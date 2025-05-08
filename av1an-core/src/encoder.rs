@@ -288,7 +288,8 @@ impl Encoder {
     }
   }
 
-  /// Returns default settings for the encoder
+  /// Returns default settings for the encoder.
+  /// These will be excluded if the user specifies any custom params.
   pub fn get_default_arguments(self, (cols, rows): (u32, u32)) -> Vec<String> {
     /// Integer log base 2
     pub const fn ilog2(x: u32) -> u32 {
@@ -312,8 +313,6 @@ impl Encoder {
           "--cpu-used=6",
           "--end-usage=q",
           "--cq-level=30",
-          "--disable-kf",
-          "--kf-max-dist=9999"
         ];
 
         if cols > 1 || rows > 1 {
@@ -330,15 +329,7 @@ impl Encoder {
         }
       }
       Encoder::rav1e => {
-        let defaults: Vec<String> = into_vec![
-          "--speed",
-          "6",
-          "--quantizer",
-          "100",
-          "--keyint",
-          "0",
-          "--no-scene-detection",
-        ];
+        let defaults: Vec<String> = into_vec!["--speed", "6", "--quantizer", "100"];
 
         if cols > 1 || rows > 1 {
           let tiles: Vec<String> = into_vec!["--tiles", format!("{}", cols * rows)];
@@ -361,8 +352,6 @@ impl Encoder {
           "--cq-level=30",
           "--row-mt=1",
           "--auto-alt-ref=6",
-          "--disable-kf",
-          "--kf-max-dist=9999"
         ];
 
         if cols > 1 || rows > 1 {
@@ -379,8 +368,7 @@ impl Encoder {
         }
       }
       Encoder::svt_av1 => {
-        let defaults =
-          into_vec!["--preset", "4", "--keyint", "0", "--scd", "0", "--rc", "0", "--crf", "25"];
+        let defaults = into_vec!["--preset", "4", "--rc", "0", "--crf", "25"];
         if cols > 1 || rows > 1 {
           let columns = ilog2(cols);
           let rows = ilog2(rows);
@@ -396,16 +384,7 @@ impl Encoder {
           defaults
         }
       }
-      Encoder::x264 => into_vec![
-        "--preset",
-        "slow",
-        "--crf",
-        "25",
-        "--keyint",
-        "infinite",
-        "--scenecut",
-        "0",
-      ],
+      Encoder::x264 => into_vec!["--preset", "slow", "--crf", "25"],
       Encoder::x265 => into_vec![
         "--preset",
         "slow",
@@ -415,11 +394,28 @@ impl Encoder {
         "10",
         "--level-idc",
         "5.0",
-        "--keyint",
-        "-1",
-        "--scenecut",
-        "0",
       ],
+    }
+  }
+
+  /// Returns additional settings for the encoder that are strongly recommended
+  /// for use with av1an. Can still be overridden if the user specifies the same setting.
+  pub fn get_additional_arguments(self) -> Vec<String> {
+    match self {
+      Encoder::aom => {
+        into_vec!["--disable-kf", "--kf-max-dist=9999"]
+      }
+      Encoder::rav1e => {
+        into_vec!["--keyint", "0", "--no-scene-detection"]
+      }
+      Encoder::vpx => {
+        into_vec!["--disable-kf", "--kf-max-dist=9999"]
+      }
+      Encoder::svt_av1 => {
+        into_vec!["--keyint", "0", "--scd", "0"]
+      }
+      Encoder::x264 => into_vec!["--keyint", "infinite", "--scenecut", "0"],
+      Encoder::x265 => into_vec!["--keyint", "-1", "--scenecut", "0"],
     }
   }
 
