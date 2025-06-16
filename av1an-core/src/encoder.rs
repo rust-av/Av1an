@@ -434,7 +434,7 @@ impl Encoder {
 
     /// Returns quantizer percentage (0-1) relative to entire range for encoder
     #[inline]
-    pub const fn get_cq_relative_percentage(self, quantizer: usize) -> f64 {
+    pub fn get_cq_relative_percentage(self, quantizer: usize) -> f64 {
         let percentage = match self {
             Self::aom | Self::vpx | Self::svt_av1 => quantizer as f64 / 64.0, // 0-63
             Self::rav1e => quantizer as f64 / 256.0,                          // 0-255
