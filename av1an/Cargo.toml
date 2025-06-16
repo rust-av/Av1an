@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.42"
 av1an-core = { path = "../av1an-core", version = "0.4.1" }
-clap = { version = "4.5.39", features = ["derive"] }
+clap = { version = "4.5.40", features = ["derive"] }
 num-traits = "0.2.19"
 once_cell = "1.8.0"
 path_abs = "0.5.1"
