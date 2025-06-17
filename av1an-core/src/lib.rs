@@ -46,7 +46,6 @@ pub mod ffmpeg;
 mod logging;
 mod metrics {
     pub mod butteraugli;
-    pub mod ssimulacra2;
     pub mod statistics;
     pub mod vmaf;
     pub mod xpsnr;
