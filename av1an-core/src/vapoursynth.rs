@@ -594,7 +594,7 @@ fn compare_butteraugli<'core>(
         return Err(anyhow::anyhow!("butteraugli not available"));
     }
 
-    const INTENSITY: f64 = 80.0;
+    const INTENSITY: f64 = 203.0;
     let error_message = format!(
         "Failed to calculate butteraugli with {plugin_id} plugin",
         plugin_id = if is_vship_installed() {
