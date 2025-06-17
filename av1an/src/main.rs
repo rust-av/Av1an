@@ -994,7 +994,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             scaler
         };
 
-        let input = Input::from((
+        let input = Input::new(
             input,
             args.vspipe_args.clone(),
             temp.as_str(),
@@ -1002,7 +1002,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.sc_downscale_height,
             args.sc_pix_format,
             scaler.clone(),
-        ));
+        )?;
 
         let verbosity = if args.quiet {
             Verbosity::Quiet

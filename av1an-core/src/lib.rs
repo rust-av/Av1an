@@ -75,6 +75,73 @@ pub enum Input {
 }
 
 impl Input {
+    #[inline]
+    pub fn new<P: AsRef<Path> + Into<PathBuf>>(
+        path: P,
+        vspipe_args: Vec<String>,
+        temp: &str,
+        chunk_method: ChunkMethod,
+        scene_detection_downscale_height: Option<usize>,
+        scene_detection_pixel_format: Option<Pixel>,
+        scene_detection_scaler: String,
+    ) -> anyhow::Result<Self> {
+        if let Some(ext) = path.as_ref().extension() {
+            if ext == "py" || ext == "vpy" {
+                let input_path = path.into();
+                let script_text = read_to_string(input_path.clone())?;
+                Ok(Self::VapourSynth {
+                    path: input_path.clone(),
+                    vspipe_args,
+                    script_text,
+                })
+            } else {
+                let input_path = path.into();
+                Ok(Self::Video {
+                    path:        input_path.clone(),
+                    script_text: match chunk_method {
+                        ChunkMethod::LSMASH
+                        | ChunkMethod::FFMS2
+                        | ChunkMethod::DGDECNV
+                        | ChunkMethod::BESTSOURCE => Some(
+                            generate_loadscript_text(
+                                temp,
+                                &input_path,
+                                chunk_method,
+                                scene_detection_downscale_height,
+                                scene_detection_pixel_format,
+                                scene_detection_scaler,
+                            )
+                            .unwrap(),
+                        ),
+                        _ => None,
+                    },
+                })
+            }
+        } else {
+            let input_path = path.into();
+            Ok(Self::Video {
+                path:        input_path.clone(),
+                script_text: match chunk_method {
+                    ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::DGDECNV
+                    | ChunkMethod::BESTSOURCE => Some(
+                        generate_loadscript_text(
+                            temp,
+                            &input_path,
+                            chunk_method,
+                            scene_detection_downscale_height,
+                            scene_detection_pixel_format,
+                            scene_detection_scaler,
+                        )
+                        .unwrap(),
+                    ),
+                    _ => None,
+                },
+            })
+        }
+    }
+
     /// Returns a reference to the inner path, panicking if the input is not an
     /// `Input::Video`.
     #[inline]
@@ -323,95 +390,6 @@ impl Input {
         }
 
         Ok(args_map)
-    }
-}
-
-impl<P: AsRef<Path> + Into<PathBuf>>
-    From<(
-        P,
-        Vec<String>,
-        &str,
-        ChunkMethod,
-        Option<usize>,
-        Option<Pixel>,
-        String,
-    )> for Input
-{
-    #[inline]
-    fn from(
-        (
-            path,
-            vspipe_args,
-            temp,
-            chunk_method,
-            scene_detection_downscale_height,
-            scene_detection_pixel_format,
-            scene_detection_scaler,
-        ): (
-            P,
-            Vec<String>,
-            &str,
-            ChunkMethod,
-            Option<usize>,
-            Option<Pixel>,
-            String,
-        ),
-    ) -> Self {
-        if let Some(ext) = path.as_ref().extension() {
-            if ext == "py" || ext == "vpy" {
-                let input_path = path.into();
-                let script_text = read_to_string(input_path.clone()).unwrap();
-                Self::VapourSynth {
-                    path: input_path.clone(),
-                    vspipe_args,
-                    script_text,
-                }
-            } else {
-                let input_path = path.into();
-                Self::Video {
-                    path:        input_path.clone(),
-                    script_text: match chunk_method {
-                        ChunkMethod::LSMASH
-                        | ChunkMethod::FFMS2
-                        | ChunkMethod::DGDECNV
-                        | ChunkMethod::BESTSOURCE => Some(
-                            generate_loadscript_text(
-                                temp,
-                                &input_path,
-                                chunk_method,
-                                scene_detection_downscale_height,
-                                scene_detection_pixel_format,
-                                scene_detection_scaler,
-                            )
-                            .unwrap(),
-                        ),
-                        _ => None,
-                    },
-                }
-            }
-        } else {
-            let input_path = path.into();
-            Self::Video {
-                path:        input_path.clone(),
-                script_text: match chunk_method {
-                    ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::DGDECNV
-                    | ChunkMethod::BESTSOURCE => Some(
-                        generate_loadscript_text(
-                            temp,
-                            &input_path,
-                            chunk_method,
-                            scene_detection_downscale_height,
-                            scene_detection_pixel_format,
-                            scene_detection_scaler,
-                        )
-                        .unwrap(),
-                    ),
-                    _ => None,
-                },
-            }
-        }
     }
 }
 
