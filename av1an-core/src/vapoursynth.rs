@@ -20,7 +20,10 @@ use vapoursynth::{
 
 use super::ChunkMethod;
 use crate::{
-    metrics::{butteraugli::ButteraugliSubMetric, xpsnr::XPSNRSubMetric},
+    metrics::{
+        butteraugli::ButteraugliSubMetric,
+        xpsnr::{weight_xpsnr, XPSNRSubMetric},
+    },
     util::to_absolute_path,
     Input,
 };
@@ -1160,13 +1163,7 @@ pub fn measure_xpsnr(
                 scores.push(minimum);
             },
             XPSNRSubMetric::Weighted => {
-                let weighted = -10.0
-                    * f64::log10(
-                        (4.0 * f64::powf(10.0, -xpsnr_y / 10.0))
-                            + f64::powf(10.0, -xpsnr_u / 10.0)
-                            + f64::powf(10.0, -xpsnr_v / 10.0),
-                    )
-                    / 6.0;
+                let weighted = weight_xpsnr(xpsnr_y, xpsnr_u, xpsnr_v);
                 scores.push(weighted);
             },
         }

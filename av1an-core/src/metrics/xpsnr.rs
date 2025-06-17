@@ -188,14 +188,19 @@ pub fn read_xpsnr_file(file: impl AsRef<Path>, submetric: XPSNRSubMetric) -> (f6
     match submetric {
         XPSNRSubMetric::Minimum => (final_yuv.0.min(final_yuv.1).min(final_yuv.2), frame_values),
         XPSNRSubMetric::Weighted => {
-            let weighted = -10.0
-                * f64::log10(
-                    ((4.0 * f64::powf(10.0, -final_yuv.0 / 10.0))
-                        + f64::powf(10.0, -final_yuv.1 / 10.0)
-                        + f64::powf(10.0, -final_yuv.2 / 10.0))
-                        / 6.0,
-                );
+            let weighted = weight_xpsnr(final_yuv.0, final_yuv.1, final_yuv.2);
+
             (weighted, frame_values)
         },
     }
+}
+
+pub fn weight_xpsnr(y: f64, u: f64, v: f64) -> f64 {
+    -10.0
+        * f64::log10(
+            ((4.0 * f64::powf(10.0, -y / 10.0))
+                + f64::powf(10.0, -u / 10.0)
+                + f64::powf(10.0, -v / 10.0))
+                / 6.0,
+        )
 }
