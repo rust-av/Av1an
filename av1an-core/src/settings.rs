@@ -291,9 +291,7 @@ impl EncodeArgs {
 
         if let Some(target_quality) = &self.target_quality {
             if target_quality.probes < 4 {
-                eprintln!(
-                    "Target quality with less than 4 probes is experimental and not recommended"
-                );
+                warn!("Target quality with less than 4 probes is experimental and not recommended");
             }
 
             ensure!(target_quality.min_q >= 1);
@@ -303,10 +301,10 @@ impl EncodeArgs {
                     [width_str, height_str] => {
                         match (width_str.parse::<u32>(), height_str.parse::<u32>()) {
                             (Ok(_width), Ok(_height)) => {},
-                            _ => eprintln!("Failed to parse Probe Resolution"),
+                            _ => bail!("Failed to parse Probe Resolution"),
                         }
                     },
-                    _ => eprintln!("Probe Resolution must be in the format widthxheight"),
+                    _ => bail!("Probe Resolution must be in the format widthxheight"),
                 }
             }
         }
