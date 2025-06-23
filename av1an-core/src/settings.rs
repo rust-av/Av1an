@@ -10,8 +10,8 @@ use anyhow::{bail, ensure};
 use ffmpeg::format::Pixel;
 use itertools::{chain, Itertools};
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::filter::LevelFilter;
 use tracing::warn;
+use tracing_subscriber::filter::LevelFilter;
 
 use crate::{
     concat::ConcatMethod,
@@ -290,7 +290,8 @@ impl EncodeArgs {
 
         if self.ignore_frame_mismatch {
             warn!(
-                "The output video's frame count may differ, and target metric calculations may be incorrect"
+                "The output video's frame count may differ, and target metric calculations may be \
+                 incorrect"
             );
         }
 
