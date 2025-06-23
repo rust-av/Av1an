@@ -646,13 +646,15 @@ pub struct CliOpts {
     /// plugin. Also requires Chunk method to be set to "lsmash", "ffms2",
     /// "bestsource", or "dgdecnv".
     ///
-    /// butteraugli-inf - Uses the Infinite-Norm value of Butteraugli. Requires
-    /// Vapoursynth-HIP or Julek plugin. Also requires Chunk method to be set to
-    /// "lsmash", "ffms2", "bestsource", or "dgdecnv".
+    /// butteraugli-inf - Uses the Infinite-Norm value of butteraugli with a
+    /// target intensity of 203 nits. Requires Vapoursynth-HIP or Julek
+    /// plugin. Also requires Chunk method to be set to "lsmash", "ffms2",
+    /// "bestsource", or "dgdecnv".
     ///
-    /// butteraugli-3  - Uses the 3-Norm value of Butteraugli. Requires
-    /// Vapoursynth-HIP plugin. Also requires Chunk method to be set to
-    /// "lsmash", "ffms2", "bestsource", or "dgdecnv".
+    /// butteraugli-3  - Uses the 3-Norm value of butteraugli with a target
+    /// intensity of 203 nits. Requires Vapoursynth-HIP plugin. Also
+    /// requires Chunk method to be set to "lsmash", "ffms2", "bestsource",
+    /// or "dgdecnv".
     ///
     /// xpsnr -  Uses the minimum of Y, U, and V. Requires FFmpeg with XPSNR
     /// enabled when Probing Rate is unspecified or set to 1. When Probing Rate

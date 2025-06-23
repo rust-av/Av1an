@@ -22,6 +22,7 @@ Target Quality supports the following metrics:
 - [VMAF](https://github.com/Netflix/vmaf)
 - [SSIMULACRA2](https://github.com/cloudinary/ssimulacra2)
 - [Butteraugli](https://github.com/google/butteraugli)
+- [XPSNR](https://github.com/fraunhoferhhi/xpsnr)
 
 ## Requirements
 
