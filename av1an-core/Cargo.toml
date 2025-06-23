@@ -28,7 +28,6 @@ av1-grain = { version = "0.2.4", default-features = false, features = [
     "create",
 ] }
 cfg-if = "1.0.1"
-clap = { version = "4", features = ["derive"] }
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.5"
 indicatif = "0.17.2"

@@ -24,7 +24,6 @@ use dashmap::DashMap;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr, IntoStaticStr};
-pub use target_quality::VmafFeature;
 
 pub use crate::{
     concat::ConcatMethod,
@@ -479,6 +478,32 @@ pub enum ChunkOrdering {
     Sequential,
     #[strum(serialize = "random")]
     Random,
+}
+
+#[derive(
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Serialize,
+    Deserialize,
+    Debug,
+    Display,
+    EnumString,
+    IntoStaticStr,
+    Hash,
+)]
+pub enum VmafFeature {
+    #[strum(serialize = "default")]
+    Default,
+    #[strum(serialize = "weighted")]
+    Weighted,
+    #[strum(serialize = "neg")]
+    Neg,
+    #[strum(serialize = "motionless")]
+    Motionless,
+    #[strum(serialize = "uhd")]
+    Uhd,
 }
 
 #[derive(

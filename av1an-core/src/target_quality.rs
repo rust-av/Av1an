@@ -5,7 +5,6 @@ use std::{
     thread::available_parallelism,
 };
 
-use clap::ValueEnum;
 use ffmpeg::format::Pixel;
 use serde::{Deserialize, Serialize};
 use splines::{Interpolation, Key, Spline};
@@ -27,6 +26,7 @@ use crate::{
     ProbingStatistic,
     ProbingStatisticName,
     TargetMetric,
+    VmafFeature,
 };
 
 const SCORE_TOLERANCE: f64 = 0.01;
@@ -55,20 +55,6 @@ pub struct TargetQuality {
     pub probe_slow:            bool,
     pub probing_vmaf_features: Vec<VmafFeature>,
     pub probing_statistic:     ProbingStatistic,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
-pub enum VmafFeature {
-    #[value(name = "default")]
-    Default,
-    #[value(name = "weighted")]
-    Weighted,
-    #[value(name = "neg")]
-    Neg,
-    #[value(name = "motionless")]
-    Motionless,
-    #[value(name = "uhd")]
-    Uhd,
 }
 
 impl TargetQuality {
