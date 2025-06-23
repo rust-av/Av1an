@@ -228,7 +228,11 @@ impl Broker<'_> {
             );
             tq.per_shot_target_quality_routine(chunk, Some(worker_id)).unwrap();
 
-            if tq.probe_slow && chunk.tq_cq.is_some() {
+            if tq.probe_slow
+                && chunk.tq_cq.is_some()
+                && tq.probing_speed.is_none()
+                && self.project.args.ffmpeg_filter_args.is_empty()
+            {
                 let optimal_q = chunk.tq_cq.unwrap();
                 let extension = match self.project.args.encoder {
                     crate::encoder::Encoder::x264 => "264",
