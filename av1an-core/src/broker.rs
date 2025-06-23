@@ -230,6 +230,7 @@ impl Broker<'_> {
 
             if tq.probe_slow
                 && chunk.tq_cq.is_some()
+                && tq.probing_rate == 1
                 && tq.probing_speed.is_none()
                 && self.project.args.ffmpeg_filter_args.is_empty()
             {
