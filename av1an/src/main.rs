@@ -668,7 +668,7 @@ pub struct CliOpts {
     /// the VapourSynth-Zig Image Process plugin version R7 or newer is required
     /// and the Chunk method must be set to "lsmash", "ffms2", "bestsource", or
     /// "dgdecnv".
-    #[clap(long, default_value_t = TargetMetric::VMAF, help_heading = "Target Quality", ignore_case = true)]
+    #[clap(long, default_value_t = TargetMetric::VMAF, help_heading = "Target Quality")]
     pub target_metric:  TargetMetric,
     /// Maximum number of probes allowed for target quality
     #[clap(long, default_value_t = 4, help_heading = "Target Quality")]
