@@ -178,7 +178,7 @@ impl Broker<'_> {
                                 if terminations_requested.load(Ordering::SeqCst) == 0 {
                                     if let Err(e) = queue.encode_chunk(&mut chunk, worker_id, &terminations_requested, total_chunks) {
                                         if let Some(e) = e {
-					    error!("[chunk {index}] {e}", index = chunk.index);
+                                            error!("[chunk {index}] {e}", index = chunk.index);
                                         }
                                         tx.send(()).unwrap();
                                         return Err(());
@@ -226,7 +226,17 @@ impl Broker<'_> {
                     target = tq.target
                 ),
             );
-            tq.per_shot_target_quality_routine(chunk, Some(worker_id)).unwrap();
+            for r#try in 1..=self.project.args.max_tries {
+                let res = tq.per_shot_target_quality_routine(chunk, Some(worker_id));
+                if let Err(e) = res {
+                    if r#try >= self.project.args.max_tries {
+                        error!("Target Quality failed after {} tries on chunk {}:\n{}", r#try, chunk.index, e);
+                        return Err(None);
+                    }
+                } else {
+                    break;
+                }
+            }
 
             if tq.probe_slow
                 && chunk.tq_cq.is_some()
