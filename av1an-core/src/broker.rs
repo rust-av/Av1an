@@ -162,11 +162,11 @@ impl Broker<'_> {
                                                     let start_thread = (threads * worker_id) % available_threads;
                                                     cpu_set.extend((start_thread..start_thread + threads).map(|t| t % available_threads));
                                                     if let Err(e) = affinity::set_thread_affinity(&cpu_set) {
-							warn!("Failed to set thread affinity for worker {worker_id}: {e}");
+                                                        warn!("Failed to set thread affinity for worker {worker_id}: {e}");
                                                     }
                                                 },
                                                 Err(e) => {
-						    warn!("Failed to get thread count: {e}. Thread affinity will not be set");
+                                                    warn!("Failed to get thread count: {e}. Thread affinity will not be set");
                                                 }
                                             }
                                         }
@@ -230,7 +230,10 @@ impl Broker<'_> {
                 let res = tq.per_shot_target_quality_routine(chunk, Some(worker_id));
                 if let Err(e) = res {
                     if r#try >= self.project.args.max_tries {
-                        error!("Target Quality failed after {} tries on chunk {}:\n{}", r#try, chunk.index, e);
+                        error!(
+                            "Target Quality failed after {} tries on chunk {}:\n{}",
+                            r#try, chunk.index, e
+                        );
                         return Err(None);
                     }
                 } else {
