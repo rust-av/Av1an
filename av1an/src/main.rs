@@ -171,6 +171,16 @@ pub struct CliOpts {
     #[clap(short, required = true)]
     pub input: Vec<PathBuf>,
 
+    /// Input proxy file for Scene Detection and Target Quality
+    ///
+    /// Can be a video or VapourSynth (.py, .vpy) script.
+    ///
+    /// The proxy should be an input that decodes or computes a simpler
+    /// approximation of the input. It must have the same number of frames as
+    /// the input.
+    #[clap(long)]
+    pub proxy: Vec<PathBuf>,
+
     /// Video output file
     #[clap(short)]
     pub output_file: Option<PathBuf>,
@@ -961,15 +971,21 @@ pub(crate) fn resolve_file_paths(path: &Path) -> anyhow::Result<Box<dyn Iterator
 #[tracing::instrument(level = "debug")]
 pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
     let input_paths = &*args.input;
+    let proxy_paths = &*args.proxy;
 
     let mut inputs = Vec::new();
     for path in input_paths {
         inputs.extend(resolve_file_paths(path)?);
     }
 
+    let mut proxies = Vec::new();
+    for path in proxy_paths {
+        proxies.extend(resolve_file_paths(path)?);
+    }
+
     let mut valid_args: Vec<EncodeArgs> = Vec::with_capacity(inputs.len());
 
-    for input in inputs {
+    for (index, input) in inputs.into_iter().enumerate() {
         let temp = if let Some(path) = args.temp.as_ref() {
             path.to_str().unwrap().to_owned()
         } else {
@@ -1002,7 +1018,26 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.sc_downscale_height,
             args.sc_pix_format,
             scaler.clone(),
+            false,
         )?;
+
+        // Assumes proxies supplied are the same number as inputs. Otherwise gets the
+        // first proxy if available
+        let proxy_path = proxies.get(index).or(proxies.first());
+        let proxy = if let Some(path) = proxy_path {
+            Some(Input::new(
+                path,
+                args.vspipe_args.clone(),
+                temp.as_str(),
+                chunk_method,
+                args.sc_downscale_height,
+                args.sc_pix_format,
+                scaler.clone(),
+                true,
+            )?)
+        } else {
+            None
+        };
 
         let verbosity = if args.quiet {
             Verbosity::Quiet
@@ -1133,6 +1168,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 }
             },
             input,
+            proxy,
             output_pix_format,
             resume: args.resume,
             scenes: args.scenes.clone(),

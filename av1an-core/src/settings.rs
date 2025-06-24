@@ -53,6 +53,7 @@ pub enum InputPixelFormat {
 #[derive(Debug)]
 pub struct EncodeArgs {
     pub input:       Input,
+    pub proxy:       Option<Input>,
     pub temp:        String,
     pub output_file: String,
 
@@ -128,6 +129,24 @@ impl EncodeArgs {
             "Input file {:?} does not exist!",
             self.input
         );
+
+        if let Some(proxy) = &self.proxy {
+            ensure!(
+                proxy.as_path().exists(),
+                "Proxy file {:?} does not exist!",
+                proxy
+            );
+
+            // Frame count must match
+            let input_frame_count = self.input.frames(None)? as u64;
+            let proxy_frame_count = proxy.frames(None)? as u64;
+
+            ensure!(
+                input_frame_count == proxy_frame_count,
+                "Input and Proxy do not have the same number of frames! ({input_frame_count} != \
+                 {proxy_frame_count})",
+            );
+        }
 
         if self.target_quality.is_some() {
             match self.target_quality.as_ref().unwrap().metric {
