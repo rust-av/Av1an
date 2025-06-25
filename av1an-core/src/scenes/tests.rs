@@ -48,6 +48,7 @@ fn get_test_args() -> Av1anContext {
             path:        PathBuf::new(),
             script_text: None,
         },
+        proxy:                 None,
         output_pix_format:     PixelFormat {
             format:    Pixel::YUV420P10LE,
             bit_depth: 10,
@@ -78,6 +79,7 @@ fn get_test_args() -> Av1anContext {
     Av1anContext {
         vs_script: None,
         vs_scd_script: None,
+        vs_proxy_script: None,
         frames: 6900,
         args,
     }
