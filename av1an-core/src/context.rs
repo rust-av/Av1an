@@ -4,7 +4,7 @@ use std::{
     collections::BTreeSet,
     convert::TryInto,
     ffi::OsString,
-    fs::{self, read_to_string, File},
+    fs::{self, File},
     io::Write,
     iter,
     path::{Path, PathBuf},
@@ -59,7 +59,7 @@ use crate::{
     scenes::{Scene, ZoneOptions},
     settings::{EncodeArgs, InputPixelFormat},
     split::{extra_splits, segment, write_scenes_to_file},
-    vapoursynth::{copy_vs_file, create_vs_file},
+    vapoursynth::create_vs_file,
     ChunkMethod,
     ChunkOrdering,
     DashMap,
@@ -73,7 +73,7 @@ use crate::{
 pub struct Av1anContext {
     pub frames:        usize,
     pub vs_script:     Option<PathBuf>,
-    pub vs_scd_script: Option<PathBuf>,
+    // pub vs_scd_script: Option<PathBuf>,
     pub args:          EncodeArgs,
 }
 
@@ -84,7 +84,7 @@ impl Av1anContext {
         let mut this = Self {
             frames: 0,
             vs_script: None,
-            vs_scd_script: None,
+            // vs_scd_script: None,
             args,
         };
         this.initialize()?;
@@ -193,10 +193,10 @@ impl Av1anContext {
             Input::VapourSynth { path, .. } => path.clone(),
             Input::Video{ path, .. } => create_vs_file(&self.args.temp, path, self.args.chunk_method, self.args.sc_downscale_height, self.args.sc_pix_format, self.args.scaler.clone())?,
           });
-          self.vs_scd_script = Some(match &self.args.input {
-            Input::VapourSynth { path, .. } => copy_vs_file(&self.args.temp, path, self.args.sc_downscale_height)?,
-            Input::Video { .. } => self.vs_script.clone().unwrap(),
-          });
+        //   self.vs_scd_script = Some(match &self.args.input {
+        //     Input::VapourSynth { path, .. } => copy_vs_file(&self.args.temp, path, self.args.sc_downscale_height)?,
+        //     Input::Video { .. } => self.vs_script.clone().unwrap(),
+        //   });
 
           let vs_script = self.vs_script.clone().unwrap();
           let vspipe_args = self.args.input.as_vspipe_args_vec()?;
@@ -782,19 +782,21 @@ impl Av1anContext {
     fn calc_split_locations(&self) -> anyhow::Result<(Vec<Scene>, usize)> {
         let zones = self.parse_zones()?;
 
-        // Create a new input with the generated VapourSynth script for Scene Detection
-        let input = self.vs_scd_script.as_ref().map_or_else(
-            || self.args.input.clone(),
-            |vs_script| Input::VapourSynth {
-                path:        vs_script.clone(),
-                vspipe_args: Vec::new(),
-                script_text: read_to_string(vs_script).unwrap(),
-            },
-        );
+        // // Create a new input with the generated VapourSynth script for Scene
+        // Detection let input = self.vs_scd_script.as_ref().map_or_else(
+        //     || self.args.input.clone(),
+        //     |vs_script| Input::VapourSynth {
+        //         path:        vs_script.clone(),
+        //         vspipe_args:
+        // self.args.input.as_vspipe_args_vec().unwrap_or_default(),
+        //         script_text: read_to_string(vs_script).unwrap(),
+        //         env:         Environment::new()?,
+        //     },
+        // );
 
         Ok(match self.args.split_method {
             SplitMethod::AvScenechange => av_scenechange_detect(
-                &input,
+                &self.args.input,
                 self.args.encoder,
                 self.frames,
                 self.args.min_scene_len,

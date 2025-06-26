@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::{IsTerminal, Read},
     process::{Command, Stdio},
     thread,
@@ -17,11 +18,16 @@ use av_scenechange::{
 use ffmpeg::format::Pixel;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
+use vapoursynth::{
+    prelude::{Environment, Property},
+    video_info::Resolution,
+};
 
 use crate::{
     into_smallvec,
     progress_bar,
     scenes::Scene,
+    vapoursynth::resize_node,
     Encoder,
     Input,
     ScenecutMethod,
@@ -100,8 +106,15 @@ pub fn scene_detect(
     sc_downscale_height: Option<usize>,
     zones: &[Scene],
 ) -> anyhow::Result<Vec<Scene>> {
+    let mut env = match input {
+        Input::VapourSynth {
+            ..
+        } => Some(Environment::new()?),
+        _ => None,
+    };
     let (mut decoder, bit_depth) = build_decoder(
         input,
+        &mut env,
         encoder,
         sc_scaler,
         sc_pix_format,
@@ -216,13 +229,14 @@ pub fn scene_detect(
 }
 
 #[tracing::instrument(level = "debug")]
-fn build_decoder(
+fn build_decoder<'core>(
     input: &Input,
+    env: &'core mut Option<Environment>,
     encoder: Encoder,
     sc_scaler: &str,
     sc_pix_format: Option<Pixel>,
     sc_downscale_height: Option<usize>,
-) -> anyhow::Result<(Decoder<impl Read>, usize)> {
+) -> anyhow::Result<(Decoder<'core, impl Read>, usize)> {
     let bit_depth;
     let filters: SmallVec<[String; 4]> = match (sc_downscale_height, sc_pix_format) {
         (Some(sdh), Some(spf)) => into_smallvec![
@@ -247,27 +261,37 @@ fn build_decoder(
         } => {
             bit_depth = crate::vapoursynth::bit_depth(path.as_ref(), input.as_vspipe_args_map()?)?;
             let vspipe_args = input.as_vspipe_args_vec()?;
-
-            if !filters.is_empty() || !vspipe_args.is_empty() {
-                let mut command = Command::new("vspipe");
-                command
-                    .arg("-c")
-                    .arg("y4m")
-                    .arg(path)
-                    .arg("-")
-                    .env("AV1AN_PERFORM_SCENE_DETECTION", "true")
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::null());
-                // Append vspipe python arguments to the environment if there are any
-                for arg in vspipe_args {
-                    command.args(["-a", &arg]);
-                }
-
-                Decoder::Y4m(y4m::Decoder::new(command.spawn()?.stdout.unwrap())?)
-            } else {
-                Decoder::Vapoursynth(VapoursynthDecoder::new(path.as_ref())?)
+            let mut arguments_map = HashMap::<String, String>::new();
+            for arg in vspipe_args {
+                let split: Vec<&str> = arg.split_terminator('=').collect();
+                arguments_map.insert(split[0].to_string(), split[1].to_string());
             }
+
+            let env = env.as_mut().unwrap();
+            let mut decoder = VapoursynthDecoder::new_from_file(env, path, Some(arguments_map))?;
+
+            if let Some(height) = sc_downscale_height {
+                let (original_width, original_height) = match decoder.node.info().resolution {
+                    Property::Variable => (0, 0),
+                    Property::Constant(Resolution {
+                        width,
+                        height,
+                    }) => (width as u32, height as u32),
+                };
+                let width = (original_width as f64 * (height as f64 / original_height as f64))
+                    .round() as u32;
+
+                decoder.node = resize_node(
+                    decoder.core,
+                    &decoder.node,
+                    Some((width / 2) * 2), // Ensure width is divisible by 2
+                    Some(height as u32),
+                    None,
+                    None,
+                )?;
+            }
+
+            Decoder::Vapoursynth(decoder)
         },
         Input::Video {
             path, ..
