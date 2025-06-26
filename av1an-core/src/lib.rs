@@ -74,6 +74,7 @@ pub enum Input {
 
 impl Input {
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn new<P: AsRef<Path> + Into<PathBuf>>(
         path: P,
         vspipe_args: Vec<String>,
@@ -82,6 +83,7 @@ impl Input {
         scene_detection_downscale_height: Option<usize>,
         scene_detection_pixel_format: Option<Pixel>,
         scene_detection_scaler: String,
+        is_proxy: bool,
     ) -> anyhow::Result<Self> {
         if let Some(ext) = path.as_ref().extension() {
             if ext == "py" || ext == "vpy" {
@@ -108,6 +110,7 @@ impl Input {
                                 scene_detection_downscale_height,
                                 scene_detection_pixel_format,
                                 scene_detection_scaler,
+                                is_proxy,
                             )
                             .unwrap(),
                         ),
@@ -131,6 +134,7 @@ impl Input {
                             scene_detection_downscale_height,
                             scene_detection_pixel_format,
                             scene_detection_scaler,
+                            is_proxy,
                         )
                         .unwrap(),
                     ),
