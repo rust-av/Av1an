@@ -36,12 +36,15 @@ pub struct Scene {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneOptions {
-    pub encoder:          Encoder,
-    pub passes:           u8,
-    pub video_params:     Vec<String>,
-    pub photon_noise:     Option<u8>,
-    pub extra_splits_len: Option<usize>,
-    pub min_scene_len:    usize,
+    pub encoder:             Encoder,
+    pub passes:              u8,
+    pub video_params:        Vec<String>,
+    pub photon_noise:        Option<u8>,
+    pub photon_noise_height: Option<u32>,
+    pub photon_noise_width:  Option<u32>,
+    pub chroma_noise:        bool,
+    pub extra_splits_len:    Option<usize>,
+    pub min_scene_len:       usize,
 }
 
 impl Scene {
@@ -126,6 +129,21 @@ impl Scene {
         } else {
             context.args.photon_noise
         };
+        let mut photon_noise_height = if reset {
+            None
+        } else {
+            context.args.photon_noise_size.1
+        };
+        let mut photon_noise_width = if reset {
+            None
+        } else {
+            context.args.photon_noise_size.0
+        };
+        let mut chroma_noise = if reset {
+            false
+        } else {
+            context.args.chroma_noise
+        };
         let mut extra_splits_len = context.args.extra_splits_len;
         let mut min_scene_len = context.args.min_scene_len;
 
@@ -151,6 +169,15 @@ impl Scene {
         }
         if let Some(zone_photon_noise) = zone_args.remove("--photon-noise") {
             photon_noise = Some(zone_photon_noise.unwrap().parse().unwrap());
+        }
+        if let Some(zone_photon_noise_height) = zone_args.remove("--photon-noise-height") {
+            photon_noise_height = Some(zone_photon_noise_height.unwrap().parse().unwrap());
+        }
+        if let Some(zone_photon_noise_width) = zone_args.remove("--photon-noise-width") {
+            photon_noise_width = Some(zone_photon_noise_width.unwrap().parse().unwrap());
+        }
+        if let Some(zone_chroma_noise) = zone_args.remove("--chroma-noise") {
+            chroma_noise = zone_chroma_noise.unwrap().parse().unwrap();
         }
         if let Some(zone_xs) = zone_args.remove("-x").or_else(|| zone_args.remove("--extra-split"))
         {
@@ -242,6 +269,9 @@ impl Scene {
                 passes,
                 video_params,
                 photon_noise,
+                photon_noise_height,
+                photon_noise_width,
+                chroma_noise,
                 extra_splits_len,
                 min_scene_len,
             }),

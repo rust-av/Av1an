@@ -1031,7 +1031,9 @@ impl Av1anContext {
             ),
             passes: scene.zone_overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
             encoder: scene.zone_overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
-            noise_size: self.args.photon_noise_size,
+            noise_size: scene.zone_overrides.as_ref().map_or(self.args.photon_noise_size, |ovr| {
+                (ovr.photon_noise_width, ovr.photon_noise_height)
+            }),
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
@@ -1040,7 +1042,10 @@ impl Av1anContext {
                 .zone_overrides
                 .as_ref()
                 .map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
-            self.args.chroma_noise,
+            scene
+                .zone_overrides
+                .as_ref()
+                .map_or(self.args.chroma_noise, |ovr| ovr.chroma_noise),
         )?;
         Ok(chunk)
     }
