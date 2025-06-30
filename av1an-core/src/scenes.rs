@@ -3,11 +3,15 @@ mod tests;
 
 use std::{
     collections::HashMap,
+    fs::{read_to_string, File},
+    io::Write,
+    path::{Path, PathBuf},
     process::{exit, Command},
     str::FromStr,
+    sync::atomic,
 };
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
 use nom::{
     branch::alt,
@@ -20,10 +24,15 @@ use nom::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    context::Av1anContext,
+    get_done,
     parse::valid_params,
+    scene_detect::av_scenechange_detect,
     settings::{invalid_params, suggest_fix},
+    split::extra_splits,
+    EncodeArgs,
     Encoder,
+    Input,
+    SplitMethod,
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -48,7 +57,7 @@ pub struct ZoneOptions {
 }
 
 impl Scene {
-    pub fn parse_from_zone(input: &str, context: &Av1anContext) -> Result<Self> {
+    pub fn parse_from_zone(input: &str, args: &EncodeArgs, frames: usize) -> Result<Self> {
         let (_, (start, _, end, _, encoder, reset, zone_args)): (
             _,
             (usize, _, usize, _, Encoder, bool, &str),
@@ -57,7 +66,7 @@ impl Scene {
             many1(char(' ')),
             map_res(alt((tag("-1"), digit1)), |res: &str| {
                 if res == "-1" {
-                    Ok(context.frames)
+                    Ok(frames)
                 } else {
                     res.parse::<usize>()
                 }
@@ -87,21 +96,21 @@ impl Scene {
         if start >= end {
             bail!("Start frame must be earlier than the end frame");
         }
-        if start >= context.frames || end > context.frames {
+        if start >= frames || end > frames {
             bail!("Start and end frames must not be past the end of the video");
         }
-        if encoder.format() != context.args.encoder.format() {
+        if encoder.format() != args.encoder.format() {
             bail!(
                 "Zone specifies using {}, but this cannot be used in the same file as {}",
                 encoder,
-                context.args.encoder,
+                args.encoder,
             );
         }
-        if encoder != context.args.encoder {
-            if encoder.get_format_bit_depth(context.args.output_pix_format.format).is_err() {
+        if encoder != args.encoder {
+            if encoder.get_format_bit_depth(args.output_pix_format.format).is_err() {
                 bail!(
                     "Output pixel format {:?} is not supported by {} (used in zones file)",
-                    context.args.output_pix_format.format,
+                    args.output_pix_format.format,
                     encoder
                 );
             }
@@ -117,35 +126,27 @@ impl Scene {
         let mut video_params = if reset {
             Vec::new()
         } else {
-            context.args.video_params.clone()
+            args.video_params.clone()
         };
         let mut passes = if reset {
             encoder.get_default_pass()
         } else {
-            context.args.passes
+            args.passes
         };
-        let mut photon_noise = if reset {
-            None
-        } else {
-            context.args.photon_noise
-        };
+        let mut photon_noise = if reset { None } else { args.photon_noise };
         let mut photon_noise_height = if reset {
             None
         } else {
-            context.args.photon_noise_size.1
+            args.photon_noise_size.1
         };
         let mut photon_noise_width = if reset {
             None
         } else {
-            context.args.photon_noise_size.0
+            args.photon_noise_size.0
         };
-        let mut chroma_noise = if reset {
-            false
-        } else {
-            context.args.chroma_noise
-        };
-        let mut extra_splits_len = context.args.extra_splits_len;
-        let mut min_scene_len = context.args.min_scene_len;
+        let mut chroma_noise = if reset { false } else { args.chroma_noise };
+        let mut extra_splits_len = args.extra_splits_len;
+        let mut min_scene_len = args.min_scene_len;
 
         // Parse overrides
         let zone_args: (&str, Vec<(&str, Option<&str>)>) =
@@ -202,7 +203,7 @@ impl Scene {
                 .collect::<Vec<String>>()
         };
 
-        if !context.args.force {
+        if !args.force {
             let help_text = {
                 let [cmd, arg] = encoder.help_command();
                 String::from_utf8(Command::new(cmd).arg(arg).output().unwrap().stdout).unwrap()
@@ -276,5 +277,199 @@ impl Scene {
                 min_scene_len,
             }),
         })
+    }
+}
+
+/// This struct is responsible for choosing and building a list of video chunks.
+/// It is responsible for managing both scene detection and extra splits.
+#[derive(Debug)]
+pub struct SceneFactory {
+    /// Count of frames in the video
+    frames:       usize,
+    /// A list of scenecuts detected in the video
+    scenes:       Option<Vec<Scene>>,
+    /// A list of scenecuts plus extra splits defined by the user setting
+    split_scenes: Option<Vec<Scene>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScenesData {
+    frames: usize,
+    scenes: Vec<Scene>,
+}
+
+impl SceneFactory {
+    /// Return a new, empty factory for computing scenes and chunks.
+    pub fn new() -> Self {
+        Self {
+            frames:       0,
+            scenes:       None,
+            split_scenes: None,
+        }
+    }
+
+    /// This loads a list of scenes from a JSON file and returns a factory with
+    /// the scenes data.
+    pub fn from_scenes_file<P: AsRef<Path>>(scene_path: &P) -> anyhow::Result<Self> {
+        let file = File::open(scene_path)?;
+        let scenes: ScenesData = serde_json::from_reader(file).with_context(|| {
+            format!(
+                "Failed to parse scenes file {:?}, this likely means that the scenes file is \
+                 corrupted",
+                scene_path.as_ref()
+            )
+        })?;
+
+        Ok(Self {
+            frames:       scenes.frames,
+            scenes:       Some(scenes.scenes),
+            split_scenes: None,
+        })
+    }
+
+    /// Retrieve the pre-extra-split scenes data
+    #[allow(dead_code)]
+    pub fn get_scenecuts(&mut self) -> anyhow::Result<&[Scene]> {
+        if self.scenes.is_none() {
+            bail!("compute_scenes must be called first");
+        }
+
+        Ok(self.scenes.as_deref().expect("scenes exist"))
+    }
+
+    /// Retrieve the post-extra-split scenes data
+    pub fn get_split_scenes(&mut self) -> anyhow::Result<&[Scene]> {
+        if self.split_scenes.is_none() {
+            bail!("compute_scenes must be called first");
+        }
+
+        Ok(self.split_scenes.as_deref().expect("split_scenes exist"))
+    }
+
+    /// Write the scenes data to the specified file as JSON
+    pub fn write_scenes_to_file<P: AsRef<Path>>(&mut self, scene_path: P) -> anyhow::Result<()> {
+        if self.scenes.is_none() {
+            bail!("compute_scenes must be called first");
+        }
+
+        let json = serde_json::to_string(self.scenes.as_ref().expect("scenes exist"))
+            .expect("serialize should not fail");
+
+        let mut file = File::create(scene_path)?;
+        file.write_all(json.as_bytes())?;
+
+        Ok(())
+    }
+
+    /// This runs scene detection and populates a list of scenes into the
+    /// factory. This function will be run automatically when it is needed.
+    pub fn compute_scenes(
+        &mut self,
+        args: &EncodeArgs,
+        vs_script: &Option<PathBuf>,
+        vs_scd_script: &Option<PathBuf>,
+        zones: &[Scene],
+    ) -> anyhow::Result<()> {
+        // We should only be calling this when scenes haven't been created yet
+        debug_assert!(self.scenes.is_none());
+
+        let frames = args.input.frames(vs_script.clone())?;
+
+        // Create a new input with the generated VapourSynth script for Scene Detection
+        let input = vs_scd_script.as_ref().map_or_else(
+            || args.input.clone(),
+            |vs_script| Input::VapourSynth {
+                path:        vs_script.clone(),
+                vspipe_args: Vec::new(),
+                script_text: read_to_string(vs_script).unwrap(),
+            },
+        );
+
+        let (mut scenes, frames) = match args.split_method {
+            SplitMethod::AvScenechange => av_scenechange_detect(
+                &input,
+                args.encoder,
+                frames,
+                args.min_scene_len,
+                args.verbosity,
+                args.scaler.as_str(),
+                args.sc_pix_format,
+                args.sc_method,
+                args.sc_downscale_height,
+                zones,
+            )?,
+            SplitMethod::None => {
+                let mut scenes = Vec::with_capacity(2 * zones.len() + 1);
+                let mut frames_processed = 0;
+                for zone in zones {
+                    let end_frame = zone.end_frame;
+
+                    if end_frame > frames_processed {
+                        scenes.push(Scene {
+                            start_frame:    frames_processed,
+                            end_frame:      zone.start_frame,
+                            zone_overrides: None,
+                        });
+                    }
+
+                    scenes.push(zone.clone());
+
+                    frames_processed += end_frame;
+                }
+                if frames > frames_processed {
+                    scenes.push(Scene {
+                        start_frame:    frames_processed,
+                        end_frame:      frames,
+                        zone_overrides: None,
+                    });
+                }
+                (scenes, args.input.frames(vs_script.clone())?)
+            },
+        };
+
+        self.frames = frames;
+        get_done().frames.store(frames, atomic::Ordering::SeqCst);
+
+        // Add forced keyframes
+        for kf in &args.force_keyframes {
+            if let Some((scene_pos, s)) =
+                scenes.iter_mut().find_position(|s| (s.start_frame..s.end_frame).contains(kf))
+            {
+                if *kf == s.start_frame {
+                    // Already a keyframe
+                    continue;
+                }
+                // Split this scene into two scenes at the requested keyframe
+                let mut new = s.clone();
+                s.end_frame = *kf;
+                new.start_frame = *kf;
+                scenes.insert(scene_pos + 1, new);
+            } else {
+                warn!(
+                    "scene {kf} was requested as a forced keyframe but video has {frames} frames, \
+                     ignoring"
+                );
+            }
+        }
+
+        let scenes_before = scenes.len();
+        self.scenes = Some(scenes);
+
+        if let Some(split_len @ 1..) = args.extra_splits_len {
+            self.split_scenes = Some(extra_splits(
+                self.scenes.as_deref().unwrap(),
+                frames,
+                split_len,
+            ));
+            let scenes_after = self.split_scenes.as_ref().unwrap().len();
+            info!(
+                "scenecut: found {scenes_before} scene(s) [with extra_splits ({split_len} \
+                 frames): {scenes_after} scene(s)]"
+            );
+        } else {
+            info!("scenecut: found {scenes_before} scene(s)");
+        }
+
+        Ok(())
     }
 }

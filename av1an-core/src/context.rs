@@ -1,10 +1,9 @@
 use std::{
     borrow::Cow,
     cmp::{self, Reverse},
-    collections::BTreeSet,
     convert::TryInto,
     ffi::OsString,
-    fs::{self, read_to_string, File},
+    fs::{self, File},
     io::Write,
     iter,
     path::{Path, PathBuf},
@@ -18,7 +17,7 @@ use std::{
 };
 
 use ansi_term::{Color, Style};
-use anyhow::{bail, Context};
+use anyhow::Context;
 use av1_grain::TransferFunction;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
@@ -55,37 +54,39 @@ use crate::{
     },
     read_chunk_queue,
     save_chunk_queue,
-    scene_detect::av_scenechange_detect,
-    scenes::{Scene, ZoneOptions},
+    scenes::{Scene, SceneFactory, ZoneOptions},
     settings::{EncodeArgs, InputPixelFormat},
-    split::{extra_splits, segment, write_scenes_to_file},
+    split::segment,
     vapoursynth::{copy_vs_file, create_vs_file},
+    zones::parse_zones,
     ChunkMethod,
     ChunkOrdering,
     DashMap,
     DoneJson,
     Input,
-    SplitMethod,
     Verbosity,
 };
 
 #[derive(Debug)]
 pub struct Av1anContext {
-    pub frames:        usize,
-    pub vs_script:     Option<PathBuf>,
-    pub vs_scd_script: Option<PathBuf>,
-    pub args:          EncodeArgs,
+    pub frames:               usize,
+    pub vs_script:            Option<PathBuf>,
+    pub vs_scd_script:        Option<PathBuf>,
+    pub args:                 EncodeArgs,
+    pub(crate) scene_factory: SceneFactory,
 }
 
 impl Av1anContext {
     #[tracing::instrument(level = "debug")]
     pub fn new(mut args: EncodeArgs) -> anyhow::Result<Self> {
         args.validate()?;
+
         let mut this = Self {
             frames: 0,
             vs_script: None,
             vs_scd_script: None,
             args,
+            scene_factory: SceneFactory::new(),
         };
         this.initialize()?;
         Ok(this)
@@ -237,7 +238,7 @@ impl Av1anContext {
             }
         );
 
-        let splits = self.split_routine()?;
+        let splits = self.split_routine()?.to_vec();
 
         if self.args.sc_only {
             debug!("scene detection only");
@@ -779,141 +780,26 @@ impl Av1anContext {
         Ok(chunks)
     }
 
-    fn calc_split_locations(&self) -> anyhow::Result<(Vec<Scene>, usize)> {
-        let zones = self.parse_zones()?;
-
-        // Create a new input with the generated VapourSynth script for Scene Detection
-        let input = self.vs_scd_script.as_ref().map_or_else(
-            || self.args.input.clone(),
-            |vs_script| Input::VapourSynth {
-                path:        vs_script.clone(),
-                vspipe_args: Vec::new(),
-                script_text: read_to_string(vs_script).unwrap(),
-            },
-        );
-
-        Ok(match self.args.split_method {
-            SplitMethod::AvScenechange => av_scenechange_detect(
-                &input,
-                self.args.encoder,
-                self.frames,
-                self.args.min_scene_len,
-                self.args.verbosity,
-                self.args.scaler.as_str(),
-                self.args.sc_pix_format,
-                self.args.sc_method,
-                self.args.sc_downscale_height,
-                &zones,
-            )?,
-            SplitMethod::None => {
-                let mut scenes = Vec::with_capacity(2 * zones.len() + 1);
-                let mut frames_processed = 0;
-                for zone in zones {
-                    let end_frame = zone.end_frame;
-
-                    if end_frame > frames_processed {
-                        scenes.push(Scene {
-                            start_frame:    frames_processed,
-                            end_frame:      zone.start_frame,
-                            zone_overrides: None,
-                        });
-                    }
-
-                    scenes.push(zone);
-
-                    frames_processed += end_frame;
-                }
-                if self.frames > frames_processed {
-                    scenes.push(Scene {
-                        start_frame:    frames_processed,
-                        end_frame:      self.frames,
-                        zone_overrides: None,
-                    });
-                }
-                (scenes, self.args.input.frames(self.vs_script.clone())?)
-            },
-        })
-    }
-
-    fn parse_zones(&self) -> anyhow::Result<Vec<Scene>> {
-        let mut zones = Vec::new();
-        if let Some(ref zones_file) = self.args.zones {
-            let input = fs::read_to_string(zones_file)?;
-            for zone_line in input.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                zones.push(Scene::parse_from_zone(zone_line, self)?);
-            }
-            zones.sort_unstable_by_key(|zone| zone.start_frame);
-            let mut segments = BTreeSet::new();
-            for zone in &zones {
-                if segments.contains(&zone.start_frame) {
-                    bail!("Zones file contains overlapping zones");
-                }
-                segments.extend(zone.start_frame..zone.end_frame);
-            }
-        }
-        Ok(zones)
-    }
-
     // If we are not resuming, then do scene detection. Otherwise: get scenes from
     // scenes.json and return that.
-    fn split_routine(&mut self) -> anyhow::Result<Vec<Scene>> {
+    fn split_routine(&mut self) -> anyhow::Result<&[Scene]> {
         let scene_file = self.args.scenes.as_ref().map_or_else(
             || Cow::Owned(Path::new(&self.args.temp).join("scenes.json")),
             |path| Cow::Borrowed(path.as_path()),
         );
-
-        let used_existing_cuts;
-        let (mut scenes, frames) =
-            if (self.args.scenes.is_some() && scene_file.exists()) || self.args.resume {
-                used_existing_cuts = true;
-                crate::split::read_scenes_from_file(scene_file.as_ref())?
-            } else {
-                used_existing_cuts = false;
-                self.frames = self.args.input.frames(self.vs_script.clone())?;
-                self.calc_split_locations()?
-            };
-        self.frames = frames;
-        get_done().frames.store(self.frames, atomic::Ordering::SeqCst);
-
-        // Add forced keyframes
-        for kf in &self.args.force_keyframes {
-            if let Some((scene_pos, s)) =
-                scenes.iter_mut().find_position(|s| (s.start_frame..s.end_frame).contains(kf))
-            {
-                if *kf == s.start_frame {
-                    // Already a keyframe
-                    continue;
-                }
-                // Split this scene into two scenes at the requested keyframe
-                let mut new = s.clone();
-                s.end_frame = *kf;
-                new.start_frame = *kf;
-                scenes.insert(scene_pos + 1, new);
-            } else {
-                warn!(
-                    "scene {kf} was requested as a forced keyframe but video has {frames} frames, \
-                     ignoring"
-                );
-            }
+        if scene_file.exists() && (self.args.scenes.is_some() || self.args.resume) {
+            self.scene_factory = SceneFactory::from_scenes_file(&scene_file)?;
+        } else {
+            let zones = parse_zones(&self.args, self.frames)?;
+            self.scene_factory.compute_scenes(
+                &self.args,
+                &self.vs_script,
+                &self.vs_scd_script,
+                &zones,
+            )?;
         }
-
-        let scenes_before = scenes.len();
-        if !used_existing_cuts {
-            if let Some(split_len @ 1..) = self.args.extra_splits_len {
-                scenes = extra_splits(&scenes, self.frames, split_len);
-                let scenes_after = scenes.len();
-                info!(
-                    "scenecut: found {scenes_before} scene(s) [with extra_splits ({split_len} \
-                     frames): {scenes_after} scene(s)]"
-                );
-            } else {
-                info!("scenecut: found {scenes_before} scene(s)");
-            }
-        }
-
-        write_scenes_to_file(&scenes, self.frames, scene_file)?;
-
-        Ok(scenes)
+        self.scene_factory.write_scenes_to_file(scene_file)?;
+        self.scene_factory.get_split_scenes()
     }
 
     fn create_select_chunk(
