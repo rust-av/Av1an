@@ -7,7 +7,6 @@ use std::{
 
 use ffmpeg::format::Pixel;
 use serde::{Deserialize, Serialize};
-use splines::{Interpolation, Key, Spline};
 use tracing::{debug, trace};
 
 use crate::{
@@ -631,6 +630,184 @@ impl TargetQuality {
     }
 }
 
+fn linear_interpolate(x: &[f64; 2], y: &[f64; 2], xi: f64) -> Option<f64> {
+    // Check strictly increasing
+    if x[1] <= x[0] {
+        return None;
+    }
+
+    // Linear interpolation formula: y = y0 + (y1 - y0) * (xi - x0) / (x1 - x0)
+    let t = (xi - x[0]) / (x[1] - x[0]);
+    Some(y[0] + t * (y[1] - y[0]))
+}
+
+fn natural_cubic_spline(x: &[f64], y: &[f64], xi: f64) -> Option<f64> {
+    let n = x.len();
+    if n < 3 || n != y.len() {
+        return None;
+    }
+
+    // No bounds check needed - we're interpolating, not extrapolating
+    // The target (xi) is a score value we're looking for, not restricted to input
+    // range
+
+    // Calculate intervals
+    let mut h = vec![0.0; n - 1];
+    for i in 0..n - 1 {
+        h[i] = x[i + 1] - x[i];
+        if h[i] <= 0.0 {
+            trace!(
+                "Natural cubic spline: x values not strictly increasing at index {}: {} >= {}",
+                i,
+                x[i],
+                x[i + 1]
+            );
+            return None; // x must be strictly increasing
+        }
+    }
+
+    // Set up tridiagonal system for second derivatives
+    let mut a = vec![0.0; n];
+    let mut b = vec![2.0; n];
+    let mut c = vec![0.0; n];
+    let mut d = vec![0.0; n];
+
+    // Natural boundary conditions: second derivative = 0 at endpoints
+    b[0] = 1.0;
+    b[n - 1] = 1.0;
+
+    // Interior points
+    for i in 1..n - 1 {
+        a[i] = h[i - 1];
+        b[i] = 2.0 * (h[i - 1] + h[i]);
+        c[i] = h[i];
+        d[i] = 3.0 * ((y[i + 1] - y[i]) / h[i] - (y[i] - y[i - 1]) / h[i - 1]);
+    }
+
+    // Solve tridiagonal system (Thomas algorithm)
+    let mut m = vec![0.0; n];
+    let mut l = vec![0.0; n];
+    let mut z = vec![0.0; n];
+
+    l[0] = b[0];
+    if l[0] == 0.0 {
+        trace!("Natural cubic spline: Singular matrix at first step");
+        return None;
+    }
+    for i in 1..n {
+        l[i] = b[i] - a[i] * c[i - 1] / l[i - 1];
+        if l[i] == 0.0 {
+            trace!("Natural cubic spline: Singular matrix at step {}", i);
+            return None;
+        }
+        z[i] = (d[i] - a[i] * z[i - 1]) / l[i];
+    }
+
+    m[n - 1] = z[n - 1];
+    for i in (0..n - 1).rev() {
+        m[i] = z[i] - c[i] * m[i + 1] / l[i];
+    }
+
+    // Find the interval containing xi
+    let mut k = 0;
+    for i in 0..n - 1 {
+        if xi >= x[i] && xi <= x[i + 1] {
+            k = i;
+            break;
+        }
+    }
+
+    // Evaluate cubic polynomial
+    let dx = xi - x[k];
+    let h_k = h[k];
+
+    let a_coeff = y[k];
+    let b_coeff = (y[k + 1] - y[k]) / h_k - h_k * (2.0 * m[k] + m[k + 1]) / 3.0;
+    let c_coeff = m[k];
+    let d_coeff = (m[k + 1] - m[k]) / (3.0 * h_k);
+
+    Some(a_coeff + b_coeff * dx + c_coeff * dx * dx + d_coeff * dx * dx * dx)
+}
+
+fn pchip_interpolate(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
+    // Check strictly increasing
+    for i in 0..3 {
+        if x[i + 1] <= x[i] {
+            return None;
+        }
+    }
+
+    // Find interval containing xi
+    let mut k = 0;
+    for i in 0..3 {
+        if xi >= x[i] && xi <= x[i + 1] {
+            k = i;
+            break;
+        }
+    }
+
+    // Calculate slopes
+    let s0 = (y[1] - y[0]) / (x[1] - x[0]);
+    let s1 = (y[2] - y[1]) / (x[2] - x[1]);
+    let s2 = (y[3] - y[2]) / (x[3] - x[2]);
+
+    // Calculate derivatives using PCHIP method
+    let mut d = [0.0; 4];
+
+    // Endpoint derivatives
+    d[0] = s0;
+    d[3] = s2;
+
+    // Interior derivatives (weighted harmonic mean)
+    for i in 1..=2 {
+        let (s_prev, s_next, h_prev, h_next) = if i == 1 {
+            (s0, s1, x[1] - x[0], x[2] - x[1])
+        } else {
+            (s1, s2, x[2] - x[1], x[3] - x[2])
+        };
+
+        if s_prev * s_next <= 0.0 {
+            d[i] = 0.0;
+        } else {
+            let w1 = 2.0 * h_next + h_prev;
+            let w2 = h_next + 2.0 * h_prev;
+            d[i] = (w1 + w2) / (w1 / s_prev + w2 / s_next);
+        }
+    }
+
+    // Monotonicity constraint
+    let slopes = [s0, s1, s2];
+    for i in 0..3 {
+        if slopes[i] == 0.0 {
+            d[i] = 0.0;
+            d[i + 1] = 0.0;
+        } else {
+            let alpha = d[i] / slopes[i];
+            let beta = d[i + 1] / slopes[i];
+            let tau = alpha * alpha + beta * beta;
+
+            if tau > 9.0 {
+                let scale = 3.0 / tau.sqrt();
+                d[i] = scale * alpha * slopes[i];
+                d[i + 1] = scale * beta * slopes[i];
+            }
+        }
+    }
+
+    // Hermite cubic evaluation
+    let h = x[k + 1] - x[k];
+    let t = (xi - x[k]) / h;
+    let t2 = t * t;
+    let t3 = t2 * t;
+
+    Some(
+        (2.0 * t3 - 3.0 * t2 + 1.0) * y[k]
+            + (t3 - 2.0 * t2 + t) * h * d[k]
+            + (-2.0 * t3 + 3.0 * t2) * y[k + 1]
+            + (t3 - t2) * h * d[k + 1],
+    )
+}
+
 fn predict_quantizer(
     lower_quantizer_limit: u32,
     upper_quantizer_limit: u32,
@@ -639,44 +816,63 @@ fn predict_quantizer(
 ) -> u32 {
     // The midpoint between the upper and lower quantizer bounds
     let binary_search = (lower_quantizer_limit + upper_quantizer_limit) / 2;
-    if quantizer_score_history.len() < 2 {
-        // Fewer than 2 probes, predict using binary search
-        return binary_search;
-    }
 
-    // Sort history by quantizer
-    let mut sorted_quantizer_score_history = quantizer_score_history.to_vec();
-    sorted_quantizer_score_history.sort_by_key(|(quantizer, _)| *quantizer);
+    let predicted_quantizer = match quantizer_score_history.len() {
+        0..=1 => binary_search as f64,
+        _ => {
+            // Sort history by quantizer
+            let mut sorted_quantizer_score_history = quantizer_score_history.to_vec();
+            sorted_quantizer_score_history
+                .sort_by(|(_, score1), (_, score2)| score1.partial_cmp(score2).unwrap());
 
-    let keys = sorted_quantizer_score_history
-        .iter()
-        .map(|(quantizer, score)| {
-            Key::new(
-                *score,
-                *quantizer as f64,
-                match sorted_quantizer_score_history.len() {
-                    0..=1 => unreachable!(),        // Handled in earlier guard
-                    2 => Interpolation::Linear,     // 2 probes, use Linear without fitting curve
-                    _ => Interpolation::CatmullRom, // 3 or more probes, fit CatmullRom curve
+            match sorted_quantizer_score_history.len() {
+                2 => {
+                    // 3rd probe: linear interpolation
+                    let scores =
+                        [sorted_quantizer_score_history[0].1, sorted_quantizer_score_history[1].1];
+                    let quantizers = [
+                        sorted_quantizer_score_history[0].0 as f64,
+                        sorted_quantizer_score_history[1].0 as f64,
+                    ];
+
+                    linear_interpolate(&scores, &quantizers, target).unwrap_or_else(|| {
+                        trace!("Linear interpolation failed, falling back to binary search");
+                        binary_search as f64
+                    })
                 },
-            )
-        })
-        .collect::<Vec<_>>();
+                3 => {
+                    // 4th probe: natural cubic spline
+                    let (scores, quantizers): (Vec<f64>, Vec<f64>) =
+                        sorted_quantizer_score_history.iter().map(|(q, s)| (*s, *q as f64)).unzip();
 
-    let spline = Spline::from_vec(keys);
-    let predicted_quantizer = spline.sample(target).unwrap_or_else(|| {
-        // Probes do not fit Catmull-Rom curve, fallback to Linear
-        trace!("Probes do not fit Catmull-Rom curve, falling back to Linear");
-        let keys = sorted_quantizer_score_history
-            .iter()
-            .map(|(quantizer, score)| Key::new(*score, *quantizer as f64, Interpolation::Linear))
-            .collect();
-        Spline::from_vec(keys).sample(target).unwrap_or_else(|| {
-            // Probes do not fit Catmull-Rom curve or Linear, fallback to binary search
-            trace!("Probes do not fit Linear curve, falling back to binary search");
-            binary_search as f64
-        })
-    });
+                    natural_cubic_spline(&scores, &quantizers, target).unwrap_or_else(|| {
+                        trace!("Natural cubic spline failed, falling back to binary search");
+                        binary_search as f64
+                    })
+                },
+                4 => {
+                    // 5th probe: PCHIP interpolation
+                    let (scores, quantizers): ([f64; 4], [f64; 4]) = {
+                        let mut s = [0.0; 4];
+                        let mut q = [0.0; 4];
+                        for (i, (quantizer, score)) in
+                            sorted_quantizer_score_history.iter().enumerate()
+                        {
+                            s[i] = *score;
+                            q[i] = *quantizer as f64;
+                        }
+                        (s, q)
+                    };
+
+                    pchip_interpolate(&scores, &quantizers, target).unwrap_or_else(|| {
+                        trace!("PCHIP interpolation failed, falling back to binary search");
+                        binary_search as f64
+                    })
+                },
+                _ => binary_search as f64, // 6+ probes: binary search only
+            }
+        },
+    };
 
     // Ensure predicted quantizer is an integer and within bounds
     (predicted_quantizer.round() as u32).clamp(lower_quantizer_limit, upper_quantizer_limit)
