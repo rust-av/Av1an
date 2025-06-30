@@ -381,7 +381,8 @@ impl SceneFactory {
             |vs_script| Input::VapourSynth {
                 path:        vs_script.clone(),
                 vspipe_args: Vec::new(),
-                script_text: read_to_string(vs_script).unwrap(),
+                script_text: read_to_string(vs_script)
+                    .context("Failed to read VapourSynth script file")?,
             },
         );
 

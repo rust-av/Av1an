@@ -12,12 +12,12 @@ pub(crate) fn parse_zones(args: &EncodeArgs, frames: usize) -> anyhow::Result<Ve
             zones.push(Scene::parse_from_zone(zone_line, args, frames)?);
         }
         zones.sort_unstable_by_key(|zone| zone.start_frame);
-        let mut segments = BTreeSet::new();
-        for zone in &zones {
-            if segments.contains(&zone.start_frame) {
+        for i in 0..zones.len() - 1 {
+            let current_zone = &zones[i];
+            let next_zone = &zones[i + 1];
+            if current_zone.end_frame > next_zone.start_frame {
                 bail!("Zones file contains overlapping zones");
             }
-            segments.extend(zone.start_frame..zone.end_frame);
         }
     }
     Ok(zones)
