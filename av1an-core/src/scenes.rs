@@ -284,27 +284,26 @@ impl Scene {
 /// It is responsible for managing both scene detection and extra splits.
 #[derive(Debug)]
 pub struct SceneFactory {
-    /// Count of frames in the video
-    frames:       usize,
-    /// A list of scenecuts detected in the video
-    scenes:       Option<Vec<Scene>>,
-    /// A list of scenecuts plus extra splits defined by the user setting
-    split_scenes: Option<Vec<Scene>>,
+    data: ScenesData,
 }
 
+/// A serializable data struct containing scenecut data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenesData {
-    frames: usize,
-    scenes: Vec<Scene>,
+    frames:       usize,
+    scenes:       Option<Vec<Scene>>,
+    split_scenes: Option<Vec<Scene>>,
 }
 
 impl SceneFactory {
     /// Return a new, empty factory for computing scenes and chunks.
     pub fn new() -> Self {
         Self {
-            frames:       0,
-            scenes:       None,
-            split_scenes: None,
+            data: ScenesData {
+                frames:       0,
+                scenes:       None,
+                split_scenes: None,
+            },
         }
     }
 
@@ -312,48 +311,50 @@ impl SceneFactory {
     /// the scenes data.
     pub fn from_scenes_file<P: AsRef<Path>>(scene_path: &P) -> anyhow::Result<Self> {
         let file = File::open(scene_path)?;
-        let scenes: ScenesData = serde_json::from_reader(file).with_context(|| {
+        let data: ScenesData = serde_json::from_reader(file).with_context(|| {
             format!(
                 "Failed to parse scenes file {:?}, this likely means that the scenes file is \
                  corrupted",
                 scene_path.as_ref()
             )
         })?;
+        get_done().frames.store(data.frames, atomic::Ordering::SeqCst);
 
         Ok(Self {
-            frames:       scenes.frames,
-            scenes:       Some(scenes.scenes),
-            split_scenes: None,
+            data,
         })
     }
 
     /// Retrieve the pre-extra-split scenes data
     #[allow(dead_code)]
-    pub fn get_scenecuts(&mut self) -> anyhow::Result<&[Scene]> {
-        if self.scenes.is_none() {
+    pub fn get_scenecuts(&self) -> anyhow::Result<&[Scene]> {
+        if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
         }
 
-        Ok(self.scenes.as_deref().expect("scenes exist"))
+        Ok(self.data.scenes.as_deref().expect("scenes exist"))
     }
 
     /// Retrieve the post-extra-split scenes data
-    pub fn get_split_scenes(&mut self) -> anyhow::Result<&[Scene]> {
-        if self.split_scenes.is_none() {
+    pub fn get_split_scenes(&self) -> anyhow::Result<&[Scene]> {
+        if self.data.split_scenes.is_none() {
             bail!("compute_scenes must be called first");
         }
 
-        Ok(self.split_scenes.as_deref().expect("split_scenes exist"))
+        Ok(self.data.split_scenes.as_deref().expect("split_scenes exist"))
+    }
+
+    pub fn get_frame_count(&self) -> usize {
+        self.data.frames
     }
 
     /// Write the scenes data to the specified file as JSON
     pub fn write_scenes_to_file<P: AsRef<Path>>(&mut self, scene_path: P) -> anyhow::Result<()> {
-        if self.scenes.is_none() {
+        if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
         }
 
-        let json = serde_json::to_string(self.scenes.as_ref().expect("scenes exist"))
-            .expect("serialize should not fail");
+        let json = serde_json::to_string(&self.data).expect("serialize should not fail");
 
         let mut file = File::create(scene_path)?;
         file.write_all(json.as_bytes())?;
@@ -372,7 +373,7 @@ impl SceneFactory {
         zones: &[Scene],
     ) -> anyhow::Result<()> {
         // We should only be calling this when scenes haven't been created yet
-        debug_assert!(self.scenes.is_none());
+        debug_assert!(self.data.scenes.is_none());
 
         let frames = args.input.frames(vs_script.clone())?;
 
@@ -428,7 +429,7 @@ impl SceneFactory {
             },
         };
 
-        self.frames = frames;
+        self.data.frames = frames;
         get_done().frames.store(frames, atomic::Ordering::SeqCst);
 
         // Add forced keyframes
@@ -454,15 +455,15 @@ impl SceneFactory {
         }
 
         let scenes_before = scenes.len();
-        self.scenes = Some(scenes);
+        self.data.scenes = Some(scenes);
 
         if let Some(split_len @ 1..) = args.extra_splits_len {
-            self.split_scenes = Some(extra_splits(
-                self.scenes.as_deref().unwrap(),
+            self.data.split_scenes = Some(extra_splits(
+                self.data.scenes.as_deref().unwrap(),
                 frames,
                 split_len,
             ));
-            let scenes_after = self.split_scenes.as_ref().unwrap().len();
+            let scenes_after = self.data.split_scenes.as_ref().unwrap().len();
             info!(
                 "scenecut: found {scenes_before} scene(s) [with extra_splits ({split_len} \
                  frames): {scenes_after} scene(s)]"

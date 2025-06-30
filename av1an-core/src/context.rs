@@ -798,6 +798,7 @@ impl Av1anContext {
                 &zones,
             )?;
         }
+        self.frames = self.scene_factory.get_frame_count();
         self.scene_factory.write_scenes_to_file(scene_file)?;
         self.scene_factory.get_split_scenes()
     }
