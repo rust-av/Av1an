@@ -162,11 +162,11 @@ impl Broker<'_> {
                                                     let start_thread = (threads * worker_id) % available_threads;
                                                     cpu_set.extend((start_thread..start_thread + threads).map(|t| t % available_threads));
                                                     if let Err(e) = affinity::set_thread_affinity(&cpu_set) {
-							warn!("Failed to set thread affinity for worker {worker_id}: {e}");
+                                                        warn!("Failed to set thread affinity for worker {worker_id}: {e}");
                                                     }
                                                 },
                                                 Err(e) => {
-						    warn!("Failed to get thread count: {e}. Thread affinity will not be set");
+                                                    warn!("Failed to get thread count: {e}. Thread affinity will not be set");
                                                 }
                                             }
                                         }
@@ -178,7 +178,7 @@ impl Broker<'_> {
                                 if terminations_requested.load(Ordering::SeqCst) == 0 {
                                     if let Err(e) = queue.encode_chunk(&mut chunk, worker_id, &terminations_requested, total_chunks) {
                                         if let Some(e) = e {
-					    error!("[chunk {index}] {e}", index = chunk.index);
+                                            error!("[chunk {index}] {e}", index = chunk.index);
                                         }
                                         tx.send(()).unwrap();
                                         return Err(());
@@ -226,7 +226,20 @@ impl Broker<'_> {
                     target = tq.target
                 ),
             );
-            tq.per_shot_target_quality_routine(chunk, Some(worker_id)).unwrap();
+            for r#try in 1..=self.project.args.max_tries {
+                let res = tq.per_shot_target_quality_routine(chunk, Some(worker_id));
+                if let Err(e) = res {
+                    if r#try >= self.project.args.max_tries {
+                        error!(
+                            "Target Quality failed after {} tries on chunk {}:\n{}",
+                            r#try, chunk.index, e
+                        );
+                        return Err(None);
+                    }
+                } else {
+                    break;
+                }
+            }
 
             if tq.probe_slow
                 && chunk.tq_cq.is_some()
