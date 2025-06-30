@@ -71,10 +71,10 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Av1anContext {
-    pub frames:        usize,
-    pub vs_script:     Option<PathBuf>,
+    pub frames:    usize,
+    pub vs_script: Option<PathBuf>,
     // pub vs_scd_script: Option<PathBuf>,
-    pub args:          EncodeArgs,
+    pub args:      EncodeArgs,
 }
 
 impl Av1anContext {
