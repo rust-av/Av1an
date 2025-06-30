@@ -759,6 +759,7 @@ fn pchip_interpolate(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
     d[3] = s2;
 
     // Interior derivatives (weighted harmonic mean)
+    #[allow(clippy::needless_range_loop)]
     for i in 1..=2 {
         let (s_prev, s_next, h_prev, h_next) = if i == 1 {
             (s0, s1, x[1] - x[0], x[2] - x[1])
