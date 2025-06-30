@@ -249,6 +249,11 @@ impl TargetQuality {
 
     fn probe(&self, chunk: &Chunk, quantizer: usize) -> anyhow::Result<f64> {
         let probe_name = self.encode_probe(chunk, quantizer)?;
+        let reference_pipe_cmd = if let Some(proxy_cmd) = &chunk.proxy_cmd {
+            proxy_cmd.as_slice()
+        } else {
+            chunk.source_cmd.as_slice()
+        };
 
         let aggregate_frame_scores = |scores: Vec<f64>| -> anyhow::Result<f64> {
             let mut statistics = MetricStatistics::new(scores);
@@ -342,7 +347,7 @@ impl TargetQuality {
                 let vmaf_scores = if use_weighted {
                     run_vmaf_weighted(
                         &probe_name,
-                        chunk.source_cmd.as_slice(),
+                        reference_pipe_cmd,
                         self.vspipe_args.clone(),
                         model,
                         self.probe_res.as_ref().unwrap_or(&self.vmaf_res),
@@ -369,7 +374,7 @@ impl TargetQuality {
 
                     run_vmaf(
                         &probe_name,
-                        chunk.source_cmd.as_slice(),
+                        reference_pipe_cmd,
                         self.vspipe_args.clone(),
                         &fl_path,
                         model,
@@ -389,7 +394,7 @@ impl TargetQuality {
             },
             TargetMetric::SSIMULACRA2 => {
                 let scores = measure_ssimulacra2(
-                    &chunk.input,
+                    chunk.proxy.as_ref().unwrap_or(&chunk.input),
                     &probe_name,
                     (chunk.start_frame as u32, chunk.end_frame as u32),
                     self.probe_res.as_ref(),
@@ -405,7 +410,7 @@ impl TargetQuality {
                         TargetMetric::Butteraugli3 => ButteraugliSubMetric::ThreeNorm,
                         _ => unreachable!(),
                     },
-                    &chunk.input,
+                    chunk.proxy.as_ref().unwrap_or(&chunk.input),
                     &probe_name,
                     (chunk.start_frame as u32, chunk.end_frame as u32),
                     self.probe_res.as_ref(),
@@ -423,7 +428,7 @@ impl TargetQuality {
                 if self.probing_rate > 1 {
                     let scores = measure_xpsnr(
                         submetric,
-                        &chunk.input,
+                        chunk.proxy.as_ref().unwrap_or(&chunk.input),
                         &probe_name,
                         (chunk.start_frame as u32, chunk.end_frame as u32),
                         self.probe_res.as_ref(),
@@ -437,7 +442,7 @@ impl TargetQuality {
 
                     run_xpsnr(
                         &probe_name,
-                        chunk.source_cmd.as_slice(),
+                        reference_pipe_cmd,
                         self.vspipe_args.clone(),
                         &fl_path,
                         self.probe_res.as_ref().unwrap_or(&self.vmaf_res),
@@ -477,7 +482,11 @@ impl TargetQuality {
         );
 
         let future = async {
-            let source_cmd = chunk.source_cmd.clone();
+            let source_cmd = if let Some(proxy_cmd) = chunk.proxy_cmd.clone() {
+                proxy_cmd
+            } else {
+                chunk.source_cmd.clone()
+            };
             let cmd = cmd.clone();
 
             tokio::task::spawn_blocking(move || {
