@@ -362,7 +362,8 @@ impl SceneFactory {
     }
 
     /// This runs scene detection and populates a list of scenes into the
-    /// factory. This function will be run automatically when it is needed.
+    /// factory. This function must be called before getting the list of scenes
+    /// or writing to the file.
     pub fn compute_scenes(
         &mut self,
         args: &EncodeArgs,
