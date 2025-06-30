@@ -461,7 +461,8 @@ fn trim_node<'core>(
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 
-fn resize_node<'core>(
+#[inline]
+pub fn resize_node<'core>(
     core: CoreRef<'core>,
     node: &Node<'core>,
     width: Option<u32>,
