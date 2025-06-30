@@ -4,6 +4,8 @@ from vapoursynth import core
 
 # Set cache size to 1GB
 core.max_cache_size = 1024
+# Limit to one thread
+core.num_threads = 1
 
 source = os.environ.get('AV1AN_SOURCE', None)
 chunk_method = os.environ.get('AV1AN_CHUNK_METHOD', None)
@@ -31,14 +33,14 @@ if not os.path.exists(source):
     raise ValueError('Source path does not exist')
 
 # Import video
-match (chunk_method): #type: ignore
-    case 'lsmash':
-        video = core.lsmas.LWLibavSource(source, cachefile=cache_file)
-    case 'ffms2':
-        video = core.ffms2.Source(source, cachefile=cache_file)
-    case 'dgdecnv':
+match (chunk_method):  # type: ignore
+    case "lsmash":
+        video = core.lsmas.LWLibavSource(source, threads=1, cachefile=cache_file)
+    case "ffms2":
+        video = core.ffms2.Source(source, threads=1, cachefile=cache_file)
+    case "dgdecnv":
         video = core.dgdecodenv.DGSource(source)
-    case 'bestsource':
+    case "bestsource":
         # Different versions of BestSource have different behaviors on Windows
         # Versions R1 and older support absolute paths just as Av1an originally expected (with .json extension)
         # Versions R8 and newer support absolute paths for cache files, but require setting cachemode to 4
@@ -46,10 +48,12 @@ match (chunk_method): #type: ignore
         # Unfortunately, BestSource is not keeping the reported version number updated properly so we cannot reliably determine if it supports absolute paths or not
         # At best, we can wrap an attempt in a try/except block as previous versions of BestSource should throw an exception if an invalid cachemode value is provided
         try:
-            video = core.bs.VideoSource(source, cachepath=cache_file, cachemode=4)
+            video = core.bs.VideoSource(
+                source, threads=1, cachepath=cache_file, cachemode=4
+            )
         except Exception:
             # Installed BestSource version does not support absolute paths, fallback to default behavior
-            video = core.bs.VideoSource(source, cachepath=cache_file)
+            video = core.bs.VideoSource(source, threads=1, cachepath=cache_file)
 
 # Scene Detection
 # Bicubic is based on FFmpeg defaults. See https://ffmpeg.org/ffmpeg-scaler.html#toc-Scaler-Options
