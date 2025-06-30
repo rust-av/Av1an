@@ -35,9 +35,9 @@ if not os.path.exists(source):
 # Import video
 match (chunk_method):  # type: ignore
     case "lsmash":
-        video = core.lsmas.LWLibavSource(source, threads=1, cachefile=cache_file)
+        video = core.lsmas.LWLibavSource(source, cachefile=cache_file)
     case "ffms2":
-        video = core.ffms2.Source(source, threads=1, cachefile=cache_file)
+        video = core.ffms2.Source(source, cachefile=cache_file)
     case "dgdecnv":
         video = core.dgdecodenv.DGSource(source)
     case "bestsource":
@@ -48,12 +48,10 @@ match (chunk_method):  # type: ignore
         # Unfortunately, BestSource is not keeping the reported version number updated properly so we cannot reliably determine if it supports absolute paths or not
         # At best, we can wrap an attempt in a try/except block as previous versions of BestSource should throw an exception if an invalid cachemode value is provided
         try:
-            video = core.bs.VideoSource(
-                source, threads=1, cachepath=cache_file, cachemode=4
-            )
+            video = core.bs.VideoSource(source, cachepath=cache_file, cachemode=4)
         except Exception:
             # Installed BestSource version does not support absolute paths, fallback to default behavior
-            video = core.bs.VideoSource(source, threads=1, cachepath=cache_file)
+            video = core.bs.VideoSource(source, cachepath=cache_file)
 
 # Scene Detection
 # Bicubic is based on FFmpeg defaults. See https://ffmpeg.org/ffmpeg-scaler.html#toc-Scaler-Options
