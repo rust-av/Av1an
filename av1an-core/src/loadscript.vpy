@@ -9,12 +9,6 @@ source = os.environ.get('AV1AN_SOURCE', None)
 chunk_method = os.environ.get('AV1AN_CHUNK_METHOD', None)
 cache_file = os.environ.get('AV1AN_CACHE_FILE', None)
 
-# Scene Detection
-perform_scene_detection = os.environ.get('AV1AN_PERFORM_SCENE_DETECTION', None)
-downscale_height = os.environ.get('AV1AN_DOWNSCALE_HEIGHT', None)
-pixel_format = os.environ.get('AV1AN_PIXEL_FORMAT', None)
-scaler = os.environ.get('AV1AN_SCALER', None)
-
 # Default valid chunk methods
 VALID_CHUNK_METHODS: list[str] = ['lsmash', 'ffms2', 'dgdecnv', 'bestsource']
 
@@ -50,36 +44,6 @@ match (chunk_method): #type: ignore
         except Exception:
             # Installed BestSource version does not support absolute paths, fallback to default behavior
             video = core.bs.VideoSource(source, cachepath=cache_file)
-
-# Scene Detection
-# Bicubic is based on FFmpeg defaults. See https://ffmpeg.org/ffmpeg-scaler.html#toc-Scaler-Options
-scaler_function = core.resize.Bicubic
-# Map scaler parameter to equivalent vapoursynth scaler. See https://www.vapoursynth.com/doc/functions/video/resize.html#resize
-if scaler is not None:
-    match (scaler.lower()):
-        case 'fast_bilinear' | 'bilinear': scaler_function = core.resize.Bilinear
-        case 'neighbor': scaler_function = core.resize.Point
-        case _: scaler_function = core.resize.Bicubic
-
-# Map pixel format to equivalent vapoursynth pixel format (Needs expansion)
-if pixel_format is not None:
-    match (pixel_format.lower()):
-        case 'yuv420p': pixel_format = vapoursynth.YUV420P8
-        case 'yuv420p10le': pixel_format = vapoursynth.YUV420P10
-        case _: pixel_format = None
-
-# Apply Scene Detection Processing
-if perform_scene_detection is not None and downscale_height is not None or pixel_format is not None:
-    # Ensure downscale_height is not greater than video height
-    if downscale_height is not None:
-        downscale_height = min(downscale_height, video.height)
-    # Maintain aspect ratio and ensure width is divisible by 2
-    video = scaler_function(
-        video,
-        width=int(((video.width / video.height) * int(downscale_height)) // 2 * 2) if downscale_height is not None else video.width,
-        height=int(downscale_height or video.height),
-        format=pixel_format,
-    )
 
 # Output video
 video.set_output()

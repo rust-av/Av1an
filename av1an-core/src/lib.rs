@@ -3,7 +3,7 @@ extern crate log;
 
 use std::{
     cmp::max,
-    collections::hash_map::DefaultHasher,
+    collections::{hash_map::DefaultHasher, HashMap},
     fs::{self, read_to_string, File},
     hash::{Hash, Hasher},
     io::Write,
@@ -64,11 +64,15 @@ pub enum Input {
     VapourSynth {
         path:        PathBuf,
         vspipe_args: Vec<String>,
+        // Must be stored in memory at initialization instead of generating
+        // on demand in order to reduce thrashing disk with frequent reads
         script_text: String,
     },
     Video {
-        path:        PathBuf,
-        script_text: Option<String>,
+        path:         PathBuf,
+        // Used to generate script_text if chunk_method is supported
+        temp:         String,
+        chunk_method: ChunkMethod,
     },
 }
 
@@ -77,11 +81,8 @@ impl Input {
     pub fn new<P: AsRef<Path> + Into<PathBuf>>(
         path: P,
         vspipe_args: Vec<String>,
-        temp: &str,
+        temporary_directory: &str,
         chunk_method: ChunkMethod,
-        scene_detection_downscale_height: Option<usize>,
-        scene_detection_pixel_format: Option<Pixel>,
-        scene_detection_scaler: String,
     ) -> anyhow::Result<Self> {
         if let Some(ext) = path.as_ref().extension() {
             if ext == "py" || ext == "vpy" {
@@ -95,47 +96,17 @@ impl Input {
             } else {
                 let input_path = path.into();
                 Ok(Self::Video {
-                    path:        input_path.clone(),
-                    script_text: match chunk_method {
-                        ChunkMethod::LSMASH
-                        | ChunkMethod::FFMS2
-                        | ChunkMethod::DGDECNV
-                        | ChunkMethod::BESTSOURCE => Some(
-                            generate_loadscript_text(
-                                temp,
-                                &input_path,
-                                chunk_method,
-                                scene_detection_downscale_height,
-                                scene_detection_pixel_format,
-                                scene_detection_scaler,
-                            )
-                            .unwrap(),
-                        ),
-                        _ => None,
-                    },
+                    path: input_path.clone(),
+                    temp: temporary_directory.to_owned(),
+                    chunk_method,
                 })
             }
         } else {
             let input_path = path.into();
             Ok(Self::Video {
-                path:        input_path.clone(),
-                script_text: match chunk_method {
-                    ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::DGDECNV
-                    | ChunkMethod::BESTSOURCE => Some(
-                        generate_loadscript_text(
-                            temp,
-                            &input_path,
-                            chunk_method,
-                            scene_detection_downscale_height,
-                            scene_detection_pixel_format,
-                            scene_detection_scaler,
-                        )
-                        .unwrap(),
-                    ),
-                    _ => None,
-                },
+                path: input_path.clone(),
+                temp: temporary_directory.to_owned(),
+                chunk_method,
             })
         }
     }
@@ -190,25 +161,28 @@ impl Input {
         }
     }
 
-    /// Returns a reference to the inner script text, panicking if the input is
-    /// does not have script text.
+    /// Returns a VapourSynth script as a string. If `self` is `Video`, the
+    /// script will be generated for supported VapourSynth chunk methods.
     #[inline]
-    pub fn as_script_text(&self) -> &String {
+    pub fn as_script_text(&self) -> anyhow::Result<String> {
         match &self {
             Input::VapourSynth {
                 script_text, ..
-            } => script_text,
+            } => Ok(script_text.clone()),
             Input::Video {
-                script_text, ..
-            } => {
-                if let Some(text) = script_text {
-                    text
-                } else {
-                    panic!(
-                        "called `Input::as_script_text()` on an `Input::Video` variant with no \
-                         script text"
-                    )
-                }
+                path,
+                temp,
+                chunk_method,
+            } => match chunk_method {
+                ChunkMethod::LSMASH
+                | ChunkMethod::FFMS2
+                | ChunkMethod::DGDECNV
+                | ChunkMethod::BESTSOURCE => {
+                    Ok(generate_loadscript_text(temp, path, *chunk_method)?)
+                },
+                _ => Err(anyhow::anyhow!(
+                    "Cannot generate VapourSynth script text with chunk method {chunk_method:?}"
+                )),
             },
         }
     }
@@ -221,6 +195,24 @@ impl Input {
     #[inline]
     pub const fn is_vapoursynth(&self) -> bool {
         matches!(&self, Input::VapourSynth { .. })
+    }
+
+    #[inline]
+    pub const fn is_vapoursynth_script(&self) -> bool {
+        match &self {
+            Input::VapourSynth {
+                ..
+            } => true,
+            Input::Video {
+                chunk_method, ..
+            } => matches!(
+                chunk_method,
+                ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::DGDECNV
+                    | ChunkMethod::BESTSOURCE
+            ),
+        }
     }
 
     #[inline]
@@ -387,6 +379,16 @@ impl Input {
             };
         }
 
+        Ok(args_map)
+    }
+
+    #[inline]
+    pub fn as_vspipe_args_hashmap(&self) -> Result<HashMap<String, String>, anyhow::Error> {
+        let mut args_map = HashMap::new();
+        for arg in self.as_vspipe_args_vec()? {
+            let split: Vec<&str> = arg.split_terminator('=').collect();
+            args_map.insert(split[0].to_string(), split[1].to_string());
+        }
         Ok(args_map)
     }
 }

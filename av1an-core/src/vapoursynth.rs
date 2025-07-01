@@ -10,7 +10,6 @@ use anyhow::{anyhow, bail};
 use av_format::rational::Rational64;
 use once_cell::sync::Lazy;
 use path_abs::PathAbs;
-use regex::Regex;
 use tracing::info;
 use vapoursynth::{
     core::CoreRef,
@@ -726,18 +725,8 @@ pub fn create_vs_file(
     temp: &str,
     source: &Path,
     chunk_method: ChunkMethod,
-    scene_detection_downscale_height: Option<usize>,
-    scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
-    scene_detection_scaler: String,
 ) -> anyhow::Result<PathBuf> {
-    let load_script_text = generate_loadscript_text(
-        temp,
-        source,
-        chunk_method,
-        scene_detection_downscale_height,
-        scene_detection_pixel_format,
-        scene_detection_scaler,
-    )?;
+    let load_script_text = generate_loadscript_text(temp, source, chunk_method)?;
 
     if chunk_method == ChunkMethod::DGDECNV {
         let absolute_source = to_absolute_path(source)?;
@@ -772,9 +761,6 @@ pub fn generate_loadscript_text(
     temp: &str,
     source: &Path,
     chunk_method: ChunkMethod,
-    scene_detection_downscale_height: Option<usize>,
-    scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
-    scene_detection_scaler: String,
 ) -> anyhow::Result<String> {
     let temp: &Path = temp.as_ref();
     let source = to_absolute_path(source)?;
@@ -807,10 +793,9 @@ pub fn generate_loadscript_text(
     };
 
     // Include rich loadscript.vpy and specify source, chunk_method, and cache_file
-    // Also specify downscale_height, pixel_format, and scaler for Scene Detection
     // TODO should probably check if the syntax for rust strings and escaping utf
     // and stuff like that is the same as in python
-    let mut load_script_text = include_str!("loadscript.vpy")
+    let load_script_text = include_str!("loadscript.vpy")
         .replace(
             "source = os.environ.get('AV1AN_SOURCE', None)",
             &format!("source = r\"{}\"", match chunk_method {
@@ -827,59 +812,7 @@ pub fn generate_loadscript_text(
             &format!("cache_file = {cache_file:?}"),
         );
 
-    if let Some(scene_detection_downscale_height) = scene_detection_downscale_height {
-        load_script_text = load_script_text.replace(
-            "downscale_height = os.environ.get('AV1AN_DOWNSCALE_HEIGHT', None)",
-            &format!("downscale_height = {scene_detection_downscale_height}"),
-        );
-    }
-    if let Some(scene_detection_pixel_format) = scene_detection_pixel_format {
-        load_script_text = load_script_text.replace(
-            "sc_pix_format = os.environ.get('AV1AN_PIXEL_FORMAT', None)",
-            &format!("pixel_format = \"{scene_detection_pixel_format:?}\""),
-        );
-    }
-    load_script_text = load_script_text.replace(
-        "scaler = os.environ.get('AV1AN_SCALER', None)",
-        &format!("scaler = {scene_detection_scaler:?}"),
-    );
-
     Ok(load_script_text)
-}
-
-#[inline]
-pub fn copy_vs_file(
-    temp: &str,
-    source: &Path,
-    downscale_height: Option<usize>,
-) -> anyhow::Result<PathBuf> {
-    let temp: &Path = temp.as_ref();
-    let scd_script_path = temp.join("split").join("scene_detection.vpy");
-    let mut scd_script = File::create(&scd_script_path)?;
-
-    let source_script = std::fs::read_to_string(source)?;
-    if let Some(downscale_height) = downscale_height {
-        let regex = Regex::new(r"(\w+).set_output\(")?;
-        if let Some(captures) = regex.captures(&source_script) {
-            let output_variable_name = captures.get(1).unwrap().as_str();
-            let injected_script = regex
-                .replace(
-                    &source_script,
-                    format!(
-                        "{output_variable_name}.resize.Bicubic(width=int((({output_variable_name}.\
-                         width / {output_variable_name}.height) * int({downscale_height})) // 2 * \
-                         2), height={downscale_height}).set_output("
-                    )
-                    .as_str(),
-                )
-                .to_string();
-            scd_script.write_all(injected_script.as_bytes())?;
-            return Ok(scd_script_path);
-        }
-    }
-
-    scd_script.write_all(source_script.as_bytes())?;
-    Ok(scd_script_path)
 }
 
 #[inline]
@@ -1058,7 +991,7 @@ pub fn measure_butteraugli(
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
     environment.set_variables(&args)?;
-    environment.eval_script(source.as_script_text())?;
+    environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -1093,7 +1026,7 @@ pub fn measure_ssimulacra2(
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
     environment.set_variables(&args)?;
-    environment.eval_script(source.as_script_text())?;
+    environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -1128,7 +1061,7 @@ pub fn measure_xpsnr(
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
     environment.set_variables(&args)?;
-    environment.eval_script(source.as_script_text())?;
+    environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;

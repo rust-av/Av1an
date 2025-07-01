@@ -8,13 +8,13 @@ use std::{
     io::Write,
     iter,
     path::{Path, PathBuf},
-    process::{exit, Command, Stdio},
+    process::{exit, Stdio},
     sync::{
         atomic::{self, AtomicBool, AtomicUsize},
         mpsc,
         Arc,
     },
-    thread::{self, available_parallelism},
+    thread::available_parallelism,
 };
 
 use ansi_term::{Color, Style};
@@ -180,45 +180,38 @@ impl Av1anContext {
         let initial_frames =
             get_done().done.iter().map(|ref_multi| ref_multi.frames).sum::<usize>();
 
-        let vspipe_cache =
-        // Technically we should check if the vapoursynth cache file exists rather than !self.resume,
-        // but the code still works if we are resuming and the cache file doesn't exist (as it gets
-        // generated when vspipe is first called), so it's not worth adding all the extra complexity.
+        // Technically we should check if the vapoursynth cache file exists rather than
+        // !self.resume, but the code still works if we are resuming and the
+        // cache file doesn't exist (as it gets generated when vspipe is first
+        // called), so it's not worth adding all the extra complexity.
         if (self.args.input.is_vapoursynth()
             || (self.args.input.is_video()
-            && matches!(self.args.chunk_method, ChunkMethod::LSMASH | ChunkMethod::FFMS2 | ChunkMethod::DGDECNV | ChunkMethod::BESTSOURCE)))
+                && matches!(
+                    self.args.chunk_method,
+                    ChunkMethod::LSMASH
+                        | ChunkMethod::FFMS2
+                        | ChunkMethod::DGDECNV
+                        | ChunkMethod::BESTSOURCE
+                )))
             && !self.args.resume
         {
-          self.vs_script = Some(match &self.args.input {
-            Input::VapourSynth { path, .. } => path.clone(),
-            Input::Video{ path, .. } => create_vs_file(&self.args.temp, path, self.args.chunk_method, self.args.sc_downscale_height, self.args.sc_pix_format, self.args.scaler.clone())?,
-          });
-        //   self.vs_scd_script = Some(match &self.args.input {
-        //     Input::VapourSynth { path, .. } => copy_vs_file(&self.args.temp, path, self.args.sc_downscale_height)?,
-        //     Input::Video { .. } => self.vs_script.clone().unwrap(),
-        //   });
-
-          let vs_script = self.vs_script.clone().unwrap();
-          let vspipe_args = self.args.input.as_vspipe_args_vec()?;
-          Some({
-            thread::spawn(move || {
-              let mut command = Command::new("vspipe");
-              command.arg("-i")
-                .arg(vs_script)
-                .args(["-i", "-"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-              // Append vspipe arguments to the environment if there are any
-              for arg in vspipe_args {
-                command.args(["-a", &arg]);
-              }
-              command.status()
-                .unwrap()
-            })
-          })
-        } else {
-          None
-        };
+            // Create the VapourSynth script file and store the path to it
+            self.vs_script = Some(match &self.args.input {
+                Input::VapourSynth {
+                    path, ..
+                } => path.clone(),
+                Input::Video {
+                    path, ..
+                } => create_vs_file(&self.args.temp, path, self.args.chunk_method)?,
+            });
+            let script = self.args.input.as_script_text()?;
+            let variables_map = self.args.input.as_vspipe_args_hashmap()?;
+            let decoder = av_scenechange::Decoder::from_script(&script, Some(variables_map))?;
+            // Getting the details will evaluate the script and produce the VapourSynth
+            // cache file
+            info!("Generating VapourSynth cache file");
+            decoder.get_video_details();
+        }
 
         let res = self.args.input.resolution()?;
         let fps_ratio = self.args.input.frame_rate()?;
@@ -260,10 +253,6 @@ impl Av1anContext {
                 total_chunks,
                 chunk_queue.len()
             );
-        }
-
-        if let Some(vspipe_cache) = vspipe_cache {
-            vspipe_cache.join().unwrap();
         }
 
         crossbeam_utils::thread::scope(|s| -> anyhow::Result<()> {
@@ -782,18 +771,6 @@ impl Av1anContext {
     fn calc_split_locations(&self) -> anyhow::Result<(Vec<Scene>, usize)> {
         let zones = self.parse_zones()?;
 
-        // // Create a new input with the generated VapourSynth script for Scene
-        // Detection let input = self.vs_scd_script.as_ref().map_or_else(
-        //     || self.args.input.clone(),
-        //     |vs_script| Input::VapourSynth {
-        //         path:        vs_script.clone(),
-        //         vspipe_args:
-        // self.args.input.as_vspipe_args_vec().unwrap_or_default(),
-        //         script_text: read_to_string(vs_script).unwrap(),
-        //         env:         Environment::new()?,
-        //     },
-        // );
-
         Ok(match self.args.split_method {
             SplitMethod::AvScenechange => av_scenechange_detect(
                 &self.args.input,
@@ -961,8 +938,9 @@ impl Av1anContext {
             temp: self.args.temp.clone(),
             index,
             input: Input::Video {
-                path:        src_path.to_path_buf(),
-                script_text: None,
+                path:         src_path.to_path_buf(),
+                temp:         self.args.temp.clone(),
+                chunk_method: ChunkMethod::Select,
             },
             source_cmd: ffmpeg_gen_cmd,
             output_ext: output_ext.to_owned(),
@@ -1020,7 +998,7 @@ impl Av1anContext {
             input: Input::VapourSynth {
                 path:        vs_script.to_path_buf(),
                 vspipe_args: self.args.input.as_vspipe_args_vec()?,
-                script_text: self.args.input.as_script_text().to_string(),
+                script_text: self.args.input.as_script_text()?,
             },
             source_cmd: vspipe_cmd_gen,
             output_ext: output_ext.to_owned(),
@@ -1203,8 +1181,9 @@ impl Av1anContext {
         let mut chunk = Chunk {
             temp: self.args.temp.clone(),
             input: Input::Video {
-                path:        PathBuf::from(file),
-                script_text: None,
+                path:         PathBuf::from(file),
+                temp:         self.args.temp.clone(),
+                chunk_method: ChunkMethod::Segment,
             },
             source_cmd: ffmpeg_gen_cmd,
             output_ext: output_ext.to_owned(),
