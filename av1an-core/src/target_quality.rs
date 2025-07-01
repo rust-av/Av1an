@@ -657,10 +657,10 @@ fn natural_cubic_spline(x: &[f64], y: &[f64], xi: f64) -> Option<f64> {
         h[i] = x[i + 1] - x[i];
         if h[i] <= 0.0 {
             trace!(
-                "Natural cubic spline: x values not strictly increasing at index {}: {} >= {}",
-                i,
-                x[i],
-                x[i + 1]
+                "Natural cubic spline: x values not strictly increasing at index {i}: {prev} >= \
+                 {next}",
+                prev = x[i],
+                next = x[i + 1]
             );
             return None; // x must be strictly increasing
         }
@@ -697,7 +697,7 @@ fn natural_cubic_spline(x: &[f64], y: &[f64], xi: f64) -> Option<f64> {
     for i in 1..n {
         l[i] = b[i] - a[i] * c[i - 1] / l[i - 1];
         if l[i] == 0.0 {
-            trace!("Natural cubic spline: Singular matrix at step {}", i);
+            trace!("Natural cubic spline: Singular matrix at step {i}");
             return None;
         }
         z[i] = (d[i] - a[i] * z[i - 1]) / l[i];
@@ -954,4 +954,255 @@ pub fn log_probes(
         target_quantizer = target_quantizer,
         target_score = target_score
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[test]
+    fn test_linear_interpolate() {
+        // Test basic linear interpolation using real CRF/score data
+        let x = [82.502861, 87.600777]; // scores (ascending order)
+        let y = [20.0, 10.0]; // CRFs
+
+        // Test exact points
+        assert_eq!(linear_interpolate(&x, &y, 82.502861), Some(20.0));
+        assert_eq!(linear_interpolate(&x, &y, 87.600777), Some(10.0));
+
+        // Test midpoint - score 85.051819 should give CRF ~15
+        assert!((linear_interpolate(&x, &y, 85.051819).unwrap() - 15.0).abs() < 0.1);
+
+        // Test interpolation for score 84.0
+        let result = linear_interpolate(&x, &y, 84.0);
+        assert!(result.is_some());
+        assert!(result.unwrap() > 15.0 && result.unwrap() < 20.0);
+
+        let x2 = [78.737953, 89.179634]; // scores (ascending order)
+        let y2 = [15.0, 5.0]; // CRFs
+        assert!((linear_interpolate(&x2, &y2, 83.958794).unwrap() - 10.0).abs() < 0.1);
+
+        // Test non-increasing x values (should return None)
+        let x_bad = [87.600777, 82.502861]; // Not ascending
+        let y_bad = [10.0, 20.0];
+        assert_eq!(linear_interpolate(&x_bad, &y_bad, 85.0), None);
+
+        // Test equal x values (should return None)
+        let x_equal = [85.0, 85.0];
+        assert_eq!(linear_interpolate(&x_equal, &y, 85.0), None);
+    }
+
+    #[test]
+    fn test_natural_cubic_spline() {
+        // CRF 10 (84.872162), CRF 20 (78.517479), CRF 30 (72.812233)
+        let x = vec![72.812233, 78.517479, 84.872162]; // scores (ascending order)
+        let y = vec![30.0, 20.0, 10.0]; // CRFs
+
+        // Test exact points
+        assert!((natural_cubic_spline(&x, &y, 72.812233).unwrap() - 30.0).abs() < 1e-10);
+        assert!((natural_cubic_spline(&x, &y, 78.517479).unwrap() - 20.0).abs() < 1e-10);
+        assert!((natural_cubic_spline(&x, &y, 84.872162).unwrap() - 10.0).abs() < 1e-10);
+
+        // Test interpolation for score 81.0
+        let result = natural_cubic_spline(&x, &y, 81.0);
+        assert!(result.is_some());
+        assert!(result.unwrap() > 10.0 && result.unwrap() < 20.0);
+
+        // CRF 15 (84.864449), CRF 25 (80.161186), CRF 35 (72.134048)
+        let x2 = vec![72.134048, 80.161186, 84.864449]; // scores (ascending order)
+        let y2 = vec![35.0, 25.0, 15.0]; // CRFs
+
+        // Test interpolation for score 82.0
+        let result = natural_cubic_spline(&x2, &y2, 82.0);
+        assert!(result.is_some());
+        assert!(result.unwrap() > 15.0 && result.unwrap() < 25.0);
+
+        // CRF 20 (83.0155), CRF 30 (77.7812), CRF 40 (67.3447)
+        let x3 = vec![67.3447, 77.7812, 83.0155]; // scores (ascending order)
+        let y3 = vec![40.0, 30.0, 20.0]; // CRFs
+
+        // Test interpolation for score 80.0
+        let result = natural_cubic_spline(&x3, &y3, 80.0);
+        assert!(result.is_some());
+        assert!(result.unwrap() > 20.0 && result.unwrap() < 30.0);
+
+        // Test with non-increasing x values (should return None)
+        let x_bad = vec![84.872162, 78.517479, 80.0]; // Not properly ordered
+        let y_bad = vec![10.0, 20.0, 25.0];
+        assert_eq!(natural_cubic_spline(&x_bad, &y_bad, 79.0), None);
+
+        // Test with too few points (should return None)
+        let x_short = vec![87.0715, 90.0064];
+        let y_short = vec![20.0, 10.0];
+        assert_eq!(natural_cubic_spline(&x_short, &y_short, 88.0), None);
+
+        // Test with mismatched lengths (should return None)
+        let x_mismatch = vec![83.8005, 87.0715, 90.0064];
+        let y_mismatch = vec![30.0, 20.0];
+        assert_eq!(natural_cubic_spline(&x_mismatch, &y_mismatch, 85.0), None);
+    }
+
+    #[test]
+    fn test_pchip_interpolate() {
+        // Test with monotonic data
+        // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
+        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
+        let y = [35.0, 25.0, 15.0, 5.0]; // CRFs
+
+        // Test exact points
+        assert!((pchip_interpolate(&x, &y, 72.9709).unwrap() - 35.0).abs() < 1e-10);
+        assert!((pchip_interpolate(&x, &y, 80.5088).unwrap() - 25.0).abs() < 1e-10);
+        assert!((pchip_interpolate(&x, &y, 85.7452).unwrap() - 15.0).abs() < 1e-10);
+        assert!((pchip_interpolate(&x, &y, 92.4354).unwrap() - 5.0).abs() < 1e-10);
+
+        // Test interpolation for score 89.0
+        let result = pchip_interpolate(&x, &y, 89.0);
+        assert!(result.is_some());
+        assert!(result.unwrap() > 5.0 && result.unwrap() < 15.0);
+
+        // Test with data that has varying slopes
+        // CRF 40 (66.699707), CRF 45 (57.916622), CRF 50 (50.740498), CRF 55
+        // (37.303120)
+        let x2 = [37.303120, 50.740498, 57.916622, 66.699707]; // scores (ascending order)
+        let y2 = [55.0, 50.0, 45.0, 40.0]; // CRFs
+
+        // Should handle the steep changes in score
+        let result = pchip_interpolate(&x2, &y2, 54.0);
+        assert!(result.is_some());
+        assert!(result.unwrap() > 45.0 && result.unwrap() < 50.0);
+
+        // Test with non-increasing x values (should return None)
+        let x_bad = [72.9709, 88.0, 85.7452, 92.4354]; // Not properly ordered
+        let y_bad = [35.0, 12.0, 15.0, 5.0];
+        assert_eq!(pchip_interpolate(&x_bad, &y_bad, 87.0), None);
+
+        // Test edge case with nearly flat region
+        // CRF 63-66 have very similar scores
+        let x_flat = [4.944567, 5.270722, 5.345044, 5.575547]; // scores (ascending order)
+        let y_flat = [65.0, 66.0, 64.0, 63.0]; // CRFs
+        let result = pchip_interpolate(&x_flat, &y_flat, 5.1);
+        assert!(result.is_some());
+        // Should handle the nearly flat region gracefully
+    }
+
+    // Full algorithm simulation tests
+    fn get_score_map(case: usize) -> HashMap<u32, f64> {
+        match case {
+            1 => [(35, 80.08)].iter().cloned().collect(),
+            2 => [(17, 80.03), (35, 65.73)].iter().cloned().collect(),
+            3 => [(17, 83.15), (22, 80.02), (35, 71.94)].iter().cloned().collect(),
+            4 => [(17, 85.81), (30, 80.92), (32, 80.01), (35, 78.05)].iter().cloned().collect(),
+            5 => [(35, 83.31), (53, 81.22), (55, 80.03), (61, 73.56), (64, 67.56)]
+                .iter()
+                .cloned()
+                .collect(),
+            6 => [
+                (35, 86.99),
+                (53, 84.41),
+                (57, 82.47),
+                (59, 81.14),
+                (60, 80.09),
+                (61, 78.58),
+                (69, 68.57),
+                (70, 64.90),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
+            _ => panic!("Unknown case"),
+        }
+    }
+
+    fn run_av1an_simulation(case: usize) -> Vec<(u32, f64)> {
+        let scores = get_score_map(case);
+        let mut history = vec![];
+        let mut lo = 1u32;
+        let mut hi = 70u32;
+        let target = 80.0;
+
+        for step in 1..=10 {
+            let next_quantizer = predict_quantizer(lo, hi, &history, target);
+            println!(
+                "Case {case}, Step {step}: predict_quantizer({lo}, {hi}, {history:?}, {target}) = \
+                 {next_quantizer}"
+            );
+
+            // Check if this quantizer was already probed
+            if let Some((_quantizer, _score)) =
+                history.iter().find(|(quantizer, _)| *quantizer == next_quantizer)
+            {
+                println!("  Already probed CRF {next_quantizer}, stopping");
+                break;
+            }
+
+            if let Some(&score) = scores.get(&next_quantizer) {
+                history.push((next_quantizer, score));
+                println!("  Got score: {score}");
+
+                if within_tolerance(score, target) {
+                    println!("  Within tolerance, stopping");
+                    break;
+                }
+
+                if score > target {
+                    lo = lo.max(next_quantizer + 1);
+                    println!("  Score too high, new range: {lo}-{hi}");
+                } else {
+                    hi = hi.min(next_quantizer.saturating_sub(1));
+                    println!("  Score too low, new range: {lo}-{hi}");
+                }
+            } else {
+                println!("  ERROR: CRF {next_quantizer} not in score map!");
+                println!("  Available CRFs: {:?}", scores.keys().collect::<Vec<_>>());
+                break;
+            }
+        }
+
+        println!("Case {case} final result: {history:?}");
+        history
+    }
+
+    #[test]
+    fn test_case_1() {
+        let result = run_av1an_simulation(1);
+        assert!(!result.is_empty());
+        assert!(within_tolerance(result.last().unwrap().1, 80.0));
+    }
+
+    #[test]
+    fn test_case_2() {
+        let result = run_av1an_simulation(2);
+        assert!(!result.is_empty());
+        assert!(within_tolerance(result.last().unwrap().1, 80.0));
+    }
+
+    #[test]
+    fn test_case_3() {
+        let result = run_av1an_simulation(3);
+        assert!(!result.is_empty());
+        assert!(within_tolerance(result.last().unwrap().1, 80.0));
+    }
+
+    #[test]
+    fn test_case_4() {
+        let result = run_av1an_simulation(4);
+        assert!(!result.is_empty());
+        assert!(within_tolerance(result.last().unwrap().1, 80.0));
+    }
+
+    #[test]
+    fn test_case_5() {
+        let result = run_av1an_simulation(5);
+        assert!(!result.is_empty());
+        assert!(within_tolerance(result.last().unwrap().1, 80.0));
+    }
+
+    #[test]
+    fn test_case_6() {
+        let result = run_av1an_simulation(6);
+        assert!(!result.is_empty());
+        assert!(within_tolerance(result.last().unwrap().1, 80.0));
+    }
 }
