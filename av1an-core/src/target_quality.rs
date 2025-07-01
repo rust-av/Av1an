@@ -1122,87 +1122,42 @@ mod tests {
         let mut hi = 70u32;
         let target = 80.0;
 
-        for step in 1..=10 {
+        for _ in 1..=10 {
             let next_quantizer = predict_quantizer(lo, hi, &history, target);
-            println!(
-                "Case {case}, Step {step}: predict_quantizer({lo}, {hi}, {history:?}, {target}) = \
-                 {next_quantizer}"
-            );
 
             // Check if this quantizer was already probed
             if let Some((_quantizer, _score)) =
                 history.iter().find(|(quantizer, _)| *quantizer == next_quantizer)
             {
-                println!("  Already probed CRF {next_quantizer}, stopping");
                 break;
             }
 
             if let Some(&score) = scores.get(&next_quantizer) {
                 history.push((next_quantizer, score));
-                println!("  Got score: {score}");
 
                 if within_tolerance(score, target) {
-                    println!("  Within tolerance, stopping");
                     break;
                 }
 
                 if score > target {
                     lo = lo.max(next_quantizer + 1);
-                    println!("  Score too high, new range: {lo}-{hi}");
                 } else {
                     hi = hi.min(next_quantizer.saturating_sub(1));
-                    println!("  Score too low, new range: {lo}-{hi}");
                 }
             } else {
-                println!("  ERROR: CRF {next_quantizer} not in score map!");
-                println!("  Available CRFs: {:?}", scores.keys().collect::<Vec<_>>());
                 break;
             }
         }
 
-        println!("Case {case} final result: {history:?}");
         history
     }
 
     #[test]
-    fn test_case_1() {
-        let result = run_av1an_simulation(1);
-        assert!(!result.is_empty());
-        assert!(within_tolerance(result.last().unwrap().1, 80.0));
-    }
-
-    #[test]
-    fn test_case_2() {
-        let result = run_av1an_simulation(2);
-        assert!(!result.is_empty());
-        assert!(within_tolerance(result.last().unwrap().1, 80.0));
-    }
-
-    #[test]
-    fn test_case_3() {
-        let result = run_av1an_simulation(3);
-        assert!(!result.is_empty());
-        assert!(within_tolerance(result.last().unwrap().1, 80.0));
-    }
-
-    #[test]
-    fn test_case_4() {
-        let result = run_av1an_simulation(4);
-        assert!(!result.is_empty());
-        assert!(within_tolerance(result.last().unwrap().1, 80.0));
-    }
-
-    #[test]
-    fn test_case_5() {
-        let result = run_av1an_simulation(5);
-        assert!(!result.is_empty());
-        assert!(within_tolerance(result.last().unwrap().1, 80.0));
-    }
-
-    #[test]
-    fn test_case_6() {
-        let result = run_av1an_simulation(6);
-        assert!(!result.is_empty());
-        assert!(within_tolerance(result.last().unwrap().1, 80.0));
+    fn test_all_cases() {
+        for case in 1..=6 {
+            let result = run_av1an_simulation(case);
+            assert!(!result.is_empty());
+            assert!(within_tolerance(result.last().unwrap().1, 80.0));
+        }
     }
 }
