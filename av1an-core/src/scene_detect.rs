@@ -6,14 +6,8 @@ use std::{
 
 use ansi_term::Style;
 use anyhow::bail;
-use av_scenechange::{
-    decoder::Decoder,
-    detect_scene_changes,
-    ffmpeg::FfmpegDecoder,
-    vapoursynth::VapoursynthDecoder,
-    DetectionOptions,
-    SceneDetectionSpeed,
-};
+use av_decoders::{DecoderImpl, FfmpegDecoder, VapoursynthDecoder, Y4mDecoder};
+use av_scenechange::{detect_scene_changes, Decoder, DetectionOptions, SceneDetectionSpeed};
 use ffmpeg::format::Pixel;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
@@ -151,14 +145,14 @@ pub fn scene_detect(
             }
         });
         let sc_result = if bit_depth > 8 {
-            detect_scene_changes::<_, u16>(
+            detect_scene_changes::<u16>(
                 &mut decoder,
                 options,
                 frame_limit,
                 callback.as_ref().map(|cb| cb as &dyn Fn(usize, usize)),
             )
         } else {
-            detect_scene_changes::<_, u8>(
+            detect_scene_changes::<u8>(
                 &mut decoder,
                 options,
                 frame_limit,
@@ -195,7 +189,7 @@ pub fn scene_detect(
             zone_overrides: cur_zone.and_then(|zone| zone.zone_overrides.clone()),
         });
         if let Some(next_idx) = next_zone_idx {
-            if cur_zone.map_or(true, |zone| zone.end_frame == zones[next_idx].start_frame) {
+            if cur_zone.is_none_or(|zone| zone.end_frame == zones[next_idx].start_frame) {
                 cur_zone = Some(&zones[next_idx]);
                 next_zone_idx = if next_idx + 1 == zones.len() {
                     None
@@ -205,7 +199,7 @@ pub fn scene_detect(
             } else {
                 cur_zone = None;
             }
-        } else if cur_zone.map_or(true, |zone| zone.end_frame == total_frames) {
+        } else if cur_zone.is_none_or(|zone| zone.end_frame == total_frames) {
             // End of video
             break;
         } else {
@@ -222,7 +216,7 @@ fn build_decoder(
     sc_scaler: &str,
     sc_pix_format: Option<Pixel>,
     sc_downscale_height: Option<usize>,
-) -> anyhow::Result<(Decoder<impl Read>, usize)> {
+) -> anyhow::Result<(Decoder, usize)> {
     let bit_depth;
     let filters: SmallVec<[String; 4]> = match (sc_downscale_height, sc_pix_format) {
         (Some(sdh), Some(spf)) => into_smallvec![
@@ -264,9 +258,12 @@ fn build_decoder(
                     command.args(["-a", &arg]);
                 }
 
-                Decoder::Y4m(y4m::Decoder::new(command.spawn()?.stdout.unwrap())?)
+                Decoder::from_decoder_impl(DecoderImpl::Y4m(Y4mDecoder::new(Box::new(
+                    command.spawn()?.stdout.unwrap(),
+                )
+                    as Box<dyn Read>)?))
             } else {
-                Decoder::Vapoursynth(VapoursynthDecoder::new(path.as_ref())?)
+                Decoder::from_decoder_impl(DecoderImpl::Vapoursynth(VapoursynthDecoder::new(path)?))
             }
         },
         Input::Video {
@@ -278,7 +275,7 @@ fn build_decoder(
                 });
             bit_depth = encoder.get_format_bit_depth(sc_pix_format.unwrap_or(input_pix_format))?;
             if !filters.is_empty() {
-                Decoder::Y4m(y4m::Decoder::new(
+                Decoder::from_decoder_impl(DecoderImpl::Y4m(Y4mDecoder::new(Box::new(
                     Command::new("ffmpeg")
                         .args(["-r", "1", "-i"])
                         .arg(path)
@@ -290,12 +287,13 @@ fn build_decoder(
                         .spawn()?
                         .stdout
                         .unwrap(),
-                )?)
+                )
+                    as Box<dyn Read>)?))
             } else {
-                Decoder::Ffmpeg(FfmpegDecoder::new(path)?)
+                Decoder::from_decoder_impl(DecoderImpl::Ffmpeg(FfmpegDecoder::new(path)?))
             }
         },
     };
 
-    Ok((decoder, bit_depth))
+    Ok((decoder?, bit_depth))
 }

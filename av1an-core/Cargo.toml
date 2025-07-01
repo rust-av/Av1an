@@ -1,7 +1,7 @@
 [package]
 name = "av1an-core"
 version = "0.4.4"
-rust-version = "1.81"
+rust-version = "1.86"
 edition = "2021"
 authors = ["Zen <master_of_zen@protonmail.com>"]
 description = """
@@ -18,9 +18,10 @@ readme = "../README.md"
 [dependencies]
 anyhow = "1.0.42"
 arrayvec = "0.7.2"
+av-decoders = { version = "0.2.0", features = ["ffmpeg", "vapoursynth"] }
 av-format = "0.7.0"
 av-ivf = "0.5.0"
-av-scenechange = { version = "0.15.0", default-features = false, features = [
+av-scenechange = { version = "0.17.0", default-features = false, features = [
     "ffmpeg",
     "vapoursynth",
 ] }
@@ -72,7 +73,7 @@ features = ["const_generics", "const_new", "union"]
 
 [dependencies.ffmpeg]
 package = "ffmpeg-the-third"
-version = "3.0.1"
+version = "3.0.2"
 features = ["serialize"]
 
 [dependencies.plotters]
@@ -93,7 +94,12 @@ tempfile = "3.20.0"
 
 [features]
 default = ["vapoursynth_new_api"]
-ffmpeg_static = ["ffmpeg/static", "ffmpeg/build"]
+ffmpeg_static = [
+    "ffmpeg/static",
+    "ffmpeg/build",
+    "av-decoders/ffmpeg_build",
+    "av-decoders/ffmpeg_static",
+]
 vapoursynth_new_api = [
     "vapoursynth/vapoursynth-api-32",
     "vapoursynth/vsscript-api-31",
