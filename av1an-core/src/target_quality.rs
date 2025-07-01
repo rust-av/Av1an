@@ -30,6 +30,11 @@ use crate::{
 
 const SCORE_TOLERANCE: f64 = 0.01;
 
+/// Maximum squared sum of normalized derivatives for PCHIP monotonicity
+/// constraint. If alpha^2 + beta^2 > 9, the derivatives are scaled down to
+/// preserve monotonicity.
+const PCHIP_MAX_TAU_SQUARED: f64 = 9.0;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetQuality {
     pub vmaf_res:              String,
@@ -647,9 +652,19 @@ fn natural_cubic_spline(x: &[f64], y: &[f64], xi: f64) -> Option<f64> {
         return None;
     }
 
-    // No bounds check needed - we're interpolating, not extrapolating
+    // Noramally, no bounds check is needed - we're interpolating, not extrapolating
     // The target (xi) is a score value we're looking for, not restricted to input
     // range
+
+    // Verify xi is within the observed range (it should be by algorithm design)
+    if xi < x[0] || xi > x[n - 1] {
+        trace!(
+            "Natural cubic spline: unexpected extrapolation case - xi = {xi}, range = [{}, {}]",
+            x[0],
+            x[n - 1]
+        );
+        return None;
+    }
 
     // Calculate intervals
     let mut h = vec![0.0; n - 1];
@@ -787,7 +802,7 @@ fn pchip_interpolate(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
             let beta = d[i + 1] / slopes[i];
             let tau = alpha * alpha + beta * beta;
 
-            if tau > 9.0 {
+            if tau > PCHIP_MAX_TAU_SQUARED {
                 let scale = 3.0 / tau.sqrt();
                 d[i] = scale * alpha * slopes[i];
                 d[i + 1] = scale * beta * slopes[i];
@@ -823,8 +838,15 @@ fn predict_quantizer(
         _ => {
             // Sort history by quantizer
             let mut sorted_quantizer_score_history = quantizer_score_history.to_vec();
-            sorted_quantizer_score_history
-                .sort_by(|(_, score1), (_, score2)| score1.partial_cmp(score2).unwrap());
+            sorted_quantizer_score_history.sort_by(|(_, score1), (_, score2)| {
+                match score1.partial_cmp(score2) {
+                    Some(ordering) => ordering,
+                    None => {
+                        trace!("Warning: NaN encountered in score comparison");
+                        std::cmp::Ordering::Equal
+                    },
+                }
+            });
 
             match sorted_quantizer_score_history.len() {
                 2 => {
