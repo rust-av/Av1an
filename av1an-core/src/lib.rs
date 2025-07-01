@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate log;
-
 use std::{
     cmp::max,
     collections::hash_map::DefaultHasher,

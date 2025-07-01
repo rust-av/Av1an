@@ -253,7 +253,6 @@ dependencies = [
  "ffmpeg-the-third",
  "indicatif",
  "itertools 0.14.0",
- "log",
  "memchr",
  "nom",
  "num-traits",
