@@ -16,7 +16,7 @@ readme = "../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.42"
+anyhow = { workspace = true }
 arrayvec = "0.7.2"
 av-decoders = { version = "0.2.0", features = ["ffmpeg", "vapoursynth"] }
 av-format = "0.7.0"
@@ -31,62 +31,52 @@ av1-grain = { version = "0.2.4", default-features = false, features = [
 cfg-if = "1.0.1"
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.5"
+dashmap = { version = "6.0.0", features = ["serde"] }
+ffmpeg = { workspace = true }
 indicatif = "0.17.12"
 itertools = "0.14.0"
 memchr = "2.7.5"
 nom = "7.1.1"
-num-traits = "0.2.19"
-once_cell = "1.8.0"
+num-traits = { workspace = true }
+once_cell = { workspace = true }
 parking_lot = "0.12.4"
 pastey = "0.1.0"
-path_abs = "0.5.1"
+path_abs = { workspace = true }
+plotters = { version = "0.3.1", default-features = false, features = [
+    "svg_backend",
+    "line_series",
+] }
 rand = "0.9.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 simdutf8 = "0.1.3"
+smallvec = { version = "1.15.1", default-features = false, features = [
+    "const_generics",
+    "const_new",
+    "union",
+] }
 strsim = "0.11.0"
 strum = { version = "0.27.1", features = ["derive"] }
 sysinfo = "0.35.2"
 textwrap = "0.16.0"
 thiserror = "2.0.11"
+tracing = { workspace = true }
 which = "8.0.0"
 y4m = "0.8.0"
+vapoursynth = { version = "0.4.0", features = [
+    "vsscript-functions",
+    "vapoursynth-functions",
+] }
 # TODO: move all of this CLI stuff to av1an-cli
-ansi_term = "0.12.1"
+colored = "3.0.0"
 ctrlc = "3.4.7"
 regex = "1.11.1"
 tokio = { version = "1.45", features = ["full"] }
-tracing = "0.1"
-tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented
 [target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
 affinity = "0.1.2"
-
-[dependencies.smallvec]
-version = "1.15.1"
-default-features = false
-features = ["const_generics", "const_new", "union"]
-
-[dependencies.ffmpeg]
-package = "ffmpeg-the-third"
-version = "3.0.2"
-features = ["serialize"]
-
-[dependencies.plotters]
-version = "0.3.1"
-default-features = false
-features = ["svg_backend", "line_series"]
-
-[dependencies.vapoursynth]
-version = "0.4.0"
-features = ["vsscript-functions", "vapoursynth-functions"]
-
-[dependencies.dashmap]
-version = "6.0.0"
-features = ["serde"]
 
 [dev-dependencies]
 tempfile = "3.20.0"

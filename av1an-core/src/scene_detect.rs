@@ -4,10 +4,10 @@ use std::{
     thread,
 };
 
-use ansi_term::Style;
 use anyhow::bail;
 use av_decoders::{DecoderImpl, FfmpegDecoder, VapoursynthDecoder, Y4mDecoder};
 use av_scenechange::{detect_scene_changes, Decoder, DetectionOptions, SceneDetectionSpeed};
+use colored::*;
 use ffmpeg::format::Pixel;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
@@ -38,7 +38,7 @@ pub fn av_scenechange_detect(
 ) -> anyhow::Result<(Vec<Scene>, usize)> {
     if verbosity != Verbosity::Quiet {
         if std::io::stderr().is_terminal() {
-            eprintln!("{}", Style::default().bold().paint("Scene detection"));
+            eprintln!("{}", "Scene detection".bold());
         } else {
             eprintln!("Scene detection");
         }

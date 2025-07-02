@@ -16,9 +16,9 @@ use std::{
     thread::{self, available_parallelism},
 };
 
-use ansi_term::{Color, Style};
 use anyhow::Context;
 use av1_grain::TransferFunction;
+use colored::*;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
 use rand::{prelude::SliceRandom, rng};
@@ -303,20 +303,20 @@ impl Av1anContext {
 
             info!(
                 "\n{}{} {} {}{} {} {}{} {} {}{} {}\n{}: {}",
-                Color::Green.bold().paint("Q"),
-                Color::Green.paint("ueue"),
-                Color::Green.bold().paint(format!("{len}", len = chunk_queue.len())),
-                Color::Blue.bold().paint("W"),
-                Color::Blue.paint("orkers"),
-                Color::Blue.bold().paint(format!("{workers}", workers = self.args.workers)),
-                Color::Purple.bold().paint("E"),
-                Color::Purple.paint("ncoder"),
-                Color::Purple.bold().paint(format!("{encoder}", encoder = self.args.encoder)),
-                Color::Purple.bold().paint("P"),
-                Color::Purple.paint("asses"),
-                Color::Purple.bold().paint(format!("{passes}", passes = self.args.passes)),
-                Style::default().bold().paint("Params"),
-                Style::default().dimmed().paint(self.args.video_params.join(" "))
+                "Q".green().bold(),
+                "ueue".green(),
+                format!("{len}", len = chunk_queue.len()).green().bold(),
+                "W".blue().bold(),
+                "orkers".blue(),
+                format!("{workers}", workers = self.args.workers).blue().bold(),
+                "E".purple().bold(),
+                "ncoder".purple(),
+                format!("{encoder}", encoder = self.args.encoder).purple().bold(),
+                "P".purple().bold(),
+                "asses".purple(),
+                format!("{passes}", passes = self.args.passes).purple().bold(),
+                "Params".bold(),
+                self.args.video_params.join(" ").dimmed()
             );
 
             if self.args.verbosity == Verbosity::Normal {

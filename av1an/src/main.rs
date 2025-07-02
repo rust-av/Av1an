@@ -12,7 +12,6 @@ use anyhow::{anyhow, bail, ensure, Context};
 use av1an_core::{
     ffmpeg,
     hash_path,
-    init_logging,
     into_vec,
     read_in_dir,
     vapoursynth,
@@ -34,13 +33,16 @@ use av1an_core::{
     TargetQuality,
     Verbosity,
     VmafFeature,
-    DEFAULT_LOG_LEVEL,
 };
 use clap::{value_parser, Parser};
 use num_traits::cast::ToPrimitive;
 use once_cell::sync::OnceCell;
 use path_abs::{PathAbs, PathInfo};
 use tracing::{instrument, level_filters::LevelFilter, warn};
+
+use crate::logging::{init_logging, DEFAULT_LOG_LEVEL};
+
+mod logging;
 
 fn main() -> anyhow::Result<()> {
     let orig_hook = panic::take_hook();
@@ -1032,24 +1034,6 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 
         // TODO make an actual constructor for this
         let arg = EncodeArgs {
-            log_file: if let Some(log_file) = args.log_file.as_ref() {
-                let log_path = Path::new(log_file);
-                if log_path.starts_with("/") || log_path.is_absolute() {
-                    Err(anyhow!("Log file path must be relative"))?
-                }
-                let absolute_path = std::path::absolute(log_path).unwrap();
-                let log_path = absolute_path
-                    .strip_prefix(std::env::current_dir().unwrap())
-                    .unwrap()
-                    .strip_prefix("logs")
-                    .unwrap_or(
-                        absolute_path.strip_prefix(std::env::current_dir().unwrap()).unwrap(),
-                    );
-                log_path.to_path_buf()
-            } else {
-                Path::new("av1an.log").to_owned()
-            },
-            log_level: args.log_level,
             ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
                 shlex::split(args)
                     .ok_or_else(|| anyhow!("Failed to split ffmpeg filter arguments"))?
@@ -1199,6 +1183,8 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 #[instrument]
 pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
+    let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
+    let log_level = cli_options.log_level;
     let args = parse_cli(cli_options)?;
     let first_arg = args.first().unwrap();
 
@@ -1208,9 +1194,9 @@ pub fn run() -> anyhow::Result<()> {
             Verbosity::Normal => LevelFilter::INFO,
             Verbosity::Verbose => LevelFilter::INFO,
         },
-        first_arg.log_file.clone(),
-        first_arg.log_level,
-    );
+        log_file,
+        log_level,
+    )?;
 
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;

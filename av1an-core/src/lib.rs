@@ -26,7 +26,6 @@ pub use crate::{
     concat::ConcatMethod,
     context::Av1anContext,
     encoder::Encoder,
-    logging::{init_logging, DEFAULT_LOG_LEVEL},
     settings::{EncodeArgs, InputPixelFormat, PixelFormat},
     target_quality::TargetQuality,
     util::read_in_dir,
@@ -39,7 +38,6 @@ mod concat;
 mod context;
 mod encoder;
 pub mod ffmpeg;
-mod logging;
 mod metrics {
     pub mod butteraugli;
     pub mod statistics;

@@ -2,6 +2,16 @@
 members = ["av1an-core", "av1an"]
 resolver = "2"
 
+[workspace.dependencies]
+anyhow = "1.0.42"
+ffmpeg = { version = "3.0.2", package = "ffmpeg-the-third", features = [
+    "serialize",
+] }
+num-traits = "0.2.19"
+once_cell = "1.8.0"
+path_abs = "0.5.1"
+tracing = "0.1"
+
 [profile.dev.package.av-scenechange]
 opt-level = 3
 
