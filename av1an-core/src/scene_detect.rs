@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     io::{IsTerminal, Read},
     process::{Command, Stdio},
     thread,
@@ -6,7 +7,13 @@ use std::{
 
 use anyhow::bail;
 use av_decoders::{DecoderError, DecoderImpl, VapoursynthDecoder, Y4mDecoder};
-use av_scenechange::{detect_scene_changes, Decoder, DetectionOptions, SceneDetectionSpeed};
+use av_scenechange::{
+    detect_scene_changes,
+    Decoder,
+    DetectionOptions,
+    SceneDetectionSpeed,
+    ScenecutResult,
+};
 use colored::*;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
@@ -37,7 +44,7 @@ pub fn av_scenechange_detect(
     sc_method: ScenecutMethod,
     sc_downscale_height: Option<usize>,
     zones: &[Scene],
-) -> anyhow::Result<(Vec<Scene>, usize)> {
+) -> anyhow::Result<(Vec<Scene>, usize, BTreeMap<usize, ScenecutResult>)> {
     if verbosity != Verbosity::Quiet {
         if std::io::stderr().is_terminal() {
             eprintln!("{}", "Scene detection".bold());
@@ -57,7 +64,7 @@ pub fn av_scenechange_detect(
         frames
     });
 
-    let scenes = scene_detect(
+    let (scenes, scores) = scene_detect(
         input,
         encoder,
         total_frames,
@@ -79,7 +86,7 @@ pub fn av_scenechange_detect(
 
     progress_bar::finish_progress_bar();
 
-    Ok((scenes, frames))
+    Ok((scenes, frames, scores))
 }
 
 /// Detect scene changes using rav1e scene detector.
@@ -95,7 +102,7 @@ pub fn scene_detect(
     sc_method: ScenecutMethod,
     sc_downscale_height: Option<usize>,
     zones: &[Scene],
-) -> anyhow::Result<Vec<Scene>> {
+) -> anyhow::Result<(Vec<Scene>, BTreeMap<usize, ScenecutResult>)> {
     let (mut decoder, bit_depth) = build_decoder(
         input,
         encoder,
@@ -105,6 +112,7 @@ pub fn scene_detect(
     )?;
 
     let mut scenes = Vec::new();
+    let mut scores: BTreeMap<usize, ScenecutResult> = BTreeMap::new();
     let mut cur_zone = zones.first().filter(|frame| frame.start_frame == 0);
     let mut next_zone_idx = if zones.is_empty() {
         None
@@ -171,6 +179,8 @@ pub fn scene_detect(
                 );
             }
         }
+        scores.extend(&sc_result.scores);
+
         let scene_changes = sc_result.scene_changes;
         for (start, end) in scene_changes.iter().copied().tuple_windows() {
             scenes.push(Scene {
@@ -208,7 +218,7 @@ pub fn scene_detect(
             cur_zone = None;
         }
     }
-    Ok(scenes)
+    Ok((scenes, scores))
 }
 
 #[tracing::instrument(level = "debug")]
