@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate log;
-
 use std::{
     cmp::max,
     collections::{hash_map::DefaultHasher, HashMap},
@@ -58,6 +55,7 @@ mod split;
 mod target_quality;
 mod util;
 pub mod vapoursynth;
+mod zones;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Input {

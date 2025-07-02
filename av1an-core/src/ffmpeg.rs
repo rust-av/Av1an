@@ -12,6 +12,7 @@ use ffmpeg::{
     Error::StreamNotFound,
 };
 use path_abs::{PathAbs, PathInfo};
+use tracing::warn;
 
 use crate::{into_array, into_vec};
 

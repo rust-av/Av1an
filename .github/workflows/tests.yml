@@ -22,7 +22,7 @@ jobs:
           toolchain: nightly
           override: true
       - uses: Swatinem/rust-cache@v2
-      
+
       - name: Validate formatting
         run: |
           cargo fmt --all -- --check
@@ -70,7 +70,7 @@ jobs:
           cargo test --profile ci
 
   encode-tests:
-    needs: [ formatting, unit-tests ]
+    needs: [formatting, unit-tests]
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
@@ -296,10 +296,10 @@ jobs:
         run: |
           target/ci/av1an -i tt_sif.y4m --sc-only --sc-method fast -s "tt_sif_scenes.json"
           du -h tt_sif_scenes.json
-        continue-on-error: true
+          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p -s "tt_sif_scenes.json"
 
   code-coverage:
-    needs: [ formatting, unit-tests, encode-tests ]
+    needs: [formatting, unit-tests, encode-tests]
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
@@ -338,7 +338,7 @@ jobs:
           fail_ci_if_error: false
 
   docker:
-    needs: [ formatting, unit-tests ]
+    needs: [formatting, unit-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -393,7 +393,7 @@ jobs:
           fi
 
   docker-publish:
-    needs: [ unit-tests, encode-tests, docker, publish-check ]
+    needs: [unit-tests, encode-tests, docker, publish-check]
     runs-on: ubuntu-latest
     if: needs.publish-check.outputs.should_publish == 'true'
     steps:

@@ -6,17 +6,12 @@ use std::{
 
 use ansi_term::Style;
 use anyhow::bail;
-use av_scenechange::{
-    av_decoders::{self, DecoderError, VapoursynthDecoder},
-    detect_scene_changes,
-    Decoder,
-    DetectionOptions,
-    SceneDetectionSpeed,
-};
+use av_decoders::{DecoderError, DecoderImpl, FfmpegDecoder, VapoursynthDecoder, Y4mDecoder};
+use av_scenechange::{detect_scene_changes, Decoder, DetectionOptions, SceneDetectionSpeed};
 use ffmpeg::format::Pixel;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
-use vapoursynth::prelude::Property;
+use vapoursynth::video_info::Property;
 
 use crate::{
     into_smallvec,
@@ -196,7 +191,7 @@ pub fn scene_detect(
             zone_overrides: cur_zone.and_then(|zone| zone.zone_overrides.clone()),
         });
         if let Some(next_idx) = next_zone_idx {
-            if cur_zone.map_or(true, |zone| zone.end_frame == zones[next_idx].start_frame) {
+            if cur_zone.is_none_or(|zone| zone.end_frame == zones[next_idx].start_frame) {
                 cur_zone = Some(&zones[next_idx]);
                 next_zone_idx = if next_idx + 1 == zones.len() {
                     None
@@ -206,7 +201,7 @@ pub fn scene_detect(
             } else {
                 cur_zone = None;
             }
-        } else if cur_zone.map_or(true, |zone| zone.end_frame == total_frames) {
+        } else if cur_zone.is_none_or(|zone| zone.end_frame == total_frames) {
             // End of video
             break;
         } else {
@@ -251,49 +246,45 @@ fn build_decoder(
 
         if let Some(height) = sc_downscale_height {
             // Register a node modifier callback to perform downscaling
-            vs_decoder.register_node_modifier(Box::new(
-                move |core: vapoursynth::core::CoreRef<'_>,
-                      node: vapoursynth::prelude::Node<'_>| {
-                    let info = node.info();
-                    let resolution = {
-                        match info.resolution {
-                            Property::Variable => {
-                                return Err(DecoderError::VariableResolution);
-                            },
-                            Property::Constant(x) => x,
-                        }
-                    };
-                    let original_width = resolution.width;
-                    let original_height = resolution.height;
-
-                    if original_height <= height {
-                        // Specified downscale height is less than or equal
-                        // to original height, return the original node unmodified
-                        return Ok(node);
+            vs_decoder.register_node_modifier(Box::new(move |core, node| {
+                let info = node.info();
+                let resolution = {
+                    match info.resolution {
+                        Property::Variable => {
+                            return Err(DecoderError::VariableResolution);
+                        },
+                        Property::Constant(x) => x,
                     }
+                };
+                let original_width = resolution.width;
+                let original_height = resolution.height;
 
-                    let width = (original_width as f64 * (height as f64 / original_height as f64))
-                        .round() as u32;
+                if original_height <= height {
+                    // Specified downscale height is less than or equal
+                    // to original height, return the original node unmodified
+                    return Ok(node);
+                }
 
-                    let resized_node = resize_node(
-                        core,
-                        &node,
-                        Some((width / 2) * 2), // Ensure width is divisible by 2
-                        Some(height as u32),
-                        None,
-                        None,
-                    )
-                    .map_err(|e| DecoderError::VapoursynthInternalError {
-                        cause: e.to_string(),
-                    })?;
+                let width = (original_width as f64 * (height as f64 / original_height as f64))
+                    .round() as u32;
 
-                    Ok(resized_node)
-                },
-            ))?;
+                let resized_node = resize_node(
+                    core,
+                    &node,
+                    Some((width / 2) * 2), // Ensure width is divisible by 2
+                    Some(height as u32),
+                    None,
+                    None,
+                )
+                .map_err(|e| DecoderError::VapoursynthInternalError {
+                    cause: e.to_string(),
+                })?;
+
+                Ok(resized_node)
+            }))?;
         }
 
-        let decoder =
-            Decoder::from_decoder_impl(av_decoders::DecoderImpl::Vapoursynth(vs_decoder))?;
+        let decoder = Decoder::from_decoder_impl(DecoderImpl::Vapoursynth(vs_decoder))?;
         bit_depth = decoder.get_video_details().bit_depth;
 
         decoder
@@ -304,7 +295,7 @@ fn build_decoder(
 
         bit_depth = encoder.get_format_bit_depth(sc_pix_format.unwrap_or(input_pix_format))?;
         let decoder_impl = if filters.is_empty() {
-            av_decoders::DecoderImpl::Ffmpeg(av_decoders::FfmpegDecoder::new(path)?)
+            DecoderImpl::Ffmpeg(FfmpegDecoder::new(path)?)
         } else {
             let stdout = Command::new("ffmpeg")
                 .args(["-r", "1", "-i"])
@@ -318,7 +309,7 @@ fn build_decoder(
                 .stdout
                 .expect("FFmpeg failed to output");
 
-            av_decoders::DecoderImpl::Y4m(y4m::Decoder::new(Box::new(stdout) as Box<dyn Read>)?)
+            DecoderImpl::Y4m(Y4mDecoder::new(Box::new(stdout) as Box<dyn Read>)?)
         };
 
         Decoder::from_decoder_impl(decoder_impl)?

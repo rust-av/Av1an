@@ -1,7 +1,7 @@
 [package]
 name = "av1an"
 version = "0.4.4"
-rust-version = "1.82"
+rust-version = "1.86"
 edition = "2021"
 authors = ["Zen <master_of_zen@protonmail.com>"]
 description = """
@@ -33,7 +33,7 @@ features = ["build", "rustc", "cargo"]
 
 [dependencies.ffmpeg]
 package = "ffmpeg-the-third"
-version = "3.0.1"
+version = "3.0.2"
 features = ["serialize"]
 
 [features]

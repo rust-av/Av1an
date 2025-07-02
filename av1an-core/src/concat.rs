@@ -20,7 +20,7 @@ use av_format::{
 use av_ivf::{demuxer::IvfDemuxer, muxer::IvfMuxer};
 use path_abs::{PathAbs, PathInfo};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::{encoder::Encoder, util::read_in_dir};
 
