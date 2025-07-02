@@ -621,12 +621,12 @@ pub struct CliOpts {
     #[clap(long, help_heading = "VMAF")]
     pub vmaf_filter: Option<String>,
 
-    /// Target a metric score for encoding (disabled by default)
+    /// Target a metric score range for encoding (disabled by default)
     ///
     /// For each chunk, target quality uses an algorithm to find the
-    /// quantizer/crf needed to achieve a certain metric score.
-    /// Target quality mode is much slower than normal encoding, but can improve
-    /// the consistency of quality in some cases.
+    /// quantizer/crf needed to achieve a metric score within the specified
+    /// range. Target quality mode is much slower than normal encoding, but
+    /// can improve the consistency of quality in some cases.
     ///
     /// The VMAF and SSIMULACRA2 score ranges are 0-100 (where 0 is the worst
     /// quality, and 100 is the best).
@@ -637,9 +637,23 @@ pub struct CliOpts {
     /// The XPSNR score minimum is 0 as the worst quality and increases as
     /// quality increases towards infinity.
     ///
+    /// Specify as a range: --target-quality 75-85 for VMAF/SSIMULACRA2
+    /// or --target-quality 1.0-1.5 for butteraugli metrics.
     /// Floating-point values are allowed for all metrics.
-    #[clap(long, help_heading = "Target Quality")]
-    pub target_quality: Option<f64>,
+    #[clap(long, help_heading = "Target Quality", value_parser = parse_target_qp_range)]
+    pub target_quality: Option<(f64, f64)>,
+
+    /// Quantizer range bounds for target quality search (disabled by default)
+    ///
+    /// Specifies the minimum and maximum quantizer/CRF/qp values to use during
+    /// target quality search. This constrains the search space and can prevent
+    /// the algorithm from using extremely high or low quality settings.
+    ///
+    /// Specify as a range: --qp-range 10-50
+    /// If not specified, encoder defaults are used.
+    #[clap(long, help_heading = "Target Quality", value_parser = parse_qp_range)]
+    pub qp_range: Option<(u32, u32)>,
+
     /// The metric used for Target Quality mode
     ///
     /// vmaf - Requires FFmpeg with VMAF enabled.
@@ -671,10 +685,10 @@ pub struct CliOpts {
     /// and the Chunk method must be set to "lsmash", "ffms2", "bestsource", or
     /// "dgdecnv".
     #[clap(long, default_value_t = TargetMetric::VMAF, help_heading = "Target Quality")]
-    pub target_metric:  TargetMetric,
+    pub target_metric: TargetMetric,
     /// Maximum number of probes allowed for target quality
     #[clap(long, default_value_t = 4, help_heading = "Target Quality")]
-    pub probes:         u32,
+    pub probes:        u32,
 
     /// Only use every nth frame for VMAF calculation, while probing.
     ///
@@ -710,26 +724,6 @@ pub struct CliOpts {
     /// --passes.
     #[clap(long, help_heading = "Target Quality")]
     pub probe_slow: bool,
-
-    /// Lower bound for target quality Q-search early exit
-    ///
-    /// If min_q is tested and the probe's VMAF score is lower than
-    /// target_quality, the Q-search early exits and min_q is used for the
-    /// chunk.
-    ///
-    /// If not specified, the default value is used (chosen per encoder).
-    #[clap(long, help_heading = "Target Quality")]
-    pub min_q: Option<u32>,
-
-    /// Upper bound for target quality Q-search early exit
-    ///
-    /// If max_q is tested and the probe's VMAF score is higher than
-    /// target_quality, the Q-search early exits and max_q is used for the
-    /// chunk.
-    ///
-    /// If not specified, the default value is used (chosen per encoder).
-    #[clap(long, help_heading = "Target Quality")]
-    pub max_q: Option<u32>,
 
     #[rustfmt::skip]
     /// VMAF calculation features for target quality probing
@@ -782,9 +776,12 @@ impl CliOpts {
     ) -> anyhow::Result<Option<TargetQuality>> {
         self.target_quality
             .map(|tq| {
-                let (min, max) = self.encoder.get_default_cq_range();
-                let min_q = self.min_q.unwrap_or(min as u32);
-                let max_q = self.max_q.unwrap_or(max as u32);
+                let (default_min, default_max) = self.encoder.get_default_cq_range();
+                let (min_q, max_q) = if let Some((min, max)) = self.qp_range {
+                    (min, max)
+                } else {
+                    (default_min as u32, default_max as u32)
+                };
 
                 let probing_statistic = match self.probing_stat.to_lowercase().as_str() {
                     "auto" => ProbingStatistic {
@@ -893,9 +890,9 @@ impl CliOpts {
                     model: self.vmaf_path.clone(),
                     probes: self.probes,
                     target: tq,
-                    metric: self.target_metric,
                     min_q,
                     max_q,
+                    metric: self.target_metric,
                     encoder: self.encoder,
                     pix_format: output_pix_format,
                     temp: temp_dir.clone(),
@@ -1217,4 +1214,32 @@ fn parse_comma_separated_numbers(string: &str) -> anyhow::Result<Vec<usize>> {
         result.push(val.trim().parse()?);
     }
     Ok(result)
+}
+
+fn parse_target_qp_range(s: &str) -> Result<(f64, f64), String> {
+    if let Some((min_str, max_str)) = s.split_once('-') {
+        let min = min_str.parse::<f64>().map_err(|_| "Invalid range format")?;
+        let max = max_str.parse::<f64>().map_err(|_| "Invalid range format")?;
+        if min >= max {
+            return Err("Min must be < max".to_string());
+        }
+        Ok((min, max))
+    } else {
+        let val = s.parse::<f64>().map_err(|_| "Invalid number")?;
+        let tol = val * 0.01;
+        Ok((val - tol, val + tol))
+    }
+}
+
+fn parse_qp_range(s: &str) -> Result<(u32, u32), String> {
+    if let Some((min_str, max_str)) = s.split_once('-') {
+        let min = min_str.parse::<u32>().map_err(|_| "Invalid range format")?;
+        let max = max_str.parse::<u32>().map_err(|_| "Invalid range format")?;
+        if min >= max {
+            return Err("Min must be < max".to_string());
+        }
+        Ok((min, max))
+    } else {
+        Err("Quality range must be specified as min-max (e.g., 10-50)".to_string())
+    }
 }

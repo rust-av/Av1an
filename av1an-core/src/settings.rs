@@ -301,8 +301,6 @@ impl EncodeArgs {
                 warn!("Target quality with less than 4 probes is experimental and not recommended");
             }
 
-            ensure!(target_quality.min_q >= 1);
-
             if let Some(resolution) = &target_quality.probe_res {
                 match resolution.split('x').collect::<Vec<&str>>().as_slice() {
                     [width_str, height_str] => {

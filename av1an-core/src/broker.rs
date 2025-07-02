@@ -221,9 +221,10 @@ impl Broker<'_> {
             update_mp_msg(
                 worker_id,
                 format!(
-                    "Targeting {metric} Quality: {target}",
+                    "Targeting {metric} Quality: {min}-{max}",
                     metric = tq.metric,
-                    target = tq.target
+                    min = tq.target.0,
+                    max = tq.target.1
                 ),
             );
             for r#try in 1..=self.project.args.max_tries {

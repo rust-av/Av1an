@@ -28,8 +28,6 @@ use crate::{
     VmafFeature,
 };
 
-const SCORE_TOLERANCE: f64 = 0.01;
-
 /// Maximum squared sum of normalized derivatives for PCHIP monotonicity
 /// constraint. If alpha^2 + beta^2 > 9, the derivatives are scaled down to
 /// preserve monotonicity.
@@ -46,7 +44,7 @@ pub struct TargetQuality {
     pub probing_rate:          usize,
     pub probing_speed:         Option<ProbingSpeed>,
     pub probes:                u32,
-    pub target:                f64,
+    pub target:                (f64, f64),
     pub metric:                TargetMetric,
     pub min_q:                 u32,
     pub max_q:                 u32,
@@ -75,16 +73,17 @@ impl TargetQuality {
                 update_mp_msg(
                     worker_id,
                     format!(
-                        "Targeting {metric} Quality {target} - Testing {quantizer}",
+                        "Targeting {metric} Quality {min}-{max} - Testing {quantizer}",
                         metric = self.metric,
-                        target = self.target,
+                        min = self.target.0,
+                        max = self.target.1,
                         quantizer = next_quantizer
                     ),
                 );
             }
         };
 
-        // Initialize quantizer limits from specified minimum and maximum quantizers
+        // Initialize quantizer limits from specified range or encoder defaults
         let mut lower_quantizer_limit = self.min_q;
         let mut upper_quantizer_limit = self.max_q;
 
@@ -95,7 +94,10 @@ impl TargetQuality {
                 &quantizer_score_history,
                 match self.metric {
                     // For inverse metrics, target must be inverted for ascending comparisons
-                    TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -self.target,
+                    TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
+                        let (min, max) = self.target;
+                        (-max, -min)
+                    },
                     _ => self.target,
                 },
             );
@@ -134,7 +136,7 @@ impl TargetQuality {
                     _ => value,
                 }
             };
-            let score_within_tolerance = within_tolerance(
+            let score_within_range = within_range(
                 match self.metric {
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                     _ => score,
@@ -144,7 +146,7 @@ impl TargetQuality {
 
             quantizer_score_history.push((next_quantizer, score));
 
-            if score_within_tolerance || quantizer_score_history.len() >= self.probes as usize {
+            if score_within_range || quantizer_score_history.len() >= self.probes as usize {
                 log_probes(
                     &quantizer_score_history,
                     self.metric,
@@ -158,7 +160,7 @@ impl TargetQuality {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
                     },
-                    if score_within_tolerance {
+                    if score_within_range {
                         SkipProbingReason::WithinTolerance
                     } else {
                         SkipProbingReason::ProbeLimitReached
@@ -167,14 +169,16 @@ impl TargetQuality {
                 break;
             }
 
-            if score
-                > (match self.metric {
-                    TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -self.target,
-                    _ => self.target,
-                })
-            {
+            let target_range = match self.metric {
+                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
+                    (-self.target.1, -self.target.0)
+                },
+                _ => self.target,
+            };
+
+            if score > target_range.1 {
                 lower_quantizer_limit = (next_quantizer + 1).min(upper_quantizer_limit);
-            } else {
+            } else if score < target_range.0 {
                 upper_quantizer_limit = (next_quantizer - 1).max(lower_quantizer_limit);
             }
 
@@ -193,14 +197,7 @@ impl TargetQuality {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
                     },
-                    if score
-                        > (match self.metric {
-                            TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                                -self.target
-                            },
-                            _ => self.target,
-                        })
-                    {
+                    if score > target_range.1 {
                         SkipProbingReason::QuantizerTooHigh
                     } else {
                         SkipProbingReason::QuantizerTooLow
@@ -210,11 +207,11 @@ impl TargetQuality {
             }
         }
 
-        let final_quantizer_score = if let Some(highest_quantizer_score_within_tolerance) =
+        let final_quantizer_score = if let Some(highest_quantizer_score_within_range) =
             quantizer_score_history
                 .iter()
                 .filter(|(_, score)| {
-                    within_tolerance(
+                    within_range(
                         match self.metric {
                             TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                             _ => *score,
@@ -225,9 +222,10 @@ impl TargetQuality {
                 .max_by_key(|(quantizer, _)| *quantizer)
         {
             // Multiple probes within tolerance, choose the highest
-            highest_quantizer_score_within_tolerance
+            highest_quantizer_score_within_range
         } else {
             // No quantizers within tolerance, choose the quantizer closest to target
+            let target_midpoint = (self.target.0 + self.target.1) / 2.0;
             quantizer_score_history
                 .iter()
                 .min_by(|(_, score1), (_, score2)| {
@@ -239,8 +237,8 @@ impl TargetQuality {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score2,
                         _ => *score2,
                     };
-                    let difference1 = (score_1 - self.target).abs();
-                    let difference2 = (score_2 - self.target).abs();
+                    let difference1 = (score_1 - target_midpoint).abs();
+                    let difference2 = (score_2 - target_midpoint).abs();
                     difference1.partial_cmp(&difference2).unwrap_or(Ordering::Equal)
                 })
                 .unwrap()
@@ -828,8 +826,10 @@ fn predict_quantizer(
     lower_quantizer_limit: u32,
     upper_quantizer_limit: u32,
     quantizer_score_history: &[(u32, f64)],
-    target: f64,
+    target_range: (f64, f64),
 ) -> u32 {
+    let target = (target_range.0 + target_range.1) / 2.0;
+
     // The midpoint between the upper and lower quantizer bounds
     let binary_search = (lower_quantizer_limit + upper_quantizer_limit) / 2;
 
@@ -901,8 +901,8 @@ fn predict_quantizer(
     (predicted_quantizer.round() as u32).clamp(lower_quantizer_limit, upper_quantizer_limit)
 }
 
-fn within_tolerance(score: f64, target: f64) -> bool {
-    (score - target).abs() / target < SCORE_TOLERANCE
+fn within_range(score: f64, target_range: (f64, f64)) -> bool {
+    score >= target_range.0 && score <= target_range.1
 }
 
 pub fn vmaf_auto_threads(workers: usize) -> usize {
@@ -931,7 +931,7 @@ pub enum SkipProbingReason {
 pub fn log_probes(
     quantizer_score_history: &[(u32, f64)],
     metric: TargetMetric,
-    target: f64,
+    target: (f64, f64),
     frames: u32,
     probing_rate: u32,
     probing_speed: Option<ProbingSpeed>,
@@ -955,12 +955,13 @@ pub fn log_probes(
     }
 
     debug!(
-        "chunk {name}: Target={target}, Metric={target_metric}, P-Rate={rate}, P-Speed={speed:?}, \
-         {frame_count} frames
-        TQ-Probes: {history:.2?}{suffix}
-        Final Q={target_quantizer:.0}, Final Score={target_score:.2}",
+        "chunk {name}: Target={min}-{max}, Metric={target_metric}, P-Rate={rate}, \
+         P-Speed={speed:?}, {frame_count} frames
+       TQ-Probes: {history:.2?}{suffix}
+       Final Q={target_quantizer:.0}, Final Score={target_score:.2}",
         name = chunk_name,
-        target = target,
+        min = target.0,
+        max = target.1,
         target_metric = metric,
         rate = probing_rate,
         speed = probing_speed.unwrap_or(ProbingSpeed::VeryFast),
@@ -1142,10 +1143,10 @@ mod tests {
         let mut history = vec![];
         let mut lo = 1u32;
         let mut hi = 70u32;
-        let target = 80.0;
+        let target_range = (79.5, 80.5);
 
         for _ in 1..=10 {
-            let next_quantizer = predict_quantizer(lo, hi, &history, target);
+            let next_quantizer = predict_quantizer(lo, hi, &history, target_range);
 
             // Check if this quantizer was already probed
             if let Some((_quantizer, _score)) =
@@ -1157,14 +1158,14 @@ mod tests {
             if let Some(&score) = scores.get(&next_quantizer) {
                 history.push((next_quantizer, score));
 
-                if within_tolerance(score, target) {
+                if within_range(score, target_range) {
                     break;
                 }
 
-                if score > target {
-                    lo = lo.max(next_quantizer + 1);
-                } else {
-                    hi = hi.min(next_quantizer.saturating_sub(1));
+                if score > target_range.1 {
+                    lo = (next_quantizer + 1).min(hi);
+                } else if score < target_range.0 {
+                    hi = (next_quantizer - 1).max(lo);
                 }
             } else {
                 break;
@@ -1179,7 +1180,7 @@ mod tests {
         for case in 1..=6 {
             let result = run_av1an_simulation(case);
             assert!(!result.is_empty());
-            assert!(within_tolerance(result.last().unwrap().1, 80.0));
+            assert!(within_range(result.last().unwrap().1, (79.5, 80.5)));
         }
     }
 }
