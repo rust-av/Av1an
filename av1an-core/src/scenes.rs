@@ -470,6 +470,7 @@ impl SceneFactory {
                  frames): {scenes_after} scene(s)]"
             );
         } else {
+            self.data.split_scenes = self.data.scenes.clone();
             info!("scenecut: found {scenes_before} scene(s)");
         }
 
