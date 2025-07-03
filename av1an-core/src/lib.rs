@@ -227,13 +227,13 @@ impl Input {
             Input::Video {
                 path, ..
             } if vs_script_path.is_none() => {
-                ffmpeg::num_frames(path.as_path()).map_err(|_| anyhow::anyhow!(FAIL_MSG))?
+                ffmpeg::num_frames(path.as_path()).context(FAIL_MSG)?
             },
             path => vapoursynth::num_frames(
                 vs_script_path.as_deref().unwrap_or(path.as_path()),
                 self.as_vspipe_args_map()?,
             )
-            .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
+            .context(FAIL_MSG)?,
         })
     }
 
@@ -243,13 +243,11 @@ impl Input {
         Ok(match &self {
             Input::Video {
                 path, ..
-            } => {
-                crate::ffmpeg::frame_rate(path.as_path()).map_err(|_| anyhow::anyhow!(FAIL_MSG))?
-            },
+            } => crate::ffmpeg::frame_rate(path.as_path()).context(FAIL_MSG)?,
             Input::VapourSynth {
                 path, ..
             } => vapoursynth::frame_rate(path.as_path(), self.as_vspipe_args_map()?)
-                .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
+                .context(FAIL_MSG)?,
         })
     }
 
@@ -260,10 +258,10 @@ impl Input {
             Input::VapourSynth {
                 path, ..
             } => crate::vapoursynth::resolution(path, self.as_vspipe_args_map()?)
-                .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
+                .context(FAIL_MSG)?,
             Input::Video {
                 path, ..
-            } => crate::ffmpeg::resolution(path).map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
+            } => crate::ffmpeg::resolution(path).context(FAIL_MSG)?,
         })
     }
 
@@ -274,12 +272,11 @@ impl Input {
             Input::VapourSynth {
                 path, ..
             } => crate::vapoursynth::pixel_format(path, self.as_vspipe_args_map()?)
-                .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
+                .context(FAIL_MSG)?,
             Input::Video {
                 path, ..
             } => {
-                let fmt =
-                    crate::ffmpeg::get_pixel_format(path).map_err(|_| anyhow::anyhow!(FAIL_MSG))?;
+                let fmt = crate::ffmpeg::get_pixel_format(path).context(FAIL_MSG)?;
                 format!("{fmt:?}")
             },
         })
@@ -292,7 +289,7 @@ impl Input {
                 path, ..
             } => {
                 match crate::vapoursynth::transfer_characteristics(path, self.as_vspipe_args_map()?)
-                    .map_err(|_| anyhow::anyhow!(FAIL_MSG))?
+                    .context(FAIL_MSG)?
                 {
                     16 => TransferFunction::SMPTE2084,
                     _ => TransferFunction::BT1886,
@@ -300,13 +297,9 @@ impl Input {
             },
             Input::Video {
                 path, ..
-            } => {
-                match crate::ffmpeg::transfer_characteristics(path)
-                    .map_err(|_| anyhow::anyhow!(FAIL_MSG))?
-                {
-                    TransferCharacteristic::SMPTE2084 => TransferFunction::SMPTE2084,
-                    _ => TransferFunction::BT1886,
-                }
+            } => match crate::ffmpeg::transfer_characteristics(path).context(FAIL_MSG)? {
+                TransferCharacteristic::SMPTE2084 => TransferFunction::SMPTE2084,
+                _ => TransferFunction::BT1886,
             },
         })
     }

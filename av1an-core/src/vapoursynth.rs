@@ -6,7 +6,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use av_format::rational::Rational64;
 use once_cell::sync::Lazy;
 use path_abs::PathAbs;
@@ -263,12 +263,8 @@ fn get_transfer(env: &Environment) -> anyhow::Result<u8> {
     #[cfg(not(feature = "vapoursynth_new_api"))]
     let node = env.get_output(OUTPUT_INDEX).unwrap();
 
-    let frame = node.get_frame(0)?;
-    let transfer = frame
-        .props()
-        .get::<i64>("_Transfer")
-        .map_err(|_| anyhow::anyhow!("Failed to get transfer characteristics from VS script"))?
-        as u8;
+    let frame = node.get_frame(0).context("get_transfer")?;
+    let transfer = frame.props().get::<i64>("_Transfer").map(|val| val as u8).unwrap_or(2);
 
     Ok(transfer)
 }
@@ -884,14 +880,14 @@ pub fn copy_vs_file(
 #[inline]
 pub fn num_frames(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<usize> {
     // Create a new VSScript environment.
-    let mut environment = Environment::new().unwrap();
+    let mut environment = Environment::new().context("num_fraes")?;
 
     if environment.set_variables(&vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
 
     // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).unwrap();
+    environment.eval_file(source, EvalFlags::SetWorkingDir).context("num_fraes")?;
 
     get_num_frames(&environment)
 }
@@ -899,14 +895,14 @@ pub fn num_frames(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<us
 #[inline]
 pub fn bit_depth(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<usize> {
     // Create a new VSScript environment.
-    let mut environment = Environment::new().unwrap();
+    let mut environment = Environment::new().context("bit_depth")?;
 
     if environment.set_variables(&vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
 
     // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).unwrap();
+    environment.eval_file(source, EvalFlags::SetWorkingDir).context("bit_depth")?;
 
     get_bit_depth(&environment)
 }
@@ -914,14 +910,14 @@ pub fn bit_depth(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<usi
 #[inline]
 pub fn frame_rate(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<Rational64> {
     // Create a new VSScript environment.
-    let mut environment = Environment::new().unwrap();
+    let mut environment = Environment::new().context("frame_rate")?;
 
     if environment.set_variables(&vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
 
     // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).unwrap();
+    environment.eval_file(source, EvalFlags::SetWorkingDir).context("frame_rate")?;
 
     get_frame_rate(&environment)
 }
@@ -929,14 +925,14 @@ pub fn frame_rate(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<Ra
 #[inline]
 pub fn resolution(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<(u32, u32)> {
     // Create a new VSScript environment.
-    let mut environment = Environment::new().unwrap();
+    let mut environment = Environment::new().context("resolution")?;
 
     if environment.set_variables(&vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
 
     // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).unwrap();
+    environment.eval_file(source, EvalFlags::SetWorkingDir).context("resolution")?;
 
     get_resolution(&environment)
 }
@@ -945,14 +941,16 @@ pub fn resolution(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<(u
 #[inline]
 pub fn transfer_characteristics(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<u8> {
     // Create a new VSScript environment.
-    let mut environment = Environment::new().unwrap();
+    let mut environment = Environment::new().context("transfer_characteristics")?;
 
     if environment.set_variables(&vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
 
     // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).unwrap();
+    environment
+        .eval_file(source, EvalFlags::SetWorkingDir)
+        .context("transfer_characteristics")?;
 
     get_transfer(&environment)
 }
@@ -960,14 +958,16 @@ pub fn transfer_characteristics(source: &Path, vspipe_args_map: OwnedMap) -> any
 #[inline]
 pub fn pixel_format(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<String> {
     // Create a new VSScript environment.
-    let mut environment = Environment::new().unwrap();
+    let mut environment = Environment::new().context("pixel_format")?;
 
     if environment.set_variables(&vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
 
     // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).unwrap();
+    environment
+        .eval_file(source, EvalFlags::SetWorkingDir)
+        .context("pixel_format")?;
 
     let info = get_clip_info(&environment);
     match info.format {
