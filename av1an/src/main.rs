@@ -23,6 +23,7 @@ use av1an_core::{
     Encoder,
     Input,
     InputPixelFormat,
+    InterpolationMethod,
     PixelFormat,
     ProbingSpeed,
     ProbingStatistic,
@@ -654,6 +655,34 @@ pub struct CliOpts {
     #[clap(long, help_heading = "Target Quality", value_parser = parse_qp_range)]
     pub qp_range: Option<(u32, u32)>,
 
+    /// Interpolation methods for target quality probing
+    ///
+    /// Controls which interpolation algorithms are used for the 4th and 5th
+    /// probe rounds during target quality search.
+    ///
+    /// Format: --interp-method <method4>-<method5>
+    ///
+    /// 4th round methods (3 known points):
+    ///   linear    - Simple linear interpolation using 2 points
+    ///   quadratic - Quadratic interpolation using all 3 points
+    ///   natural   - Natural cubic spline (default)
+    ///
+    /// 5th round methods (4 known points):
+    ///   linear       - Simple linear interpolation using 2 points
+    ///   quadratic    - Quadratic interpolation using 3 points
+    ///   natural      - Natural cubic spline
+    ///   pchip        - Piecewise Cubic Hermite Interpolation (default)
+    ///   catmull      - Catmull-Rom spline
+    ///   akima        - Akima spline (reduced oscillation)
+    ///   cubicpolynom - Cubic polynomial through all 4 points
+    ///
+    /// Examples:
+    ///   --interp-method natural-pchip      (default)
+    ///   --interp-method quadratic-akima
+    ///   --interp-method linear-catmull
+    #[clap(long, help_heading = "Target Quality", value_parser = parse_interp_method, verbatim_doc_comment)]
+    pub interp_method: Option<(InterpolationMethod, InterpolationMethod)>,
+
     /// The metric used for Target Quality mode
     ///
     /// vmaf - Requires FFmpeg with VMAF enabled.
@@ -890,6 +919,7 @@ impl CliOpts {
                     model: self.vmaf_path.clone(),
                     probes: self.probes,
                     target: tq,
+                    interp_method: self.interp_method,
                     min_q,
                     max_q,
                     metric: self.target_metric,
@@ -1242,4 +1272,35 @@ fn parse_qp_range(s: &str) -> Result<(u32, u32), String> {
     } else {
         Err("Quality range must be specified as min-max (e.g., 10-50)".to_string())
     }
+}
+
+pub fn parse_interp_method(s: &str) -> anyhow::Result<(InterpolationMethod, InterpolationMethod)> {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 2 {
+        return Err(anyhow::anyhow!(
+            "Invalid format. Use: --interp-method method4-method5"
+        ));
+    }
+
+    let method4 = parts[0]
+        .parse::<InterpolationMethod>()
+        .map_err(|_| anyhow::anyhow!("Invalid 4th round method: {}", parts[0]))?;
+    let method5 = parts[1]
+        .parse::<InterpolationMethod>()
+        .map_err(|_| anyhow::anyhow!("Invalid 5th round method: {}", parts[1]))?;
+
+    // Validate methods for correct round
+    match method4 {
+        InterpolationMethod::Linear
+        | InterpolationMethod::Quadratic
+        | InterpolationMethod::Natural => {},
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Method '{}' not available for 4th round",
+                parts[0]
+            ))
+        },
+    }
+
+    Ok((method4, method5))
 }

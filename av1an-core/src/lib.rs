@@ -27,7 +27,7 @@ pub use crate::{
     context::Av1anContext,
     encoder::Encoder,
     settings::{EncodeArgs, InputPixelFormat, PixelFormat},
-    target_quality::TargetQuality,
+    target_quality::{InterpolationMethod, TargetQuality},
     util::read_in_dir,
 };
 use crate::{progress_bar::finish_progress_bar, vapoursynth::generate_loadscript_text};
@@ -44,6 +44,7 @@ mod metrics {
     pub mod vmaf;
     pub mod xpsnr;
 }
+mod interpol;
 mod parse;
 mod progress_bar;
 mod scene_detect;
