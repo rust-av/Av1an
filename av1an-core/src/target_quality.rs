@@ -6,6 +6,7 @@ use std::{
     thread::available_parallelism,
 };
 
+use anyhow::bail;
 use ffmpeg::format::Pixel;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
@@ -29,7 +30,7 @@ use crate::{
         xpsnr::{read_xpsnr_file, run_xpsnr, XPSNRSubMetric},
     },
     progress_bar::update_mp_msg,
-    vapoursynth::{measure_butteraugli, measure_ssimulacra2, measure_xpsnr},
+    vapoursynth::{measure_butteraugli, measure_ssimulacra2, measure_xpsnr, VapoursynthPlugins},
     Encoder,
     ProbingSpeed,
     ProbingStatistic,
@@ -99,6 +100,7 @@ impl TargetQuality {
         &self,
         chunk: &Chunk,
         worker_id: Option<usize>,
+        plugins: Option<&VapoursynthPlugins>,
     ) -> anyhow::Result<u32> {
         // History of probe results as quantizer-score pairs
         let mut quantizer_score_history: Vec<(u32, f64)> = vec![];
@@ -164,7 +166,7 @@ impl TargetQuality {
             update_progress_bar(next_quantizer);
 
             let score = {
-                let value = self.probe(chunk, next_quantizer as usize)?;
+                let value = self.probe(chunk, next_quantizer as usize, plugins)?;
 
                 // Butteraugli is an inverse metric, invert score for comparisons
                 match self.metric {
@@ -285,7 +287,12 @@ impl TargetQuality {
         Ok(final_quantizer_score.0)
     }
 
-    fn probe(&self, chunk: &Chunk, quantizer: usize) -> anyhow::Result<f64> {
+    fn probe(
+        &self,
+        chunk: &Chunk,
+        quantizer: usize,
+        plugins: Option<&VapoursynthPlugins>,
+    ) -> anyhow::Result<f64> {
         let probe_name = self.encode_probe(chunk, quantizer)?;
 
         let aggregate_frame_scores = |scores: Vec<f64>| -> anyhow::Result<f64> {
@@ -426,29 +433,39 @@ impl TargetQuality {
                 aggregate_frame_scores(vmaf_scores)
             },
             TargetMetric::SSIMULACRA2 => {
-                let scores = measure_ssimulacra2(
-                    &chunk.input,
-                    &probe_name,
-                    (chunk.start_frame as u32, chunk.end_frame as u32),
-                    self.probe_res.as_ref(),
-                    self.probing_rate,
-                )?;
+                let scores = if let Some(plugins) = plugins {
+                    measure_ssimulacra2(
+                        &chunk.input,
+                        &probe_name,
+                        (chunk.start_frame as u32, chunk.end_frame as u32),
+                        self.probe_res.as_ref(),
+                        self.probing_rate,
+                        plugins,
+                    )?
+                } else {
+                    bail!("SSIMULACRA2 requires Vapoursynth to be installed");
+                };
 
                 aggregate_frame_scores(scores)
             },
             TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                let scores = measure_butteraugli(
-                    match self.metric {
-                        TargetMetric::ButteraugliINF => ButteraugliSubMetric::InfiniteNorm,
-                        TargetMetric::Butteraugli3 => ButteraugliSubMetric::ThreeNorm,
-                        _ => unreachable!(),
-                    },
-                    &chunk.input,
-                    &probe_name,
-                    (chunk.start_frame as u32, chunk.end_frame as u32),
-                    self.probe_res.as_ref(),
-                    self.probing_rate,
-                )?;
+                let scores = if let Some(plugins) = plugins {
+                    measure_butteraugli(
+                        match self.metric {
+                            TargetMetric::ButteraugliINF => ButteraugliSubMetric::InfiniteNorm,
+                            TargetMetric::Butteraugli3 => ButteraugliSubMetric::ThreeNorm,
+                            _ => unreachable!(),
+                        },
+                        &chunk.input,
+                        &probe_name,
+                        (chunk.start_frame as u32, chunk.end_frame as u32),
+                        self.probe_res.as_ref(),
+                        self.probing_rate,
+                        plugins,
+                    )?
+                } else {
+                    bail!("Butteraugli requires Vapoursynth to be installed");
+                };
 
                 aggregate_frame_scores(scores)
             },
@@ -459,14 +476,19 @@ impl TargetQuality {
                     XPSNRSubMetric::Weighted
                 };
                 if self.probing_rate > 1 {
-                    let scores = measure_xpsnr(
-                        submetric,
-                        &chunk.input,
-                        &probe_name,
-                        (chunk.start_frame as u32, chunk.end_frame as u32),
-                        self.probe_res.as_ref(),
-                        self.probing_rate,
-                    )?;
+                    let scores = if let Some(plugins) = plugins {
+                        measure_xpsnr(
+                            submetric,
+                            &chunk.input,
+                            &probe_name,
+                            (chunk.start_frame as u32, chunk.end_frame as u32),
+                            self.probe_res.as_ref(),
+                            self.probing_rate,
+                            plugins,
+                        )?
+                    } else {
+                        bail!("XPSNR with probing_rate > 1 requires Vapoursynth to be installed");
+                    };
 
                     aggregate_frame_scores(scores)
                 } else {
@@ -663,8 +685,9 @@ impl TargetQuality {
         &self,
         chunk: &mut Chunk,
         worker_id: Option<usize>,
+        plugins: Option<&VapoursynthPlugins>,
     ) -> anyhow::Result<()> {
-        chunk.tq_cq = Some(self.per_shot_target_quality(chunk, worker_id)?);
+        chunk.tq_cq = Some(self.per_shot_target_quality(chunk, worker_id, plugins)?);
         Ok(())
     }
 }

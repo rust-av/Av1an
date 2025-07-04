@@ -14,7 +14,7 @@ use av1an_core::{
     hash_path,
     into_vec,
     read_in_dir,
-    vapoursynth,
+    vapoursynth::{self, get_vapoursynth_plugins, VSZipVersion},
     Av1anContext,
     ChunkMethod,
     ChunkOrdering,
@@ -59,9 +59,11 @@ fn main() -> anyhow::Result<()> {
 // concatenate non-trivial strings at compile-time
 fn version() -> &'static str {
     fn get_vs_info() -> String {
-        let isfound = |found: bool| if found { "Found" } else { "Not found" };
-        format!(
-            "\
+        let vapoursynth_plugins = get_vapoursynth_plugins().ok();
+        if let Some(plugins) = vapoursynth_plugins {
+            let isfound = |found: bool| if found { "Found" } else { "Not found" };
+            format!(
+                "\
 * VapourSynth Plugins
   systems.innocent.lsmas : {}
   com.vapoursynth.ffms2  : {}
@@ -70,14 +72,19 @@ fn version() -> &'static str {
   com.julek.plugin : {}
   com.julek.vszip : {}
   com.lumen.vship : {}",
-            isfound(vapoursynth::is_lsmash_installed()),
-            isfound(vapoursynth::is_ffms2_installed()),
-            isfound(vapoursynth::is_dgdecnv_installed()),
-            isfound(vapoursynth::is_bestsource_installed()),
-            isfound(vapoursynth::is_julek_installed()),
-            isfound(vapoursynth::is_vszip_installed()),
-            isfound(vapoursynth::is_vship_installed())
-        )
+                isfound(plugins.lsmash),
+                isfound(plugins.ffms2),
+                isfound(plugins.dgdecnv),
+                isfound(plugins.bestsource),
+                isfound(plugins.julek),
+                isfound(plugins.vszip != VSZipVersion::None),
+                isfound(plugins.vship)
+            )
+        } else {
+            "\
+* VapourSynth: Not Found"
+                .to_string()
+        }
     }
 
     fn get_encoder_info() -> String {
@@ -1005,6 +1012,9 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 
     let mut valid_args: Vec<EncodeArgs> = Vec::with_capacity(inputs.len());
 
+    // Don't hard error, we can proceed if Vapoursynth isn't available
+    let vapoursynth_plugins = get_vapoursynth_plugins().ok();
+
     for input in inputs {
         let temp = if let Some(path) = args.temp.as_ref() {
             path.to_str().unwrap().to_owned()
@@ -1012,8 +1022,11 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             format!(".{}", hash_path(input.as_path()))
         };
 
-        let chunk_method =
-            args.chunk_method.unwrap_or_else(vapoursynth::best_available_chunk_method);
+        let chunk_method = args.chunk_method.unwrap_or_else(|| {
+            vapoursynth_plugins
+                .map(|p| p.best_available_chunk_method())
+                .unwrap_or(ChunkMethod::Hybrid)
+        });
         let scaler = {
             let mut scaler = args.scaler.to_string().clone();
             let mut scaler_ext =
@@ -1176,6 +1189,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             zones: args.zones.clone(),
             scaler,
             ignore_frame_mismatch: args.ignore_frame_mismatch,
+            vapoursynth_plugins,
         };
 
         if !args.overwrite {

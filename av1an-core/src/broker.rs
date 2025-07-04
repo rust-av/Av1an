@@ -228,7 +228,11 @@ impl Broker<'_> {
                 ),
             );
             for r#try in 1..=self.project.args.max_tries {
-                let res = tq.per_shot_target_quality_routine(chunk, Some(worker_id));
+                let res = tq.per_shot_target_quality_routine(
+                    chunk,
+                    Some(worker_id),
+                    self.project.args.vapoursynth_plugins.as_ref(),
+                );
                 if let Err(e) = res {
                     if r#try >= self.project.args.max_tries {
                         error!(

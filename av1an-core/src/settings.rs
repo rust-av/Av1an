@@ -18,16 +18,7 @@ use crate::{
     metrics::{vmaf::validate_libvmaf, xpsnr::validate_libxpsnr},
     parse::valid_params,
     target_quality::TargetQuality,
-    vapoursynth::{
-        is_bestsource_installed,
-        is_dgdecnv_installed,
-        is_ffms2_installed,
-        is_julek_installed,
-        is_lsmash_installed,
-        is_vship_installed,
-        is_vszip_installed,
-        is_vszip_r7_or_newer,
-    },
+    vapoursynth::{VSZipVersion, VapoursynthPlugins},
     ChunkMethod,
     ChunkOrdering,
     Input,
@@ -105,6 +96,8 @@ pub struct EncodeArgs {
     pub probe_res:      Option<String>,
     pub vmaf_threads:   Option<usize>,
     pub vmaf_filter:    Option<String>,
+
+    pub vapoursynth_plugins: Option<VapoursynthPlugins>,
 }
 
 impl EncodeArgs {
@@ -132,7 +125,10 @@ impl EncodeArgs {
                 TargetMetric::VMAF => validate_libvmaf()?,
                 TargetMetric::SSIMULACRA2 => {
                     ensure!(
-                        is_vship_installed() || is_vszip_installed(),
+                        self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                            || self
+                                .vapoursynth_plugins
+                                .is_some_and(|p| p.vszip != VSZipVersion::None),
                         "SSIMULACRA2 metric requires either Vapoursynth-HIP or VapourSynth Zig \
                          Image Process to be installed"
                     );
@@ -150,7 +146,8 @@ impl EncodeArgs {
                 },
                 TargetMetric::ButteraugliINF => {
                     ensure!(
-                        is_vship_installed() || is_julek_installed(),
+                        self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                            || self.vapoursynth_plugins.is_some_and(|p| p.julek),
                         "Butteraugli metric requires either Vapoursynth-HIP or \
                          vapoursynth-julek-plugin to be installed"
                     );
@@ -168,7 +165,7 @@ impl EncodeArgs {
                 },
                 TargetMetric::Butteraugli3 => {
                     ensure!(
-                        is_vship_installed(),
+                        self.vapoursynth_plugins.is_some_and(|p| p.vship),
                         "Butteraugli 3 Norm metric requires Vapoursynth-HIP plugin to be installed"
                     );
                     ensure!(
@@ -193,7 +190,7 @@ impl EncodeArgs {
                     };
                     if self.target_quality.as_ref().unwrap().probing_rate > 1 {
                         ensure!(
-                            is_vszip_installed() && is_vszip_r7_or_newer(),
+                            self.vapoursynth_plugins.is_some_and(|p| p.vszip == VSZipVersion::New),
                             format!(
                                 "{metric_name}XPSNR metric with probing rate greater than 1 \
                                  requires VapourSynth-Zig Image Process R7 or newer to be \
@@ -258,26 +255,26 @@ impl EncodeArgs {
 
         if self.chunk_method == ChunkMethod::LSMASH {
             ensure!(
-                is_lsmash_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.lsmash),
                 "LSMASH is not installed, but it was specified as the chunk method"
             );
         }
         if self.chunk_method == ChunkMethod::FFMS2 {
             ensure!(
-                is_ffms2_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.ffms2),
                 "FFMS2 is not installed, but it was specified as the chunk method"
             );
         }
         if self.chunk_method == ChunkMethod::DGDECNV && which::which("dgindexnv").is_err() {
             ensure!(
-                is_dgdecnv_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.dgdecnv),
                 "Either DGDecNV is not installed or DGIndexNV is not in system path, but it was \
                  specified as the chunk method"
             );
         }
         if self.chunk_method == ChunkMethod::BESTSOURCE {
             ensure!(
-                is_bestsource_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.bestsource),
                 "BestSource is not installed, but it was specified as the chunk method"
             );
         }
