@@ -10,11 +10,10 @@ use std::{
 use ::ffmpeg::format::Pixel;
 use anyhow::{anyhow, bail, ensure, Context};
 use av1an_core::{
-    ffmpeg,
     hash_path,
     into_vec,
     read_in_dir,
-    vapoursynth::{self, get_vapoursynth_plugins, VSZipVersion},
+    vapoursynth::{get_vapoursynth_plugins, VSZipVersion},
     Av1anContext,
     ChunkMethod,
     ChunkOrdering,
@@ -59,7 +58,9 @@ fn main() -> anyhow::Result<()> {
 // concatenate non-trivial strings at compile-time
 fn version() -> &'static str {
     fn get_vs_info() -> String {
-        let vapoursynth_plugins = get_vapoursynth_plugins().ok();
+        let vapoursynth_plugins = get_vapoursynth_plugins()
+            .map_err(|e| warn!("Failed to detect VapourSynth plugins: {}", e))
+            .ok();
         if let Some(plugins) = vapoursynth_plugins {
             let isfound = |found: bool| if found { "Found" } else { "Not found" };
             format!(
@@ -1077,6 +1078,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             output_pix_format.format,
         )?;
 
+        let clip_info = input.clip_info(None)?;
         // TODO make an actual constructor for this
         let arg = EncodeArgs {
             ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
@@ -1129,9 +1131,8 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 Some(0) => None,
                 Some(x) => Some(x),
                 // Make sure it's at least 10 seconds, unless specified by user
-                None => match input.frame_rate() {
-                    Ok(fps) => Some((fps.to_f64().unwrap() * args.extra_split_sec) as usize),
-                    Err(_) => Some(240_usize),
+                None => {
+                    Some((clip_info.frame_rate.to_f64().unwrap() * args.extra_split_sec) as usize)
                 },
             },
             photon_noise: args.photon_noise.and_then(|arg| if arg == 0 { None } else { Some(arg) }),
@@ -1146,18 +1147,14 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                     Input::Video {
                         path, ..
                     } => InputPixelFormat::FFmpeg {
-                        format: ffmpeg::get_pixel_format(path.as_ref()).with_context(|| {
+                        format: clip_info.format_info.as_pixel_format().with_context(|| {
                             format!("FFmpeg failed to get pixel format for input video {path:?}")
                         })?,
                     },
                     Input::VapourSynth {
                         path, ..
                     } => InputPixelFormat::VapourSynth {
-                        bit_depth: crate::vapoursynth::bit_depth(
-                            path.as_ref(),
-                            input.as_vspipe_args_map()?,
-                        )
-                        .with_context(|| {
+                        bit_depth: clip_info.format_info.as_bit_depth().with_context(|| {
                             format!("VapourSynth failed to get bit depth for input video {path:?}")
                         })?,
                     },

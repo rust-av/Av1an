@@ -7,14 +7,15 @@ use std::{
 use av_format::rational::Rational64;
 use ffmpeg::{
     color::TransferCharacteristic,
-    format::{input, Pixel},
+    format::{context::Input, input, Pixel},
     media::Type as MediaType,
     Error::StreamNotFound,
+    Stream,
 };
 use path_abs::{PathAbs, PathInfo};
 use tracing::warn;
 
-use crate::{into_array, into_vec};
+use crate::{into_array, into_vec, ClipInfo, InputPixelFormat};
 
 #[inline]
 pub fn compose_ffmpeg_pipe<S: Into<String>>(
@@ -39,13 +40,36 @@ pub fn compose_ffmpeg_pipe<S: Into<String>>(
     p
 }
 
-/// Get frame count using FFmpeg
-#[tracing::instrument(level = "debug")]
-pub fn num_frames(source: &Path) -> Result<usize, ffmpeg::Error> {
+#[inline]
+pub fn get_clip_info(source: &Path) -> Result<ClipInfo, ffmpeg::Error> {
     let mut ictx = input(source)?;
     let input = ictx.streams().best(MediaType::Video).ok_or(StreamNotFound)?;
     let video_stream_index = input.index();
 
+    Ok(ClipInfo {
+        format_info:              InputPixelFormat::FFmpeg {
+            format: get_pixel_format(&input)?,
+        },
+        frame_rate:               frame_rate(&input)?,
+        resolution:               resolution(&input)?,
+        transfer_characteristics: match transfer_characteristics(&input)? {
+            TransferCharacteristic::SMPTE2084 => av1_grain::TransferFunction::SMPTE2084,
+            _ => av1_grain::TransferFunction::BT1886,
+        },
+        num_frames:               num_frames(&mut ictx, video_stream_index)?,
+    })
+}
+
+/// Get frame count using FFmpeg
+#[inline]
+pub fn get_num_frames(source: &Path) -> Result<usize, ffmpeg::Error> {
+    let mut ictx = input(source)?;
+    let input = ictx.streams().best(MediaType::Video).ok_or(StreamNotFound)?;
+    let video_stream_index = input.index();
+    num_frames(&mut ictx, video_stream_index)
+}
+
+fn num_frames(ictx: &mut Input, video_stream_index: usize) -> Result<usize, ffmpeg::Error> {
     Ok(ictx
         .packets()
         .filter_map(Result::ok)
@@ -53,10 +77,7 @@ pub fn num_frames(source: &Path) -> Result<usize, ffmpeg::Error> {
         .count())
 }
 
-#[tracing::instrument(level = "debug")]
-pub fn frame_rate(source: &Path) -> Result<Rational64, ffmpeg::Error> {
-    let ictx = input(source)?;
-    let input = ictx.streams().best(MediaType::Video).ok_or(StreamNotFound)?;
+fn frame_rate(input: &Stream) -> Result<Rational64, ffmpeg::Error> {
     let rate = input.avg_frame_rate();
     Ok(Rational64::new(
         rate.numerator() as i64,
@@ -64,12 +85,7 @@ pub fn frame_rate(source: &Path) -> Result<Rational64, ffmpeg::Error> {
     ))
 }
 
-#[tracing::instrument(level = "debug")]
-pub fn get_pixel_format(source: &Path) -> Result<Pixel, ffmpeg::Error> {
-    let ictx = ffmpeg::format::input(source)?;
-
-    let input = ictx.streams().best(MediaType::Video).ok_or(StreamNotFound)?;
-
+fn get_pixel_format(input: &Stream) -> Result<Pixel, ffmpeg::Error> {
     let decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters())?
         .decoder()
         .video()?;
@@ -77,12 +93,7 @@ pub fn get_pixel_format(source: &Path) -> Result<Pixel, ffmpeg::Error> {
     Ok(decoder.format())
 }
 
-#[tracing::instrument(level = "debug")]
-pub fn resolution(source: &Path) -> Result<(u32, u32), ffmpeg::Error> {
-    let ictx = ffmpeg::format::input(source)?;
-
-    let input = ictx.streams().best(MediaType::Video).ok_or(StreamNotFound)?;
-
+fn resolution(input: &Stream) -> Result<(u32, u32), ffmpeg::Error> {
     let decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters())?
         .decoder()
         .video()?;
@@ -90,12 +101,7 @@ pub fn resolution(source: &Path) -> Result<(u32, u32), ffmpeg::Error> {
     Ok((decoder.width(), decoder.height()))
 }
 
-#[tracing::instrument(level = "debug")]
-pub fn transfer_characteristics(source: &Path) -> Result<TransferCharacteristic, ffmpeg::Error> {
-    let ictx = ffmpeg::format::input(source)?;
-
-    let input = ictx.streams().best(MediaType::Video).ok_or(StreamNotFound)?;
-
+fn transfer_characteristics(input: &Stream) -> Result<TransferCharacteristic, ffmpeg::Error> {
     let decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters())?
         .decoder()
         .video()?;

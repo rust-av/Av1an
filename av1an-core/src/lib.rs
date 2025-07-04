@@ -1,6 +1,6 @@
 use std::{
     cmp::max,
-    collections::hash_map::DefaultHasher,
+    collections::{hash_map::DefaultHasher, HashMap},
     fs::{self, read_to_string, File},
     hash::{Hash, Hasher},
     io::Write,
@@ -11,14 +11,15 @@ use std::{
     time::Instant,
 };
 
-use ::ffmpeg::{color::TransferCharacteristic, format::Pixel};
+use ::ffmpeg::format::Pixel;
 use ::vapoursynth::{api::API, map::OwnedMap};
 use anyhow::{bail, Context};
 use av1_grain::TransferFunction;
 use av_format::rational::Rational64;
 use chunk::Chunk;
 use dashmap::DashMap;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr, IntoStaticStr};
 
@@ -56,7 +57,16 @@ mod util;
 pub mod vapoursynth;
 mod zones;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+static CLIP_INFO_CACHE: Lazy<Mutex<HashMap<CacheKey, ClipInfo>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct CacheKey {
+    input:          Input,
+    vs_script_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
     VapourSynth {
         path:        PathBuf,
@@ -221,114 +231,33 @@ impl Input {
     }
 
     #[inline]
-    pub fn frames(&self, vs_script_path: Option<PathBuf>) -> anyhow::Result<usize> {
+    pub fn clip_info(&self, vs_script_path: Option<PathBuf>) -> anyhow::Result<ClipInfo> {
         const FAIL_MSG: &str = "Failed to get number of frames for input video";
-        Ok(match &self {
+
+        let mut cache = CLIP_INFO_CACHE.lock();
+        let key = CacheKey {
+            input:          self.clone(),
+            vs_script_path: vs_script_path.clone(),
+        };
+        let cached = cache.get(&key);
+        if let Some(cached) = cached {
+            return Ok(*cached);
+        }
+
+        let info = match &self {
             Input::Video {
                 path, ..
             } if vs_script_path.is_none() => {
-                ffmpeg::num_frames(path.as_path()).context(FAIL_MSG)?
+                ffmpeg::get_clip_info(path.as_path()).context(FAIL_MSG)?
             },
-            path => vapoursynth::num_frames(
+            path => vapoursynth::get_clip_info(
                 vs_script_path.as_deref().unwrap_or(path.as_path()),
                 self.as_vspipe_args_map()?,
             )
             .context(FAIL_MSG)?,
-        })
-    }
-
-    #[inline]
-    pub fn frame_rate(&self) -> anyhow::Result<Rational64> {
-        const FAIL_MSG: &str = "Failed to get frame rate for input video";
-        Ok(match &self {
-            Input::Video {
-                path, ..
-            } => crate::ffmpeg::frame_rate(path.as_path()).context(FAIL_MSG)?,
-            Input::VapourSynth {
-                path, ..
-            } => vapoursynth::frame_rate(path.as_path(), self.as_vspipe_args_map()?)
-                .context(FAIL_MSG)?,
-        })
-    }
-
-    #[inline]
-    pub fn resolution(&self) -> anyhow::Result<(u32, u32)> {
-        const FAIL_MSG: &str = "Failed to get resolution for input video";
-        Ok(match self {
-            Input::VapourSynth {
-                path, ..
-            } => crate::vapoursynth::resolution(path, self.as_vspipe_args_map()?)
-                .context(FAIL_MSG)?,
-            Input::Video {
-                path, ..
-            } => crate::ffmpeg::resolution(path).context(FAIL_MSG)?,
-        })
-    }
-
-    #[inline]
-    pub fn pixel_format(&self) -> anyhow::Result<String> {
-        const FAIL_MSG: &str = "Failed to get pixel format for input video";
-        Ok(match self {
-            Input::VapourSynth {
-                path, ..
-            } => crate::vapoursynth::pixel_format(path, self.as_vspipe_args_map()?)
-                .context(FAIL_MSG)?,
-            Input::Video {
-                path, ..
-            } => {
-                let fmt = crate::ffmpeg::get_pixel_format(path).context(FAIL_MSG)?;
-                format!("{fmt:?}")
-            },
-        })
-    }
-
-    fn transfer_function(&self) -> anyhow::Result<TransferFunction> {
-        const FAIL_MSG: &str = "Failed to get transfer characteristics for input video";
-        Ok(match self {
-            Input::VapourSynth {
-                path, ..
-            } => {
-                match crate::vapoursynth::transfer_characteristics(path, self.as_vspipe_args_map()?)
-                    .context(FAIL_MSG)?
-                {
-                    16 => TransferFunction::SMPTE2084,
-                    _ => TransferFunction::BT1886,
-                }
-            },
-            Input::Video {
-                path, ..
-            } => match crate::ffmpeg::transfer_characteristics(path).context(FAIL_MSG)? {
-                TransferCharacteristic::SMPTE2084 => TransferFunction::SMPTE2084,
-                _ => TransferFunction::BT1886,
-            },
-        })
-    }
-
-    #[inline]
-    pub fn transfer_function_params_adjusted(
-        &self,
-        enc_params: &[String],
-    ) -> anyhow::Result<TransferFunction> {
-        if enc_params.iter().any(|p| {
-            let p = p.to_ascii_lowercase();
-            p == "pq" || p.ends_with("=pq") || p.ends_with("smpte2084")
-        }) {
-            return Ok(TransferFunction::SMPTE2084);
-        }
-        if enc_params.iter().any(|p| {
-            let p = p.to_ascii_lowercase();
-            // If the user specified an SDR transfer characteristic, assume they want to
-            // encode to SDR.
-            p.ends_with("bt709")
-                || p.ends_with("bt.709")
-                || p.ends_with("bt601")
-                || p.ends_with("bt.601")
-                || p.contains("smpte240")
-                || p.contains("smpte170")
-        }) {
-            return Ok(TransferFunction::BT1886);
-        }
-        self.transfer_function()
+        };
+        cache.insert(key, info);
+        Ok(info)
     }
 
     /// Calculates tiles from resolution
@@ -337,7 +266,7 @@ impl Input {
     /// Return number of horizontal and vertical tiles
     #[inline]
     pub fn calculate_tiles(&self) -> (u32, u32) {
-        match self.resolution() {
+        match self.clip_info(None).map(|info| info.resolution) {
             Ok((h, v)) => {
                 // tile range 0-1440 pixels
                 let horizontal = max((h - 1) / 720, 1);
@@ -515,10 +444,9 @@ pub enum TargetMetric {
 }
 
 /// Determine the optimal number of workers for an encoder
-#[must_use]
 #[inline]
-pub fn determine_workers(args: &EncodeArgs) -> u64 {
-    let res = args.input.resolution().unwrap();
+pub fn determine_workers(args: &EncodeArgs) -> anyhow::Result<u64> {
+    let res = args.input.clip_info(None)?.resolution;
     let tiles = args.tiles;
     let megapixels = (res.0 * res.1) as f64 / 1e6;
     // encoder memory and chunk_method memory usage scales with resolution
@@ -565,13 +493,13 @@ pub fn determine_workers(args: &EncodeArgs) -> u64 {
     // use total instead of available, because av1an does not resize worker pool
     let ram_gb = system.total_memory() as f64 / 1e9;
 
-    std::cmp::max(
+    Ok(std::cmp::max(
         std::cmp::min(
             cpu / cpu_threads,
             (ram_gb / (megapixels * (enc_ram + cm_ram) * pix_mult)).round() as u64,
         ),
         1,
-    )
+    ))
 }
 
 #[inline]
@@ -653,4 +581,41 @@ pub enum ProbingStatisticName {
 pub struct ProbingStatistic {
     pub name:  ProbingStatisticName,
     pub value: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClipInfo {
+    pub num_frames:               usize,
+    pub format_info:              InputPixelFormat,
+    pub frame_rate:               Rational64,
+    pub resolution:               (u32, u32),
+    /// This is overly simplified because we currently only use it for photon
+    /// noise gen, which only supports two transfer functions
+    pub transfer_characteristics: TransferFunction,
+}
+
+impl ClipInfo {
+    #[inline]
+    pub fn transfer_function_params_adjusted(&self, enc_params: &[String]) -> TransferFunction {
+        if enc_params.iter().any(|p| {
+            let p = p.to_ascii_lowercase();
+            p == "pq" || p.ends_with("=pq") || p.ends_with("smpte2084")
+        }) {
+            return TransferFunction::SMPTE2084;
+        }
+        if enc_params.iter().any(|p| {
+            let p = p.to_ascii_lowercase();
+            // If the user specified an SDR transfer characteristic, assume they want to
+            // encode to SDR.
+            p.ends_with("bt709")
+                || p.ends_with("bt.709")
+                || p.ends_with("bt601")
+                || p.ends_with("bt.601")
+                || p.contains("smpte240")
+                || p.contains("smpte170")
+        }) {
+            return TransferFunction::BT1886;
+        }
+        self.transfer_characteristics
+    }
 }

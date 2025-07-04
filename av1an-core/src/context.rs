@@ -34,7 +34,7 @@ use crate::{
     concat::{self, ConcatMethod},
     create_dir,
     determine_workers,
-    ffmpeg::{compose_ffmpeg_pipe, num_frames},
+    ffmpeg::{compose_ffmpeg_pipe, get_num_frames},
     get_done,
     init_done,
     into_vec,
@@ -156,7 +156,7 @@ impl Av1anContext {
 
             // frames need to be recalculated in this case
             if self.frames == 0 {
-                self.frames = self.args.input.frames(self.vs_script.clone())?;
+                self.frames = self.args.input.clip_info(self.vs_script.clone())?.num_frames;
                 done.frames.store(self.frames, atomic::Ordering::Relaxed);
             }
 
@@ -221,17 +221,25 @@ impl Av1anContext {
           None
         };
 
-        let res = self.args.input.resolution()?;
-        let fps_ratio = self.args.input.frame_rate()?;
+        let clip_info = self.args.input.clip_info(None)?;
+        let res = clip_info.resolution;
+        let fps_ratio = clip_info.frame_rate;
         let fps = fps_ratio.to_f64().unwrap();
-        let format = self.args.input.pixel_format()?;
-        let tfc = self.args.input.transfer_function_params_adjusted(&self.args.video_params)?;
+        let format = clip_info.format_info;
+        let tfc = clip_info.transfer_function_params_adjusted(&self.args.video_params);
         info!(
             "Input: {}x{} @ {:.3} fps, {}, {}",
             res.0,
             res.1,
             fps,
-            format,
+            match format {
+                InputPixelFormat::VapourSynth {
+                    bit_depth,
+                } => format!("{bit_depth} BPC"),
+                InputPixelFormat::FFmpeg {
+                    format,
+                } => format!("{format:?}"),
+            },
             match tfc {
                 TransferFunction::SMPTE2084 => "HDR",
                 TransferFunction::BT1886 => "SDR",
@@ -297,7 +305,7 @@ impl Av1anContext {
             };
 
             if self.args.workers == 0 {
-                self.args.workers = determine_workers(&self.args) as usize;
+                self.args.workers = determine_workers(&self.args)? as usize;
             }
             self.args.workers = cmp::min(self.args.workers, chunk_queue.len());
 
@@ -412,7 +420,7 @@ impl Av1anContext {
             if self.args.vmaf || self.args.target_quality.is_some() {
                 let vmaf_res = if let Some(ref tq) = self.args.target_quality {
                     if tq.vmaf_res == "inputres" {
-                        let inputres = self.args.input.resolution()?;
+                        let inputres = self.args.input.clip_info(None)?.resolution;
                         format!("{width}x{height}", width = inputres.0, height = inputres.1)
                     } else {
                         tq.vmaf_res.clone()
@@ -704,7 +712,7 @@ impl Av1anContext {
         }
 
         if current_pass == chunk.passes {
-            let encoded_frames = num_frames(chunk.output().as_ref());
+            let encoded_frames = get_num_frames(chunk.output().as_ref());
 
             let err_str = match encoded_frames {
                 Ok(encoded_frames)
@@ -942,7 +950,7 @@ impl Av1anContext {
     }
 
     fn create_video_queue_vs(&self, scenes: &[Scene], vs_script: &Path) -> Vec<Chunk> {
-        let frame_rate = self.args.input.frame_rate().unwrap().to_f64().unwrap();
+        let frame_rate = self.args.input.clip_info(None).unwrap().frame_rate.to_f64().unwrap();
         let chunk_queue: Vec<Chunk> = scenes
             .iter()
             .enumerate()
@@ -956,7 +964,7 @@ impl Av1anContext {
 
     fn create_video_queue_select(&self, scenes: &[Scene]) -> Vec<Chunk> {
         let input = self.args.input.as_video_path();
-        let frame_rate = self.args.input.frame_rate().unwrap().to_f64().unwrap();
+        let frame_rate = self.args.input.clip_info(None).unwrap().frame_rate.to_f64().unwrap();
 
         let chunk_queue: Vec<Chunk> = scenes
             .iter()
@@ -979,7 +987,7 @@ impl Av1anContext {
 
     fn create_video_queue_segment(&self, scenes: &[Scene]) -> anyhow::Result<Vec<Chunk>> {
         let input = self.args.input.as_video_path();
-        let frame_rate = self.args.input.frame_rate().unwrap().to_f64().unwrap();
+        let frame_rate = self.args.input.clip_info(None)?.frame_rate.to_f64().unwrap();
 
         debug!("Splitting video");
         segment(
@@ -1016,7 +1024,7 @@ impl Av1anContext {
 
     fn create_video_queue_hybrid(&self, scenes: &[Scene]) -> anyhow::Result<Vec<Chunk>> {
         let input = self.args.input.as_video_path();
-        let frame_rate = self.args.input.frame_rate().unwrap().to_f64().unwrap();
+        let frame_rate = self.args.input.clip_info(None)?.frame_rate.to_f64().unwrap();
 
         let keyframes = crate::ffmpeg::get_keyframes(input).unwrap();
 
@@ -1092,7 +1100,7 @@ impl Av1anContext {
 
         let output_ext = self.args.encoder.output_extension();
 
-        let num_frames = num_frames(Path::new(file))?;
+        let num_frames = get_num_frames(Path::new(file))?;
 
         let mut chunk = Chunk {
             temp: self.args.temp.clone(),

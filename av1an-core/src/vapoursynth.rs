@@ -24,7 +24,9 @@ use crate::{
         xpsnr::{weight_xpsnr, XPSNRSubMetric},
     },
     util::to_absolute_path,
+    ClipInfo,
     Input,
+    InputPixelFormat,
 };
 
 /// Contains a list of installed Vapoursynth plugins which may be used by av1an
@@ -134,23 +136,42 @@ fn is_vszip_r7_or_newer(env: &Environment) -> bool {
     functions.iter().any(|(name, _)| name == "XPSNR")
 }
 
-fn get_clip_info(env: &Environment) -> VideoInfo<'_> {
-    // Get the output node.
+#[inline]
+pub fn get_clip_info(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<ClipInfo> {
     const OUTPUT_INDEX: i32 = 0;
 
-    #[cfg(feature = "vapoursynth_new_api")]
-    let (node, _) = env.get_output(OUTPUT_INDEX).unwrap();
-    #[cfg(not(feature = "vapoursynth_new_api"))]
-    let node = env.get_output(OUTPUT_INDEX).unwrap();
+    let mut environment = Environment::new().context("get_clip_info")?;
+    if environment.set_variables(&vspipe_args_map).is_err() {
+        bail!("Failed to set vspipe arguments");
+    };
+    environment
+        .eval_file(source, EvalFlags::SetWorkingDir)
+        .context("get_clip_info")?;
 
-    node.info()
+    #[cfg(feature = "vapoursynth_new_api")]
+    let (node, _) = environment.get_output(OUTPUT_INDEX).unwrap();
+    #[cfg(not(feature = "vapoursynth_new_api"))]
+    let node = environment.get_output(OUTPUT_INDEX).unwrap();
+
+    let info = node.info();
+
+    Ok(ClipInfo {
+        num_frames:               get_num_frames(&info)?,
+        format_info:              InputPixelFormat::VapourSynth {
+            bit_depth: get_bit_depth(&info)?,
+        },
+        frame_rate:               get_frame_rate(&info)?,
+        resolution:               get_resolution(&info)?,
+        transfer_characteristics: match get_transfer(&environment)? {
+            16 => av1_grain::TransferFunction::SMPTE2084,
+            _ => av1_grain::TransferFunction::BT1886,
+        },
+    })
 }
 
 /// Get the number of frames from an environment that has already been
 /// evaluated on a script.
-fn get_num_frames(env: &Environment) -> anyhow::Result<usize> {
-    let info = get_clip_info(env);
-
+fn get_num_frames(info: &VideoInfo) -> anyhow::Result<usize> {
     let num_frames = {
         if Property::Variable == info.format {
             bail!("Cannot output clips with varying format");
@@ -183,9 +204,7 @@ fn get_num_frames(env: &Environment) -> anyhow::Result<usize> {
     Ok(num_frames)
 }
 
-fn get_frame_rate(env: &Environment) -> anyhow::Result<Rational64> {
-    let info = get_clip_info(env);
-
+fn get_frame_rate(info: &VideoInfo) -> anyhow::Result<Rational64> {
     match info.framerate {
         Property::Variable => bail!("Cannot output clips with varying framerate"),
         Property::Constant(fps) => Ok(Rational64::new(
@@ -197,9 +216,7 @@ fn get_frame_rate(env: &Environment) -> anyhow::Result<Rational64> {
 
 /// Get the bit depth from an environment that has already been
 /// evaluated on a script.
-fn get_bit_depth(env: &Environment) -> anyhow::Result<usize> {
-    let info = get_clip_info(env);
-
+fn get_bit_depth(info: &VideoInfo) -> anyhow::Result<usize> {
     let bits_per_sample = {
         match info.format {
             Property::Variable => {
@@ -214,9 +231,7 @@ fn get_bit_depth(env: &Environment) -> anyhow::Result<usize> {
 
 /// Get the resolution from an environment that has already been
 /// evaluated on a script.
-fn get_resolution(env: &Environment) -> anyhow::Result<(u32, u32)> {
-    let info = get_clip_info(env);
-
+fn get_resolution(info: &VideoInfo) -> anyhow::Result<(u32, u32)> {
     let resolution = {
         match info.resolution {
             Property::Variable => {
@@ -229,8 +244,8 @@ fn get_resolution(env: &Environment) -> anyhow::Result<(u32, u32)> {
     Ok((resolution.width as u32, resolution.height as u32))
 }
 
-/// Get the transfer characteristics from an environment that has already been
-/// evaluated on a script.
+/// Get the transfer characteristics from an environment that has already
+/// been evaluated on a script.
 fn get_transfer(env: &Environment) -> anyhow::Result<u8> {
     // Get the output node.
     const OUTPUT_INDEX: i32 = 0;
@@ -855,105 +870,6 @@ pub fn copy_vs_file(
 
     scd_script.write_all(source_script.as_bytes())?;
     Ok(scd_script_path)
-}
-
-#[inline]
-pub fn num_frames(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<usize> {
-    // Create a new VSScript environment.
-    let mut environment = Environment::new().context("num_fraes")?;
-
-    if environment.set_variables(&vspipe_args_map).is_err() {
-        bail!("Failed to set vspipe arguments");
-    };
-
-    // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).context("num_fraes")?;
-
-    get_num_frames(&environment)
-}
-
-#[inline]
-pub fn bit_depth(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<usize> {
-    // Create a new VSScript environment.
-    let mut environment = Environment::new().context("bit_depth")?;
-
-    if environment.set_variables(&vspipe_args_map).is_err() {
-        bail!("Failed to set vspipe arguments");
-    };
-
-    // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).context("bit_depth")?;
-
-    get_bit_depth(&environment)
-}
-
-#[inline]
-pub fn frame_rate(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<Rational64> {
-    // Create a new VSScript environment.
-    let mut environment = Environment::new().context("frame_rate")?;
-
-    if environment.set_variables(&vspipe_args_map).is_err() {
-        bail!("Failed to set vspipe arguments");
-    };
-
-    // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).context("frame_rate")?;
-
-    get_frame_rate(&environment)
-}
-
-#[inline]
-pub fn resolution(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<(u32, u32)> {
-    // Create a new VSScript environment.
-    let mut environment = Environment::new().context("resolution")?;
-
-    if environment.set_variables(&vspipe_args_map).is_err() {
-        bail!("Failed to set vspipe arguments");
-    };
-
-    // Evaluate the script.
-    environment.eval_file(source, EvalFlags::SetWorkingDir).context("resolution")?;
-
-    get_resolution(&environment)
-}
-
-/// Transfer characteristics as specified in ITU-T H.265 Table E.4.
-#[inline]
-pub fn transfer_characteristics(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<u8> {
-    // Create a new VSScript environment.
-    let mut environment = Environment::new().context("transfer_characteristics")?;
-
-    if environment.set_variables(&vspipe_args_map).is_err() {
-        bail!("Failed to set vspipe arguments");
-    };
-
-    // Evaluate the script.
-    environment
-        .eval_file(source, EvalFlags::SetWorkingDir)
-        .context("transfer_characteristics")?;
-
-    get_transfer(&environment)
-}
-
-#[inline]
-pub fn pixel_format(source: &Path, vspipe_args_map: OwnedMap) -> anyhow::Result<String> {
-    // Create a new VSScript environment.
-    let mut environment = Environment::new().context("pixel_format")?;
-
-    if environment.set_variables(&vspipe_args_map).is_err() {
-        bail!("Failed to set vspipe arguments");
-    };
-
-    // Evaluate the script.
-    environment
-        .eval_file(source, EvalFlags::SetWorkingDir)
-        .context("pixel_format")?;
-
-    let info = get_clip_info(&environment);
-    match info.format {
-        Property::Variable => bail!("Variable pixel format not supported"),
-        Property::Constant(x) => Ok(x.name().to_string()),
-    }
 }
 
 #[inline]

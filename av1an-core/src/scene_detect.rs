@@ -47,7 +47,7 @@ pub fn av_scenechange_detect(
 
     let input2 = input.clone();
     let frame_thread = thread::spawn(move || {
-        let frames = input2.frames(None).unwrap();
+        let frames = input2.clip_info(None).unwrap().num_frames;
         if verbosity != Verbosity::Quiet {
             progress_bar::convert_to_progress(0);
             progress_bar::set_len(frames as u64);
@@ -55,7 +55,6 @@ pub fn av_scenechange_detect(
         frames
     });
 
-    let frames = frame_thread.join().unwrap();
     let scenes = scene_detect(
         input,
         encoder,
@@ -74,6 +73,7 @@ pub fn av_scenechange_detect(
         sc_downscale_height,
         zones,
     )?;
+    let frames = frame_thread.join().unwrap();
 
     progress_bar::finish_progress_bar();
 
@@ -235,11 +235,12 @@ fn build_decoder(
         (None, None) => smallvec![],
     };
 
+    let clip_info = input.clip_info(None)?;
     let decoder = match input {
         Input::VapourSynth {
             path, ..
         } => {
-            bit_depth = crate::vapoursynth::bit_depth(path.as_ref(), input.as_vspipe_args_map()?)?;
+            bit_depth = clip_info.format_info.as_bit_depth().unwrap();
             let vspipe_args = input.as_vspipe_args_vec()?;
 
             if !filters.is_empty() || !vspipe_args.is_empty() {
@@ -269,10 +270,9 @@ fn build_decoder(
         Input::Video {
             path, ..
         } => {
-            let input_pix_format =
-                crate::ffmpeg::get_pixel_format(path.as_ref()).unwrap_or_else(|e| {
-                    panic!("FFmpeg failed to get pixel format for input video: {e:?}")
-                });
+            let input_pix_format = clip_info.format_info.as_pixel_format().unwrap_or_else(|e| {
+                panic!("FFmpeg failed to get pixel format for input video: {e:?}")
+            });
             bit_depth = encoder.get_format_bit_depth(sc_pix_format.unwrap_or(input_pix_format))?;
             if !filters.is_empty() {
                 Decoder::from_decoder_impl(DecoderImpl::Y4m(Y4mDecoder::new(Box::new(

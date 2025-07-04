@@ -60,7 +60,8 @@ impl Chunk {
             let grain_table = Path::new(&self.temp).join(format!("iso{iso_setting}-grain.tbl"));
             if !grain_table.exists() {
                 debug!("Generating grain table at ISO {iso_setting}");
-                let (mut width, mut height) = self.input.resolution()?;
+                let clip_info = self.input.clip_info(None)?;
+                let (mut width, mut height) = clip_info.resolution;
                 if self.noise_size.0.is_some() {
                     width = self.noise_size.0.unwrap();
                 }
@@ -68,7 +69,7 @@ impl Chunk {
                     height = self.noise_size.1.unwrap();
                 }
                 let transfer_function =
-                    self.input.transfer_function_params_adjusted(&self.video_params)?;
+                    clip_info.transfer_function_params_adjusted(&self.video_params);
                 let params = generate_photon_noise_params(0, u64::MAX, NoiseGenArgs {
                     iso_setting,
                     width,

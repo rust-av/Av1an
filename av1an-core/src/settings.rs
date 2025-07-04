@@ -40,6 +40,32 @@ pub enum InputPixelFormat {
     FFmpeg { format: Pixel },
 }
 
+impl InputPixelFormat {
+    #[inline]
+    pub fn as_bit_depth(&self) -> anyhow::Result<usize> {
+        match self {
+            InputPixelFormat::VapourSynth {
+                bit_depth,
+            } => Ok(*bit_depth),
+            InputPixelFormat::FFmpeg {
+                ..
+            } => Err(anyhow::anyhow!("failed to get bit depth; wrong input type")),
+        }
+    }
+
+    #[inline]
+    pub fn as_pixel_format(&self) -> anyhow::Result<Pixel> {
+        match self {
+            InputPixelFormat::VapourSynth {
+                ..
+            } => Err(anyhow::anyhow!("failed to get bit depth; wrong input type")),
+            InputPixelFormat::FFmpeg {
+                format,
+            } => Ok(*format),
+        }
+    }
+}
+
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct EncodeArgs {

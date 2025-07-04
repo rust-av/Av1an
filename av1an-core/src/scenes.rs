@@ -376,7 +376,7 @@ impl SceneFactory {
         // We should only be calling this when scenes haven't been created yet
         debug_assert!(self.data.scenes.is_none());
 
-        let frames = args.input.frames(vs_script.clone())?;
+        let frames = args.input.clip_info(vs_script.clone())?.num_frames;
 
         // Create a new input with the generated VapourSynth script for Scene Detection
         let input = vs_scd_script.as_ref().map_or_else(
@@ -426,7 +426,7 @@ impl SceneFactory {
                         zone_overrides: None,
                     });
                 }
-                (scenes, args.input.frames(vs_script.clone())?)
+                (scenes, frames)
             },
         };
 
