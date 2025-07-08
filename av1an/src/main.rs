@@ -10,12 +10,10 @@ use std::{
 use ::ffmpeg::format::Pixel;
 use anyhow::{anyhow, bail, ensure, Context};
 use av1an_core::{
-    ffmpeg,
     hash_path,
-    init_logging,
     into_vec,
     read_in_dir,
-    vapoursynth,
+    vapoursynth::{get_vapoursynth_plugins, VSZipVersion},
     Av1anContext,
     ChunkMethod,
     ChunkOrdering,
@@ -24,6 +22,7 @@ use av1an_core::{
     Encoder,
     Input,
     InputPixelFormat,
+    InterpolationMethod,
     PixelFormat,
     ProbingSpeed,
     ProbingStatistic,
@@ -34,13 +33,16 @@ use av1an_core::{
     TargetQuality,
     Verbosity,
     VmafFeature,
-    DEFAULT_LOG_LEVEL,
 };
 use clap::{value_parser, Parser};
 use num_traits::cast::ToPrimitive;
 use once_cell::sync::OnceCell;
 use path_abs::{PathAbs, PathInfo};
 use tracing::{instrument, level_filters::LevelFilter, warn};
+
+use crate::logging::{init_logging, DEFAULT_LOG_LEVEL};
+
+mod logging;
 
 fn main() -> anyhow::Result<()> {
     let orig_hook = panic::take_hook();
@@ -56,9 +58,13 @@ fn main() -> anyhow::Result<()> {
 // concatenate non-trivial strings at compile-time
 fn version() -> &'static str {
     fn get_vs_info() -> String {
-        let isfound = |found: bool| if found { "Found" } else { "Not found" };
-        format!(
-            "\
+        let vapoursynth_plugins = get_vapoursynth_plugins()
+            .map_err(|e| warn!("Failed to detect VapourSynth plugins: {}", e))
+            .ok();
+        if let Some(plugins) = vapoursynth_plugins {
+            let isfound = |found: bool| if found { "Found" } else { "Not found" };
+            format!(
+                "\
 * VapourSynth Plugins
   systems.innocent.lsmas : {}
   com.vapoursynth.ffms2  : {}
@@ -67,14 +73,19 @@ fn version() -> &'static str {
   com.julek.plugin : {}
   com.julek.vszip : {}
   com.lumen.vship : {}",
-            isfound(vapoursynth::is_lsmash_installed()),
-            isfound(vapoursynth::is_ffms2_installed()),
-            isfound(vapoursynth::is_dgdecnv_installed()),
-            isfound(vapoursynth::is_bestsource_installed()),
-            isfound(vapoursynth::is_julek_installed()),
-            isfound(vapoursynth::is_vszip_installed()),
-            isfound(vapoursynth::is_vship_installed())
-        )
+                isfound(plugins.lsmash),
+                isfound(plugins.ffms2),
+                isfound(plugins.dgdecnv),
+                isfound(plugins.bestsource),
+                isfound(plugins.julek),
+                isfound(plugins.vszip != VSZipVersion::None),
+                isfound(plugins.vship)
+            )
+        } else {
+            "\
+* VapourSynth: Not Found"
+                .to_string()
+        }
     }
 
     fn get_encoder_info() -> String {
@@ -619,12 +630,12 @@ pub struct CliOpts {
     #[clap(long, help_heading = "VMAF")]
     pub vmaf_filter: Option<String>,
 
-    /// Target a metric score for encoding (disabled by default)
+    /// Target a metric score range for encoding (disabled by default)
     ///
     /// For each chunk, target quality uses an algorithm to find the
-    /// quantizer/crf needed to achieve a certain metric score.
-    /// Target quality mode is much slower than normal encoding, but can improve
-    /// the consistency of quality in some cases.
+    /// quantizer/crf needed to achieve a metric score within the specified
+    /// range. Target quality mode is much slower than normal encoding, but
+    /// can improve the consistency of quality in some cases.
     ///
     /// The VMAF and SSIMULACRA2 score ranges are 0-100 (where 0 is the worst
     /// quality, and 100 is the best).
@@ -635,9 +646,56 @@ pub struct CliOpts {
     /// The XPSNR score minimum is 0 as the worst quality and increases as
     /// quality increases towards infinity.
     ///
+    /// Specify as a range: --target-quality 75-85 for VMAF/SSIMULACRA2
+    /// or --target-quality 1.0-1.5 for butteraugli metrics.
     /// Floating-point values are allowed for all metrics.
-    #[clap(long, help_heading = "Target Quality")]
-    pub target_quality: Option<f64>,
+    #[clap(long, help_heading = "Target Quality", value_parser = parse_target_qp_range)]
+    pub target_quality: Option<(f64, f64)>,
+
+    /// Quantizer range bounds for target quality search (disabled by default)
+    ///
+    /// Specifies the minimum and maximum quantizer/CRF/qp values to use during
+    /// target quality search. This constrains the search space and can prevent
+    /// the algorithm from using extremely high or low quality settings.
+    ///
+    /// Specify as a range: --qp-range 10-50
+    /// If not specified, encoder defaults are used.
+    #[clap(long, help_heading = "Target Quality", value_parser = parse_qp_range)]
+    pub qp_range: Option<(u32, u32)>,
+
+    #[rustfmt::skip]
+    /// Interpolation methods for target quality probing
+    ///
+    /// Controls which interpolation algorithms are used for the 4th and 5th probe rounds during target quality search.
+    /// Higher-order interpolation methods can provide more accurate quantizer predictions but may be less stable with noisy data.
+    ///
+    /// Format: --interp-method <method4>-<method5>
+    ///
+    /// 4th round methods (3 known points):
+    ///   linear    - Simple linear interpolation using the 2 closest points. Fast and stable, good for monotonic data.
+    ///   quadratic - Quadratic interpolation using all 3 points. Better curve fitting than linear, moderate accuracy.
+    ///   natural   - Natural cubic spline interpolation. Smooth curves with natural boundary conditions. (default)
+    ///
+    /// 5th round methods (4 known points):
+    ///   linear                  - Simple linear interpolation using 2 closest points. Most stable for narrow ranges.
+    ///   quadratic               - Quadratic interpolation (Lagrange method) using 3 best points. Good balance of accuracy and stability.
+    ///   natural                 - Natural cubic spline interpolation. Smooth curves, good for well-behaved data.
+    ///   pchip                   - Piecewise Cubic Hermite Interpolation. Preserves monotonicity, prevents overshooting. (default)
+    ///   catmull                 - Catmull-Rom spline interpolation. Smooth curves that pass through all points.
+    ///   akima                   - Akima spline interpolation. Reduces oscillations. Beware: Designed for 5 data points originally.
+    ///   cubic | cubicpolynomial - Cubic polynomial through all 4 points. High accuracy but can overshoot dramatically.
+    ///
+    /// Recommendations:
+    ///   - For most content:      natural-pchip      - Good balance of accuracy and stability (tested)
+    ///   - For difficult content: quadratic-natural  - More conservative, less prone to overshooting
+    ///   - For fine-tuning:       linear-linear      - Most predictable behavior, good for testing
+    ///
+    /// Examples:
+    ///   --interp-method natural-pchip      # Default: balanced accuracy and stability
+    ///   --interp-method quadratic-akima    # Experimental
+    ///   --interp-method linear-catmull     # Simple start, smooth finish
+    #[clap(long, help_heading = "Target Quality", value_parser = parse_interp_method, verbatim_doc_comment)]
+    pub interp_method: Option<(InterpolationMethod, InterpolationMethod)>,
     /// The metric used for Target Quality mode
     ///
     /// vmaf - Requires FFmpeg with VMAF enabled.
@@ -669,10 +727,10 @@ pub struct CliOpts {
     /// and the Chunk method must be set to "lsmash", "ffms2", "bestsource", or
     /// "dgdecnv".
     #[clap(long, default_value_t = TargetMetric::VMAF, help_heading = "Target Quality")]
-    pub target_metric:  TargetMetric,
+    pub target_metric: TargetMetric,
     /// Maximum number of probes allowed for target quality
     #[clap(long, default_value_t = 4, help_heading = "Target Quality")]
-    pub probes:         u32,
+    pub probes:        u32,
 
     /// Only use every nth frame for VMAF calculation, while probing.
     ///
@@ -708,26 +766,6 @@ pub struct CliOpts {
     /// --passes.
     #[clap(long, help_heading = "Target Quality")]
     pub probe_slow: bool,
-
-    /// Lower bound for target quality Q-search early exit
-    ///
-    /// If min_q is tested and the probe's VMAF score is lower than
-    /// target_quality, the Q-search early exits and min_q is used for the
-    /// chunk.
-    ///
-    /// If not specified, the default value is used (chosen per encoder).
-    #[clap(long, help_heading = "Target Quality")]
-    pub min_q: Option<u32>,
-
-    /// Upper bound for target quality Q-search early exit
-    ///
-    /// If max_q is tested and the probe's VMAF score is higher than
-    /// target_quality, the Q-search early exits and max_q is used for the
-    /// chunk.
-    ///
-    /// If not specified, the default value is used (chosen per encoder).
-    #[clap(long, help_heading = "Target Quality")]
-    pub max_q: Option<u32>,
 
     #[rustfmt::skip]
     /// VMAF calculation features for target quality probing
@@ -780,9 +818,12 @@ impl CliOpts {
     ) -> anyhow::Result<Option<TargetQuality>> {
         self.target_quality
             .map(|tq| {
-                let (min, max) = self.encoder.get_default_cq_range();
-                let min_q = self.min_q.unwrap_or(min as u32);
-                let max_q = self.max_q.unwrap_or(max as u32);
+                let (default_min, default_max) = self.encoder.get_default_cq_range();
+                let (min_q, max_q) = if let Some((min, max)) = self.qp_range {
+                    (min, max)
+                } else {
+                    (default_min as u32, default_max as u32)
+                };
 
                 let probing_statistic = match self.probing_stat.to_lowercase().as_str() {
                     "auto" => ProbingStatistic {
@@ -891,9 +932,10 @@ impl CliOpts {
                     model: self.vmaf_path.clone(),
                     probes: self.probes,
                     target: tq,
-                    metric: self.target_metric,
+                    interp_method: self.interp_method,
                     min_q,
                     max_q,
+                    metric: self.target_metric,
                     encoder: self.encoder,
                     pix_format: output_pix_format,
                     temp: temp_dir.clone(),
@@ -971,6 +1013,9 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 
     let mut valid_args: Vec<EncodeArgs> = Vec::with_capacity(inputs.len());
 
+    // Don't hard error, we can proceed if Vapoursynth isn't available
+    let vapoursynth_plugins = get_vapoursynth_plugins().ok();
+
     for input in inputs {
         let temp = if let Some(path) = args.temp.as_ref() {
             path.to_str().unwrap().to_owned()
@@ -978,8 +1023,11 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             format!(".{}", hash_path(input.as_path()))
         };
 
-        let chunk_method =
-            args.chunk_method.unwrap_or_else(vapoursynth::best_available_chunk_method);
+        let chunk_method = args.chunk_method.unwrap_or_else(|| {
+            vapoursynth_plugins
+                .map(|p| p.best_available_chunk_method())
+                .unwrap_or(ChunkMethod::Hybrid)
+        });
         let scaler = {
             let mut scaler = args.scaler.to_string().clone();
             let mut scaler_ext =
@@ -1022,26 +1070,9 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             output_pix_format.format,
         )?;
 
+        let clip_info = input.clip_info()?;
         // TODO make an actual constructor for this
         let arg = EncodeArgs {
-            log_file: if let Some(log_file) = args.log_file.as_ref() {
-                let log_path = Path::new(log_file);
-                if log_path.starts_with("/") || log_path.is_absolute() {
-                    Err(anyhow!("Log file path must be relative"))?
-                }
-                let absolute_path = std::path::absolute(log_path).unwrap();
-                let log_path = absolute_path
-                    .strip_prefix(std::env::current_dir().unwrap())
-                    .unwrap()
-                    .strip_prefix("logs")
-                    .unwrap_or(
-                        absolute_path.strip_prefix(std::env::current_dir().unwrap()).unwrap(),
-                    );
-                log_path.to_path_buf()
-            } else {
-                Path::new("av1an.log").to_owned()
-            },
-            log_level: args.log_level,
             ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
                 shlex::split(args)
                     .ok_or_else(|| anyhow!("Failed to split ffmpeg filter arguments"))?
@@ -1092,9 +1123,8 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 Some(0) => None,
                 Some(x) => Some(x),
                 // Make sure it's at least 10 seconds, unless specified by user
-                None => match input.frame_rate() {
-                    Ok(fps) => Some((fps.to_f64().unwrap() * args.extra_split_sec) as usize),
-                    Err(_) => Some(240_usize),
+                None => {
+                    Some((clip_info.frame_rate.to_f64().unwrap() * args.extra_split_sec) as usize)
                 },
             },
             photon_noise: args.photon_noise.and_then(|arg| if arg == 0 { None } else { Some(arg) }),
@@ -1109,18 +1139,14 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                     Input::Video {
                         path, ..
                     } => InputPixelFormat::FFmpeg {
-                        format: ffmpeg::get_pixel_format(path.as_ref()).with_context(|| {
+                        format: clip_info.format_info.as_pixel_format().with_context(|| {
                             format!("FFmpeg failed to get pixel format for input video {path:?}")
                         })?,
                     },
                     Input::VapourSynth {
                         path, ..
                     } => InputPixelFormat::VapourSynth {
-                        bit_depth: crate::vapoursynth::bit_depth(
-                            path.as_ref(),
-                            input.as_vspipe_args_map()?,
-                        )
-                        .with_context(|| {
+                        bit_depth: clip_info.format_info.as_bit_depth().with_context(|| {
                             format!("VapourSynth failed to get bit depth for input video {path:?}")
                         })?,
                     },
@@ -1152,6 +1178,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             zones: args.zones.clone(),
             scaler,
             ignore_frame_mismatch: args.ignore_frame_mismatch,
+            vapoursynth_plugins,
         };
 
         if !args.overwrite {
@@ -1191,6 +1218,8 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 #[instrument]
 pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
+    let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
+    let log_level = cli_options.log_level;
     let args = parse_cli(cli_options)?;
     let first_arg = args.first().unwrap();
 
@@ -1200,9 +1229,9 @@ pub fn run() -> anyhow::Result<()> {
             Verbosity::Normal => LevelFilter::INFO,
             Verbosity::Verbose => LevelFilter::INFO,
         },
-        first_arg.log_file.clone(),
-        first_arg.log_level,
-    );
+        log_file,
+        log_level,
+    )?;
 
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;
@@ -1223,4 +1252,63 @@ fn parse_comma_separated_numbers(string: &str) -> anyhow::Result<Vec<usize>> {
         result.push(val.trim().parse()?);
     }
     Ok(result)
+}
+
+fn parse_target_qp_range(s: &str) -> Result<(f64, f64), String> {
+    if let Some((min_str, max_str)) = s.split_once('-') {
+        let min = min_str.parse::<f64>().map_err(|_| "Invalid range format")?;
+        let max = max_str.parse::<f64>().map_err(|_| "Invalid range format")?;
+        if min >= max {
+            return Err("Min must be < max".to_string());
+        }
+        Ok((min, max))
+    } else {
+        let val = s.parse::<f64>().map_err(|_| "Invalid number")?;
+        let tol = val * 0.01;
+        Ok((val - tol, val + tol))
+    }
+}
+
+fn parse_qp_range(s: &str) -> Result<(u32, u32), String> {
+    if let Some((min_str, max_str)) = s.split_once('-') {
+        let min = min_str.parse::<u32>().map_err(|_| "Invalid range format")?;
+        let max = max_str.parse::<u32>().map_err(|_| "Invalid range format")?;
+        if min >= max {
+            return Err("Min must be < max".to_string());
+        }
+        Ok((min, max))
+    } else {
+        Err("Quality range must be specified as min-max (e.g., 10-50)".to_string())
+    }
+}
+
+pub fn parse_interp_method(s: &str) -> anyhow::Result<(InterpolationMethod, InterpolationMethod)> {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 2 {
+        return Err(anyhow::anyhow!(
+            "Invalid format. Use: --interp-method method4-method5"
+        ));
+    }
+
+    let method4 = parts[0]
+        .parse::<InterpolationMethod>()
+        .map_err(|_| anyhow::anyhow!("Invalid 4th round method: {}", parts[0]))?;
+    let method5 = parts[1]
+        .parse::<InterpolationMethod>()
+        .map_err(|_| anyhow::anyhow!("Invalid 5th round method: {}", parts[1]))?;
+
+    // Validate methods for correct round
+    match method4 {
+        InterpolationMethod::Linear
+        | InterpolationMethod::Quadratic
+        | InterpolationMethod::Natural => {},
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Method '{}' not available for 4th round",
+                parts[0]
+            ))
+        },
+    }
+
+    Ok((method4, method5))
 }

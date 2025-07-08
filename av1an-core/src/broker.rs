@@ -221,13 +221,18 @@ impl Broker<'_> {
             update_mp_msg(
                 worker_id,
                 format!(
-                    "Targeting {metric} Quality: {target}",
+                    "Targeting {metric} Quality: {min}-{max}",
                     metric = tq.metric,
-                    target = tq.target
+                    min = tq.target.0,
+                    max = tq.target.1
                 ),
             );
             for r#try in 1..=self.project.args.max_tries {
-                let res = tq.per_shot_target_quality_routine(chunk, Some(worker_id));
+                let res = tq.per_shot_target_quality_routine(
+                    chunk,
+                    Some(worker_id),
+                    self.project.args.vapoursynth_plugins.as_ref(),
+                );
                 if let Err(e) = res {
                     if r#try >= self.project.args.max_tries {
                         error!(

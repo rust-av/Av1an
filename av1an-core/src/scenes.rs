@@ -3,7 +3,7 @@ mod tests;
 
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{read_to_string, File},
     io::Write,
     path::{Path, PathBuf},
     process::{exit, Command},
@@ -32,6 +32,7 @@ use crate::{
     split::extra_splits,
     EncodeArgs,
     Encoder,
+    Input,
     SplitMethod,
 };
 
@@ -365,16 +366,11 @@ impl SceneFactory {
     /// This runs scene detection and populates a list of scenes into the
     /// factory. This function must be called before getting the list of scenes
     /// or writing to the file.
-    pub fn compute_scenes(
-        &mut self,
-        args: &EncodeArgs,
-        vs_script: &Option<PathBuf>,
-        zones: &[Scene],
-    ) -> anyhow::Result<()> {
+    pub fn compute_scenes(&mut self, args: &EncodeArgs, zones: &[Scene]) -> anyhow::Result<()> {
         // We should only be calling this when scenes haven't been created yet
         debug_assert!(self.data.scenes.is_none());
 
-        let frames = args.input.frames(vs_script.clone())?;
+        let frames = args.input.clip_info()?.num_frames;
 
         let (mut scenes, frames) = match args.split_method {
             SplitMethod::AvScenechange => av_scenechange_detect(
@@ -414,7 +410,7 @@ impl SceneFactory {
                         zone_overrides: None,
                     });
                 }
-                (scenes, args.input.frames(vs_script.clone())?)
+                (scenes, frames)
             },
         };
 
@@ -458,6 +454,7 @@ impl SceneFactory {
                  frames): {scenes_after} scene(s)]"
             );
         } else {
+            self.data.split_scenes = self.data.scenes.clone();
             info!("scenecut: found {scenes_before} scene(s)");
         }
 

@@ -4,10 +4,10 @@ use std::{
     thread,
 };
 
-use ansi_term::Style;
 use anyhow::bail;
 use av_decoders::{DecoderError, DecoderImpl, FfmpegDecoder, VapoursynthDecoder, Y4mDecoder};
 use av_scenechange::{detect_scene_changes, Decoder, DetectionOptions, SceneDetectionSpeed};
+use colored::*;
 use ffmpeg::format::Pixel;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
@@ -41,7 +41,7 @@ pub fn av_scenechange_detect(
 ) -> anyhow::Result<(Vec<Scene>, usize)> {
     if verbosity != Verbosity::Quiet {
         if std::io::stderr().is_terminal() {
-            eprintln!("{}", Style::default().bold().paint("Scene detection"));
+            eprintln!("{}", "Scene detection".bold());
         } else {
             eprintln!("Scene detection");
         }
@@ -50,7 +50,7 @@ pub fn av_scenechange_detect(
 
     let input2 = input.clone();
     let frame_thread = thread::spawn(move || {
-        let frames = input2.frames(None).unwrap();
+        let frames = input2.clip_info().unwrap().num_frames;
         if verbosity != Verbosity::Quiet {
             progress_bar::convert_to_progress(0);
             progress_bar::set_len(frames as u64);
@@ -58,7 +58,6 @@ pub fn av_scenechange_detect(
         frames
     });
 
-    let frames = frame_thread.join().unwrap();
     let scenes = scene_detect(
         input,
         encoder,
@@ -77,6 +76,7 @@ pub fn av_scenechange_detect(
         sc_downscale_height,
         zones,
     )?;
+    let frames = frame_thread.join().unwrap();
 
     progress_bar::finish_progress_bar();
 
@@ -238,10 +238,11 @@ fn build_decoder(
         (None, None) => smallvec![],
     };
 
+    let clip_info = input.clip_info()?;
     let decoder = if input.is_vapoursynth() && filters.is_empty() {
         // No downscaling or format conversion for user-provided VapourSynth script
         // VSPipe is still faster than VapoursynthDecoder
-        bit_depth = crate::vapoursynth::bit_depth(input.as_path(), input.as_vspipe_args_map()?)?;
+        bit_depth = clip_info.format_info.as_bit_depth().unwrap();
         let mut command = Command::new("vspipe");
         // input path might be relative, get the absolute path
         let path = to_absolute_path(input.as_vapoursynth_path())?;
@@ -265,7 +266,7 @@ fn build_decoder(
         Decoder::from_decoder_impl(DecoderImpl::Y4m(y4m_decoder))?
     } else if input.is_vapoursynth_script() {
         // Downscaling may be necessary and VapoursynthDecoder is the most reliable
-
+        bit_depth = clip_info.format_info.as_bit_depth().unwrap();
         let mut vs_decoder = if input.is_vapoursynth() {
             // Must use from_file in order to set the CWD to the
             // directory of the user-provided VapourSynth script
@@ -276,39 +277,23 @@ fn build_decoder(
         };
         vs_decoder.set_variables(input.as_vspipe_args_hashmap()?)?;
 
-        if let Some(height) = sc_downscale_height {
+        let (input_width, input_height) = clip_info.resolution;
+        if sc_downscale_height.is_some_and(|downscale_height| downscale_height < input_height) {
+            let downscale_width = (input_width as f64
+                * (downscale_height as f64 / input_height as f64))
+                .round() as u32;
             // Register a node modifier callback to perform downscaling
             vs_decoder.register_node_modifier(Box::new(move |core, node| {
                 // Node is expected to exist
                 let node = node.ok_or_else(|| DecoderError::VapoursynthInternalError {
                     cause: "No output node".to_string(),
                 })?;
-                let info = node.info();
-                let resolution = {
-                    match info.resolution {
-                        Property::Variable => {
-                            return Err(DecoderError::VariableResolution);
-                        },
-                        Property::Constant(x) => x,
-                    }
-                };
-                let original_width = resolution.width;
-                let original_height = resolution.height;
-
-                if original_height <= height {
-                    // Specified downscale height is less than or equal
-                    // to original height, return the original node unmodified
-                    return Ok(node);
-                }
-
-                let width = (original_width as f64 * (height as f64 / original_height as f64))
-                    .round() as u32;
 
                 let resized_node = resize_node(
                     core,
                     &node,
-                    Some((width / 2) * 2), // Ensure width is divisible by 2
-                    Some(height as u32),
+                    Some((downscale_width / 2) * 2), // Ensure width is divisible by 2
+                    Some(downscale_height as u32),
                     None,
                     None,
                 )
@@ -327,13 +312,12 @@ fn build_decoder(
     } else {
         // FFmpeg piped into Y4mDecoder
         let path = input.as_path();
-        let input_pix_format = crate::ffmpeg::get_pixel_format(path)
+        let input_pix_format = clip_info
+            .format_info
+            .as_pixel_format()
             .unwrap_or_else(|e| panic!("FFmpeg failed to get pixel format for input video: {e:?}"));
-
         bit_depth = encoder.get_format_bit_depth(sc_pix_format.unwrap_or(input_pix_format))?;
-        let decoder_impl = if filters.is_empty() {
-            DecoderImpl::Ffmpeg(FfmpegDecoder::new(path)?)
-        } else {
+        let decoder_impl = if !filters.is_empty() {
             let stdout = Command::new("ffmpeg")
                 .args(["-r", "1", "-i"])
                 .arg(path)
@@ -344,13 +328,15 @@ fn build_decoder(
                 .stderr(Stdio::null())
                 .spawn()?
                 .stdout
-                .expect("FFmpeg failed to output");
+                .unwrap();
 
             DecoderImpl::Y4m(Y4mDecoder::new(Box::new(stdout) as Box<dyn Read>)?)
+        } else {
+            DecoderImpl::Ffmpeg(FfmpegDecoder::new(path)?)
         };
 
         Decoder::from_decoder_impl(decoder_impl)?
     };
 
-    Ok((decoder, bit_depth))
+    Ok((decoder?, bit_depth))
 }

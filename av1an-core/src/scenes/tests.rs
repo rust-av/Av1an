@@ -12,7 +12,6 @@ fn get_test_args() -> Av1anContext {
     use crate::{
         concat::ConcatMethod,
         into_vec,
-        logging::DEFAULT_LOG_LEVEL,
         settings::{EncodeArgs, InputPixelFormat, PixelFormat},
         ChunkMethod,
         ChunkOrdering,
@@ -23,8 +22,6 @@ fn get_test_args() -> Av1anContext {
     };
 
     let args = EncodeArgs {
-        log_file:              PathBuf::new(),
-        log_level:             DEFAULT_LOG_LEVEL,
         ffmpeg_filter_args:    Vec::new(),
         temp:                  String::new(),
         force:                 false,
@@ -79,6 +76,7 @@ fn get_test_args() -> Av1anContext {
         vmaf_threads:          None,
         vmaf_filter:           None,
         probe_res:             None,
+        vapoursynth_plugins:   None,
     };
     Av1anContext {
         vs_script: None,

@@ -2,9 +2,11 @@ use std::{
     cmp::{self, Ordering},
     collections::HashSet,
     path::{Path, PathBuf},
+    str::FromStr,
     thread::available_parallelism,
 };
 
+use anyhow::bail;
 use ffmpeg::format::Pixel;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
@@ -12,6 +14,15 @@ use tracing::{debug, trace};
 use crate::{
     broker::EncoderCrash,
     chunk::Chunk,
+    interpol::{
+        akima_interpolate,
+        catmull_rom_interpolate,
+        cubic_polynomial_interpolate,
+        linear_interpolate,
+        natural_cubic_spline,
+        pchip_interpolate,
+        quadratic_interpolate,
+    },
     metrics::{
         butteraugli::ButteraugliSubMetric,
         statistics::MetricStatistics,
@@ -19,7 +30,7 @@ use crate::{
         xpsnr::{read_xpsnr_file, run_xpsnr, XPSNRSubMetric},
     },
     progress_bar::update_mp_msg,
-    vapoursynth::{measure_butteraugli, measure_ssimulacra2, measure_xpsnr},
+    vapoursynth::{measure_butteraugli, measure_ssimulacra2, measure_xpsnr, VapoursynthPlugins},
     Encoder,
     ProbingSpeed,
     ProbingStatistic,
@@ -28,7 +39,34 @@ use crate::{
     VmafFeature,
 };
 
-const SCORE_TOLERANCE: f64 = 0.01;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InterpolationMethod {
+    Linear,
+    Quadratic,
+    Natural,
+    Pchip,
+    Catmull,
+    Akima,
+    CubicPolynomial,
+}
+
+impl FromStr for InterpolationMethod {
+    type Err = ();
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "linear" => Ok(Self::Linear),
+            "quadratic" => Ok(Self::Quadratic),
+            "natural" => Ok(Self::Natural),
+            "pchip" => Ok(Self::Pchip),
+            "catmull" => Ok(Self::Catmull),
+            "akima" => Ok(Self::Akima),
+            "cubicpolynomial" | "cubic" => Ok(Self::CubicPolynomial),
+            _ => Err(()),
+        }
+    }
+}
 
 /// Maximum squared sum of normalized derivatives for PCHIP monotonicity
 /// constraint. If alpha^2 + beta^2 > 9, the derivatives are scaled down to
@@ -46,10 +84,11 @@ pub struct TargetQuality {
     pub probing_rate:          usize,
     pub probing_speed:         Option<ProbingSpeed>,
     pub probes:                u32,
-    pub target:                f64,
+    pub target:                (f64, f64),
     pub metric:                TargetMetric,
     pub min_q:                 u32,
     pub max_q:                 u32,
+    pub interp_method:         Option<(InterpolationMethod, InterpolationMethod)>,
     pub encoder:               Encoder,
     pub pix_format:            Pixel,
     pub temp:                  String,
@@ -66,6 +105,7 @@ impl TargetQuality {
         &self,
         chunk: &Chunk,
         worker_id: Option<usize>,
+        plugins: Option<&VapoursynthPlugins>,
     ) -> anyhow::Result<u32> {
         // History of probe results as quantizer-score pairs
         let mut quantizer_score_history: Vec<(u32, f64)> = vec![];
@@ -75,16 +115,17 @@ impl TargetQuality {
                 update_mp_msg(
                     worker_id,
                     format!(
-                        "Targeting {metric} Quality {target} - Testing {quantizer}",
+                        "Targeting {metric} Quality {min}-{max} - Testing {quantizer}",
                         metric = self.metric,
-                        target = self.target,
+                        min = self.target.0,
+                        max = self.target.1,
                         quantizer = next_quantizer
                     ),
                 );
             }
         };
 
-        // Initialize quantizer limits from specified minimum and maximum quantizers
+        // Initialize quantizer limits from specified range or encoder defaults
         let mut lower_quantizer_limit = self.min_q;
         let mut upper_quantizer_limit = self.max_q;
 
@@ -95,9 +136,13 @@ impl TargetQuality {
                 &quantizer_score_history,
                 match self.metric {
                     // For inverse metrics, target must be inverted for ascending comparisons
-                    TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -self.target,
+                    TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
+                        let (min, max) = self.target;
+                        (-max, -min)
+                    },
                     _ => self.target,
                 },
+                self.interp_method,
             );
 
             if let Some((quantizer, score)) = quantizer_score_history
@@ -126,7 +171,7 @@ impl TargetQuality {
             update_progress_bar(next_quantizer);
 
             let score = {
-                let value = self.probe(chunk, next_quantizer as usize)?;
+                let value = self.probe(chunk, next_quantizer as usize, plugins)?;
 
                 // Butteraugli is an inverse metric, invert score for comparisons
                 match self.metric {
@@ -134,7 +179,7 @@ impl TargetQuality {
                     _ => value,
                 }
             };
-            let score_within_tolerance = within_tolerance(
+            let score_within_range = within_range(
                 match self.metric {
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                     _ => score,
@@ -144,7 +189,7 @@ impl TargetQuality {
 
             quantizer_score_history.push((next_quantizer, score));
 
-            if score_within_tolerance || quantizer_score_history.len() >= self.probes as usize {
+            if score_within_range || quantizer_score_history.len() >= self.probes as usize {
                 log_probes(
                     &quantizer_score_history,
                     self.metric,
@@ -158,7 +203,7 @@ impl TargetQuality {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
                     },
-                    if score_within_tolerance {
+                    if score_within_range {
                         SkipProbingReason::WithinTolerance
                     } else {
                         SkipProbingReason::ProbeLimitReached
@@ -167,14 +212,16 @@ impl TargetQuality {
                 break;
             }
 
-            if score
-                > (match self.metric {
-                    TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -self.target,
-                    _ => self.target,
-                })
-            {
+            let target_range = match self.metric {
+                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
+                    (-self.target.1, -self.target.0)
+                },
+                _ => self.target,
+            };
+
+            if score > target_range.1 {
                 lower_quantizer_limit = (next_quantizer + 1).min(upper_quantizer_limit);
-            } else {
+            } else if score < target_range.0 {
                 upper_quantizer_limit = (next_quantizer - 1).max(lower_quantizer_limit);
             }
 
@@ -193,14 +240,7 @@ impl TargetQuality {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
                     },
-                    if score
-                        > (match self.metric {
-                            TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                                -self.target
-                            },
-                            _ => self.target,
-                        })
-                    {
+                    if score > target_range.1 {
                         SkipProbingReason::QuantizerTooHigh
                     } else {
                         SkipProbingReason::QuantizerTooLow
@@ -210,11 +250,11 @@ impl TargetQuality {
             }
         }
 
-        let final_quantizer_score = if let Some(highest_quantizer_score_within_tolerance) =
+        let final_quantizer_score = if let Some(highest_quantizer_score_within_range) =
             quantizer_score_history
                 .iter()
                 .filter(|(_, score)| {
-                    within_tolerance(
+                    within_range(
                         match self.metric {
                             TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                             _ => *score,
@@ -225,9 +265,10 @@ impl TargetQuality {
                 .max_by_key(|(quantizer, _)| *quantizer)
         {
             // Multiple probes within tolerance, choose the highest
-            highest_quantizer_score_within_tolerance
+            highest_quantizer_score_within_range
         } else {
             // No quantizers within tolerance, choose the quantizer closest to target
+            let target_midpoint = (self.target.0 + self.target.1) / 2.0;
             quantizer_score_history
                 .iter()
                 .min_by(|(_, score1), (_, score2)| {
@@ -239,8 +280,8 @@ impl TargetQuality {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score2,
                         _ => *score2,
                     };
-                    let difference1 = (score_1 - self.target).abs();
-                    let difference2 = (score_2 - self.target).abs();
+                    let difference1 = (score_1 - target_midpoint).abs();
+                    let difference2 = (score_2 - target_midpoint).abs();
                     difference1.partial_cmp(&difference2).unwrap_or(Ordering::Equal)
                 })
                 .unwrap()
@@ -251,7 +292,12 @@ impl TargetQuality {
         Ok(final_quantizer_score.0)
     }
 
-    fn probe(&self, chunk: &Chunk, quantizer: usize) -> anyhow::Result<f64> {
+    fn probe(
+        &self,
+        chunk: &Chunk,
+        quantizer: usize,
+        plugins: Option<&VapoursynthPlugins>,
+    ) -> anyhow::Result<f64> {
         let probe_name = self.encode_probe(chunk, quantizer)?;
 
         let aggregate_frame_scores = |scores: Vec<f64>| -> anyhow::Result<f64> {
@@ -392,29 +438,39 @@ impl TargetQuality {
                 aggregate_frame_scores(vmaf_scores)
             },
             TargetMetric::SSIMULACRA2 => {
-                let scores = measure_ssimulacra2(
-                    &chunk.input,
-                    &probe_name,
-                    (chunk.start_frame as u32, chunk.end_frame as u32),
-                    self.probe_res.as_ref(),
-                    self.probing_rate,
-                )?;
+                let scores = if let Some(plugins) = plugins {
+                    measure_ssimulacra2(
+                        &chunk.input,
+                        &probe_name,
+                        (chunk.start_frame as u32, chunk.end_frame as u32),
+                        self.probe_res.as_ref(),
+                        self.probing_rate,
+                        plugins,
+                    )?
+                } else {
+                    bail!("SSIMULACRA2 requires Vapoursynth to be installed");
+                };
 
                 aggregate_frame_scores(scores)
             },
             TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                let scores = measure_butteraugli(
-                    match self.metric {
-                        TargetMetric::ButteraugliINF => ButteraugliSubMetric::InfiniteNorm,
-                        TargetMetric::Butteraugli3 => ButteraugliSubMetric::ThreeNorm,
-                        _ => unreachable!(),
-                    },
-                    &chunk.input,
-                    &probe_name,
-                    (chunk.start_frame as u32, chunk.end_frame as u32),
-                    self.probe_res.as_ref(),
-                    self.probing_rate,
-                )?;
+                let scores = if let Some(plugins) = plugins {
+                    measure_butteraugli(
+                        match self.metric {
+                            TargetMetric::ButteraugliINF => ButteraugliSubMetric::InfiniteNorm,
+                            TargetMetric::Butteraugli3 => ButteraugliSubMetric::ThreeNorm,
+                            _ => unreachable!(),
+                        },
+                        &chunk.input,
+                        &probe_name,
+                        (chunk.start_frame as u32, chunk.end_frame as u32),
+                        self.probe_res.as_ref(),
+                        self.probing_rate,
+                        plugins,
+                    )?
+                } else {
+                    bail!("Butteraugli requires Vapoursynth to be installed");
+                };
 
                 aggregate_frame_scores(scores)
             },
@@ -425,14 +481,19 @@ impl TargetQuality {
                     XPSNRSubMetric::Weighted
                 };
                 if self.probing_rate > 1 {
-                    let scores = measure_xpsnr(
-                        submetric,
-                        &chunk.input,
-                        &probe_name,
-                        (chunk.start_frame as u32, chunk.end_frame as u32),
-                        self.probe_res.as_ref(),
-                        self.probing_rate,
-                    )?;
+                    let scores = if let Some(plugins) = plugins {
+                        measure_xpsnr(
+                            submetric,
+                            &chunk.input,
+                            &probe_name,
+                            (chunk.start_frame as u32, chunk.end_frame as u32),
+                            self.probe_res.as_ref(),
+                            self.probing_rate,
+                            plugins,
+                        )?
+                    } else {
+                        bail!("XPSNR with probing_rate > 1 requires Vapoursynth to be installed");
+                    };
 
                     aggregate_frame_scores(scores)
                 } else {
@@ -629,8 +690,9 @@ impl TargetQuality {
         &self,
         chunk: &mut Chunk,
         worker_id: Option<usize>,
+        plugins: Option<&VapoursynthPlugins>,
     ) -> anyhow::Result<()> {
-        chunk.tq_cq = Some(self.per_shot_target_quality(chunk, worker_id)?);
+        chunk.tq_cq = Some(self.per_shot_target_quality(chunk, worker_id, plugins)?);
         Ok(())
     }
 }
@@ -828,81 +890,95 @@ fn predict_quantizer(
     lower_quantizer_limit: u32,
     upper_quantizer_limit: u32,
     quantizer_score_history: &[(u32, f64)],
-    target: f64,
+    target_range: (f64, f64),
+    interp_method: Option<(InterpolationMethod, InterpolationMethod)>,
 ) -> u32 {
-    // The midpoint between the upper and lower quantizer bounds
+    let target = (target_range.0 + target_range.1) / 2.0;
     let binary_search = (lower_quantizer_limit + upper_quantizer_limit) / 2;
 
     let predicted_quantizer = match quantizer_score_history.len() {
         0..=1 => binary_search as f64,
-        _ => {
+        n => {
             // Sort history by quantizer
-            let mut sorted_quantizer_score_history = quantizer_score_history.to_vec();
-            sorted_quantizer_score_history.sort_by(|(_, score1), (_, score2)| {
-                match score1.partial_cmp(score2) {
-                    Some(ordering) => ordering,
-                    None => {
-                        trace!("Warning: NaN encountered in score comparison");
-                        std::cmp::Ordering::Equal
-                    },
-                }
+            let mut sorted = quantizer_score_history.to_vec();
+            sorted.sort_by(|(_, s1), (_, s2)| {
+                s1.partial_cmp(s2).unwrap_or(std::cmp::Ordering::Equal)
             });
 
-            match sorted_quantizer_score_history.len() {
+            let (scores, quantizers): (Vec<f64>, Vec<f64>) =
+                sorted.iter().map(|(q, s)| (*s, *q as f64)).unzip();
+
+            let result = match n {
                 2 => {
                     // 3rd probe: linear interpolation
-                    let scores =
-                        [sorted_quantizer_score_history[0].1, sorted_quantizer_score_history[1].1];
-                    let quantizers = [
-                        sorted_quantizer_score_history[0].0 as f64,
-                        sorted_quantizer_score_history[1].0 as f64,
-                    ];
-
-                    linear_interpolate(&scores, &quantizers, target).unwrap_or_else(|| {
-                        trace!("Linear interpolation failed, falling back to binary search");
-                        binary_search as f64
-                    })
+                    linear_interpolate(
+                        &[scores[0], scores[1]],
+                        &[quantizers[0], quantizers[1]],
+                        target,
+                    )
                 },
                 3 => {
-                    // 4th probe: natural cubic spline
-                    let (scores, quantizers): (Vec<f64>, Vec<f64>) =
-                        sorted_quantizer_score_history.iter().map(|(q, s)| (*s, *q as f64)).unzip();
-
-                    natural_cubic_spline(&scores, &quantizers, target).unwrap_or_else(|| {
-                        trace!("Natural cubic spline failed, falling back to binary search");
-                        binary_search as f64
-                    })
+                    // 4th probe: configurable method
+                    let method =
+                        interp_method.map(|(m, _)| m).unwrap_or(InterpolationMethod::Natural);
+                    match method {
+                        InterpolationMethod::Linear => linear_interpolate(
+                            &[scores[0], scores[1]],
+                            &[quantizers[0], quantizers[1]],
+                            target,
+                        ),
+                        InterpolationMethod::Quadratic => quadratic_interpolate(
+                            &[scores[0], scores[1], scores[2]],
+                            &[quantizers[0], quantizers[1], quantizers[2]],
+                            target,
+                        ),
+                        InterpolationMethod::Natural => {
+                            natural_cubic_spline(&scores, &quantizers, target)
+                        },
+                        _ => None,
+                    }
                 },
                 4 => {
-                    // 5th probe: PCHIP interpolation
-                    let (scores, quantizers): ([f64; 4], [f64; 4]) = {
-                        let mut s = [0.0; 4];
-                        let mut q = [0.0; 4];
-                        for (i, (quantizer, score)) in
-                            sorted_quantizer_score_history.iter().enumerate()
-                        {
-                            s[i] = *score;
-                            q[i] = *quantizer as f64;
-                        }
-                        (s, q)
-                    };
+                    // 5th probe: configurable method
+                    let method =
+                        interp_method.map(|(_, m)| m).unwrap_or(InterpolationMethod::Pchip);
+                    let s: &[f64; 4] = &scores[..4].try_into().unwrap();
+                    let q: &[f64; 4] = &quantizers[..4].try_into().unwrap();
 
-                    pchip_interpolate(&scores, &quantizers, target).unwrap_or_else(|| {
-                        trace!("PCHIP interpolation failed, falling back to binary search");
-                        binary_search as f64
-                    })
+                    match method {
+                        InterpolationMethod::Linear => {
+                            linear_interpolate(&[s[0], s[1]], &[q[0], q[1]], target)
+                        },
+                        InterpolationMethod::Quadratic => {
+                            quadratic_interpolate(&[s[0], s[1], s[2]], &[q[0], q[1], q[2]], target)
+                        },
+                        InterpolationMethod::Natural => {
+                            natural_cubic_spline(&scores, &quantizers, target)
+                        },
+                        InterpolationMethod::Pchip => pchip_interpolate(s, q, target),
+                        InterpolationMethod::Catmull => catmull_rom_interpolate(s, q, target),
+                        InterpolationMethod::Akima => akima_interpolate(s, q, target),
+                        InterpolationMethod::CubicPolynomial => {
+                            cubic_polynomial_interpolate(s, q, target)
+                        },
+                    }
                 },
-                _ => binary_search as f64, // 6+ probes: binary search only
-            }
+                _ => None,
+            };
+
+            result.unwrap_or_else(|| {
+                trace!("Interpolation failed, falling back to binary search");
+                binary_search as f64
+            })
         },
     };
 
-    // Ensure predicted quantizer is an integer and within bounds
+    // Round the result of the interpolation to the nearest integer
     (predicted_quantizer.round() as u32).clamp(lower_quantizer_limit, upper_quantizer_limit)
 }
 
-fn within_tolerance(score: f64, target: f64) -> bool {
-    (score - target).abs() / target < SCORE_TOLERANCE
+fn within_range(score: f64, target_range: (f64, f64)) -> bool {
+    score >= target_range.0 && score <= target_range.1
 }
 
 pub fn vmaf_auto_threads(workers: usize) -> usize {
@@ -931,7 +1007,7 @@ pub enum SkipProbingReason {
 pub fn log_probes(
     quantizer_score_history: &[(u32, f64)],
     metric: TargetMetric,
-    target: f64,
+    target: (f64, f64),
     frames: u32,
     probing_rate: u32,
     probing_speed: Option<ProbingSpeed>,
@@ -955,12 +1031,13 @@ pub fn log_probes(
     }
 
     debug!(
-        "chunk {name}: Target={target}, Metric={target_metric}, P-Rate={rate}, P-Speed={speed:?}, \
-         {frame_count} frames
-        TQ-Probes: {history:.2?}{suffix}
-        Final Q={target_quantizer:.0}, Final Score={target_score:.2}",
+        "chunk {name}: Target={min}-{max}, Metric={target_metric}, P-Rate={rate}, \
+         P-Speed={speed:?}, {frame_count} frames
+       TQ-Probes: {history:.2?}{suffix}
+       Final Q={target_quantizer:.0}, Final Score={target_score:.2}",
         name = chunk_name,
-        target = target,
+        min = target.0,
+        max = target.1,
         target_metric = metric,
         rate = probing_rate,
         speed = probing_speed.unwrap_or(ProbingSpeed::VeryFast),
@@ -983,131 +1060,6 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-
-    #[test]
-    fn test_linear_interpolate() {
-        // Test basic linear interpolation using real CRF/score data
-        let x = [82.502861, 87.600777]; // scores (ascending order)
-        let y = [20.0, 10.0]; // CRFs
-
-        // Test exact points
-        assert_eq!(linear_interpolate(&x, &y, 82.502861), Some(20.0));
-        assert_eq!(linear_interpolate(&x, &y, 87.600777), Some(10.0));
-
-        // Test midpoint - score 85.051819 should give CRF ~15
-        assert!((linear_interpolate(&x, &y, 85.051819).unwrap() - 15.0).abs() < 0.1);
-
-        // Test interpolation for score 84.0
-        let result = linear_interpolate(&x, &y, 84.0);
-        assert!(result.is_some());
-        assert!(result.unwrap() > 15.0 && result.unwrap() < 20.0);
-
-        let x2 = [78.737953, 89.179634]; // scores (ascending order)
-        let y2 = [15.0, 5.0]; // CRFs
-        assert!((linear_interpolate(&x2, &y2, 83.958794).unwrap() - 10.0).abs() < 0.1);
-
-        // Test non-increasing x values (should return None)
-        let x_bad = [87.600777, 82.502861]; // Not ascending
-        let y_bad = [10.0, 20.0];
-        assert_eq!(linear_interpolate(&x_bad, &y_bad, 85.0), None);
-
-        // Test equal x values (should return None)
-        let x_equal = [85.0, 85.0];
-        assert_eq!(linear_interpolate(&x_equal, &y, 85.0), None);
-    }
-
-    #[test]
-    fn test_natural_cubic_spline() {
-        // CRF 10 (84.872162), CRF 20 (78.517479), CRF 30 (72.812233)
-        let x = vec![72.812233, 78.517479, 84.872162]; // scores (ascending order)
-        let y = vec![30.0, 20.0, 10.0]; // CRFs
-
-        // Test exact points
-        assert!((natural_cubic_spline(&x, &y, 72.812233).unwrap() - 30.0).abs() < 1e-10);
-        assert!((natural_cubic_spline(&x, &y, 78.517479).unwrap() - 20.0).abs() < 1e-10);
-        assert!((natural_cubic_spline(&x, &y, 84.872162).unwrap() - 10.0).abs() < 1e-10);
-
-        // Test interpolation for score 81.0
-        let result = natural_cubic_spline(&x, &y, 81.0);
-        assert!(result.is_some());
-        assert!(result.unwrap() > 10.0 && result.unwrap() < 20.0);
-
-        // CRF 15 (84.864449), CRF 25 (80.161186), CRF 35 (72.134048)
-        let x2 = vec![72.134048, 80.161186, 84.864449]; // scores (ascending order)
-        let y2 = vec![35.0, 25.0, 15.0]; // CRFs
-
-        // Test interpolation for score 82.0
-        let result = natural_cubic_spline(&x2, &y2, 82.0);
-        assert!(result.is_some());
-        assert!(result.unwrap() > 15.0 && result.unwrap() < 25.0);
-
-        // CRF 20 (83.0155), CRF 30 (77.7812), CRF 40 (67.3447)
-        let x3 = vec![67.3447, 77.7812, 83.0155]; // scores (ascending order)
-        let y3 = vec![40.0, 30.0, 20.0]; // CRFs
-
-        // Test interpolation for score 80.0
-        let result = natural_cubic_spline(&x3, &y3, 80.0);
-        assert!(result.is_some());
-        assert!(result.unwrap() > 20.0 && result.unwrap() < 30.0);
-
-        // Test with non-increasing x values (should return None)
-        let x_bad = vec![84.872162, 78.517479, 80.0]; // Not properly ordered
-        let y_bad = vec![10.0, 20.0, 25.0];
-        assert_eq!(natural_cubic_spline(&x_bad, &y_bad, 79.0), None);
-
-        // Test with too few points (should return None)
-        let x_short = vec![87.0715, 90.0064];
-        let y_short = vec![20.0, 10.0];
-        assert_eq!(natural_cubic_spline(&x_short, &y_short, 88.0), None);
-
-        // Test with mismatched lengths (should return None)
-        let x_mismatch = vec![83.8005, 87.0715, 90.0064];
-        let y_mismatch = vec![30.0, 20.0];
-        assert_eq!(natural_cubic_spline(&x_mismatch, &y_mismatch, 85.0), None);
-    }
-
-    #[test]
-    fn test_pchip_interpolate() {
-        // Test with monotonic data
-        // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
-        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
-        let y = [35.0, 25.0, 15.0, 5.0]; // CRFs
-
-        // Test exact points
-        assert!((pchip_interpolate(&x, &y, 72.9709).unwrap() - 35.0).abs() < 1e-10);
-        assert!((pchip_interpolate(&x, &y, 80.5088).unwrap() - 25.0).abs() < 1e-10);
-        assert!((pchip_interpolate(&x, &y, 85.7452).unwrap() - 15.0).abs() < 1e-10);
-        assert!((pchip_interpolate(&x, &y, 92.4354).unwrap() - 5.0).abs() < 1e-10);
-
-        // Test interpolation for score 89.0
-        let result = pchip_interpolate(&x, &y, 89.0);
-        assert!(result.is_some());
-        assert!(result.unwrap() > 5.0 && result.unwrap() < 15.0);
-
-        // Test with data that has varying slopes
-        // CRF 40 (66.699707), CRF 45 (57.916622), CRF 50 (50.740498), CRF 55
-        // (37.303120)
-        let x2 = [37.303120, 50.740498, 57.916622, 66.699707]; // scores (ascending order)
-        let y2 = [55.0, 50.0, 45.0, 40.0]; // CRFs
-
-        // Should handle the steep changes in score
-        let result = pchip_interpolate(&x2, &y2, 54.0);
-        assert!(result.is_some());
-        assert!(result.unwrap() > 45.0 && result.unwrap() < 50.0);
-
-        // Test with non-increasing x values (should return None)
-        let x_bad = [72.9709, 88.0, 85.7452, 92.4354]; // Not properly ordered
-        let y_bad = [35.0, 12.0, 15.0, 5.0];
-        assert_eq!(pchip_interpolate(&x_bad, &y_bad, 87.0), None);
-
-        // Test edge case with nearly flat region
-        // CRF 63-66 have very similar scores
-        let x_flat = [4.944567, 5.270722, 5.345044, 5.575547]; // scores (ascending order)
-        let y_flat = [65.0, 66.0, 64.0, 63.0]; // CRFs
-        let result = pchip_interpolate(&x_flat, &y_flat, 5.1);
-        assert!(result.is_some());
-        // Should handle the nearly flat region gracefully
-    }
 
     // Full algorithm simulation tests
     fn get_score_map(case: usize) -> HashMap<u32, f64> {
@@ -1142,10 +1094,10 @@ mod tests {
         let mut history = vec![];
         let mut lo = 1u32;
         let mut hi = 70u32;
-        let target = 80.0;
+        let target_range = (79.5, 80.5);
 
         for _ in 1..=10 {
-            let next_quantizer = predict_quantizer(lo, hi, &history, target);
+            let next_quantizer = predict_quantizer(lo, hi, &history, target_range, None);
 
             // Check if this quantizer was already probed
             if let Some((_quantizer, _score)) =
@@ -1157,14 +1109,14 @@ mod tests {
             if let Some(&score) = scores.get(&next_quantizer) {
                 history.push((next_quantizer, score));
 
-                if within_tolerance(score, target) {
+                if within_range(score, target_range) {
                     break;
                 }
 
-                if score > target {
-                    lo = lo.max(next_quantizer + 1);
-                } else {
-                    hi = hi.min(next_quantizer.saturating_sub(1));
+                if score > target_range.1 {
+                    lo = (next_quantizer + 1).min(hi);
+                } else if score < target_range.0 {
+                    hi = (next_quantizer - 1).max(lo);
                 }
             } else {
                 break;
@@ -1179,7 +1131,7 @@ mod tests {
         for case in 1..=6 {
             let result = run_av1an_simulation(case);
             assert!(!result.is_empty());
-            assert!(within_tolerance(result.last().unwrap().1, 80.0));
+            assert!(within_range(result.last().unwrap().1, (79.5, 80.5)));
         }
     }
 }
