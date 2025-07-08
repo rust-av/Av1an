@@ -1231,8 +1231,6 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 #[instrument]
 pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
-    let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
-    let log_level = cli_options.log_level;
 
     let completions = cli_options.completions;
     if let Some(shell) = completions {
@@ -1240,6 +1238,8 @@ pub fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
+    let log_level = cli_options.log_level;
     let args = parse_cli(cli_options)?;
     let first_arg = args.first().unwrap();
 
@@ -1252,8 +1252,6 @@ pub fn run() -> anyhow::Result<()> {
         log_file,
         log_level,
     )?;
-
-
 
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;
