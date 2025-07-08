@@ -34,7 +34,8 @@ use av1an_core::{
     Verbosity,
     VmafFeature,
 };
-use clap::{value_parser, Parser};
+use clap::{value_parser, CommandFactory, Parser};
+use clap_complete::generate;
 use num_traits::cast::ToPrimitive;
 use once_cell::sync::OnceCell;
 use path_abs::{PathAbs, PathInfo};
@@ -222,6 +223,10 @@ pub struct CliOpts {
     #[clap(long, default_value_t = DEFAULT_LOG_LEVEL, ignore_case = true)]
     // "off" is also an allowed value for LevelFilter but we just disable the user from setting it
     pub log_level: LevelFilter,
+
+    /// Generate shell completions for the specified shell and exit
+    #[clap(long, conflicts_with = "input", value_name = "SHELL")]
+    pub completions: Option<clap_complete::Shell>,
 
     /// Resume previous session from temporary directory
     #[clap(short, long)]
@@ -1228,6 +1233,13 @@ pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
     let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
     let log_level = cli_options.log_level;
+
+    let completions = cli_options.completions;
+    if let Some(shell) = completions {
+        generate(shell, &mut CliOpts::command(), "av1an", &mut io::stdout());
+        return Ok(());
+    }
+
     let args = parse_cli(cli_options)?;
     let first_arg = args.first().unwrap();
 
@@ -1240,6 +1252,8 @@ pub fn run() -> anyhow::Result<()> {
         log_file,
         log_level,
     )?;
+
+
 
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;
