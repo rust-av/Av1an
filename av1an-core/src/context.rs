@@ -855,7 +855,7 @@ impl Av1anContext {
             input: Input::Video {
                 path:         src_path.to_path_buf(),
                 temp:         self.args.temp.clone(),
-                chunk_method: ChunkMethod::Select,
+                chunk_method: format!("{:?}", ChunkMethod::Select),
             },
             source_cmd: ffmpeg_gen_cmd,
             output_ext: output_ext.to_owned(),
@@ -1107,7 +1107,7 @@ impl Av1anContext {
             input: Input::Video {
                 path:         PathBuf::from(file),
                 temp:         self.args.temp.clone(),
-                chunk_method: ChunkMethod::Segment,
+                chunk_method: format!("{:?}", ChunkMethod::Segment),
             },
             source_cmd: ffmpeg_gen_cmd,
             output_ext: output_ext.to_owned(),

@@ -48,7 +48,7 @@ fn get_test_args() -> Av1anContext {
         input:                 Input::Video {
             path:         PathBuf::new(),
             temp:         String::new(),
-            chunk_method: ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         output_pix_format:     PixelFormat {
             format:    Pixel::YUV420P10LE,

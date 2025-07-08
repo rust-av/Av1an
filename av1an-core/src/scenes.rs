@@ -3,9 +3,9 @@ mod tests;
 
 use std::{
     collections::HashMap,
-    fs::{read_to_string, File},
+    fs::File,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::{exit, Command},
     str::FromStr,
     sync::atomic,
@@ -32,7 +32,6 @@ use crate::{
     split::extra_splits,
     EncodeArgs,
     Encoder,
-    Input,
     SplitMethod,
 };
 

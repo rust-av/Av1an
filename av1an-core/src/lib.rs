@@ -5,6 +5,7 @@ use std::{
     hash::{Hash, Hasher},
     io::Write,
     path::{Path, PathBuf},
+    str::FromStr,
     string::ToString,
     sync::atomic::{AtomicBool, AtomicUsize},
     thread::available_parallelism,
@@ -79,7 +80,8 @@ pub enum Input {
         path:         PathBuf,
         // Used to generate script_text if chunk_method is supported
         temp:         String,
-        chunk_method: ChunkMethod,
+        // Store as a string of ChunkMethod to enable hashing
+        chunk_method: String,
     },
 }
 
@@ -103,17 +105,17 @@ impl Input {
             } else {
                 let input_path = path.into();
                 Ok(Self::Video {
-                    path: input_path.clone(),
-                    temp: temporary_directory.to_owned(),
-                    chunk_method,
+                    path:         input_path.clone(),
+                    temp:         temporary_directory.to_owned(),
+                    chunk_method: format!("{chunk_method:?}"),
                 })
             }
         } else {
             let input_path = path.into();
             Ok(Self::Video {
-                path: input_path.clone(),
-                temp: temporary_directory.to_owned(),
-                chunk_method,
+                path:         input_path.clone(),
+                temp:         temporary_directory.to_owned(),
+                chunk_method: format!("{chunk_method:?}"),
             })
         }
     }
@@ -180,16 +182,20 @@ impl Input {
                 path,
                 temp,
                 chunk_method,
-            } => match chunk_method {
-                ChunkMethod::LSMASH
-                | ChunkMethod::FFMS2
-                | ChunkMethod::DGDECNV
-                | ChunkMethod::BESTSOURCE => {
-                    Ok(generate_loadscript_text(temp, path, *chunk_method)?)
-                },
-                _ => Err(anyhow::anyhow!(
-                    "Cannot generate VapourSynth script text with chunk method {chunk_method:?}"
-                )),
+            } => {
+                let chunk_method = ChunkMethod::from_str(chunk_method)?;
+                match chunk_method {
+                    ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::DGDECNV
+                    | ChunkMethod::BESTSOURCE => {
+                        Ok(generate_loadscript_text(temp, path, chunk_method)?)
+                    },
+                    _ => Err(anyhow::anyhow!(
+                        "Cannot generate VapourSynth script text with chunk method \
+                         {chunk_method:?}"
+                    )),
+                }
             },
         }
     }
@@ -205,7 +211,7 @@ impl Input {
     }
 
     #[inline]
-    pub const fn is_vapoursynth_script(&self) -> bool {
+    pub fn is_vapoursynth_script(&self) -> bool {
         match &self {
             Input::VapourSynth {
                 ..
@@ -213,7 +219,7 @@ impl Input {
             Input::Video {
                 chunk_method, ..
             } => matches!(
-                chunk_method,
+                ChunkMethod::from_str(chunk_method).unwrap(),
                 ChunkMethod::LSMASH
                     | ChunkMethod::FFMS2
                     | ChunkMethod::DGDECNV

@@ -11,7 +11,7 @@ fn test_chunk_name_1() {
         input:                 Input::Video {
             path:         "test.mkv".into(),
             temp:         "none".to_owned(),
-            chunk_method: ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),
@@ -35,7 +35,7 @@ fn test_chunk_name_10000() {
         input:                 Input::Video {
             path:         "test.mkv".into(),
             temp:         "none".to_owned(),
-            chunk_method: ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),
@@ -60,7 +60,7 @@ fn test_chunk_output() {
         input:                 Input::Video {
             path:         "test.mkv".into(),
             temp:         "d".to_owned(),
-            chunk_method: ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),
@@ -85,7 +85,7 @@ fn test_chunk_frames() {
         input:                 Input::Video {
             path:         "test.mkv".into(),
             temp:         "none".to_owned(),
-            chunk_method: ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),
@@ -112,7 +112,7 @@ fn test_apply_photon_noise_args_with_noise() -> anyhow::Result<()> {
             path:         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-files/blank_1080p.mkv"),
             temp:         temp_dir.path().to_str().unwrap().to_owned(),
-            chunk_method: ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),
@@ -142,7 +142,7 @@ fn test_apply_photon_noise_args_no_noise() -> anyhow::Result<()> {
             path:         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-files/blank_1080p.mkv"),
             temp:         temp_dir.path().to_str().unwrap().to_owned(),
-            chunk_method: crate::ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),
@@ -172,7 +172,7 @@ fn test_apply_photon_noise_args_unsupported_encoder() -> anyhow::Result<()> {
             path:         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-files/blank_1080p.mkv"),
             temp:         temp_dir.path().to_str().unwrap().to_owned(),
-            chunk_method: crate::ChunkMethod::LSMASH,
+            chunk_method: format!("{:?}", ChunkMethod::LSMASH),
         },
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),

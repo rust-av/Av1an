@@ -11,7 +11,6 @@ use colored::*;
 use ffmpeg::format::Pixel;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
-use vapoursynth::video_info::Property;
 
 use crate::{
     into_smallvec,
@@ -278,7 +277,10 @@ fn build_decoder(
         vs_decoder.set_variables(input.as_vspipe_args_hashmap()?)?;
 
         let (input_width, input_height) = clip_info.resolution;
-        if sc_downscale_height.is_some_and(|downscale_height| downscale_height < input_height) {
+        if sc_downscale_height
+            .is_some_and(|downscale_height| downscale_height < (input_height as usize))
+        {
+            let downscale_height = sc_downscale_height.unwrap();
             let downscale_width = (input_width as f64
                 * (downscale_height as f64 / input_height as f64))
                 .round() as u32;
@@ -305,10 +307,7 @@ fn build_decoder(
             }))?;
         }
 
-        let decoder = Decoder::from_decoder_impl(DecoderImpl::Vapoursynth(vs_decoder))?;
-        bit_depth = decoder.get_video_details().bit_depth;
-
-        decoder
+        Decoder::from_decoder_impl(DecoderImpl::Vapoursynth(vs_decoder))?
     } else {
         // FFmpeg piped into Y4mDecoder
         let path = input.as_path();
@@ -338,5 +337,5 @@ fn build_decoder(
         Decoder::from_decoder_impl(decoder_impl)?
     };
 
-    Ok((decoder?, bit_depth))
+    Ok((decoder, bit_depth))
 }

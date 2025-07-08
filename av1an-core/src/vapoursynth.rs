@@ -137,18 +137,19 @@ fn is_vszip_r7_or_newer(env: &Environment) -> bool {
 
 #[inline]
 pub fn get_clip_info(source: &Input, vspipe_args_map: OwnedMap) -> anyhow::Result<ClipInfo> {
+    const CONTEXT_MSG: &str = "get_clip_info";
     const OUTPUT_INDEX: i32 = 0;
 
-    let mut environment = Environment::new().context("get_clip_info")?;
+    let mut environment = Environment::new().context(CONTEXT_MSG)?;
     if environment.set_variables(&vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
     if source.is_vapoursynth() {
         environment
             .eval_file(source.as_path(), EvalFlags::SetWorkingDir)
-            .context("get_clip_info")?;
+            .context(CONTEXT_MSG)?;
     } else {
-        environment.eval_script(source.as_script_text()?).context("get_clip_info")?;
+        environment.eval_script(&source.as_script_text()?).context(CONTEXT_MSG)?;
     }
 
     #[cfg(feature = "vapoursynth_new_api")]
