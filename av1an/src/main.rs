@@ -13,7 +13,12 @@ use av1an_core::{
     hash_path,
     into_vec,
     read_in_dir,
-    vapoursynth::{get_vapoursynth_plugins, VSZipVersion},
+    vapoursynth::{
+        create_vs_file,
+        generate_loadscript_text,
+        get_vapoursynth_plugins,
+        VSZipVersion,
+    },
     Av1anContext,
     ChunkMethod,
     ChunkOrdering,
@@ -38,7 +43,7 @@ use clap::{value_parser, Parser};
 use num_traits::cast::ToPrimitive;
 use once_cell::sync::OnceCell;
 use path_abs::{PathAbs, PathInfo};
-use tracing::{instrument, level_filters::LevelFilter, warn};
+use tracing::{info, instrument, level_filters::LevelFilter, warn};
 
 use crate::logging::{init_logging, DEFAULT_LOG_LEVEL};
 
@@ -1070,6 +1075,21 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             output_pix_format.format,
         )?;
 
+        if input.is_video() && input.is_vapoursynth_script() {
+            // Clip info is cached and reused so the values need to be correct
+            // the first time. The loadscript needs to be generated along with
+            // prerequisite cache/index files and their directories.
+            let (_, cache_file_already_exists) =
+                generate_loadscript_text(&temp, input.as_path(), chunk_method)?;
+            if !cache_file_already_exists {
+                // Getting the clip info will cause VapourSynth to generate the
+                // cache file which may take a long time.
+                info!("Generating VapourSynth cache file");
+            }
+
+            create_vs_file(&temp, input.as_path(), chunk_method)?;
+        }
+
         let clip_info = input.clip_info()?;
         // TODO make an actual constructor for this
         let arg = EncodeArgs {
@@ -1138,12 +1158,15 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 match &input {
                     Input::Video {
                         path, ..
-                    } => InputPixelFormat::FFmpeg {
+                    } if !input.is_vapoursynth_script() => InputPixelFormat::FFmpeg {
                         format: clip_info.format_info.as_pixel_format().with_context(|| {
                             format!("FFmpeg failed to get pixel format for input video {path:?}")
                         })?,
                     },
                     Input::VapourSynth {
+                        path, ..
+                    }
+                    | Input::Video {
                         path, ..
                     } => InputPixelFormat::VapourSynth {
                         bit_depth: clip_info.format_info.as_bit_depth().with_context(|| {
@@ -1220,11 +1243,19 @@ pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
     let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
     let log_level = cli_options.log_level;
-    let args = parse_cli(cli_options)?;
-    let first_arg = args.first().unwrap();
+    let verbosity = {
+        if cli_options.quiet {
+            Verbosity::Quiet
+        } else if cli_options.verbose {
+            Verbosity::Verbose
+        } else {
+            Verbosity::Normal
+        }
+    };
 
+    // Initialize logging before fully parsing CLI options
     init_logging(
-        match first_arg.verbosity {
+        match verbosity {
             Verbosity::Quiet => LevelFilter::WARN,
             Verbosity::Normal => LevelFilter::INFO,
             Verbosity::Verbose => LevelFilter::INFO,
@@ -1233,6 +1264,7 @@ pub fn run() -> anyhow::Result<()> {
         log_level,
     )?;
 
+    let args = parse_cli(cli_options)?;
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;
     }

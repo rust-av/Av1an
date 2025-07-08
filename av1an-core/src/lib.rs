@@ -186,7 +186,8 @@ impl Input {
                 | ChunkMethod::FFMS2
                 | ChunkMethod::DGDECNV
                 | ChunkMethod::BESTSOURCE => {
-                    Ok(generate_loadscript_text(temp, path, *chunk_method)?)
+                    let (script_text, _) = generate_loadscript_text(temp, path, *chunk_method)?;
+                    Ok(script_text)
                 },
                 _ => Err(anyhow::anyhow!(
                     "Cannot generate VapourSynth script text with chunk method {chunk_method:?}"

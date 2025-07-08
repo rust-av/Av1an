@@ -203,7 +203,11 @@ impl Av1anContext {
                 } => path.clone(),
                 Input::Video {
                     path, ..
-                } => create_vs_file(&self.args.temp, path, self.args.chunk_method)?,
+                } => {
+                    let (script_path, _) =
+                        create_vs_file(&self.args.temp, path, self.args.chunk_method)?;
+                    script_path
+                },
             });
             let variables_map = self.args.input.as_vspipe_args_hashmap()?;
             let decoder = match &self.args.input {
@@ -225,7 +229,6 @@ impl Av1anContext {
             };
             // Getting the details will evaluate the script
             // and produce the VapourSynth cache file
-            info!("Generating VapourSynth cache file");
             decoder.get_video_details();
         }
 

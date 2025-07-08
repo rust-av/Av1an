@@ -1,6 +1,6 @@
 use std::{
     collections::HashSet,
-    fs::File,
+    fs::{create_dir_all, File},
     io::Write,
     path::{absolute, Path, PathBuf},
     process::Command,
@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context};
 use av_format::rational::Rational64;
-use path_abs::PathAbs;
+use path_abs::{PathAbs, PathInfo};
 use tracing::info;
 use vapoursynth::{
     core::CoreRef,
@@ -721,13 +721,17 @@ pub fn create_vs_file(
     temp: &str,
     source: &Path,
     chunk_method: ChunkMethod,
-) -> anyhow::Result<PathBuf> {
-    let load_script_text = generate_loadscript_text(temp, source, chunk_method)?;
+) -> anyhow::Result<(PathBuf, bool)> {
+    let (load_script_text, cache_file_already_exists) =
+        generate_loadscript_text(temp, source, chunk_method)?;
+    // Ensure the temp folder exists
+    let temp: &Path = temp.as_ref();
+    let split_folder = temp.join("split");
+    create_dir_all(&split_folder)?;
 
     if chunk_method == ChunkMethod::DGDECNV {
         let absolute_source = to_absolute_path(source)?;
-        let temp: &Path = temp.as_ref();
-        let dgindexnv_output = temp.join("split").join("index.dgi");
+        let dgindexnv_output = split_folder.join("index.dgi");
 
         if !dgindexnv_output.exists() {
             info!("Indexing input with DGDecNV");
@@ -743,13 +747,12 @@ pub fn create_vs_file(
         }
     }
 
-    let temp: &Path = temp.as_ref();
     let load_script_path = temp.join("split").join("loadscript.vpy");
     let mut load_script = File::create(&load_script_path)?;
 
     load_script.write_all(load_script_text.as_bytes())?;
 
-    Ok(load_script_path)
+    Ok((load_script_path, cache_file_already_exists))
 }
 
 #[inline]
@@ -757,7 +760,7 @@ pub fn generate_loadscript_text(
     temp: &str,
     source: &Path,
     chunk_method: ChunkMethod,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, bool)> {
     let temp: &Path = temp.as_ref();
     let source = to_absolute_path(source)?;
 
@@ -808,7 +811,12 @@ pub fn generate_loadscript_text(
             &format!("cache_file = {cache_file:?}"),
         );
 
-    Ok(load_script_text)
+    let cache_file_already_exists = match chunk_method {
+        ChunkMethod::DGDECNV => dgindex_path.exists(),
+        _ => cache_file.exists(),
+    };
+
+    Ok((load_script_text, cache_file_already_exists))
 }
 
 #[inline]
