@@ -63,7 +63,8 @@ pub enum Input {
         path:        PathBuf,
         vspipe_args: Vec<String>,
         // Must be stored in memory at initialization instead of generating
-        // on demand in order to reduce thrashing disk with frequent reads
+        // on demand in order to reduce thrashing disk with frequent reads from Target Quality
+        // probing
         script_text: String,
     },
     Video {

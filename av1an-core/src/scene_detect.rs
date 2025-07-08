@@ -17,6 +17,7 @@ use crate::{
     into_smallvec,
     progress_bar,
     scenes::Scene,
+    util::to_absolute_path,
     vapoursynth::resize_node,
     Encoder,
     Input,
@@ -237,16 +238,51 @@ fn build_decoder(
         (None, None) => smallvec![],
     };
 
-    let decoder = if input.is_vapoursynth_script() {
-        let script_text = input.as_script_text()?;
-        let arguments_map = input.as_vspipe_args_hashmap()?;
+    let decoder = if input.is_vapoursynth() && filters.is_empty() {
+        // No downscaling or format conversion for user-provided VapourSynth script
+        // VSPipe is still faster than VapoursynthDecoder
+        bit_depth = crate::vapoursynth::bit_depth(input.as_path(), input.as_vspipe_args_map()?)?;
+        let mut command = Command::new("vspipe");
+        // input path might be relative, get the absolute path
+        let path = to_absolute_path(input.as_vapoursynth_path())?;
+        command
+            // Set the CWD to the directory of the user-provided VapourSynth script
+            .current_dir(path.parent().unwrap())
+            .arg("-c")
+            .arg("y4m")
+            .arg(path)
+            .arg("-")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        // Append vspipe python arguments to the environment if there are any
+        for arg in input.as_vspipe_args_vec()? {
+            command.args(["-a", &arg]);
+        }
 
-        let mut vs_decoder = VapoursynthDecoder::from_script(&script_text)?;
-        vs_decoder.set_variables(arguments_map)?;
+        let y4m_decoder =
+            Y4mDecoder::new(Box::new(command.spawn()?.stdout.unwrap()) as Box<dyn Read>)?;
+        Decoder::from_decoder_impl(DecoderImpl::Y4m(y4m_decoder))?
+    } else if input.is_vapoursynth_script() {
+        // Downscaling may be necessary and VapoursynthDecoder is the most reliable
+
+        let mut vs_decoder = if input.is_vapoursynth() {
+            // Must use from_file in order to set the CWD to the
+            // directory of the user-provided VapourSynth script
+            VapoursynthDecoder::from_file(input.as_vapoursynth_path())?
+        } else {
+            // Loadscript text generated in memory, CWD is inherited
+            VapoursynthDecoder::from_script(&input.as_script_text()?)?
+        };
+        vs_decoder.set_variables(input.as_vspipe_args_hashmap()?)?;
 
         if let Some(height) = sc_downscale_height {
             // Register a node modifier callback to perform downscaling
             vs_decoder.register_node_modifier(Box::new(move |core, node| {
+                // Node is expected to exist
+                let node = node.ok_or_else(|| DecoderError::VapoursynthInternalError {
+                    cause: "No output node".to_string(),
+                })?;
                 let info = node.info();
                 let resolution = {
                     match info.resolution {
@@ -289,6 +325,7 @@ fn build_decoder(
 
         decoder
     } else {
+        // FFmpeg piped into Y4mDecoder
         let path = input.as_path();
         let input_pix_format = crate::ffmpeg::get_pixel_format(path)
             .unwrap_or_else(|e| panic!("FFmpeg failed to get pixel format for input video: {e:?}"));

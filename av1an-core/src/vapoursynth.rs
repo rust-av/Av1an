@@ -991,7 +991,8 @@ pub fn measure_butteraugli(
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
     environment.set_variables(&args)?;
-    environment.eval_script(&source.as_script_text()?)?;
+    environment.eval_file(source.as_path(), EvalFlags::SetWorkingDir)?;
+    // environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -1026,7 +1027,8 @@ pub fn measure_ssimulacra2(
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
     environment.set_variables(&args)?;
-    environment.eval_script(&source.as_script_text()?)?;
+    environment.eval_file(source.as_path(), EvalFlags::SetWorkingDir)?;
+    // environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -1061,7 +1063,8 @@ pub fn measure_xpsnr(
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
     environment.set_variables(&args)?;
-    environment.eval_script(&source.as_script_text()?)?;
+    environment.eval_file(source.as_path(), EvalFlags::SetWorkingDir)?;
+    // environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;

@@ -19,6 +19,7 @@ use std::{
 use ansi_term::{Color, Style};
 use anyhow::Context;
 use av1_grain::TransferFunction;
+use av_decoders::VapoursynthDecoder;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
 use rand::{prelude::SliceRandom, rng};
@@ -204,11 +205,26 @@ impl Av1anContext {
                     path, ..
                 } => create_vs_file(&self.args.temp, path, self.args.chunk_method)?,
             });
-            let script = self.args.input.as_script_text()?;
             let variables_map = self.args.input.as_vspipe_args_hashmap()?;
-            let decoder = av_scenechange::Decoder::from_script(&script, Some(variables_map))?;
-            // Getting the details will evaluate the script and produce the VapourSynth
-            // cache file
+            let decoder = match &self.args.input {
+                Input::VapourSynth {
+                    path, ..
+                } => {
+                    let mut dec = VapoursynthDecoder::from_file(path)?;
+                    dec.set_variables(variables_map)?;
+                    av_scenechange::Decoder::from_decoder_impl(
+                        av_decoders::DecoderImpl::Vapoursynth(dec),
+                    )?
+                },
+                Input::Video {
+                    ..
+                } => av_scenechange::Decoder::from_script(
+                    &self.args.input.as_script_text()?,
+                    Some(variables_map),
+                )?,
+            };
+            // Getting the details will evaluate the script
+            // and produce the VapourSynth cache file
             info!("Generating VapourSynth cache file");
             decoder.get_video_details();
         }
