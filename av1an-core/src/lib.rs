@@ -5,7 +5,6 @@ use std::{
     hash::{Hash, Hasher},
     io::Write,
     path::{Path, PathBuf},
-    str::FromStr,
     string::ToString,
     sync::atomic::{AtomicBool, AtomicUsize},
     thread::available_parallelism,
@@ -81,7 +80,7 @@ pub enum Input {
         // Used to generate script_text if chunk_method is supported
         temp:         String,
         // Store as a string of ChunkMethod to enable hashing
-        chunk_method: String,
+        chunk_method: ChunkMethod,
     },
 }
 
@@ -105,17 +104,17 @@ impl Input {
             } else {
                 let input_path = path.into();
                 Ok(Self::Video {
-                    path:         input_path.clone(),
-                    temp:         temporary_directory.to_owned(),
-                    chunk_method: format!("{chunk_method:?}"),
+                    path: input_path.clone(),
+                    temp: temporary_directory.to_owned(),
+                    chunk_method,
                 })
             }
         } else {
             let input_path = path.into();
             Ok(Self::Video {
-                path:         input_path.clone(),
-                temp:         temporary_directory.to_owned(),
-                chunk_method: format!("{chunk_method:?}"),
+                path: input_path.clone(),
+                temp: temporary_directory.to_owned(),
+                chunk_method,
             })
         }
     }
@@ -182,20 +181,16 @@ impl Input {
                 path,
                 temp,
                 chunk_method,
-            } => {
-                let chunk_method = ChunkMethod::from_str(chunk_method)?;
-                match chunk_method {
-                    ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::DGDECNV
-                    | ChunkMethod::BESTSOURCE => {
-                        Ok(generate_loadscript_text(temp, path, chunk_method)?)
-                    },
-                    _ => Err(anyhow::anyhow!(
-                        "Cannot generate VapourSynth script text with chunk method \
-                         {chunk_method:?}"
-                    )),
-                }
+            } => match chunk_method {
+                ChunkMethod::LSMASH
+                | ChunkMethod::FFMS2
+                | ChunkMethod::DGDECNV
+                | ChunkMethod::BESTSOURCE => {
+                    Ok(generate_loadscript_text(temp, path, *chunk_method)?)
+                },
+                _ => Err(anyhow::anyhow!(
+                    "Cannot generate VapourSynth script text with chunk method {chunk_method:?}"
+                )),
             },
         }
     }
@@ -219,7 +214,7 @@ impl Input {
             Input::Video {
                 chunk_method, ..
             } => matches!(
-                ChunkMethod::from_str(chunk_method).unwrap(),
+                chunk_method,
                 ChunkMethod::LSMASH
                     | ChunkMethod::FFMS2
                     | ChunkMethod::DGDECNV
@@ -372,7 +367,19 @@ pub enum ScenecutMethod {
     Standard,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Debug, EnumString, IntoStaticStr)]
+#[derive(
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Serialize,
+    Deserialize,
+    Debug,
+    EnumString,
+    IntoStaticStr,
+    Display,
+    Hash,
+)]
 pub enum ChunkMethod {
     #[strum(serialize = "select")]
     Select,
