@@ -4,8 +4,6 @@ from vapoursynth import core
 
 # Set cache size to 1GB
 core.max_cache_size = 1024
-# Limit to one thread
-core.num_threads = 1
 
 source = os.environ.get("AV1AN_SOURCE", None)
 chunk_method = os.environ.get("AV1AN_CHUNK_METHOD", None)
@@ -85,6 +83,9 @@ if perform_scene_detection is not None and downscale_height is not None or pixel
         height=int(downscale_height or video.height),
         format=pixel_format,
     )
+else:
+    # Limit to one thread when encoding
+    core.num_threads = 1
 
 
 # Output video
