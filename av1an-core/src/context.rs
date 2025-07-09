@@ -204,8 +204,14 @@ impl Av1anContext {
                 Input::Video {
                     path, ..
                 } => {
-                    let (script_path, _) =
-                        create_vs_file(&self.args.temp, path, self.args.chunk_method)?;
+                    let (script_path, _) = create_vs_file(
+                        &self.args.temp,
+                        path,
+                        self.args.chunk_method,
+                        self.args.sc_downscale_height,
+                        self.args.sc_pix_format,
+                        self.args.scaler.clone(),
+                    )?;
                     script_path
                 },
             });
@@ -223,7 +229,11 @@ impl Av1anContext {
                 Input::Video {
                     ..
                 } => av_scenechange::Decoder::from_script(
-                    &self.args.input.as_script_text()?,
+                    &self.args.input.as_script_text(
+                        self.args.sc_downscale_height,
+                        self.args.sc_pix_format,
+                        Some(self.args.scaler.clone()),
+                    )?,
                     Some(variables_map),
                 )?,
             };
@@ -920,7 +930,11 @@ impl Av1anContext {
             input: Input::VapourSynth {
                 path:        vs_script.to_path_buf(),
                 vspipe_args: self.args.input.as_vspipe_args_vec()?,
-                script_text: self.args.input.as_script_text()?,
+                script_text: self.args.input.as_script_text(
+                    self.args.sc_downscale_height,
+                    self.args.sc_pix_format,
+                    Some(self.args.scaler.clone()),
+                )?,
             },
             source_cmd: vspipe_cmd_gen,
             output_ext: output_ext.to_owned(),

@@ -149,7 +149,9 @@ pub fn get_clip_info(source: &Input, vspipe_args_map: OwnedMap) -> anyhow::Resul
             .eval_file(source.as_path(), EvalFlags::SetWorkingDir)
             .context(CONTEXT_MSG)?;
     } else {
-        environment.eval_script(&source.as_script_text()?).context(CONTEXT_MSG)?;
+        environment
+            .eval_script(&source.as_script_text(None, None, None)?)
+            .context(CONTEXT_MSG)?;
     }
 
     #[cfg(feature = "vapoursynth_new_api")]
@@ -721,9 +723,18 @@ pub fn create_vs_file(
     temp: &str,
     source: &Path,
     chunk_method: ChunkMethod,
+    scene_detection_downscale_height: Option<usize>,
+    scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
+    scene_detection_scaler: String,
 ) -> anyhow::Result<(PathBuf, bool)> {
-    let (load_script_text, cache_file_already_exists) =
-        generate_loadscript_text(temp, source, chunk_method)?;
+    let (load_script_text, cache_file_already_exists) = generate_loadscript_text(
+        temp,
+        source,
+        chunk_method,
+        scene_detection_downscale_height,
+        scene_detection_pixel_format,
+        scene_detection_scaler,
+    )?;
     // Ensure the temp folder exists
     let temp: &Path = temp.as_ref();
     let split_folder = temp.join("split");
@@ -760,6 +771,9 @@ pub fn generate_loadscript_text(
     temp: &str,
     source: &Path,
     chunk_method: ChunkMethod,
+    scene_detection_downscale_height: Option<usize>,
+    scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
+    scene_detection_scaler: String,
 ) -> anyhow::Result<(String, bool)> {
     let temp: &Path = temp.as_ref();
     let source = to_absolute_path(source)?;
@@ -792,24 +806,48 @@ pub fn generate_loadscript_text(
     };
 
     // Include rich loadscript.vpy and specify source, chunk_method, and cache_file
+    // Also specify downscale_height, pixel_format, and scaler for Scene Detection
     // TODO should probably check if the syntax for rust strings and escaping utf
     // and stuff like that is the same as in python
-    let load_script_text = include_str!("loadscript.vpy")
+    let mut load_script_text = include_str!("loadscript.vpy")
         .replace(
-            "source = os.environ.get('AV1AN_SOURCE', None)",
+            "source = os.environ.get(\"AV1AN_SOURCE\", None)",
             &format!("source = r\"{}\"", match chunk_method {
                 ChunkMethod::DGDECNV => dgindex_path.display(),
                 _ => source.display(),
             }),
         )
         .replace(
-            "chunk_method = os.environ.get('AV1AN_CHUNK_METHOD', None)",
+            "chunk_method = os.environ.get(\"AV1AN_CHUNK_METHOD\", None)",
             &format!("chunk_method = {chunk_method_lower:?}"),
         )
         .replace(
-            "cache_file = os.environ.get('AV1AN_CACHE_FILE', None)",
+            "cache_file = os.environ.get(\"AV1AN_CACHE_FILE\", None)",
             &format!("cache_file = {cache_file:?}"),
         );
+
+    if let Some(scene_detection_downscale_height) = scene_detection_downscale_height {
+        load_script_text = load_script_text.replace(
+            "downscale_height = os.environ.get(\"AV1AN_DOWNSCALE_HEIGHT\", None)",
+            &format!(
+                "downscale_height = os.environ.get(\"AV1AN_DOWNSCALE_HEIGHT\", \
+                 {scene_detection_downscale_height})"
+            ),
+        );
+    }
+    if let Some(scene_detection_pixel_format) = scene_detection_pixel_format {
+        load_script_text = load_script_text.replace(
+            "sc_pix_format = os.environ.get(\"AV1AN_PIXEL_FORMAT\", None)",
+            &format!(
+                "pixel_format = os.environ.get(\"AV1AN_PIXEL_FORMAT\", \
+                 \"{scene_detection_pixel_format:?}\")"
+            ),
+        );
+    }
+    load_script_text = load_script_text.replace(
+        "scaler = os.environ.get(\"AV1AN_SCALER\", None)",
+        &format!("scaler = os.environ.get(\"AV1AN_SCALER\", {scene_detection_scaler:?})"),
+    );
 
     let cache_file_already_exists = match chunk_method {
         ChunkMethod::DGDECNV => dgindex_path.exists(),
@@ -904,7 +942,7 @@ pub fn measure_butteraugli(
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
     // Consider using eval_file only when source is not in CWD
-    environment.eval_script(&source.as_script_text()?)?;
+    environment.eval_script(&source.as_script_text(None, None, None)?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -942,7 +980,7 @@ pub fn measure_ssimulacra2(
     environment.set_variables(&args)?;
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
-    environment.eval_script(&source.as_script_text()?)?;
+    environment.eval_script(&source.as_script_text(None, None, None)?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -981,7 +1019,7 @@ pub fn measure_xpsnr(
     environment.set_variables(&args)?;
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
-    environment.eval_script(&source.as_script_text()?)?;
+    environment.eval_script(&source.as_script_text(None, None, None)?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;

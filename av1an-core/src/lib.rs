@@ -172,7 +172,12 @@ impl Input {
     /// Returns a VapourSynth script as a string. If `self` is `Video`, the
     /// script will be generated for supported VapourSynth chunk methods.
     #[inline]
-    pub fn as_script_text(&self) -> anyhow::Result<String> {
+    pub fn as_script_text(
+        &self,
+        scene_detection_downscale_height: Option<usize>,
+        scene_detection_pixel_format: Option<Pixel>,
+        scene_detection_scaler: Option<String>,
+    ) -> anyhow::Result<String> {
         match &self {
             Input::VapourSynth {
                 script_text, ..
@@ -186,13 +191,40 @@ impl Input {
                 | ChunkMethod::FFMS2
                 | ChunkMethod::DGDECNV
                 | ChunkMethod::BESTSOURCE => {
-                    let (script_text, _) = generate_loadscript_text(temp, path, *chunk_method)?;
+                    let (script_text, _) = generate_loadscript_text(
+                        temp,
+                        path,
+                        *chunk_method,
+                        scene_detection_downscale_height,
+                        scene_detection_pixel_format,
+                        scene_detection_scaler.unwrap_or_default(),
+                    )?;
                     Ok(script_text)
                 },
                 _ => Err(anyhow::anyhow!(
                     "Cannot generate VapourSynth script text with chunk method {chunk_method:?}"
                 )),
             },
+        }
+    }
+
+    /// Returns a path to the VapourSynth script, panicking if the input is not
+    /// an `Input::VapourSynth` or `Input::Video` with a valid chunk method.
+    #[inline]
+    pub fn as_script_path(&self) -> PathBuf {
+        match &self {
+            Input::VapourSynth {
+                path, ..
+            } => path.to_path_buf(),
+            Input::Video {
+                temp, ..
+            } if self.is_vapoursynth_script() => {
+                let temp: &Path = temp.as_ref();
+                temp.join("split").join("loadscript.vpy")
+            },
+            Input::Video {
+                ..
+            } => panic!("called `Input::as_script_path()` on an `Input::Video` variant"),
         }
     }
 

@@ -1079,15 +1079,28 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             // Clip info is cached and reused so the values need to be correct
             // the first time. The loadscript needs to be generated along with
             // prerequisite cache/index files and their directories.
-            let (_, cache_file_already_exists) =
-                generate_loadscript_text(&temp, input.as_path(), chunk_method)?;
+            let (_, cache_file_already_exists) = generate_loadscript_text(
+                &temp,
+                input.as_path(),
+                chunk_method,
+                args.sc_downscale_height,
+                args.sc_pix_format,
+                scaler.clone(),
+            )?;
             if !cache_file_already_exists {
                 // Getting the clip info will cause VapourSynth to generate the
                 // cache file which may take a long time.
                 info!("Generating VapourSynth cache file");
             }
 
-            create_vs_file(&temp, input.as_path(), chunk_method)?;
+            create_vs_file(
+                &temp,
+                input.as_path(),
+                chunk_method,
+                args.sc_downscale_height,
+                args.sc_pix_format,
+                scaler.clone(),
+            )?;
         }
 
         let clip_info = input.clip_info()?;
