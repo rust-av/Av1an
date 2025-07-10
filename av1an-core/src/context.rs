@@ -82,7 +82,7 @@ impl Av1anContext {
         args.validate()?;
 
         let mut this = Self {
-            frames: 0,
+            frames: args.input.clip_info(None)?.num_frames,
             vs_script: None,
             vs_scd_script: None,
             args,
