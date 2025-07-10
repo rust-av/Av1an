@@ -22,6 +22,7 @@ Target Quality supports the following metrics:
 - [VMAF](https://github.com/Netflix/vmaf)
 - [SSIMULACRA2](https://github.com/cloudinary/ssimulacra2)
 - [Butteraugli](https://github.com/google/butteraugli)
+- [XPSNR](https://github.com/fraunhoferhhi/xpsnr)
 
 ## Requirements
 
@@ -66,9 +67,7 @@ Alternatively:
 
 - [`--target-metric TargetMetric`](../Cli/target_quality.md#target-metric---target-metric) - Chooses the metric used to evaluate quality of each segment
 
-- [`--target-quality FLOAT`](../Cli/target_quality.md#target-quality---target-quality) - enables target quality with default settings for that encoder, targets FLOAT value
-
-- [`--min_q INT`](../Cli/target_quality.md#minimum-quantizer---min-q), [`--max_q INT`](../Cli/target_quality.md#maximum-quantizer---max-q) - Overrides default CRF/CQ boundaries for search
+- [`--target-quality FLOAT-FLOAT`](../Cli/target_quality.md#target-quality---target-quality) - enables target quality with default settings for that encoder, targets a range with FLOAT values
 
 - [`--probes INT`](../Cli/target_quality.md#probes---probes) - Overrides maximum amount of probes to make for each segment (Default 4)
 

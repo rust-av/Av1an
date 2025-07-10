@@ -1,4 +1,8 @@
-use crate::{context::Av1anContext, encoder::Encoder, scenes::Scene};
+use crate::{
+    context::Av1anContext,
+    encoder::Encoder,
+    scenes::{Scene, SceneFactory},
+};
 
 fn get_test_args() -> Av1anContext {
     use std::path::PathBuf;
@@ -8,7 +12,6 @@ fn get_test_args() -> Av1anContext {
     use crate::{
         concat::ConcatMethod,
         into_vec,
-        logging::DEFAULT_LOG_LEVEL,
         settings::{EncodeArgs, InputPixelFormat, PixelFormat},
         ChunkMethod,
         ChunkOrdering,
@@ -19,8 +22,6 @@ fn get_test_args() -> Av1anContext {
     };
 
     let args = EncodeArgs {
-        log_file:              PathBuf::new(),
-        log_level:             DEFAULT_LOG_LEVEL,
         ffmpeg_filter_args:    Vec::new(),
         temp:                  String::new(),
         force:                 false,
@@ -45,8 +46,10 @@ fn get_test_args() -> Av1anContext {
             format: Pixel::YUV420P10LE,
         },
         input:                 Input::Video {
-            path:        PathBuf::new(),
-            script_text: None,
+            path:         PathBuf::new(),
+            temp:         String::new(),
+            chunk_method: ChunkMethod::LSMASH,
+            is_proxy:     false,
         },
         proxy:                 None,
         output_pix_format:     PixelFormat {
@@ -75,13 +78,14 @@ fn get_test_args() -> Av1anContext {
         vmaf_threads:          None,
         vmaf_filter:           None,
         probe_res:             None,
+        vapoursynth_plugins:   None,
     };
     Av1anContext {
         vs_script: None,
-        vs_scd_script: None,
         vs_proxy_script: None,
         frames: 6900,
         args,
+        scene_factory: SceneFactory::new(),
     }
 }
 
@@ -89,7 +93,7 @@ fn get_test_args() -> Av1anContext {
 fn validate_zones_args() {
     let input = "45 729 aom --cq-level=20 --photon-noise 4 -x 60 --min-scene-len 12";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args).unwrap();
+    let result = Scene::parse_from_zone(input, &args.args, args.frames).unwrap();
     assert_eq!(result.start_frame, 45);
     assert_eq!(result.end_frame, 729);
 
@@ -108,7 +112,7 @@ fn validate_zones_args() {
 fn validate_rav1e_zone_with_photon_noise() {
     let input = "45 729 rav1e reset --speed 6 --photon-noise 4";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args).unwrap();
+    let result = Scene::parse_from_zone(input, &args.args, args.frames).unwrap();
     assert_eq!(result.start_frame, 45);
     assert_eq!(result.end_frame, 729);
 
@@ -125,7 +129,7 @@ fn validate_rav1e_zone_with_photon_noise() {
 fn validate_zones_reset() {
     let input = "729 1337 aom reset --cq-level=20 --cpu-used=5";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args).unwrap();
+    let result = Scene::parse_from_zone(input, &args.args, args.frames).unwrap();
     assert_eq!(result.start_frame, 729);
     assert_eq!(result.end_frame, 1337);
 
@@ -148,7 +152,7 @@ fn validate_zones_reset() {
 fn validate_zones_encoder_changed() {
     let input = "729 1337 rav1e reset -s 3 -q 45";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args).unwrap();
+    let result = Scene::parse_from_zone(input, &args.args, args.frames).unwrap();
     assert_eq!(result.start_frame, 729);
     assert_eq!(result.end_frame, 1337);
 
@@ -174,7 +178,7 @@ fn validate_zones_encoder_changed() {
 fn validate_zones_encoder_changed_no_reset() {
     let input = "729 1337 rav1e -s 3 -q 45";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args);
+    let result = Scene::parse_from_zone(input, &args.args, args.frames);
     assert_eq!(
         result.err().unwrap().to_string(),
         "Zone includes encoder change but previous args were kept. You probably meant to specify \
@@ -186,7 +190,7 @@ fn validate_zones_encoder_changed_no_reset() {
 fn validate_zones_no_args() {
     let input = "2459 5000 rav1e";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args);
+    let result = Scene::parse_from_zone(input, &args.args, args.frames);
     assert_eq!(
         result.err().unwrap().to_string(),
         "Zone includes encoder change but previous args were kept. You probably meant to specify \
@@ -198,7 +202,7 @@ fn validate_zones_no_args() {
 fn validate_zones_format_mismatch() {
     let input = "5000 -1 x264 reset";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args);
+    let result = Scene::parse_from_zone(input, &args.args, args.frames);
     assert_eq!(
         result.err().unwrap().to_string(),
         "Zone specifies using x264, but this cannot be used in the same file as aom"
@@ -211,7 +215,7 @@ fn validate_zones_no_args_reset() {
     let args = get_test_args();
 
     // This is weird, but can technically work for some encoders so we'll allow it.
-    let result = Scene::parse_from_zone(input, &args).unwrap();
+    let result = Scene::parse_from_zone(input, &args.args, args.frames).unwrap();
     assert_eq!(result.start_frame, 5000);
     assert_eq!(result.end_frame, 6900);
 

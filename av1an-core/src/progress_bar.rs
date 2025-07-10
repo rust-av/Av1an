@@ -290,6 +290,11 @@ pub fn update_progress_bar_estimates(
 ) {
     let completed_frames: usize =
         get_done().done.iter().map(|ref_multi| ref_multi.value().frames).sum();
+    if completed_frames == 0 {
+        // avoid division by 0
+        return;
+    }
+
     let total_size: u64 = get_done()
         .done
         .iter()

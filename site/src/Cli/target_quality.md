@@ -2,7 +2,7 @@
 
 Name | Flag | Type | Default
 --- | --- | --- | ---
-[Target Metric](#target-metric---target-metric) | `--target-metric` | `TARGET_METRIC` | `VMAF`
+[Target Metric](#target-metric---target-metric) | `--target-metric` | `TARGET_METRIC` | `vmaf`
 [Target Quality](#target-quality---target-quality) | `--target-quality` | Float | 
 [Probes](#probes---probes) | `--probes` | Integer | `4`
 [Probe Resolution](#probe-resolution---probe-res) | `--probe-res` | String |
@@ -20,38 +20,38 @@ Metric used for Target Quality.
 
 ### Possible Values
 
-Can be any of the following (case insensitive):
+Can be any of the following:
 
-* `VMAF` - [Video Multi-Method Assessment Fusion](https://github.com/Netflix/vmaf)
+* `vmaf` - [Video Multi-Method Assessment Fusion](https://github.com/Netflix/vmaf)
     * Requires FFmpeg with [libvmaf](https://ffmpeg.org/ffmpeg-filters.html#libvmaf-1) enabled
-* `SSIMULACRA2` - [Structural SIMilarity Unveiling Local And Compression Related Artifacts](https://github.com/cloudinary/ssimulacra2)
+* `ssimulacra2` - [Structural SIMilarity Unveiling Local And Compression Related Artifacts](https://github.com/cloudinary/ssimulacra2)
     * Requires VapourSynth plugin [Vapoursynth-HIP](https://github.com/Line-fr/Vship) for Hardware-accelerated processing (recommended) or [Vapoursynth-Zig Image Process](https://github.com/dnjulek/vapoursynth-zip) for CPU processing
     * Requires [Chunk Method](./encoding.md#chunk-method--m---chunk-method) to be `lsmash`, `ffms2`, `bestsource`, or `dgdecnv`
-* `butteraugli-INF` - [butteraugli](https://github.com/google/butteraugli) Infinite-Norm
+* `butteraugli-inf` - [butteraugli](https://github.com/google/butteraugli) Infinite-Norm with a target intensity of 203 nits
     * Requires VapourSynth plugin [Vapoursynth-HIP](https://github.com/Line-fr/Vship) for Hardware-accelerated processing (recommended) or [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) for CPU processing
     * Requires [Chunk Method](./encoding.md#chunk-method--m---chunk-method) to be `lsmash`, `ffms2`, `bestsource`, or `dgdecnv`
-* `butteraugli-3` - [butteraugli](https://github.com/google/butteraugli) 3-Norm
+* `butteraugli-3` - [butteraugli](https://github.com/google/butteraugli) 3-Norm with a target intensity of 203 nits
     * Requires VapourSynth plugin [Vapoursynth-HIP](https://github.com/Line-fr/Vship) for Hardware-accelerated processing (recommended) or [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) for CPU processing
     * Requires [Chunk Method](./encoding.md#chunk-method--m---chunk-method) to be `lsmash`, `ffms2`, `bestsource`, or `dgdecnv`
-* `XPSNR` - [Extended Perceptually Weighted Peak Signal-to-Noise Ratio](https://github.com/fraunhoferhhi/xpsnr) using the minimum of the `Y`, `U`, and `V` scores
+* `xpsnr` - [Extended Perceptually Weighted Peak Signal-to-Noise Ratio](https://github.com/fraunhoferhhi/xpsnr) using the minimum of the `Y`, `U`, and `V` scores
     * Requires FFmpeg with [libxpsnr](https://ffmpeg.org/ffmpeg-filters.html#xpsnr-1) enabled when [Probing Rate](#probing-rate---probing-rate) is unspecified or `1`
     * Requires VapourSynth plugin [Vapoursynth-Zig Image Process](https://github.com/dnjulek/vapoursynth-zip) for CPU processing when [Probing Rate](#probing-rate---probing-rate) is greater than `1`
         * Requires [Chunk Method](./encoding.md#chunk-method--m---chunk-method) to be `lsmash`, `ffms2`, `bestsource`, or `dgdecnv`
-* `XPSNR-Weighted` - Weighted [Extended Perceptually Weighted Peak Signal-to-Noise Ratio](https://github.com/fraunhoferhhi/xpsnr) using the formula: `((4 * Y) + U + V) / 6`
+* `xpsnr-weighted` - Weighted [Extended Perceptually Weighted Peak Signal-to-Noise Ratio](https://github.com/fraunhoferhhi/xpsnr) using the formula: `((4 * Y) + U + V) / 6`
     * Requires FFmpeg with [libxpsnr](https://ffmpeg.org/ffmpeg-filters.html#xpsnr-1) enabled when [Probing Rate](#probing-rate---probing-rate) is unspecified or `1`
     * Requires VapourSynth plugin [Vapoursynth-Zig Image Process](https://github.com/dnjulek/vapoursynth-zip) for CPU processing when [Probing Rate](#probing-rate---probing-rate) is greater than `1`
         * Requires [Chunk Method](./encoding.md#chunk-method--m---chunk-method) to be `lsmash`, `ffms2`, `bestsource`, or `dgdecnv`
 
 ### Default
 
-If not specified, `VMAF` is used.
+If not specified, `vmaf` is used.
 
 ### Examples
 
 * `> av1an -i input.mkv -o output.mkv --target-quality 95` - Target a VMAF score of 95
 * `> av1an -i input.mkv -o output.mkv --target-metric ssimulacra2 --target-quality 80` - Target a SSIMULACRA2 score of 80
 * `> av1an -i input.mkv -o output.mkv --target-metric butteraugli-3 --target-quality 2` - Target a Butteraugli 3-Norm score of 2
-* `> av1an -i input.mkv -o output.mkv --target-metric XPSNR-weighted --target-quality 40` - Target a Weighted XPSNR score of 40
+* `> av1an -i input.mkv -o output.mkv --target-metric xpsnr-weighted --target-quality 40` - Target a Weighted XPSNR score of 40
 
 ## Target Quality `--target-quality`
 
@@ -74,17 +74,17 @@ Any float value for the specified [`--target-metric`](#target-metric---target-me
 * "butteraugli-inf" - `0` to any positive value, where `0` is the best quality and increases as quality decreases
 * "butteraugli-3" - `0` to any positive value, where `0` is the best quality and increases as quality decreases
 * "xpsnr" - `0` to any positive value, where `0` is the worst quality, and increases as quality increases
-* [XPSNR-Weighted](https://github.com/fraunhoferhhi/xpsnr) - `0` to any positive value, where `0` is the worst quality, and increases as quality increases
+* "xpsnr-weighted" - `0` to any positive value, where `0` is the worst quality, and increases as quality increases
 
 ### Examples
 
 * `> av1an -i input.mkv -o output.mkv --target-quality 80` - Target a VMAF score of 80
 * `> av1an -i input.mkv -o output.mkv --target-quality 90.5` - Target a VMAF score of 90.5
-* `> av1an -i input.mkv -o output.mkv --target-metric SSIMULACRA2 --target-quality 75` - Target a SSIMULACRA2 score of 75
+* `> av1an -i input.mkv -o output.mkv --target-metric ssimulacra2 --target-quality 75` - Target a SSIMULACRA2 score of 75
 * `> av1an -i input.mkv -o output.mkv --target-metric butteraugli-inf --target-quality 5.4` - Target a Butteraugli Infinite-Norm score of 5.4
 * `> av1an -i input.mkv -o output.mkv --target-metric butteraugli-3 --target-quality 1.5` - Target a Butteraugli 3-Norm score of 1.5
 * `> av1an -i input.mkv -o output.mkv --target-metric xpsnr --target-quality 50` - Target a XPSNR score of 40
-* `> av1an -i input.mkv -o output.mkv --target-metric XPSNR-weighted --target-quality 40` - Target a Weighted XPSNR score of 40
+* `> av1an -i input.mkv -o output.mkv --target-metric xpsnr-weighted --target-quality 40` - Target a Weighted XPSNR score of 40
 
 ## Probes `--probes`
 

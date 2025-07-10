@@ -1,9 +1,6 @@
-#[macro_use]
-extern crate log;
-
 use std::{
     cmp::max,
-    collections::hash_map::DefaultHasher,
+    collections::{hash_map::DefaultHasher, HashMap},
     fs::{self, read_to_string, File},
     hash::{Hash, Hasher},
     io::Write,
@@ -14,25 +11,24 @@ use std::{
     time::Instant,
 };
 
-use ::ffmpeg::{color::TransferCharacteristic, format::Pixel};
+use ::ffmpeg::format::Pixel;
 use ::vapoursynth::{api::API, map::OwnedMap};
 use anyhow::{bail, Context};
 use av1_grain::TransferFunction;
 use av_format::rational::Rational64;
 use chunk::Chunk;
 use dashmap::DashMap;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr, IntoStaticStr};
-pub use target_quality::VmafFeature;
 
 pub use crate::{
     concat::ConcatMethod,
     context::Av1anContext,
     encoder::Encoder,
-    logging::{init_logging, DEFAULT_LOG_LEVEL},
     settings::{EncodeArgs, InputPixelFormat, PixelFormat},
-    target_quality::TargetQuality,
+    target_quality::{InterpolationMethod, TargetQuality},
     util::read_in_dir,
 };
 use crate::{progress_bar::finish_progress_bar, vapoursynth::generate_loadscript_text};
@@ -43,13 +39,13 @@ mod concat;
 mod context;
 mod encoder;
 pub mod ffmpeg;
-mod logging;
 mod metrics {
     pub mod butteraugli;
     pub mod statistics;
     pub mod vmaf;
     pub mod xpsnr;
 }
+mod interpol;
 mod parse;
 mod progress_bar;
 mod scene_detect;
@@ -59,17 +55,34 @@ mod split;
 mod target_quality;
 mod util;
 pub mod vapoursynth;
+mod zones;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+static CLIP_INFO_CACHE: Lazy<Mutex<HashMap<CacheKey, ClipInfo>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct CacheKey {
+    input: Input,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
     VapourSynth {
         path:        PathBuf,
         vspipe_args: Vec<String>,
+        // Must be stored in memory at initialization instead of generating
+        // on demand in order to reduce thrashing disk with frequent reads from Target Quality
+        // probing
         script_text: String,
+        is_proxy:    bool,
     },
     Video {
-        path:        PathBuf,
-        script_text: Option<String>,
+        path:         PathBuf,
+        // Used to generate script_text if chunk_method is supported
+        temp:         String,
+        // Store as a string of ChunkMethod to enable hashing
+        chunk_method: ChunkMethod,
+        is_proxy:     bool,
     },
 }
 
@@ -79,11 +92,8 @@ impl Input {
     pub fn new<P: AsRef<Path> + Into<PathBuf>>(
         path: P,
         vspipe_args: Vec<String>,
-        temp: &str,
+        temporary_directory: &str,
         chunk_method: ChunkMethod,
-        scene_detection_downscale_height: Option<usize>,
-        scene_detection_pixel_format: Option<Pixel>,
-        scene_detection_scaler: String,
         is_proxy: bool,
     ) -> anyhow::Result<Self> {
         if let Some(ext) = path.as_ref().extension() {
@@ -94,53 +104,24 @@ impl Input {
                     path: input_path.clone(),
                     vspipe_args,
                     script_text,
+                    is_proxy,
                 })
             } else {
                 let input_path = path.into();
                 Ok(Self::Video {
-                    path:        input_path.clone(),
-                    script_text: match chunk_method {
-                        ChunkMethod::LSMASH
-                        | ChunkMethod::FFMS2
-                        | ChunkMethod::DGDECNV
-                        | ChunkMethod::BESTSOURCE => Some(
-                            generate_loadscript_text(
-                                temp,
-                                &input_path,
-                                chunk_method,
-                                scene_detection_downscale_height,
-                                scene_detection_pixel_format,
-                                scene_detection_scaler,
-                                is_proxy,
-                            )
-                            .unwrap(),
-                        ),
-                        _ => None,
-                    },
+                    path: input_path.clone(),
+                    temp: temporary_directory.to_owned(),
+                    chunk_method,
+                    is_proxy,
                 })
             }
         } else {
             let input_path = path.into();
             Ok(Self::Video {
-                path:        input_path.clone(),
-                script_text: match chunk_method {
-                    ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::DGDECNV
-                    | ChunkMethod::BESTSOURCE => Some(
-                        generate_loadscript_text(
-                            temp,
-                            &input_path,
-                            chunk_method,
-                            scene_detection_downscale_height,
-                            scene_detection_pixel_format,
-                            scene_detection_scaler,
-                            is_proxy,
-                        )
-                        .unwrap(),
-                    ),
-                    _ => None,
-                },
+                path: input_path.clone(),
+                temp: temporary_directory.to_owned(),
+                chunk_method,
+                is_proxy,
             })
         }
     }
@@ -195,26 +176,67 @@ impl Input {
         }
     }
 
-    /// Returns a reference to the inner script text, panicking if the input is
-    /// does not have script text.
+    /// Returns a VapourSynth script as a string. If `self` is `Video`, the
+    /// script will be generated for supported VapourSynth chunk methods.
     #[inline]
-    pub fn as_script_text(&self) -> &String {
+    pub fn as_script_text(
+        &self,
+        scene_detection_downscale_height: Option<usize>,
+        scene_detection_pixel_format: Option<Pixel>,
+        scene_detection_scaler: Option<String>,
+    ) -> anyhow::Result<String> {
         match &self {
             Input::VapourSynth {
                 script_text, ..
-            } => script_text,
+            } => Ok(script_text.clone()),
             Input::Video {
-                script_text, ..
-            } => {
-                if let Some(text) = script_text {
-                    text
-                } else {
-                    panic!(
-                        "called `Input::as_script_text()` on an `Input::Video` variant with no \
-                         script text"
-                    )
-                }
+                path,
+                temp,
+                chunk_method,
+                is_proxy,
+            } => match chunk_method {
+                ChunkMethod::LSMASH
+                | ChunkMethod::FFMS2
+                | ChunkMethod::DGDECNV
+                | ChunkMethod::BESTSOURCE => {
+                    let (script_text, _) = generate_loadscript_text(
+                        temp,
+                        path,
+                        *chunk_method,
+                        scene_detection_downscale_height,
+                        scene_detection_pixel_format,
+                        scene_detection_scaler.unwrap_or_default(),
+                        *is_proxy,
+                    )?;
+                    Ok(script_text)
+                },
+                _ => Err(anyhow::anyhow!(
+                    "Cannot generate VapourSynth script text with chunk method {chunk_method:?}"
+                )),
             },
+        }
+    }
+
+    /// Returns a path to the VapourSynth script, panicking if the input is not
+    /// an `Input::VapourSynth` or `Input::Video` with a valid chunk method.
+    #[inline]
+    pub fn as_script_path(&self) -> PathBuf {
+        match &self {
+            Input::VapourSynth {
+                path, ..
+            } => path.to_path_buf(),
+            Input::Video {
+                temp, ..
+            } if self.is_vapoursynth_script() => {
+                let temp: &Path = temp.as_ref();
+                temp.join("split").join(match self.is_proxy() {
+                    true => "loadscript_proxy.vpy",
+                    false => "loadscript.vpy",
+                })
+            },
+            Input::Video {
+                ..
+            } => panic!("called `Input::as_script_path()` on an `Input::Video` variant"),
         }
     }
 
@@ -229,121 +251,60 @@ impl Input {
     }
 
     #[inline]
-    pub fn frames(&self, vs_script_path: Option<PathBuf>) -> anyhow::Result<usize> {
+    pub const fn is_proxy(&self) -> bool {
+        match &self {
+            Input::Video {
+                is_proxy, ..
+            }
+            | Input::VapourSynth {
+                is_proxy, ..
+            } => *is_proxy,
+        }
+    }
+
+    #[inline]
+    pub fn is_vapoursynth_script(&self) -> bool {
+        match &self {
+            Input::VapourSynth {
+                ..
+            } => true,
+            Input::Video {
+                chunk_method, ..
+            } => matches!(
+                chunk_method,
+                ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::DGDECNV
+                    | ChunkMethod::BESTSOURCE
+            ),
+        }
+    }
+
+    #[inline]
+    pub fn clip_info(&self) -> anyhow::Result<ClipInfo> {
         const FAIL_MSG: &str = "Failed to get number of frames for input video";
-        Ok(match &self {
-            Input::Video {
-                path, ..
-            } if vs_script_path.is_none() => {
-                ffmpeg::num_frames(path.as_path()).map_err(|_| anyhow::anyhow!(FAIL_MSG))?
-            },
-            path => vapoursynth::num_frames(
-                vs_script_path.as_deref().unwrap_or(path.as_path()),
-                self.as_vspipe_args_map()?,
-            )
-            .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
-        })
-    }
 
-    #[inline]
-    pub fn frame_rate(&self) -> anyhow::Result<Rational64> {
-        const FAIL_MSG: &str = "Failed to get frame rate for input video";
-        Ok(match &self {
-            Input::Video {
-                path, ..
-            } => {
-                crate::ffmpeg::frame_rate(path.as_path()).map_err(|_| anyhow::anyhow!(FAIL_MSG))?
-            },
-            Input::VapourSynth {
-                path, ..
-            } => vapoursynth::frame_rate(path.as_path(), self.as_vspipe_args_map()?)
-                .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
-        })
-    }
-
-    #[inline]
-    pub fn resolution(&self) -> anyhow::Result<(u32, u32)> {
-        const FAIL_MSG: &str = "Failed to get resolution for input video";
-        Ok(match self {
-            Input::VapourSynth {
-                path, ..
-            } => crate::vapoursynth::resolution(path, self.as_vspipe_args_map()?)
-                .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
-            Input::Video {
-                path, ..
-            } => crate::ffmpeg::resolution(path).map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
-        })
-    }
-
-    #[inline]
-    pub fn pixel_format(&self) -> anyhow::Result<String> {
-        const FAIL_MSG: &str = "Failed to get pixel format for input video";
-        Ok(match self {
-            Input::VapourSynth {
-                path, ..
-            } => crate::vapoursynth::pixel_format(path, self.as_vspipe_args_map()?)
-                .map_err(|_| anyhow::anyhow!(FAIL_MSG))?,
-            Input::Video {
-                path, ..
-            } => {
-                let fmt =
-                    crate::ffmpeg::get_pixel_format(path).map_err(|_| anyhow::anyhow!(FAIL_MSG))?;
-                format!("{fmt:?}")
-            },
-        })
-    }
-
-    fn transfer_function(&self) -> anyhow::Result<TransferFunction> {
-        const FAIL_MSG: &str = "Failed to get transfer characteristics for input video";
-        Ok(match self {
-            Input::VapourSynth {
-                path, ..
-            } => {
-                match crate::vapoursynth::transfer_characteristics(path, self.as_vspipe_args_map()?)
-                    .map_err(|_| anyhow::anyhow!(FAIL_MSG))?
-                {
-                    16 => TransferFunction::SMPTE2084,
-                    _ => TransferFunction::BT1886,
-                }
-            },
-            Input::Video {
-                path, ..
-            } => {
-                match crate::ffmpeg::transfer_characteristics(path)
-                    .map_err(|_| anyhow::anyhow!(FAIL_MSG))?
-                {
-                    TransferCharacteristic::SMPTE2084 => TransferFunction::SMPTE2084,
-                    _ => TransferFunction::BT1886,
-                }
-            },
-        })
-    }
-
-    #[inline]
-    pub fn transfer_function_params_adjusted(
-        &self,
-        enc_params: &[String],
-    ) -> anyhow::Result<TransferFunction> {
-        if enc_params.iter().any(|p| {
-            let p = p.to_ascii_lowercase();
-            p == "pq" || p.ends_with("=pq") || p.ends_with("smpte2084")
-        }) {
-            return Ok(TransferFunction::SMPTE2084);
+        let mut cache = CLIP_INFO_CACHE.lock();
+        let key = CacheKey {
+            input: self.clone(),
+        };
+        let cached = cache.get(&key);
+        if let Some(cached) = cached {
+            return Ok(*cached);
         }
-        if enc_params.iter().any(|p| {
-            let p = p.to_ascii_lowercase();
-            // If the user specified an SDR transfer characteristic, assume they want to
-            // encode to SDR.
-            p.ends_with("bt709")
-                || p.ends_with("bt.709")
-                || p.ends_with("bt601")
-                || p.ends_with("bt.601")
-                || p.contains("smpte240")
-                || p.contains("smpte170")
-        }) {
-            return Ok(TransferFunction::BT1886);
-        }
-        self.transfer_function()
+
+        let info = match &self {
+            Input::Video {
+                path, ..
+            } if !&self.is_vapoursynth_script() => {
+                ffmpeg::get_clip_info(path.as_path()).context(FAIL_MSG)?
+            },
+            path => {
+                vapoursynth::get_clip_info(path, self.as_vspipe_args_map()?).context(FAIL_MSG)?
+            },
+        };
+        cache.insert(key, info);
+        Ok(info)
     }
 
     /// Calculates tiles from resolution
@@ -352,7 +313,7 @@ impl Input {
     /// Return number of horizontal and vertical tiles
     #[inline]
     pub fn calculate_tiles(&self) -> (u32, u32) {
-        match self.resolution() {
+        match self.clip_info().map(|info| info.resolution) {
             Ok((h, v)) => {
                 // tile range 0-1440 pixels
                 let horizontal = max((h - 1) / 720, 1);
@@ -392,6 +353,16 @@ impl Input {
             };
         }
 
+        Ok(args_map)
+    }
+
+    #[inline]
+    pub fn as_vspipe_args_hashmap(&self) -> Result<HashMap<String, String>, anyhow::Error> {
+        let mut args_map = HashMap::new();
+        for arg in self.as_vspipe_args_vec()? {
+            let split: Vec<&str> = arg.split_terminator('=').collect();
+            args_map.insert(split[0].to_string(), split[1].to_string());
+        }
         Ok(args_map)
     }
 }
@@ -453,7 +424,19 @@ pub enum ScenecutMethod {
     Standard,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Debug, EnumString, IntoStaticStr)]
+#[derive(
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Serialize,
+    Deserialize,
+    Debug,
+    EnumString,
+    IntoStaticStr,
+    Display,
+    Hash,
+)]
 pub enum ChunkMethod {
     #[strum(serialize = "select")]
     Select,
@@ -486,6 +469,32 @@ pub enum ChunkOrdering {
 }
 
 #[derive(
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Serialize,
+    Deserialize,
+    Debug,
+    Display,
+    EnumString,
+    IntoStaticStr,
+    Hash,
+)]
+pub enum VmafFeature {
+    #[strum(serialize = "default")]
+    Default,
+    #[strum(serialize = "weighted")]
+    Weighted,
+    #[strum(serialize = "neg")]
+    Neg,
+    #[strum(serialize = "motionless")]
+    Motionless,
+    #[strum(serialize = "uhd")]
+    Uhd,
+}
+
+#[derive(
     PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Debug, Display, EnumString, IntoStaticStr,
 )]
 pub enum TargetMetric {
@@ -504,10 +513,9 @@ pub enum TargetMetric {
 }
 
 /// Determine the optimal number of workers for an encoder
-#[must_use]
 #[inline]
-pub fn determine_workers(args: &EncodeArgs) -> u64 {
-    let res = args.input.resolution().unwrap();
+pub fn determine_workers(args: &EncodeArgs) -> anyhow::Result<u64> {
+    let res = args.input.clip_info()?.resolution;
     let tiles = args.tiles;
     let megapixels = (res.0 * res.1) as f64 / 1e6;
     // encoder memory and chunk_method memory usage scales with resolution
@@ -554,13 +562,13 @@ pub fn determine_workers(args: &EncodeArgs) -> u64 {
     // use total instead of available, because av1an does not resize worker pool
     let ram_gb = system.total_memory() as f64 / 1e9;
 
-    std::cmp::max(
+    Ok(std::cmp::max(
         std::cmp::min(
             cpu / cpu_threads,
             (ram_gb / (megapixels * (enc_ram + cm_ram) * pix_mult)).round() as u64,
         ),
         1,
-    )
+    ))
 }
 
 #[inline]
@@ -642,4 +650,41 @@ pub enum ProbingStatisticName {
 pub struct ProbingStatistic {
     pub name:  ProbingStatisticName,
     pub value: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClipInfo {
+    pub num_frames:               usize,
+    pub format_info:              InputPixelFormat,
+    pub frame_rate:               Rational64,
+    pub resolution:               (u32, u32), // (width, height), consider using type aliases
+    /// This is overly simplified because we currently only use it for photon
+    /// noise gen, which only supports two transfer functions
+    pub transfer_characteristics: TransferFunction,
+}
+
+impl ClipInfo {
+    #[inline]
+    pub fn transfer_function_params_adjusted(&self, enc_params: &[String]) -> TransferFunction {
+        if enc_params.iter().any(|p| {
+            let p = p.to_ascii_lowercase();
+            p == "pq" || p.ends_with("=pq") || p.ends_with("smpte2084")
+        }) {
+            return TransferFunction::SMPTE2084;
+        }
+        if enc_params.iter().any(|p| {
+            let p = p.to_ascii_lowercase();
+            // If the user specified an SDR transfer characteristic, assume they want to
+            // encode to SDR.
+            p.ends_with("bt709")
+                || p.ends_with("bt.709")
+                || p.ends_with("bt601")
+                || p.ends_with("bt.601")
+                || p.contains("smpte240")
+                || p.contains("smpte170")
+        }) {
+            return TransferFunction::BT1886;
+        }
+        self.transfer_characteristics
+    }
 }

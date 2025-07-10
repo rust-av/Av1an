@@ -2,15 +2,10 @@
 mod tests;
 
 use std::{
-    fs::File,
-    io::{prelude::*, BufReader},
     path::Path,
     process::{Command, Stdio},
     string::ToString,
 };
-
-use anyhow::Context;
-use serde::{Deserialize, Serialize};
 
 use crate::scenes::Scene;
 
@@ -82,46 +77,4 @@ pub fn extra_splits(scenes: &[Scene], total_frames: usize, split_size: usize) ->
     }
 
     new_scenes
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-struct ScenesData {
-    scenes: Vec<Scene>,
-    frames: usize,
-}
-
-pub fn write_scenes_to_file(
-    scenes: &[Scene],
-    total_frames: usize,
-    scene_path: impl AsRef<Path>,
-) -> std::io::Result<()> {
-    // Writes a list of scenes and frame count to the file
-    let data = ScenesData {
-        scenes: scenes.to_vec(),
-        frames: total_frames,
-    };
-
-    // serializing the data should never fail, so unwrap is OK
-    let serialized = serde_json::to_string(&data).unwrap();
-
-    let mut file = File::create(scene_path)?;
-
-    file.write_all(serialized.as_bytes())?;
-
-    Ok(())
-}
-
-pub fn read_scenes_from_file(scene_path: &Path) -> anyhow::Result<(Vec<Scene>, usize)> {
-    let file = File::open(scene_path)?;
-
-    let reader = BufReader::new(file);
-
-    let data: ScenesData = serde_json::from_reader(reader).with_context(|| {
-        format!(
-            "Failed to parse scenes file {scene_path:?}, this likely means that the scenes file \
-             is corrupted"
-        )
-    })?;
-
-    Ok((data.scenes, data.frames))
 }
