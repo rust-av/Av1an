@@ -355,7 +355,7 @@ impl SceneFactory {
             bail!("compute_scenes must be called first");
         }
 
-        let json = serde_json::to_string(&self.data).expect("serialize should not fail");
+        let json = serde_json::to_string_pretty(&self.data).expect("serialize should not fail");
 
         let mut file = File::create(scene_path)?;
         file.write_all(json.as_bytes())?;
