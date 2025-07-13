@@ -407,7 +407,7 @@ impl SceneFactory {
                 for zone in zones {
                     let end_frame = zone.end_frame;
 
-                    if end_frame > frames_processed {
+                    if end_frame > frames_processed && frames_processed > 0 {
                         scenes.push(Scene {
                             start_frame:    frames_processed,
                             end_frame:      zone.start_frame,
@@ -417,7 +417,7 @@ impl SceneFactory {
 
                     scenes.push(zone.clone());
 
-                    frames_processed += end_frame;
+                    frames_processed = end_frame;
                 }
                 if frames > frames_processed {
                     scenes.push(Scene {
