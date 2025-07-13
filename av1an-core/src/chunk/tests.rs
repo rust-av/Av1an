@@ -70,7 +70,11 @@ fn test_chunk_output() {
         noise_size:            (None, None),
         ignore_frame_mismatch: false,
     };
-    assert_eq!("d/encode/00001.ivf", ch.output());
+
+    // Convert output path to PathBuf for comparison
+    let expected_output: PathBuf = ["d", "encode", "00001.ivf"].iter().collect();
+
+    assert_eq!(expected_output.to_str().unwrap(), ch.output());
 }
 
 #[test]
