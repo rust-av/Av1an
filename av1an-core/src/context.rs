@@ -805,9 +805,9 @@ impl Av1anContext {
                 &self.vs_scd_script,
                 &zones,
             )?;
+            self.scene_factory.write_scenes_to_file(scene_file)?;
         }
         self.frames = self.scene_factory.get_frame_count();
-        self.scene_factory.write_scenes_to_file(scene_file)?;
         self.scene_factory.get_split_scenes()
     }
 
