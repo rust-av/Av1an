@@ -112,12 +112,15 @@ fn test_apply_photon_noise_args_with_noise() -> anyhow::Result<()> {
     let mut ch = Chunk {
         temp:                  temp_dir.path().to_str().unwrap().to_owned(),
         index:                 1,
-        input:                 Input::Video {
-            path:         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("test-files/blank_1080p.mkv"),
-            temp:         temp_dir.path().to_str().unwrap().to_owned(),
-            chunk_method: ChunkMethod::LSMASH,
-        },
+        input:                 Input::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-files/blank_1080p.mkv"),
+            vec![],
+            temp_dir.path().to_str().unwrap(),
+            ChunkMethod::LSMASH,
+            None,
+            None,
+            None,
+        )?,
         source_cmd:            vec!["".into()],
         output_ext:            "ivf".to_owned(),
         start_frame:           0,

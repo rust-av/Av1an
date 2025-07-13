@@ -22,6 +22,7 @@ use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr, IntoStaticStr};
+use tracing::info;
 
 pub use crate::{
     concat::ConcatMethod,
@@ -31,7 +32,10 @@ pub use crate::{
     target_quality::{InterpolationMethod, TargetQuality},
     util::read_in_dir,
 };
-use crate::{progress_bar::finish_progress_bar, vapoursynth::generate_loadscript_text};
+use crate::{
+    progress_bar::finish_progress_bar,
+    vapoursynth::{create_vs_file, generate_loadscript_text},
+};
 
 mod broker;
 mod chunk;
@@ -91,12 +95,15 @@ impl Input {
         vspipe_args: Vec<String>,
         temporary_directory: &str,
         chunk_method: ChunkMethod,
+        scene_detection_downscale_height: Option<usize>,
+        scene_detection_pixel_format: Option<Pixel>,
+        scene_detection_scaler: Option<String>,
     ) -> anyhow::Result<Self> {
-        if let Some(ext) = path.as_ref().extension() {
+        let input = if let Some(ext) = path.as_ref().extension() {
             if ext == "py" || ext == "vpy" {
                 let input_path = path.into();
                 let script_text = read_to_string(input_path.clone())?;
-                Ok(Self::VapourSynth {
+                Ok::<Self, anyhow::Error>(Self::VapourSynth {
                     path: input_path.clone(),
                     vspipe_args,
                     script_text,
@@ -116,7 +123,39 @@ impl Input {
                 temp: temporary_directory.to_owned(),
                 chunk_method,
             })
+        }?;
+
+        if input.is_video() && input.is_vapoursynth_script() {
+            // Clip info is cached and reused so the values need to be correct
+            // the first time. The loadscript needs to be generated along with
+            // prerequisite cache/index files and their directories.
+            let (_, cache_file_already_exists) = generate_loadscript_text(
+                temporary_directory,
+                input.as_path(),
+                chunk_method,
+                scene_detection_downscale_height,
+                scene_detection_pixel_format,
+                scene_detection_scaler.clone().unwrap_or_default(),
+            )?;
+            if !cache_file_already_exists {
+                // Getting the clip info will cause VapourSynth to generate the
+                // cache file which may take a long time.
+                info!("Generating VapourSynth cache file");
+            }
+
+            create_vs_file(
+                temporary_directory,
+                input.as_path(),
+                chunk_method,
+                scene_detection_downscale_height,
+                scene_detection_pixel_format,
+                scene_detection_scaler.unwrap_or_default(),
+            )?;
+
+            input.clip_info()?;
         }
+
+        Ok(input)
     }
 
     /// Returns a reference to the inner path, panicking if the input is not an
