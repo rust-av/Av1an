@@ -408,7 +408,7 @@ impl SceneFactory {
                 for zone in zones {
                     // Frames between the previous zone and this zone
                     if zone.start_frame > frames_processed {
-                        // No ovrrides for unspecified frames between zones
+                        // No overrides for unspecified frames between zones
                         scenes.push(Scene {
                             start_frame:    frames_processed,
                             end_frame:      zone.start_frame,
