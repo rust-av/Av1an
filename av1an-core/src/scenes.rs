@@ -404,10 +404,11 @@ impl SceneFactory {
             SplitMethod::None => {
                 let mut scenes = Vec::with_capacity(2 * zones.len() + 1);
                 let mut frames_processed = 0;
+                // Add scenes for each zone and the scenes between zones
                 for zone in zones {
-                    let end_frame = zone.end_frame;
-
-                    if end_frame > frames_processed && frames_processed > 0 {
+                    // Frames between the previous zone and this zone
+                    if zone.start_frame > frames_processed {
+                        // No ovrrides for unspecified frames between zones
                         scenes.push(Scene {
                             start_frame:    frames_processed,
                             end_frame:      zone.start_frame,
@@ -415,9 +416,10 @@ impl SceneFactory {
                         });
                     }
 
+                    // Add the zone with its overrides
                     scenes.push(zone.clone());
-
-                    frames_processed = end_frame;
+                    // Update the frames processed
+                    frames_processed = zone.end_frame;
                 }
                 if frames > frames_processed {
                     scenes.push(Scene {
