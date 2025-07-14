@@ -18,6 +18,7 @@ use vapoursynth::{
 
 use super::ChunkMethod;
 use crate::{
+    ffmpeg::FFPixelFormat,
     metrics::{
         butteraugli::ButteraugliSubMetric,
         xpsnr::{weight_xpsnr, XPSNRSubMetric},
@@ -724,7 +725,7 @@ pub fn create_vs_file(
     source: &Path,
     chunk_method: ChunkMethod,
     scene_detection_downscale_height: Option<usize>,
-    scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
+    scene_detection_pixel_format: Option<FFPixelFormat>,
     scene_detection_scaler: String,
     is_proxy: bool,
 ) -> anyhow::Result<(PathBuf, bool)> {
@@ -780,7 +781,7 @@ pub fn generate_loadscript_text(
     source: &Path,
     chunk_method: ChunkMethod,
     scene_detection_downscale_height: Option<usize>,
-    scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
+    scene_detection_pixel_format: Option<FFPixelFormat>,
     scene_detection_scaler: String,
     is_proxy: bool,
 ) -> anyhow::Result<(String, bool)> {

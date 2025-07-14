@@ -96,9 +96,6 @@ impl Av1anContext {
     /// Initialize logging routines and create temporary directories
     #[tracing::instrument(level = "debug")]
     fn initialize(&mut self) -> anyhow::Result<()> {
-        ffmpeg::init()?;
-        ffmpeg::util::log::set_level(ffmpeg::util::log::level::Level::Fatal);
-
         if !self.args.resume && Path::new(&self.args.temp).is_dir() {
             fs::remove_dir_all(&self.args.temp).with_context(|| {
                 format!(
@@ -879,7 +876,7 @@ impl Av1anContext {
                 end = end_frame - 1
             ),
             "-pix_fmt",
-            self.args.output_pix_format.format.descriptor().unwrap().name(),
+            self.args.output_pix_format.format.to_pix_fmt_string(),
             "-strict",
             "-1",
             "-f",
@@ -1173,7 +1170,7 @@ impl Av1anContext {
             "-strict",
             "-1",
             "-pix_fmt",
-            self.args.output_pix_format.format.descriptor().unwrap().name(),
+            self.args.output_pix_format.format.to_pix_fmt_string(),
             "-f",
             "yuv4mpegpipe",
             "-",

@@ -5,14 +5,14 @@ use std::{
 };
 
 use anyhow::bail;
-use av_decoders::{DecoderError, DecoderImpl, FfmpegDecoder, VapoursynthDecoder, Y4mDecoder};
+use av_decoders::{DecoderError, DecoderImpl, VapoursynthDecoder, Y4mDecoder};
 use av_scenechange::{detect_scene_changes, Decoder, DetectionOptions, SceneDetectionSpeed};
 use colored::*;
-use ffmpeg::format::Pixel;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    ffmpeg::FFPixelFormat,
     into_smallvec,
     progress_bar,
     scenes::Scene,
@@ -33,7 +33,7 @@ pub fn av_scenechange_detect(
     min_scene_len: usize,
     verbosity: Verbosity,
     sc_scaler: &str,
-    sc_pix_format: Option<Pixel>,
+    sc_pix_format: Option<FFPixelFormat>,
     sc_method: ScenecutMethod,
     sc_downscale_height: Option<usize>,
     zones: &[Scene],
@@ -91,7 +91,7 @@ pub fn scene_detect(
     callback: Option<&dyn Fn(usize)>,
     min_scene_len: usize,
     sc_scaler: &str,
-    sc_pix_format: Option<Pixel>,
+    sc_pix_format: Option<FFPixelFormat>,
     sc_method: ScenecutMethod,
     sc_downscale_height: Option<usize>,
     zones: &[Scene],
@@ -216,7 +216,7 @@ fn build_decoder(
     input: &Input,
     encoder: Encoder,
     sc_scaler: &str,
-    sc_pix_format: Option<Pixel>,
+    sc_pix_format: Option<FFPixelFormat>,
     sc_downscale_height: Option<usize>,
 ) -> anyhow::Result<(Decoder, usize)> {
     let bit_depth;
@@ -225,7 +225,7 @@ fn build_decoder(
             "-vf",
             format!(
                 "format={},scale=-2:'min({},ih)':flags={}",
-                spf.descriptor().unwrap().name(),
+                spf.to_pix_fmt_string(),
                 sdh,
                 sc_scaler
             )
@@ -233,7 +233,7 @@ fn build_decoder(
         (Some(sdh), None) => {
             into_smallvec!["-vf", format!("scale=-2:'min({sdh},ih)':flags={sc_scaler}")]
         },
-        (None, Some(spf)) => into_smallvec!["-pix_fmt", spf.descriptor().unwrap().name()],
+        (None, Some(spf)) => into_smallvec!["-pix_fmt", spf.to_pix_fmt_string()],
         (None, None) => smallvec![],
     };
 
@@ -323,23 +323,19 @@ fn build_decoder(
             .as_pixel_format()
             .unwrap_or_else(|e| panic!("FFmpeg failed to get pixel format for input video: {e:?}"));
         bit_depth = encoder.get_format_bit_depth(sc_pix_format.unwrap_or(input_pix_format))?;
-        let decoder_impl = if !filters.is_empty() {
-            let stdout = Command::new("ffmpeg")
-                .args(["-r", "1", "-i"])
-                .arg(path)
-                .args(filters.as_ref())
-                .args(["-f", "yuv4mpegpipe", "-strict", "-1", "-"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()?
-                .stdout
-                .unwrap();
 
-            DecoderImpl::Y4m(Y4mDecoder::new(Box::new(stdout) as Box<dyn Read>)?)
-        } else {
-            DecoderImpl::Ffmpeg(FfmpegDecoder::new(path)?)
-        };
+        let stdout = Command::new("ffmpeg")
+            .args(["-r", "1", "-i"])
+            .arg(path)
+            .args(filters.as_ref())
+            .args(["-f", "yuv4mpegpipe", "-strict", "-1", "-"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?
+            .stdout
+            .unwrap();
+        let decoder_impl = DecoderImpl::Y4m(Y4mDecoder::new(Box::new(stdout) as Box<dyn Read>)?);
 
         Decoder::from_decoder_impl(decoder_impl)?
     };

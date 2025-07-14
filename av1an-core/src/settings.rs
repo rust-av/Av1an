@@ -7,7 +7,6 @@ use std::{
 };
 
 use anyhow::{bail, ensure};
-use ffmpeg::format::Pixel;
 use itertools::{chain, Itertools};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -15,6 +14,7 @@ use tracing::warn;
 use crate::{
     concat::ConcatMethod,
     encoder::Encoder,
+    ffmpeg::FFPixelFormat,
     metrics::{vmaf::validate_libvmaf, xpsnr::validate_libxpsnr},
     parse::valid_params,
     target_quality::TargetQuality,
@@ -31,14 +31,14 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PixelFormat {
-    pub format:    Pixel,
+    pub format:    FFPixelFormat,
     pub bit_depth: usize,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum InputPixelFormat {
     VapourSynth { bit_depth: usize },
-    FFmpeg { format: Pixel },
+    FFmpeg { format: FFPixelFormat },
 }
 
 impl InputPixelFormat {
@@ -55,7 +55,7 @@ impl InputPixelFormat {
     }
 
     #[inline]
-    pub fn as_pixel_format(&self) -> anyhow::Result<Pixel> {
+    pub fn as_pixel_format(&self) -> anyhow::Result<FFPixelFormat> {
         match self {
             InputPixelFormat::VapourSynth {
                 ..
@@ -80,7 +80,7 @@ pub struct EncodeArgs {
     pub scaler:                String,
     pub scenes:                Option<PathBuf>,
     pub split_method:          SplitMethod,
-    pub sc_pix_format:         Option<Pixel>,
+    pub sc_pix_format:         Option<FFPixelFormat>,
     pub sc_method:             ScenecutMethod,
     pub sc_only:               bool,
     pub sc_downscale_height:   Option<usize>,

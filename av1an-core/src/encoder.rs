@@ -5,14 +5,13 @@ use std::{borrow::Cow, cmp, fmt::Display, iter::Iterator, path::PathBuf, process
 
 use arrayvec::ArrayVec;
 use cfg_if::cfg_if;
-use ffmpeg::format::Pixel;
 use itertools::chain;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ffmpeg::compose_ffmpeg_pipe,
+    ffmpeg::{compose_ffmpeg_pipe, FFPixelFormat},
     inplace_vec,
     into_array,
     into_vec,
@@ -967,7 +966,7 @@ impl Encoder {
         temp: String,
         chunk_index: usize,
         q: usize,
-        pix_fmt: Pixel,
+        pix_fmt: FFPixelFormat,
         probing_rate: usize,
         probing_speed: Option<ProbingSpeed>,
         vmaf_threads: usize,
@@ -1034,7 +1033,10 @@ impl Encoder {
     }
 
     #[inline]
-    pub fn get_format_bit_depth(self, format: Pixel) -> Result<usize, UnsupportedPixelFormatError> {
+    pub fn get_format_bit_depth(
+        self,
+        format: FFPixelFormat,
+    ) -> Result<usize, UnsupportedPixelFormatError> {
         macro_rules! impl_this_function {
       ($($encoder:ident),*) => {
         match self {
@@ -1051,14 +1053,14 @@ impl Encoder {
 #[derive(Error, Debug)]
 pub enum UnsupportedPixelFormatError {
     #[error("{0} does not support {1:?}")]
-    UnsupportedFormat(Encoder, Pixel),
+    UnsupportedFormat(Encoder, FFPixelFormat),
 }
 
 macro_rules! create_get_format_bit_depth_function {
   ($encoder:ident, 8: $_8bit_fmts:expr, 10: $_10bit_fmts:expr, 12: $_12bit_fmts:expr) => {
     pastey::paste! {
-      pub fn [<get_ $encoder _format_bit_depth>](format: Pixel) -> Result<usize, UnsupportedPixelFormatError> {
-        use Pixel::*;
+      pub fn [<get_ $encoder _format_bit_depth>](format: FFPixelFormat) -> Result<usize, UnsupportedPixelFormatError> {
+        use FFPixelFormat::*;
         if $_8bit_fmts.contains(&format) {
           Ok(8)
         } else if $_10bit_fmts.contains(&format) {

@@ -10,13 +10,13 @@ use std::{
 };
 
 use anyhow::bail;
-use ffmpeg::format::Pixel;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
 use crate::{
     broker::EncoderCrash,
     chunk::Chunk,
+    ffmpeg::FFPixelFormat,
     interpol::{
         akima_interpolate,
         catmull_rom_interpolate,
@@ -88,7 +88,7 @@ pub struct TargetQuality {
     pub max_q:                 u32,
     pub interp_method:         Option<(InterpolationMethod, InterpolationMethod)>,
     pub encoder:               Encoder,
-    pub pix_format:            Pixel,
+    pub pix_format:            FFPixelFormat,
     pub temp:                  String,
     pub workers:               usize,
     pub video_params:          Vec<String>,

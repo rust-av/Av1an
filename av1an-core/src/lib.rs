@@ -11,7 +11,6 @@ use std::{
     time::Instant,
 };
 
-use ::ffmpeg::format::Pixel;
 use ::vapoursynth::{api::API, map::OwnedMap};
 use anyhow::{bail, Context};
 use av1_grain::TransferFunction;
@@ -33,6 +32,7 @@ pub use crate::{
     util::read_in_dir,
 };
 use crate::{
+    ffmpeg::FFPixelFormat,
     progress_bar::finish_progress_bar,
     vapoursynth::{create_vs_file, generate_loadscript_text},
 };
@@ -102,7 +102,7 @@ impl Input {
         temporary_directory: &str,
         chunk_method: ChunkMethod,
         scene_detection_downscale_height: Option<usize>,
-        scene_detection_pixel_format: Option<Pixel>,
+        scene_detection_pixel_format: Option<FFPixelFormat>,
         scene_detection_scaler: Option<String>,
         is_proxy: bool,
     ) -> anyhow::Result<Self> {
@@ -226,7 +226,7 @@ impl Input {
     pub fn as_script_text(
         &self,
         scene_detection_downscale_height: Option<usize>,
-        scene_detection_pixel_format: Option<Pixel>,
+        scene_detection_pixel_format: Option<FFPixelFormat>,
         scene_detection_scaler: Option<String>,
     ) -> anyhow::Result<String> {
         match &self {
@@ -593,8 +593,8 @@ pub fn determine_workers(args: &EncodeArgs) -> anyhow::Result<u64> {
     // memory usage scales with pixel format, expressed as a multiplier of memory
     // usage. Roughly the same behavior was observed accross all encoders.
     let pix_mult = match args.output_pix_format.format {
-        Pixel::YUV444P | Pixel::YUV444P10LE | Pixel::YUV444P12LE => 1.5,
-        Pixel::YUV422P | Pixel::YUV422P10LE | Pixel::YUV422P12LE => 1.25,
+        FFPixelFormat::YUV444P | FFPixelFormat::YUV444P10LE | FFPixelFormat::YUV444P12LE => 1.5,
+        FFPixelFormat::YUV422P | FFPixelFormat::YUV422P10LE | FFPixelFormat::YUV422P12LE => 1.25,
         _ => 1.0,
     };
 

@@ -7,10 +7,9 @@ use crate::{
 fn get_test_args() -> Av1anContext {
     use std::path::PathBuf;
 
-    use ffmpeg::format::Pixel;
-
     use crate::{
         concat::ConcatMethod,
+        ffmpeg::FFPixelFormat,
         into_vec,
         settings::{EncodeArgs, InputPixelFormat, PixelFormat},
         ChunkMethod,
@@ -43,7 +42,7 @@ fn get_test_args() -> Av1anContext {
         max_tries:             3,
         min_scene_len:         10,
         input_pix_format:      InputPixelFormat::FFmpeg {
-            format: Pixel::YUV420P10LE,
+            format: FFPixelFormat::YUV420P10LE,
         },
         input:                 Input::Video {
             path:         PathBuf::new(),
@@ -53,7 +52,7 @@ fn get_test_args() -> Av1anContext {
         },
         proxy:                 None,
         output_pix_format:     PixelFormat {
-            format:    Pixel::YUV420P10LE,
+            format:    FFPixelFormat::YUV420P10LE,
             bit_depth: 10,
         },
         resume:                false,

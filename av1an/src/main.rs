@@ -7,9 +7,9 @@ use std::{
     thread::available_parallelism,
 };
 
-use ::ffmpeg::format::Pixel;
 use anyhow::{anyhow, bail, ensure, Context};
 use av1an_core::{
+    ffmpeg::FFPixelFormat,
     hash_path,
     into_vec,
     read_in_dir,
@@ -335,7 +335,7 @@ pub struct CliOpts {
 
     /// Perform scene detection with this pixel format
     #[clap(long, help_heading = "Scene Detection")]
-    pub sc_pix_format: Option<Pixel>,
+    pub sc_pix_format: Option<FFPixelFormat>,
 
     /// Maximum scene length
     ///
@@ -555,7 +555,7 @@ pub struct CliOpts {
 
     /// FFmpeg pixel format
     #[clap(long, default_value = "yuv420p10le", help_heading = "Encoding")]
-    pub pix_format: Pixel,
+    pub pix_format: FFPixelFormat,
 
     /// Path to a file specifying zones within the video with differing encoder
     /// settings.
@@ -829,7 +829,7 @@ impl CliOpts {
         &self,
         temp_dir: String,
         video_params: Vec<String>,
-        output_pix_format: Pixel,
+        output_pix_format: FFPixelFormat,
     ) -> anyhow::Result<Option<TargetQuality>> {
         self.target_quality
             .map(|tq| {

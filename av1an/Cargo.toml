@@ -22,7 +22,6 @@ anyhow = { workspace = true }
 av1an-core = { path = "../av1an-core", version = "0.4.1" }
 clap = { version = "4.5.41", features = ["derive"] }
 clap_complete = "4.5.54"
-ffmpeg = { workspace = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 path_abs = { workspace = true }
@@ -36,4 +35,3 @@ vergen-git2 = { version = "1.0.0", features = ["build", "rustc", "cargo"] }
 
 [features]
 default = []
-ffmpeg_static = ["ffmpeg/static", "ffmpeg/build", "av1an-core/ffmpeg_static"]
