@@ -973,11 +973,15 @@ impl Encoder {
         vmaf_threads: usize,
         mut video_params: Vec<String>,
         probe_slow: bool,
-    ) -> (Vec<String>, Vec<Cow<'static, str>>) {
-        let pipe = compose_ffmpeg_pipe(
-            ["-vf", format!("select=not(mod(n\\,{probing_rate}))").as_str(), "-vsync", "0"],
-            pix_fmt,
-        );
+    ) -> (Option<Vec<String>>, Vec<Cow<'static, str>>) {
+        let pipe = if probing_rate > 1 {
+            Some(compose_ffmpeg_pipe(
+                ["-vf", format!("select=not(mod(n\\,{probing_rate}))").as_str(), "-vsync", "0"],
+                pix_fmt,
+            ))
+        } else {
+            None
+        };
 
         let extension = match self {
             Encoder::x264 => "264",

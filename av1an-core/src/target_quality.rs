@@ -1,9 +1,12 @@
 use std::{
+    borrow::Cow,
     cmp::{self, Ordering},
     collections::HashSet,
+    io::Read,
     path::{Path, PathBuf},
+    process::{Child, Stdio},
     str::FromStr,
-    thread::available_parallelism,
+    thread::{self, available_parallelism},
 };
 
 use anyhow::bail;
@@ -538,7 +541,7 @@ impl TargetQuality {
 
         let future = async {
             let source_cmd = chunk.source_cmd.clone();
-            let cmd = cmd.clone();
+            let (ff_cmd, output) = cmd.clone();
 
             tokio::task::spawn_blocking(move || {
                 let mut source = if let [pipe_cmd, args @ ..] = &*source_cmd {
@@ -560,54 +563,47 @@ impl TargetQuality {
 
                 let source_stdout = source.stdout.take().unwrap();
 
-                let mut source_pipe = if let [ffmpeg, args @ ..] = &*cmd.0 {
-                    std::process::Command::new(ffmpeg)
-                        .args(args)
-                        .stdin(source_stdout)
-                        .stdout(std::process::Stdio::piped())
-                        .stderr(std::process::Stdio::piped())
-                        .spawn()
-                        .map_err(|e| EncoderCrash {
-                            exit_status:        std::process::ExitStatus::default(),
-                            source_pipe_stderr: format!("Failed to spawn ffmpeg: {e}").into(),
-                            ffmpeg_pipe_stderr: None,
-                            stderr:             String::new().into(),
-                            stdout:             String::new().into(),
-                        })?
-                } else {
-                    unreachable!()
-                };
+                let (mut source_pipe, mut enc_pipe) = {
+                    if let Some(ff_cmd) = ff_cmd.as_deref() {
+                        let (ffmpeg, args) = ff_cmd.split_first().expect("not empty");
+                        let mut source_pipe = std::process::Command::new(ffmpeg)
+                            .args(args)
+                            .stdin(source_stdout)
+                            .stdout(std::process::Stdio::piped())
+                            .stderr(std::process::Stdio::piped())
+                            .spawn()
+                            .map_err(|e| EncoderCrash {
+                                exit_status:        std::process::ExitStatus::default(),
+                                source_pipe_stderr: format!("Failed to spawn ffmpeg: {e}").into(),
+                                ffmpeg_pipe_stderr: None,
+                                stderr:             String::new().into(),
+                                stdout:             String::new().into(),
+                            })?;
 
-                let source_pipe_stdout = source_pipe.stdout.take().unwrap();
+                        let source_pipe_stdout = source_pipe.stdout.take().unwrap();
 
-                let mut enc_pipe = if let [cmd, args @ ..] = &*cmd.1 {
-                    std::process::Command::new(cmd.as_ref())
-                        .args(args.iter().map(AsRef::as_ref))
-                        .stdin(source_pipe_stdout)
-                        .stdout(std::process::Stdio::piped())
-                        .stderr(std::process::Stdio::piped())
-                        .spawn()
-                        .map_err(|e| EncoderCrash {
-                            exit_status:        std::process::ExitStatus::default(),
-                            source_pipe_stderr: String::new().into(),
-                            ffmpeg_pipe_stderr: None,
-                            stderr:             format!("Failed to spawn encoder: {e}").into(),
-                            stdout:             String::new().into(),
-                        })?
-                } else {
-                    unreachable!()
+                        let enc_pipe = if let [cmd, args @ ..] = &*output {
+                            build_encoder_pipe(cmd.clone(), args, source_pipe_stdout)?
+                        } else {
+                            unreachable!()
+                        };
+                        (Some(source_pipe), enc_pipe)
+                    } else {
+                        // We unfortunately have to duplicate the code like this
+                        // in order to satisfy the borrow checker for `source_stdout`
+                        let enc_pipe = if let [cmd, args @ ..] = &*output {
+                            build_encoder_pipe(cmd.clone(), args, source_stdout)?
+                        } else {
+                            unreachable!()
+                        };
+                        (None, enc_pipe)
+                    }
                 };
 
                 // Drop stdout to prevent buffer deadlock
                 drop(enc_pipe.stdout.take());
 
-                // Start reading stderr concurrently to prevent deadlock
-                use std::{io::Read, thread};
-
                 let source_stderr = source.stderr.take().unwrap();
-                let source_pipe_stderr = source_pipe.stderr.take().unwrap();
-                let enc_stderr = enc_pipe.stderr.take().unwrap();
-
                 let stderr_thread1 = thread::spawn(move || {
                     let mut buf = Vec::new();
                     let mut stderr = source_stderr;
@@ -615,16 +611,20 @@ impl TargetQuality {
                     buf
                 });
 
-                let stderr_thread2 = thread::spawn(move || {
-                    let mut buf = Vec::new();
-                    let mut stderr = source_pipe_stderr;
-                    stderr.read_to_end(&mut buf).ok();
-                    buf
+                let source_pipe_stderr = source_pipe.as_mut().map(|p| p.stderr.take().unwrap());
+                let stderr_thread2 = source_pipe_stderr.map(|source_pipe_stderr| {
+                    thread::spawn(move || {
+                        let mut buf = Vec::new();
+                        let mut stderr = source_pipe_stderr;
+                        stderr.read_to_end(&mut buf).ok();
+                        buf
+                    })
                 });
 
+                let enc_pipe_stderr = enc_pipe.stderr.take().unwrap();
                 let stderr_thread3 = thread::spawn(move || {
                     let mut buf = Vec::new();
-                    let mut stderr = enc_stderr;
+                    let mut stderr = enc_pipe_stderr;
                     stderr.read_to_end(&mut buf).ok();
                     buf
                 });
@@ -638,13 +638,15 @@ impl TargetQuality {
                     stdout:             String::new().into(),
                 })?;
 
-                let _ = source_pipe.wait();
+                if let Some(source_pipe) = source_pipe.as_mut() {
+                    let _ = source_pipe.wait();
+                };
                 let _ = source.wait();
 
                 // Collect stderr after process finishes
                 let stderr_handles = (
                     stderr_thread1.join().unwrap_or_default(),
-                    stderr_thread2.join().unwrap_or_default(),
+                    stderr_thread2.map(|t| t.join().unwrap_or_default()),
                     stderr_thread3.join().unwrap_or_default(),
                 );
 
@@ -652,7 +654,7 @@ impl TargetQuality {
                     return Err(EncoderCrash {
                         exit_status:        enc_status,
                         source_pipe_stderr: stderr_handles.0.into(),
-                        ffmpeg_pipe_stderr: Some(stderr_handles.1.into()),
+                        ffmpeg_pipe_stderr: stderr_handles.1.map(|h| h.into()),
                         stderr:             stderr_handles.2.into(),
                         stdout:             String::new().into(),
                     });
@@ -690,6 +692,27 @@ impl TargetQuality {
         chunk.tq_cq = Some(self.per_shot_target_quality(chunk, worker_id, plugins)?);
         Ok(())
     }
+}
+
+#[allow(clippy::result_large_err)]
+fn build_encoder_pipe(
+    cmd: Cow<'_, str>,
+    args: &[Cow<'_, str>],
+    in_pipe: impl Into<Stdio>,
+) -> Result<Child, EncoderCrash> {
+    std::process::Command::new(cmd.as_ref())
+        .args(args.iter().map(AsRef::as_ref))
+        .stdin(in_pipe)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| EncoderCrash {
+            exit_status:        std::process::ExitStatus::default(),
+            source_pipe_stderr: String::new().into(),
+            ffmpeg_pipe_stderr: None,
+            stderr:             format!("Failed to spawn encoder: {e}").into(),
+            stdout:             String::new().into(),
+        })
 }
 
 fn predict_quantizer(
