@@ -104,7 +104,7 @@ pub fn get_num_frames(source: &Path) -> anyhow::Result<usize> {
         .arg(source)
         .output()?
         .stdout;
-    match String::from_utf8_lossy(&output).parse::<usize>() {
+    match String::from_utf8_lossy(&output).trim().parse::<usize>() {
         Ok(x) if x > 0 => Ok(x),
         _ => {
             // If we got empty output or a 0 frame count, try using the slower
@@ -129,7 +129,7 @@ fn get_num_frames_slow(source: &Path) -> anyhow::Result<usize> {
         .arg(source)
         .output()?
         .stdout;
-    Ok(String::from_utf8_lossy(&output).parse::<usize>()?)
+    Ok(String::from_utf8_lossy(&output).trim().parse::<usize>()?)
 }
 
 fn parse_frame_rate(rate: &str) -> anyhow::Result<Rational64> {
