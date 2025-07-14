@@ -22,6 +22,7 @@ use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr, IntoStaticStr};
+use tracing::info;
 
 pub use crate::{
     concat::ConcatMethod,
@@ -31,7 +32,10 @@ pub use crate::{
     target_quality::{InterpolationMethod, TargetQuality},
     util::read_in_dir,
 };
-use crate::{progress_bar::finish_progress_bar, vapoursynth::generate_loadscript_text};
+use crate::{
+    progress_bar::finish_progress_bar,
+    vapoursynth::{create_vs_file, generate_loadscript_text},
+};
 
 mod broker;
 mod chunk;
@@ -62,8 +66,7 @@ static CLIP_INFO_CACHE: Lazy<Mutex<HashMap<CacheKey, ClipInfo>>> =
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct CacheKey {
-    input:          Input,
-    vs_script_path: Option<PathBuf>,
+    input: Input,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,11 +74,17 @@ pub enum Input {
     VapourSynth {
         path:        PathBuf,
         vspipe_args: Vec<String>,
+        // Must be stored in memory at initialization instead of generating
+        // on demand in order to reduce thrashing disk with frequent reads from Target Quality
+        // probing
         script_text: String,
     },
     Video {
-        path:        PathBuf,
-        script_text: Option<String>,
+        path:         PathBuf,
+        // Used to generate script_text if chunk_method is supported
+        temp:         String,
+        // Store as a string of ChunkMethod to enable hashing
+        chunk_method: ChunkMethod,
     },
 }
 
@@ -84,17 +93,17 @@ impl Input {
     pub fn new<P: AsRef<Path> + Into<PathBuf>>(
         path: P,
         vspipe_args: Vec<String>,
-        temp: &str,
+        temporary_directory: &str,
         chunk_method: ChunkMethod,
         scene_detection_downscale_height: Option<usize>,
         scene_detection_pixel_format: Option<Pixel>,
-        scene_detection_scaler: String,
+        scene_detection_scaler: Option<String>,
     ) -> anyhow::Result<Self> {
-        if let Some(ext) = path.as_ref().extension() {
+        let input = if let Some(ext) = path.as_ref().extension() {
             if ext == "py" || ext == "vpy" {
                 let input_path = path.into();
                 let script_text = read_to_string(input_path.clone())?;
-                Ok(Self::VapourSynth {
+                Ok::<Self, anyhow::Error>(Self::VapourSynth {
                     path: input_path.clone(),
                     vspipe_args,
                     script_text,
@@ -102,49 +111,51 @@ impl Input {
             } else {
                 let input_path = path.into();
                 Ok(Self::Video {
-                    path:        input_path.clone(),
-                    script_text: match chunk_method {
-                        ChunkMethod::LSMASH
-                        | ChunkMethod::FFMS2
-                        | ChunkMethod::DGDECNV
-                        | ChunkMethod::BESTSOURCE => Some(
-                            generate_loadscript_text(
-                                temp,
-                                &input_path,
-                                chunk_method,
-                                scene_detection_downscale_height,
-                                scene_detection_pixel_format,
-                                scene_detection_scaler,
-                            )
-                            .unwrap(),
-                        ),
-                        _ => None,
-                    },
+                    path: input_path.clone(),
+                    temp: temporary_directory.to_owned(),
+                    chunk_method,
                 })
             }
         } else {
             let input_path = path.into();
             Ok(Self::Video {
-                path:        input_path.clone(),
-                script_text: match chunk_method {
-                    ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::DGDECNV
-                    | ChunkMethod::BESTSOURCE => Some(
-                        generate_loadscript_text(
-                            temp,
-                            &input_path,
-                            chunk_method,
-                            scene_detection_downscale_height,
-                            scene_detection_pixel_format,
-                            scene_detection_scaler,
-                        )
-                        .unwrap(),
-                    ),
-                    _ => None,
-                },
+                path: input_path.clone(),
+                temp: temporary_directory.to_owned(),
+                chunk_method,
             })
+        }?;
+
+        if input.is_video() && input.is_vapoursynth_script() {
+            // Clip info is cached and reused so the values need to be correct
+            // the first time. The loadscript needs to be generated along with
+            // prerequisite cache/index files and their directories.
+            let (_, cache_file_already_exists) = generate_loadscript_text(
+                temporary_directory,
+                input.as_path(),
+                chunk_method,
+                scene_detection_downscale_height,
+                scene_detection_pixel_format,
+                scene_detection_scaler.clone().unwrap_or_default(),
+            )?;
+            if !cache_file_already_exists {
+                // Getting the clip info will cause VapourSynth to generate the
+                // cache file which may take a long time.
+                info!("Generating VapourSynth cache file");
+            }
+
+            create_vs_file(
+                temporary_directory,
+                input.as_path(),
+                chunk_method,
+                scene_detection_downscale_height,
+                scene_detection_pixel_format,
+                scene_detection_scaler.unwrap_or_default(),
+            )?;
+
+            input.clip_info()?;
         }
+
+        Ok(input)
     }
 
     /// Returns a reference to the inner path, panicking if the input is not an
@@ -197,26 +208,62 @@ impl Input {
         }
     }
 
-    /// Returns a reference to the inner script text, panicking if the input is
-    /// does not have script text.
+    /// Returns a VapourSynth script as a string. If `self` is `Video`, the
+    /// script will be generated for supported VapourSynth chunk methods.
     #[inline]
-    pub fn as_script_text(&self) -> &String {
+    pub fn as_script_text(
+        &self,
+        scene_detection_downscale_height: Option<usize>,
+        scene_detection_pixel_format: Option<Pixel>,
+        scene_detection_scaler: Option<String>,
+    ) -> anyhow::Result<String> {
         match &self {
             Input::VapourSynth {
                 script_text, ..
-            } => script_text,
+            } => Ok(script_text.clone()),
             Input::Video {
-                script_text, ..
-            } => {
-                if let Some(text) = script_text {
-                    text
-                } else {
-                    panic!(
-                        "called `Input::as_script_text()` on an `Input::Video` variant with no \
-                         script text"
-                    )
-                }
+                path,
+                temp,
+                chunk_method,
+            } => match chunk_method {
+                ChunkMethod::LSMASH
+                | ChunkMethod::FFMS2
+                | ChunkMethod::DGDECNV
+                | ChunkMethod::BESTSOURCE => {
+                    let (script_text, _) = generate_loadscript_text(
+                        temp,
+                        path,
+                        *chunk_method,
+                        scene_detection_downscale_height,
+                        scene_detection_pixel_format,
+                        scene_detection_scaler.unwrap_or_default(),
+                    )?;
+                    Ok(script_text)
+                },
+                _ => Err(anyhow::anyhow!(
+                    "Cannot generate VapourSynth script text with chunk method {chunk_method:?}"
+                )),
             },
+        }
+    }
+
+    /// Returns a path to the VapourSynth script, panicking if the input is not
+    /// an `Input::VapourSynth` or `Input::Video` with a valid chunk method.
+    #[inline]
+    pub fn as_script_path(&self) -> PathBuf {
+        match &self {
+            Input::VapourSynth {
+                path, ..
+            } => path.to_path_buf(),
+            Input::Video {
+                temp, ..
+            } if self.is_vapoursynth_script() => {
+                let temp: &Path = temp.as_ref();
+                temp.join("split").join("loadscript.vpy")
+            },
+            Input::Video {
+                ..
+            } => panic!("called `Input::as_script_path()` on an `Input::Video` variant"),
         }
     }
 
@@ -231,13 +278,30 @@ impl Input {
     }
 
     #[inline]
-    pub fn clip_info(&self, vs_script_path: Option<PathBuf>) -> anyhow::Result<ClipInfo> {
+    pub fn is_vapoursynth_script(&self) -> bool {
+        match &self {
+            Input::VapourSynth {
+                ..
+            } => true,
+            Input::Video {
+                chunk_method, ..
+            } => matches!(
+                chunk_method,
+                ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::DGDECNV
+                    | ChunkMethod::BESTSOURCE
+            ),
+        }
+    }
+
+    #[inline]
+    pub fn clip_info(&self) -> anyhow::Result<ClipInfo> {
         const FAIL_MSG: &str = "Failed to get number of frames for input video";
 
         let mut cache = CLIP_INFO_CACHE.lock();
         let key = CacheKey {
-            input:          self.clone(),
-            vs_script_path: vs_script_path.clone(),
+            input: self.clone(),
         };
         let cached = cache.get(&key);
         if let Some(cached) = cached {
@@ -247,14 +311,12 @@ impl Input {
         let info = match &self {
             Input::Video {
                 path, ..
-            } if vs_script_path.is_none() => {
+            } if !&self.is_vapoursynth_script() => {
                 ffmpeg::get_clip_info(path.as_path()).context(FAIL_MSG)?
             },
-            path => vapoursynth::get_clip_info(
-                vs_script_path.as_deref().unwrap_or(path.as_path()),
-                self.as_vspipe_args_map()?,
-            )
-            .context(FAIL_MSG)?,
+            path => {
+                vapoursynth::get_clip_info(path, self.as_vspipe_args_map()?).context(FAIL_MSG)?
+            },
         };
         cache.insert(key, info);
         Ok(info)
@@ -266,7 +328,7 @@ impl Input {
     /// Return number of horizontal and vertical tiles
     #[inline]
     pub fn calculate_tiles(&self) -> (u32, u32) {
-        match self.clip_info(None).map(|info| info.resolution) {
+        match self.clip_info().map(|info| info.resolution) {
             Ok((h, v)) => {
                 // tile range 0-1440 pixels
                 let horizontal = max((h - 1) / 720, 1);
@@ -306,6 +368,16 @@ impl Input {
             };
         }
 
+        Ok(args_map)
+    }
+
+    #[inline]
+    pub fn as_vspipe_args_hashmap(&self) -> Result<HashMap<String, String>, anyhow::Error> {
+        let mut args_map = HashMap::new();
+        for arg in self.as_vspipe_args_vec()? {
+            let split: Vec<&str> = arg.split_terminator('=').collect();
+            args_map.insert(split[0].to_string(), split[1].to_string());
+        }
         Ok(args_map)
     }
 }
@@ -367,7 +439,19 @@ pub enum ScenecutMethod {
     Standard,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Serialize, Deserialize, Debug, EnumString, IntoStaticStr)]
+#[derive(
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Serialize,
+    Deserialize,
+    Debug,
+    EnumString,
+    IntoStaticStr,
+    Display,
+    Hash,
+)]
 pub enum ChunkMethod {
     #[strum(serialize = "select")]
     Select,
@@ -446,7 +530,7 @@ pub enum TargetMetric {
 /// Determine the optimal number of workers for an encoder
 #[inline]
 pub fn determine_workers(args: &EncodeArgs) -> anyhow::Result<u64> {
-    let res = args.input.clip_info(None)?.resolution;
+    let res = args.input.clip_info()?.resolution;
     let tiles = args.tiles;
     let megapixels = (res.0 * res.1) as f64 / 1e6;
     // encoder memory and chunk_method memory usage scales with resolution
@@ -588,7 +672,7 @@ pub struct ClipInfo {
     pub num_frames:               usize,
     pub format_info:              InputPixelFormat,
     pub frame_rate:               Rational64,
-    pub resolution:               (u32, u32),
+    pub resolution:               (u32, u32), // (width, height), consider using type aliases
     /// This is overly simplified because we currently only use it for photon
     /// noise gen, which only supports two transfer functions
     pub transfer_characteristics: TransferFunction,

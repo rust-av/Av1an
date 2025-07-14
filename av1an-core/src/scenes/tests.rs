@@ -46,8 +46,9 @@ fn get_test_args() -> Av1anContext {
             format: Pixel::YUV420P10LE,
         },
         input:                 Input::Video {
-            path:        PathBuf::new(),
-            script_text: None,
+            path:         PathBuf::new(),
+            temp:         String::new(),
+            chunk_method: ChunkMethod::LSMASH,
         },
         output_pix_format:     PixelFormat {
             format:    Pixel::YUV420P10LE,
@@ -79,7 +80,7 @@ fn get_test_args() -> Av1anContext {
     };
     Av1anContext {
         vs_script: None,
-        vs_scd_script: None,
+        // vs_scd_script: None,
         frames: 6900,
         args,
         scene_factory: SceneFactory::new(),

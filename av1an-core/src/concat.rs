@@ -164,6 +164,7 @@ pub fn mkvmerge(
     num_chunks: usize,
     output_fps: Option<Rational64>,
 ) -> anyhow::Result<()> {
+    const MAXIMUM_CHUNKS_PER_MERGE: usize = 100;
     // mkvmerge does not accept UNC paths on Windows
     #[cfg(windows)]
     fn fix_path<P: AsRef<Path>>(p: P) -> String {
@@ -202,10 +203,68 @@ pub fn mkvmerge(
 
     assert!(num_chunks != 0);
 
+    let num_chunk_groups = (num_chunks as f64 / MAXIMUM_CHUNKS_PER_MERGE as f64).ceil() as usize;
+    let chunk_groups: Vec<Vec<String>> = (0..num_chunk_groups)
+        .map(|group_index| {
+            let start = group_index * MAXIMUM_CHUNKS_PER_MERGE;
+            let end = (start + MAXIMUM_CHUNKS_PER_MERGE).min(num_chunks);
+            (start..end)
+                .map(|i| {
+                    format!(
+                        "{i:05}.{ext}",
+                        ext = match encoder {
+                            Encoder::x264 => "264",
+                            Encoder::x265 => "hevc",
+                            _ => "ivf",
+                        }
+                    )
+                })
+                .collect()
+        })
+        .collect();
+
+    chunk_groups.iter().enumerate().try_for_each(|(group_index, chunk_group)| {
+        let group_options_path =
+            PathBuf::from(&temp_dir).join(format!("group_options_{group_index:05}.json"));
+        let group_options_output_path = PathAbs::new(
+            PathBuf::from(&temp_dir).join(format!("group_output_{group_index:05}.mkv")),
+        )?;
+
+        let group_options_json_contents = mkvmerge_options_json(
+            chunk_group,
+            &fix_path(group_options_output_path.to_str().unwrap()),
+            None,
+            output_fps,
+        );
+
+        let mut group_options_json = File::create(group_options_path)?;
+        group_options_json.write_all(group_options_json_contents.as_bytes())?;
+
+        let mut group_cmd = Command::new("mkvmerge");
+        group_cmd.current_dir(&encode_dir);
+        group_cmd.arg(format!("@../group_options_{group_index:05}.json"));
+
+        let group_out = group_cmd
+            .output()
+            .with_context(|| "Failed to execute mkvmerge command for concatenation")?;
+
+        if !group_out.status.success() {
+            return Err(anyhow::Error::msg(format!(
+                "Failed to execute mkvmerge command for concatenation: {}",
+                String::from_utf8_lossy(&group_out.stderr)
+            )));
+        }
+
+        Ok(())
+    })?;
+
+    let chunk_group_options_names: Vec<String> = (0..num_chunk_groups)
+        .map(|group_index| format!("group_output_{group_index:05}.mkv"))
+        .collect();
+
     let options_path = PathBuf::from(&temp_dir).join("options.json");
     let options_json_contents = mkvmerge_options_json(
-        num_chunks,
-        encoder,
+        &chunk_group_options_names,
         &fix_path(output.to_str().unwrap()),
         audio_file.as_deref(),
         output_fps,
@@ -215,8 +274,8 @@ pub fn mkvmerge(
     options_json.write_all(options_json_contents.as_bytes())?;
 
     let mut cmd = Command::new("mkvmerge");
-    cmd.current_dir(&encode_dir);
-    cmd.arg("@../options.json");
+    cmd.current_dir(temp_dir);
+    cmd.arg("@./options.json");
 
     let out = cmd
         .output()
@@ -238,13 +297,16 @@ pub fn mkvmerge(
 /// Create mkvmerge options.json
 #[tracing::instrument(level = "debug")]
 pub fn mkvmerge_options_json(
-    num: usize,
-    encoder: Encoder,
+    chunks: &Vec<String>,
     output: &str,
     audio: Option<&str>,
     output_fps: Option<Rational64>,
 ) -> String {
-    let mut file_string = String::with_capacity(64 + 12 * num);
+    let mut file_string = String::with_capacity(
+        64 + output.len()
+            + audio.map_or(0, |a| a.len() + 2)
+            + chunks.iter().map(|s| s.len() + 4).sum::<usize>(),
+    );
     write!(file_string, "[\"-o\", {output:?}").unwrap();
     if let Some(audio) = audio {
         write!(file_string, ", {audio:?}").unwrap();
@@ -260,18 +322,9 @@ pub fn mkvmerge_options_json(
     } else {
         file_string.push_str(", \"[\"");
     }
-    for i in 0..num {
-        write!(
-            file_string,
-            ", \"{i:05}.{ext}\"",
-            ext = match encoder {
-                Encoder::x264 => "264",
-                Encoder::x265 => "hevc",
-                _ => "ivf",
-            }
-        )
-        .unwrap();
-    }
+    chunks.iter().for_each(|chunk| {
+        write!(file_string, ", \"{chunk}\"").unwrap();
+    });
     file_string.push_str(",\"]\"]");
 
     file_string

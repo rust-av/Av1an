@@ -18,6 +18,7 @@ use crate::{
     metrics::{vmaf::validate_libvmaf, xpsnr::validate_libxpsnr},
     parse::valid_params,
     target_quality::TargetQuality,
+    util::to_absolute_path,
     vapoursynth::{VSZipVersion, VapoursynthPlugins},
     ChunkMethod,
     ChunkOrdering,
@@ -147,6 +148,16 @@ impl EncodeArgs {
         );
 
         if self.target_quality.is_some() {
+            if self.input.is_vapoursynth() {
+                let input_absolute_path = to_absolute_path(self.input.as_path())?;
+                if !input_absolute_path.starts_with(std::env::current_dir()?) {
+                    warn!(
+                        "Target Quality with VapourSynth script file input not in current working \
+                         directory. It is recommended to run in the same directory."
+                    );
+                }
+            }
+
             match self.target_quality.as_ref().unwrap().metric {
                 TargetMetric::VMAF => validate_libvmaf()?,
                 TargetMetric::SSIMULACRA2 => {
