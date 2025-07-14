@@ -13,12 +13,7 @@ use av1an_core::{
     hash_path,
     into_vec,
     read_in_dir,
-    vapoursynth::{
-        create_vs_file,
-        generate_loadscript_text,
-        get_vapoursynth_plugins,
-        VSZipVersion,
-    },
+    vapoursynth::{get_vapoursynth_plugins, VSZipVersion},
     Av1anContext,
     ChunkMethod,
     ChunkOrdering,
@@ -43,7 +38,7 @@ use clap::{value_parser, Parser};
 use num_traits::cast::ToPrimitive;
 use once_cell::sync::OnceCell;
 use path_abs::{PathAbs, PathInfo};
-use tracing::{info, instrument, level_filters::LevelFilter, warn};
+use tracing::{instrument, level_filters::LevelFilter, warn};
 
 use crate::logging::{init_logging, DEFAULT_LOG_LEVEL};
 
@@ -1070,6 +1065,9 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.vspipe_args.clone(),
             temp.as_str(),
             chunk_method,
+            args.sc_downscale_height,
+            args.sc_pix_format,
+            Some(scaler.clone()),
             false,
         )?;
 
@@ -1082,6 +1080,9 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 args.vspipe_args.clone(),
                 temp.as_str(),
                 chunk_method,
+                args.sc_downscale_height,
+                args.sc_pix_format,
+                Some(scaler.clone()),
                 true,
             )?)
         } else {
@@ -1112,49 +1113,11 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             output_pix_format.format,
         )?;
 
-        let initialize_vs_input = |vs_input: &Input| {
-            // Clip info is cached and reused so the values need to be correct
-            // the first time. The loadscript needs to be generated along with
-            // prerequisite cache/index files and their directories.
-            let (_, cache_file_already_exists) = generate_loadscript_text(
-                &temp,
-                vs_input.as_path(),
-                chunk_method,
-                args.sc_downscale_height,
-                args.sc_pix_format,
-                scaler.clone(),
-                vs_input.is_proxy(),
-            )?;
-            if !cache_file_already_exists {
-                // Getting the clip info will cause VapourSynth to generate the
-                // cache file which may take a long time.
-                info!("Generating VapourSynth cache file");
-            }
-
-            create_vs_file(
-                &temp,
-                vs_input.as_path(),
-                chunk_method,
-                args.sc_downscale_height,
-                args.sc_pix_format,
-                scaler.clone(),
-                vs_input.is_proxy(),
-            )?;
-
-            Ok::<(), anyhow::Error>(())
-        };
-
-        if input.is_video() && input.is_vapoursynth_script() {
-            initialize_vs_input(&input)?;
-        }
+        // Instantiates VapourSynth cache(s) if applicable
+        let clip_info = input.clip_info()?;
         if let Some(proxy) = &proxy {
-            if proxy.is_video() && proxy.is_vapoursynth_script() {
-                initialize_vs_input(proxy)?;
-            }
             proxy.clip_info()?;
         }
-
-        let clip_info = input.clip_info()?;
         // TODO make an actual constructor for this
         let arg = EncodeArgs {
             ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
