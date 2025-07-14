@@ -167,7 +167,7 @@ pub fn get_keyframes(source: &Path) -> anyhow::Result<Vec<usize>> {
         .arg("-show_frames")
         .arg("-select_streams")
         .arg("v:0")
-        .arg("show_entries")
+        .arg("-show_entries")
         .arg("frame=key_frame")
         .arg(source)
         .output()?
