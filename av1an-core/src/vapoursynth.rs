@@ -744,7 +744,7 @@ pub fn create_vs_file(
 
     if chunk_method == ChunkMethod::DGDECNV {
         let absolute_source = to_absolute_path(source)?;
-        let dgindexnv_output = split_folder.join("split").join(match is_proxy {
+        let dgindexnv_output = split_folder.join(match is_proxy {
             true => "index_proxy.dgi",
             false => "index.dgi",
         });
