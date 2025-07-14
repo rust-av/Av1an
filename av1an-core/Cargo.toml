@@ -57,7 +57,7 @@ smallvec = { version = "1.15.1", default-features = false, features = [
 ] }
 strsim = "0.11.0"
 strum = { version = "0.27.1", features = ["derive"] }
-sysinfo = "0.35.2"
+sysinfo = "0.36.0"
 textwrap = "0.16.0"
 thiserror = "2.0.11"
 tracing = { workspace = true }
