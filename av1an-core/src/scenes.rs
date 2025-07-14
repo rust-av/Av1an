@@ -3,9 +3,9 @@ mod tests;
 
 use std::{
     collections::HashMap,
-    fs::{read_to_string, File},
+    fs::File,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     process::{exit, Command},
     str::FromStr,
     sync::atomic,
@@ -32,7 +32,6 @@ use crate::{
     split::extra_splits,
     EncodeArgs,
     Encoder,
-    Input,
     SplitMethod,
 };
 
@@ -366,31 +365,15 @@ impl SceneFactory {
     /// This runs scene detection and populates a list of scenes into the
     /// factory. This function must be called before getting the list of scenes
     /// or writing to the file.
-    pub fn compute_scenes(
-        &mut self,
-        args: &EncodeArgs,
-        vs_script: &Option<PathBuf>,
-        vs_scd_script: &Option<PathBuf>,
-        zones: &[Scene],
-    ) -> anyhow::Result<()> {
+    pub fn compute_scenes(&mut self, args: &EncodeArgs, zones: &[Scene]) -> anyhow::Result<()> {
         // We should only be calling this when scenes haven't been created yet
         debug_assert!(self.data.scenes.is_none());
 
-        let frames = args.input.clip_info(vs_script.clone())?.num_frames;
-
-        // Create a new input with the generated VapourSynth script for Scene Detection
-        let input = vs_scd_script.as_ref().map_or_else(
-            || args.input.clone(),
-            |vs_script| Input::VapourSynth {
-                path:        vs_script.clone(),
-                vspipe_args: Vec::new(),
-                script_text: read_to_string(vs_script).unwrap(),
-            },
-        );
+        let frames = args.input.clip_info()?.num_frames;
 
         let (mut scenes, frames) = match args.split_method {
             SplitMethod::AvScenechange => av_scenechange_detect(
-                &input,
+                &args.input,
                 args.encoder,
                 frames,
                 args.min_scene_len,
@@ -404,10 +387,11 @@ impl SceneFactory {
             SplitMethod::None => {
                 let mut scenes = Vec::with_capacity(2 * zones.len() + 1);
                 let mut frames_processed = 0;
+                // Add scenes for each zone and the scenes between zones
                 for zone in zones {
-                    let end_frame = zone.end_frame;
-
-                    if end_frame > frames_processed {
+                    // Frames between the previous zone and this zone
+                    if zone.start_frame > frames_processed {
+                        // No overrides for unspecified frames between zones
                         scenes.push(Scene {
                             start_frame:    frames_processed,
                             end_frame:      zone.start_frame,
@@ -415,9 +399,10 @@ impl SceneFactory {
                         });
                     }
 
+                    // Add the zone with its overrides
                     scenes.push(zone.clone());
-
-                    frames_processed += end_frame;
+                    // Update the frames processed
+                    frames_processed = zone.end_frame;
                 }
                 if frames > frames_processed {
                     scenes.push(Scene {

@@ -60,7 +60,7 @@ impl Chunk {
             let grain_table = Path::new(&self.temp).join(format!("iso{iso_setting}-grain.tbl"));
             if !grain_table.exists() {
                 debug!("Generating grain table at ISO {iso_setting}");
-                let clip_info = self.input.clip_info(None)?;
+                let clip_info = self.input.clip_info()?;
                 let (mut width, mut height) = clip_info.resolution;
                 if self.noise_size.0.is_some() {
                     width = self.noise_size.0.unwrap();

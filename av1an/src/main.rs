@@ -1051,7 +1051,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             chunk_method,
             args.sc_downscale_height,
             args.sc_pix_format,
-            scaler.clone(),
+            Some(scaler.clone()),
         )?;
 
         let verbosity = if args.quiet {
@@ -1078,7 +1078,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             output_pix_format.format,
         )?;
 
-        let clip_info = input.clip_info(None)?;
+        let clip_info = input.clip_info()?;
         // TODO make an actual constructor for this
         let arg = EncodeArgs {
             ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
@@ -1146,12 +1146,15 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 match &input {
                     Input::Video {
                         path, ..
-                    } => InputPixelFormat::FFmpeg {
+                    } if !input.is_vapoursynth_script() => InputPixelFormat::FFmpeg {
                         format: clip_info.format_info.as_pixel_format().with_context(|| {
                             format!("FFmpeg failed to get pixel format for input video {path:?}")
                         })?,
                     },
                     Input::VapourSynth {
+                        path, ..
+                    }
+                    | Input::Video {
                         path, ..
                     } => InputPixelFormat::VapourSynth {
                         bit_depth: clip_info.format_info.as_bit_depth().with_context(|| {
@@ -1228,11 +1231,19 @@ pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
     let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
     let log_level = cli_options.log_level;
-    let args = parse_cli(cli_options)?;
-    let first_arg = args.first().unwrap();
+    let verbosity = {
+        if cli_options.quiet {
+            Verbosity::Quiet
+        } else if cli_options.verbose {
+            Verbosity::Verbose
+        } else {
+            Verbosity::Normal
+        }
+    };
 
+    // Initialize logging before fully parsing CLI options
     init_logging(
-        match first_arg.verbosity {
+        match verbosity {
             Verbosity::Quiet => LevelFilter::WARN,
             Verbosity::Normal => LevelFilter::INFO,
             Verbosity::Verbose => LevelFilter::INFO,
@@ -1241,6 +1252,7 @@ pub fn run() -> anyhow::Result<()> {
         log_level,
     )?;
 
+    let args = parse_cli(cli_options)?;
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;
     }
