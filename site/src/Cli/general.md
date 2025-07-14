@@ -3,6 +3,7 @@
 Name | Flag | Type | Default
 --- | --- | --- | ---
 [Input](#input--i) | `-i` | Path
+[Proxy](#proxy---temp) | `--proxy` | Path
 [Output](#output--o) | `-o` | Path
 [Temporary](#temporary---temp) | `--temp` | Path | Input file name hash
 [Quiet](#quiet--q---quiet) | `-q` | 
@@ -35,6 +36,19 @@ Can be a video or a VapourSynth (`.py`, `.vpy`) script.
 * `> av1an -i C:\Videos\input.mp4 -o output.mkv`
 * `> av1an -i /home/videos/vapoursynth/script.vpy -o output.mkv`
 * `> av1an -i ./script.py -o output.mkv`
+
+## Proxy `--proxy`
+
+Proxy file for the Input. When specified, Scene Detection and Target Quality probing will use this file instead of the input file.
+
+Can be a video or a VapourSynth (`.py`, `.vpy`) script. Must have the same number of frames as the input file.
+
+Useful for when the Input is a very intermediary file or a VapourSynth script that is computationally expensive.
+
+### Examples
+
+* `> av1an -i complex_input.vpy --proxy input.mkv -o output.mkv --target-quality 98` - Encodes with `complex_input.vpy` and uses `input.mkv` for Scene Detection and Target Quality
+* `> av1an -i complex_input.vpy --proxy simple_input.vpy -o output.mkv` - Encodes with `complex_input.vpy` and uses `simple_input.vpy` for Scene Detection
 
 ## Output `-o`
 

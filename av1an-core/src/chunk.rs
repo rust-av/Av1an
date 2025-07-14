@@ -14,7 +14,9 @@ pub struct Chunk {
     pub temp:                  String,
     pub index:                 usize,
     pub input:                 Input,
+    pub proxy:                 Option<Input>,
     pub source_cmd:            Vec<OsString>,
+    pub proxy_cmd:             Option<Vec<OsString>>,
     pub output_ext:            String,
     pub start_frame:           usize,
     // End frame is exclusive, i.e. the range of frames is `start_frame..end_frame`

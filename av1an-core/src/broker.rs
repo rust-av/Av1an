@@ -251,6 +251,7 @@ impl Broker<'_> {
                 && tq.probing_rate == 1
                 && tq.probing_speed.is_none()
                 && self.project.args.ffmpeg_filter_args.is_empty()
+                && chunk.proxy.is_none()
             {
                 let optimal_q = chunk.tq_cq.unwrap();
                 let extension = match self.project.args.encoder {

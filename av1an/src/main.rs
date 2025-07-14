@@ -34,7 +34,8 @@ use av1an_core::{
     Verbosity,
     VmafFeature,
 };
-use clap::{value_parser, Parser};
+use clap::{value_parser, CommandFactory, Parser};
+use clap_complete::generate;
 use num_traits::cast::ToPrimitive;
 use once_cell::sync::OnceCell;
 use path_abs::{PathAbs, PathInfo};
@@ -182,6 +183,16 @@ pub struct CliOpts {
     #[clap(short, required = true)]
     pub input: Vec<PathBuf>,
 
+    /// Input proxy file for Scene Detection and Target Quality
+    ///
+    /// Can be a video or VapourSynth (.py, .vpy) script.
+    ///
+    /// The proxy should be an input that decodes or computes a simpler
+    /// approximation of the input. It must have the same number of frames as
+    /// the input.
+    #[clap(long)]
+    pub proxy: Vec<PathBuf>,
+
     /// Video output file
     #[clap(short)]
     pub output_file: Option<PathBuf>,
@@ -222,6 +233,10 @@ pub struct CliOpts {
     #[clap(long, default_value_t = DEFAULT_LOG_LEVEL, ignore_case = true)]
     // "off" is also an allowed value for LevelFilter but we just disable the user from setting it
     pub log_level: LevelFilter,
+
+    /// Generate shell completions for the specified shell and exit
+    #[clap(long, conflicts_with = "input", value_name = "SHELL")]
+    pub completions: Option<clap_complete::Shell>,
 
     /// Resume previous session from temporary directory
     #[clap(short, long)]
@@ -1005,10 +1020,16 @@ pub(crate) fn resolve_file_paths(path: &Path) -> anyhow::Result<Box<dyn Iterator
 #[tracing::instrument(level = "debug")]
 pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
     let input_paths = &*args.input;
+    let proxy_paths = &*args.proxy;
 
     let mut inputs = Vec::new();
     for path in input_paths {
         inputs.extend(resolve_file_paths(path)?);
+    }
+
+    let mut proxies = Vec::new();
+    for path in proxy_paths {
+        proxies.extend(resolve_file_paths(path)?);
     }
 
     let mut valid_args: Vec<EncodeArgs> = Vec::with_capacity(inputs.len());
@@ -1016,7 +1037,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
     // Don't hard error, we can proceed if Vapoursynth isn't available
     let vapoursynth_plugins = get_vapoursynth_plugins().ok();
 
-    for input in inputs {
+    for (index, input) in inputs.into_iter().enumerate() {
         let temp = if let Some(path) = args.temp.as_ref() {
             path.to_str().unwrap().to_owned()
         } else {
@@ -1052,7 +1073,26 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.sc_downscale_height,
             args.sc_pix_format,
             Some(scaler.clone()),
+            false,
         )?;
+
+        // Assumes proxies supplied are the same number as inputs. Otherwise gets the
+        // first proxy if available
+        let proxy_path = proxies.get(index).or(proxies.first());
+        let proxy = if let Some(path) = proxy_path {
+            Some(Input::new(
+                path,
+                args.vspipe_args.clone(),
+                temp.as_str(),
+                chunk_method,
+                args.sc_downscale_height,
+                args.sc_pix_format,
+                Some(scaler.clone()),
+                true,
+            )?)
+        } else {
+            None
+        };
 
         let verbosity = if args.quiet {
             Verbosity::Quiet
@@ -1078,7 +1118,11 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             output_pix_format.format,
         )?;
 
+        // Instantiates VapourSynth cache(s) if applicable
         let clip_info = input.clip_info()?;
+        if let Some(proxy) = &proxy {
+            proxy.clip_info()?;
+        }
         // TODO make an actual constructor for this
         let arg = EncodeArgs {
             ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
@@ -1164,6 +1208,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 }
             },
             input,
+            proxy,
             output_pix_format,
             resume: args.resume,
             scenes: args.scenes.clone(),
@@ -1229,6 +1274,13 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 #[instrument]
 pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
+
+    let completions = cli_options.completions;
+    if let Some(shell) = completions {
+        generate(shell, &mut CliOpts::command(), "av1an", &mut io::stdout());
+        return Ok(());
+    }
+
     let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
     let log_level = cli_options.log_level;
     let verbosity = {

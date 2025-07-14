@@ -726,6 +726,7 @@ pub fn create_vs_file(
     scene_detection_downscale_height: Option<usize>,
     scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
     scene_detection_scaler: String,
+    is_proxy: bool,
 ) -> anyhow::Result<(PathBuf, bool)> {
     let (load_script_text, cache_file_already_exists) = generate_loadscript_text(
         temp,
@@ -734,6 +735,7 @@ pub fn create_vs_file(
         scene_detection_downscale_height,
         scene_detection_pixel_format,
         scene_detection_scaler,
+        is_proxy,
     )?;
     // Ensure the temp folder exists
     let temp: &Path = temp.as_ref();
@@ -742,7 +744,10 @@ pub fn create_vs_file(
 
     if chunk_method == ChunkMethod::DGDECNV {
         let absolute_source = to_absolute_path(source)?;
-        let dgindexnv_output = split_folder.join("index.dgi");
+        let dgindexnv_output = split_folder.join(match is_proxy {
+            true => "index_proxy.dgi",
+            false => "index.dgi",
+        });
 
         if !dgindexnv_output.exists() {
             info!("Indexing input with DGDecNV");
@@ -758,7 +763,10 @@ pub fn create_vs_file(
         }
     }
 
-    let load_script_path = temp.join("split").join("loadscript.vpy");
+    let load_script_path = split_folder.join(match is_proxy {
+        true => "loadscript_proxy.vpy",
+        false => "loadscript.vpy",
+    });
     let mut load_script = File::create(&load_script_path)?;
 
     load_script.write_all(load_script_text.as_bytes())?;
@@ -774,12 +782,14 @@ pub fn generate_loadscript_text(
     scene_detection_downscale_height: Option<usize>,
     scene_detection_pixel_format: Option<ffmpeg::format::Pixel>,
     scene_detection_scaler: String,
+    is_proxy: bool,
 ) -> anyhow::Result<(String, bool)> {
     let temp: &Path = temp.as_ref();
     let source = to_absolute_path(source)?;
 
     let cache_file = PathAbs::new(temp.join("split").join(format!(
-        "cache.{}",
+        "{}cache.{}",
+        if is_proxy { "proxy_" } else { "" },
         match chunk_method {
             ChunkMethod::FFMS2 => "ffindex",
             ChunkMethod::LSMASH => "lwi",
@@ -799,7 +809,10 @@ pub fn generate_loadscript_text(
     // Only used for DGDECNV
     let dgindex_path = match chunk_method {
         ChunkMethod::DGDECNV => {
-            let dgindexnv_output = temp.join("split").join("index.dgi");
+            let dgindexnv_output = temp.join("split").join(match is_proxy {
+                true => "index_proxy.dgi",
+                false => "index.dgi",
+            });
             &to_absolute_path(&dgindexnv_output)?
         },
         _ => &source,

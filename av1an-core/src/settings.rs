@@ -71,6 +71,7 @@ impl InputPixelFormat {
 #[derive(Debug)]
 pub struct EncodeArgs {
     pub input:       Input,
+    pub proxy:       Option<Input>,
     pub temp:        String,
     pub output_file: String,
 
@@ -146,6 +147,24 @@ impl EncodeArgs {
             "Input file {:?} does not exist!",
             self.input
         );
+
+        if let Some(proxy) = &self.proxy {
+            ensure!(
+                proxy.as_path().exists(),
+                "Proxy file {:?} does not exist!",
+                proxy
+            );
+
+            // Frame count must match
+            let input_frame_count = self.input.clip_info()?.num_frames;
+            let proxy_frame_count = proxy.clip_info()?.num_frames;
+
+            ensure!(
+                input_frame_count == proxy_frame_count,
+                "Input and Proxy do not have the same number of frames! ({input_frame_count} != \
+                 {proxy_frame_count})",
+            );
+        }
 
         if self.target_quality.is_some() {
             if self.input.is_vapoursynth() {

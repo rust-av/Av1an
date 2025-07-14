@@ -373,7 +373,7 @@ impl SceneFactory {
 
         let (mut scenes, frames) = match args.split_method {
             SplitMethod::AvScenechange => av_scenechange_detect(
-                &args.input,
+                args.proxy.as_ref().unwrap_or(&args.input),
                 args.encoder,
                 frames,
                 args.min_scene_len,

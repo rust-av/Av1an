@@ -95,3 +95,7 @@ If you want to install the L-SMASH, FFMS2, or BestSource plugins and are on Wind
 1. Open your VapourSynth installation directory
 2. Open a command prompt or PowerShell window via Shift + Right click
 3. Run `python3 vsrepo.py install lsmas ffms2 bs vszip julek`
+
+## Developing
+
+See [Developing and Contributing](https://rust-av.github.io/Av1an/contributing) for a guide on developing Av1an and prepare for a Pull Request.

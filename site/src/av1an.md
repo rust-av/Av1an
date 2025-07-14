@@ -15,6 +15,7 @@ For more details, see documentation for each parameter or run `av1an --help`.
 Name | Flag | Type | Default
 --- | --- | --- | ---
 [Input](./Cli/general.md#input--i) | `-i` | Path
+[Proxy](./Cli/general.md#proxy---proxy) | `--proxy` | Path
 [Output](./Cli/general.md#output--o) | `-o` | Path
 [Temporary](./Cli/general.md#temporary---temp) | `--temp` | Path | Input file name hash
 [Quiet](./Cli/general.md#quiet--q---quiet) | `-q` | 

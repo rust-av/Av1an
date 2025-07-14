@@ -66,7 +66,10 @@ static CLIP_INFO_CACHE: Lazy<Mutex<HashMap<CacheKey, ClipInfo>>> =
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct CacheKey {
-    input: Input,
+    input:    Input,
+    // Not strictly necessary, but allows for proxy to have different values for vspipe_args or
+    // chunking method
+    is_proxy: bool,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +81,7 @@ pub enum Input {
         // on demand in order to reduce thrashing disk with frequent reads from Target Quality
         // probing
         script_text: String,
+        is_proxy:    bool,
     },
     Video {
         path:         PathBuf,
@@ -85,11 +89,13 @@ pub enum Input {
         temp:         String,
         // Store as a string of ChunkMethod to enable hashing
         chunk_method: ChunkMethod,
+        is_proxy:     bool,
     },
 }
 
 impl Input {
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn new<P: AsRef<Path> + Into<PathBuf>>(
         path: P,
         vspipe_args: Vec<String>,
@@ -98,6 +104,7 @@ impl Input {
         scene_detection_downscale_height: Option<usize>,
         scene_detection_pixel_format: Option<Pixel>,
         scene_detection_scaler: Option<String>,
+        is_proxy: bool,
     ) -> anyhow::Result<Self> {
         let input = if let Some(ext) = path.as_ref().extension() {
             if ext == "py" || ext == "vpy" {
@@ -107,6 +114,7 @@ impl Input {
                     path: input_path.clone(),
                     vspipe_args,
                     script_text,
+                    is_proxy,
                 })
             } else {
                 let input_path = path.into();
@@ -114,6 +122,7 @@ impl Input {
                     path: input_path.clone(),
                     temp: temporary_directory.to_owned(),
                     chunk_method,
+                    is_proxy,
                 })
             }
         } else {
@@ -122,6 +131,7 @@ impl Input {
                 path: input_path.clone(),
                 temp: temporary_directory.to_owned(),
                 chunk_method,
+                is_proxy,
             })
         }?;
 
@@ -136,6 +146,7 @@ impl Input {
                 scene_detection_downscale_height,
                 scene_detection_pixel_format,
                 scene_detection_scaler.clone().unwrap_or_default(),
+                is_proxy,
             )?;
             if !cache_file_already_exists {
                 // Getting the clip info will cause VapourSynth to generate the
@@ -150,6 +161,7 @@ impl Input {
                 scene_detection_downscale_height,
                 scene_detection_pixel_format,
                 scene_detection_scaler.unwrap_or_default(),
+                is_proxy,
             )?;
 
             input.clip_info()?;
@@ -225,6 +237,7 @@ impl Input {
                 path,
                 temp,
                 chunk_method,
+                is_proxy,
             } => match chunk_method {
                 ChunkMethod::LSMASH
                 | ChunkMethod::FFMS2
@@ -237,6 +250,7 @@ impl Input {
                         scene_detection_downscale_height,
                         scene_detection_pixel_format,
                         scene_detection_scaler.unwrap_or_default(),
+                        *is_proxy,
                     )?;
                     Ok(script_text)
                 },
@@ -259,7 +273,10 @@ impl Input {
                 temp, ..
             } if self.is_vapoursynth_script() => {
                 let temp: &Path = temp.as_ref();
-                temp.join("split").join("loadscript.vpy")
+                temp.join("split").join(match self.is_proxy() {
+                    true => "loadscript_proxy.vpy",
+                    false => "loadscript.vpy",
+                })
             },
             Input::Video {
                 ..
@@ -275,6 +292,18 @@ impl Input {
     #[inline]
     pub const fn is_vapoursynth(&self) -> bool {
         matches!(&self, Input::VapourSynth { .. })
+    }
+
+    #[inline]
+    pub const fn is_proxy(&self) -> bool {
+        match &self {
+            Input::Video {
+                is_proxy, ..
+            }
+            | Input::VapourSynth {
+                is_proxy, ..
+            } => *is_proxy,
+        }
     }
 
     #[inline]
@@ -301,7 +330,8 @@ impl Input {
 
         let mut cache = CLIP_INFO_CACHE.lock();
         let key = CacheKey {
-            input: self.clone(),
+            input:    self.clone(),
+            is_proxy: self.is_proxy(),
         };
         let cached = cache.get(&key);
         if let Some(cached) = cached {
