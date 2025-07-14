@@ -84,7 +84,6 @@ impl Av1anContext {
         let mut this = Self {
             frames: args.input.clip_info()?.num_frames,
             vs_script: None,
-            // vs_scd_script: None,
             args,
             scene_factory: SceneFactory::new(),
         };
