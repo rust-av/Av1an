@@ -2,7 +2,7 @@
 mod tests;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     fs::File,
     io::Write,
     path::Path,
@@ -371,7 +371,7 @@ impl SceneFactory {
 
         let frames = args.input.clip_info()?.num_frames;
 
-        let (mut scenes, frames, scores) = match args.split_method {
+        let (mut scenes, frames) = match args.split_method {
             SplitMethod::AvScenechange => av_scenechange_detect(
                 args.proxy.as_ref().unwrap_or(&args.input),
                 args.encoder,
@@ -411,7 +411,7 @@ impl SceneFactory {
                         zone_overrides: None,
                     });
                 }
-                (scenes, frames, BTreeMap::new())
+                (scenes, frames)
             },
         };
 
@@ -440,23 +440,14 @@ impl SceneFactory {
             }
         }
 
-        if let Some(scene) = scenes.last() {
-            assert!(
-                scene.end_frame <= frames,
-                "scenecut reported at frame {}, but there are only {} frames",
-                scene.end_frame,
-                frames
-            );
-        }
-
         let scenes_before = scenes.len();
         self.data.scenes = Some(scenes);
 
         if let Some(split_len @ 1..) = args.extra_splits_len {
             self.data.split_scenes = Some(extra_splits(
                 self.data.scenes.as_deref().unwrap(),
+                frames,
                 split_len,
-                &scores,
             ));
             let scenes_after = self.data.split_scenes.as_ref().unwrap().len();
             info!(

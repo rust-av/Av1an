@@ -3,6 +3,7 @@ use crate::{encoder::Encoder, into_vec, scenes::ZoneOptions};
 
 #[test]
 fn test_extra_split_no_segments() {
+    let total_frames = 300;
     let split_size = 240;
     let done = extra_splits(
         &[Scene {
@@ -10,8 +11,8 @@ fn test_extra_split_no_segments() {
             end_frame:      300,
             zone_overrides: None,
         }],
+        total_frames,
         split_size,
-        &BTreeMap::new(),
     );
     let expected_split_locations = vec![0usize, 150];
 
@@ -23,6 +24,7 @@ fn test_extra_split_no_segments() {
 
 #[test]
 fn test_extra_split_segments() {
+    let total_frames = 2000;
     let split_size = 130;
     let done = extra_splits(
         &[
@@ -77,8 +79,8 @@ fn test_extra_split_segments() {
                 zone_overrides: None,
             },
         ],
+        total_frames,
         split_size,
-        &BTreeMap::new(),
     );
     let expected_split_locations = [
         0usize, 75, 150, 253, 356, 460, 549, 638, 728, 822, 876, 890, 995, 1100, 1199, 1299, 1399,
@@ -93,6 +95,7 @@ fn test_extra_split_segments() {
 
 #[test]
 fn test_extra_split_preserves_zone_overrides() {
+    let total_frames = 2000;
     let split_size = 130;
     let done = extra_splits(
         &[
@@ -167,8 +170,8 @@ fn test_extra_split_preserves_zone_overrides() {
                 zone_overrides: None,
             },
         ],
+        total_frames,
         split_size,
-        &BTreeMap::new(),
     );
     let expected_split_locations = [
         0, 75, 150, 253, 356, 460, 504, 549, 594, 638, 683, 728, 822, 876, 890, 995, 1100, 1199,
