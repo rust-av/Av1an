@@ -10,7 +10,14 @@ use plotters::prelude::*;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use crate::{broker::EncoderCrash, ffmpeg, ref_smallvec, util::printable_base10_digits, Input};
+use crate::{
+    broker::EncoderCrash,
+    ffmpeg,
+    ref_smallvec,
+    util::printable_base10_digits,
+    Input,
+    VmafFeature,
+};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct VmafScore {
@@ -128,6 +135,7 @@ pub fn plot(
     sample_rate: usize,
     filter: Option<&str>,
     threads: usize,
+    probing_vmaf_features: &[VmafFeature],
 ) -> Result<(), Box<EncoderCrash>> {
     let json_file = encoded.with_extension("json");
     let plot_file = encoded.with_extension("svg");
@@ -174,10 +182,23 @@ pub fn plot(
         threads,
         60.0,
         false,
+        probing_vmaf_features,
     )?;
 
     plot_vmaf_score_file(&json_file, &plot_file).unwrap();
     Ok(())
+}
+
+pub fn get_vmaf_model_version(features: &[VmafFeature]) -> &'static str {
+    let has_uhd = features.contains(&VmafFeature::Uhd);
+    let has_neg = features.contains(&VmafFeature::Neg);
+
+    match (has_uhd, has_neg) {
+        (true, true) => "vmaf_4k_v0.6.1neg",
+        (true, false) => "vmaf_4k_v0.6.1",
+        (false, true) => "vmaf_v0.6.1neg",
+        (false, false) => "vmaf_v0.6.1",
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -194,6 +215,7 @@ pub fn run_vmaf(
     threads: usize,
     framerate: f64,
     disable_motion: bool,
+    probing_vmaf_features: &[VmafFeature],
 ) -> Result<(), Box<EncoderCrash>> {
     let mut filter = if sample_rate > 1 {
         format!(
@@ -212,9 +234,10 @@ pub fn run_vmaf(
     }
 
     let vmaf = if let Some(model) = model {
-        let model_path = if model.as_ref().as_os_str() == "vmaf_v0.6.1neg.json" {
+        let model_path = if model.as_ref().as_os_str().to_string_lossy().ends_with(".json") {
             format!(
-                "version=vmaf_v0.6.1neg{}",
+                "version={}{}",
+                get_vmaf_model_version(probing_vmaf_features),
                 if disable_motion {
                     "\\:motion.motion_force_zero=true"
                 } else {
@@ -236,9 +259,12 @@ pub fn run_vmaf(
             "[distorted][ref]libvmaf=log_fmt='json':eof_action=endall:log_path={}{}:n_threads={}",
             ffmpeg::escape_path_in_filter(stat_file),
             if disable_motion {
-                ":model='version=vmaf_v0.6.1\\:motion.motion_force_zero=true'"
+                format!(
+                    ":model='version={}\\:motion.motion_force_zero=true'",
+                    get_vmaf_model_version(probing_vmaf_features)
+                )
             } else {
-                ""
+                String::new()
             },
             threads
         )
@@ -319,6 +345,7 @@ pub fn run_vmaf_weighted(
     threads: usize,
     framerate: f64,
     disable_motion: bool,
+    probing_vmaf_features: &[VmafFeature],
 ) -> anyhow::Result<Vec<f64>> {
     let temp_dir = encoded.parent().unwrap();
     let vmaf_y_path = temp_dir.join(format!(
@@ -351,9 +378,10 @@ pub fn run_vmaf_weighted(
     }
 
     let model_str = if let Some(model) = model {
-        if model.as_ref().as_os_str() == "vmaf_v0.6.1neg.json" {
+        if model.as_ref().as_os_str().to_string_lossy().ends_with(".json") {
             format!(
-                "version=vmaf_v0.6.1neg{}",
+                "version={}{}",
+                get_vmaf_model_version(probing_vmaf_features),
                 if disable_motion {
                     "\\:motion.motion_force_zero=true"
                 } else {
@@ -373,7 +401,8 @@ pub fn run_vmaf_weighted(
         }
     } else {
         format!(
-            "version=vmaf_v0.6.1{}",
+            "version={}{}",
+            get_vmaf_model_version(probing_vmaf_features),
             if disable_motion {
                 "\\:motion.motion_force_zero=true"
             } else {

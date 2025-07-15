@@ -488,6 +488,7 @@ impl Av1anContext {
                         1,
                         vmaf_filter,
                         vmaf_threads,
+                        &[],
                     ) {
                         error!("VMAF calculation failed with error: {e}");
                     }

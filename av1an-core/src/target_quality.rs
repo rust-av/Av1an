@@ -29,7 +29,7 @@ use crate::{
     metrics::{
         butteraugli::ButteraugliSubMetric,
         statistics::MetricStatistics,
-        vmaf::{read_vmaf_file, run_vmaf, run_vmaf_weighted},
+        vmaf::{get_vmaf_model_version, read_vmaf_file, run_vmaf, run_vmaf_weighted},
         xpsnr::{read_xpsnr_file, run_xpsnr, XPSNRSubMetric},
     },
     progress_bar::update_mp_msg,
@@ -375,16 +375,12 @@ impl TargetQuality {
             TargetMetric::VMAF => {
                 let features: HashSet<_> = self.probing_vmaf_features.iter().copied().collect();
                 let use_weighted = features.contains(&VmafFeature::Weighted);
-                let use_neg = features.contains(&VmafFeature::Neg);
-                let use_uhd = features.contains(&VmafFeature::Uhd);
                 let disable_motion = features.contains(&VmafFeature::Motionless);
 
-                let default_model = match (use_uhd, use_neg) {
-                    (true, true) => Some(PathBuf::from("vmaf_4k_v0.6.1neg.json")),
-                    (true, false) => Some(PathBuf::from("vmaf_4k_v0.6.1.json")),
-                    (false, true) => Some(PathBuf::from("vmaf_v0.6.1neg.json")),
-                    (false, false) => None,
-                };
+                let default_model = Some(PathBuf::from(format!(
+                    "{}.json",
+                    get_vmaf_model_version(&self.probing_vmaf_features)
+                )));
 
                 let model = if self.model.is_none() {
                     default_model.as_ref()
@@ -405,6 +401,7 @@ impl TargetQuality {
                         self.vmaf_threads,
                         chunk.frame_rate,
                         disable_motion,
+                        &self.probing_vmaf_features,
                     )
                     .map_err(|e| {
                         Box::new(EncoderCrash {
@@ -433,6 +430,7 @@ impl TargetQuality {
                         self.vmaf_threads,
                         chunk.frame_rate,
                         disable_motion,
+                        &self.probing_vmaf_features,
                     )?;
 
                     read_vmaf_file(&fl_path)?
