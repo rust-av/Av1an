@@ -203,17 +203,16 @@ pub fn has_audio(file: &Path) -> anyhow::Result<bool> {
 ///
 /// This function returns `Some(output)` if the audio exists and the audio
 /// successfully encoded, or `None` otherwise.
-#[must_use]
 #[inline]
 pub fn encode_audio<S: AsRef<OsStr>>(
     input: impl AsRef<Path> + std::fmt::Debug,
     temp: impl AsRef<Path> + std::fmt::Debug,
     audio_params: &[S],
-) -> Option<PathBuf> {
+) -> anyhow::Result<Option<PathBuf>> {
     let input = input.as_ref();
     let temp = temp.as_ref();
 
-    if has_audio(input).unwrap() {
+    if has_audio(input)? {
         let audio_file = Path::new(temp).join("audio.mkv");
         let mut encode_audio = Command::new("ffmpeg");
 
@@ -228,16 +227,16 @@ pub fn encode_audio<S: AsRef<OsStr>>(
         encode_audio.args(audio_params);
         encode_audio.arg(&audio_file);
 
-        let output = encode_audio.output().unwrap();
+        let output = encode_audio.output()?;
 
         if !output.status.success() {
             warn!("FFmpeg failed to encode audio!\n{output:#?}\nParams: {encode_audio:?}");
-            return None;
+            return Ok(None);
         }
 
-        Some(audio_file)
+        Ok(Some(audio_file))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -366,7 +365,7 @@ impl FromStr for FFPixelFormat {
             "yuvj420p" => FFPixelFormat::YUVJ420P,
             "yuvj422p" => FFPixelFormat::YUVJ422P,
             "yuvj444p" => FFPixelFormat::YUVJ444P,
-            _ => bail!("Unsupported pixel format string"),
+            s => bail!("Unsupported pixel format string: {s}"),
         })
     }
 }

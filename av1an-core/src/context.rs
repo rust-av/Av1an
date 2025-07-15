@@ -322,7 +322,8 @@ impl Av1anContext {
                 let temp = self.args.temp.as_str();
                 let audio_params = self.args.audio_params.as_slice();
                 Some(s.spawn(move |_| {
-                    let audio_output = crate::ffmpeg::encode_audio(input, temp, audio_params);
+                    let audio_output =
+                        crate::ffmpeg::encode_audio(input, temp, audio_params).unwrap();
                     get_done().audio_done.store(true, atomic::Ordering::SeqCst);
 
                     let progress_file = Path::new(temp).join("done.json");
