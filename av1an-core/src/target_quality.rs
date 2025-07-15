@@ -377,15 +377,13 @@ impl TargetQuality {
                 let use_weighted = features.contains(&VmafFeature::Weighted);
                 let disable_motion = features.contains(&VmafFeature::Motionless);
 
-                let default_model = Some(PathBuf::from(format!(
-                    "{}.json",
-                    get_vmaf_model_version(&self.probing_vmaf_features)
-                )));
-
-                let model = if self.model.is_none() {
-                    default_model.as_ref()
-                } else {
+                let model = if self.model.is_some() {
                     self.model.as_ref()
+                } else {
+                    Some(&PathBuf::from(format!(
+                        "{}.json",
+                        get_vmaf_model_version(&self.probing_vmaf_features)
+                    )))
                 };
 
                 let vmaf_scores = if use_weighted {

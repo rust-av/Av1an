@@ -488,7 +488,10 @@ impl Av1anContext {
                         1,
                         vmaf_filter,
                         vmaf_threads,
-                        &[],
+                        self.args
+                            .target_quality
+                            .as_ref()
+                            .map_or(&[], |tq| &tq.probing_vmaf_features),
                     ) {
                         error!("VMAF calculation failed with error: {e}");
                     }
