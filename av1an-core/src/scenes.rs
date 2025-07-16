@@ -314,13 +314,21 @@ impl SceneFactory {
     /// the scenes data.
     pub fn from_scenes_file<P: AsRef<Path>>(scene_path: &P) -> anyhow::Result<Self> {
         let file = File::open(scene_path)?;
-        let data: ScenesData = serde_json::from_reader(file).with_context(|| {
+        let mut data: ScenesData = serde_json::from_reader(file).with_context(|| {
             format!(
                 "Failed to parse scenes file {:?}, this likely means that the scenes file is \
                  corrupted",
                 scene_path.as_ref()
             )
         })?;
+        if data.scenes.is_some() && data.split_scenes.is_none() {
+            // If a user is using a scenes file from an older build of av1an,
+            // we need to copy the list of scenes to the `split_scenes` array.
+            // We won't be able to do special pre-split analysis because the scenes
+            // list in the old format was always post-split, but at least the
+            // encode won't error out.
+            data.split_scenes = data.scenes.clone();
+        }
         get_done().frames.store(data.frames, atomic::Ordering::SeqCst);
 
         Ok(Self {
