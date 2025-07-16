@@ -35,3 +35,8 @@ vergen-git2 = { version = "1.0.0", features = ["build", "rustc", "cargo"] }
 
 [features]
 default = []
+
+[dev-dependencies]
+assert_cmd = "2.0.17"
+serial_test = "3.0"
+tempfile = { workspace = true }
