@@ -34,7 +34,7 @@ dashmap = { version = "6.0.0", features = ["serde"] }
 indicatif = "0.18.0"
 itertools = "0.14.0"
 memchr = "2.7.5"
-nom = "7.1.1"
+nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 parking_lot = "0.12.4"

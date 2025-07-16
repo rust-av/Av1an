@@ -19,7 +19,8 @@ use nom::{
     character::complete::{char, digit1, space1},
     combinator::{map, map_res, opt, recognize, rest},
     multi::{many1, separated_list0},
-    sequence::{preceded, tuple},
+    sequence::preceded,
+    Parser,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -61,8 +62,8 @@ impl Scene {
         let (_, (start, _, end, _, encoder, reset, zone_args)): (
             _,
             (usize, _, usize, _, Encoder, bool, &str),
-        ) = tuple::<_, _, nom::error::Error<&str>, _>((
-            map_res(digit1, str::parse),
+        ) = (
+            map_res(digit1::<&str, nom::error::Error<&str>>, str::parse),
             many1(char(' ')),
             map_res(alt((tag("-1"), digit1)), |res: &str| {
                 if res == "-1" {
@@ -91,8 +92,9 @@ impl Scene {
                 opt(preceded(many1(char(' ')), rest)),
                 |res: Option<&str>| res.unwrap_or_default().trim(),
             ),
-        ))(input)
-        .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
+        )
+            .parse(input)
+            .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         if start >= end {
             bail!("Start frame must be earlier than the end frame");
         }
@@ -150,16 +152,17 @@ impl Scene {
 
         // Parse overrides
         let zone_args: (&str, Vec<(&str, Option<&str>)>) =
-            separated_list0::<_, _, _, nom::error::Error<&str>, _, _>(
+            separated_list0::<_, nom::error::Error<&str>, _, _>(
                 space1,
-                tuple((
-                    recognize(tuple((
+                (
+                    recognize((
                         alt((tag("--"), tag("-"))),
                         take_till(|c| c == '=' || c == ' '),
-                    ))),
+                    )),
                     opt(preceded(alt((space1, tag("="))), take_while(|c| c != ' '))),
-                )),
-            )(zone_args)
+                ),
+            )
+            .parse(zone_args)
             .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         let mut zone_args = zone_args.1.into_iter().collect::<HashMap<_, _>>();
         if let Some(zone_passes) = zone_args.remove("--passes") {
