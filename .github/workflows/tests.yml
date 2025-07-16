@@ -32,6 +32,8 @@ jobs:
     container: shssoichiro/av1an-ci:latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: "true"
       - name: Install Rust stable
         uses: actions-rs/toolchain@v1
         with:
@@ -80,6 +82,8 @@ jobs:
     container: shssoichiro/av1an-ci:latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: "true"
       - name: Install Rust stable
         uses: actions-rs/toolchain@v1
         with:
