@@ -266,7 +266,6 @@ dependencies = [
  "nom 8.0.0",
  "num-traits",
  "once_cell",
- "parking_lot",
  "pastey",
  "path_abs",
  "plotters",

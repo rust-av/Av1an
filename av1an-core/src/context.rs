@@ -11,6 +11,7 @@ use std::{
         atomic::{self, AtomicBool, AtomicUsize},
         mpsc,
         Arc,
+        Mutex,
     },
     thread::{self, available_parallelism},
 };
@@ -21,7 +22,6 @@ use av_decoders::VapoursynthDecoder;
 use colored::*;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
-use parking_lot::Mutex;
 use rand::{prelude::SliceRandom, rng};
 use tracing::{debug, error, info, warn};
 
@@ -652,16 +652,18 @@ impl Av1anContext {
 
                 scope.spawn(move || {
                     for line in source_reader.lines() {
-                        p_stdr2.lock().push_str(&line.unwrap());
-                        p_stdr2.lock().push('\n');
+                        let mut lock = p_stdr2.lock().unwrap();
+                        lock.push_str(&line.unwrap());
+                        lock.push('\n');
                     }
                 });
                 if let Some(ffmpeg_reader) = ffmpeg_reader {
                     let f_stdr2 = f_stdr2.unwrap();
                     scope.spawn(move || {
                         for line in ffmpeg_reader.lines() {
-                            f_stdr2.lock().push_str(&line.unwrap());
-                            f_stdr2.lock().push('\n');
+                            let mut lock = f_stdr2.lock().unwrap();
+                            lock.push_str(&line.unwrap());
+                            lock.push('\n');
                         }
                     });
                 }
@@ -718,8 +720,8 @@ impl Av1anContext {
 
                 let enc_output = enc_pipe.wait_with_output().unwrap();
 
-                let source_pipe_stderr = pipe_stderr.lock().clone();
-                let ffmpeg_pipe_stderr = ffmpeg_stderr.map(|x| x.lock().clone());
+                let source_pipe_stderr = pipe_stderr.lock().unwrap().clone();
+                let ffmpeg_pipe_stderr = ffmpeg_stderr.map(|x| x.lock().unwrap().clone());
                 (
                     source_pipe_stderr,
                     ffmpeg_pipe_stderr,

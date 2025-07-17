@@ -37,7 +37,6 @@ memchr = "2.7.5"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
-parking_lot = "0.12.4"
 pastey = "0.1.0"
 path_abs = { workspace = true }
 plotters = { version = "0.3.1", default-features = false, features = [

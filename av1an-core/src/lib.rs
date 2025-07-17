@@ -6,7 +6,10 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     string::ToString,
-    sync::atomic::{AtomicBool, AtomicUsize},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Mutex,
+    },
     thread::available_parallelism,
     time::Instant,
 };
@@ -18,7 +21,6 @@ use av_format::rational::Rational64;
 use chunk::Chunk;
 use dashmap::DashMap;
 use once_cell::sync::{Lazy, OnceCell};
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, FromRepr, IntoStaticStr};
 use tracing::info;
@@ -328,7 +330,7 @@ impl Input {
     pub fn clip_info(&self) -> anyhow::Result<ClipInfo> {
         const FAIL_MSG: &str = "Failed to get number of frames for input video";
 
-        let mut cache = CLIP_INFO_CACHE.lock();
+        let mut cache = CLIP_INFO_CACHE.lock().unwrap();
         let key = CacheKey {
             input:    self.clone(),
             is_proxy: self.is_proxy(),
