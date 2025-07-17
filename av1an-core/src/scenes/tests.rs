@@ -2,6 +2,7 @@ use crate::{
     context::Av1anContext,
     encoder::Encoder,
     scenes::{Scene, SceneFactory},
+    TargetQuality,
 };
 
 fn get_test_args() -> Av1anContext {
@@ -62,7 +63,7 @@ fn get_test_args() -> Av1anContext {
         sc_only:               false,
         sc_downscale_height:   None,
         force_keyframes:       Vec::new(),
-        target_quality:        None,
+        target_quality:        TargetQuality::default(String::new(), Encoder::aom),
         vmaf:                  false,
         verbosity:             Verbosity::Normal,
         workers:               1,
