@@ -217,18 +217,18 @@ impl Broker<'_> {
         let padding = printable_base10_digits(self.chunk_queue.len() - 1) as usize;
         update_mp_chunk(worker_id, chunk.index, padding);
 
-        if let Some(ref tq) = self.project.args.target_quality {
+        if let Some((min, max)) = chunk.target_quality.target {
             update_mp_msg(
                 worker_id,
                 format!(
                     "Targeting {metric} Quality: {min}-{max}",
-                    metric = tq.metric,
-                    min = tq.target.0,
-                    max = tq.target.1
+                    metric = chunk.target_quality.metric,
+                    min = min,
+                    max = max
                 ),
             );
             for r#try in 1..=self.project.args.max_tries {
-                let res = tq.per_shot_target_quality_routine(
+                let res = self.project.args.target_quality.per_shot_target_quality_routine(
                     chunk,
                     Some(worker_id),
                     self.project.args.vapoursynth_plugins.as_ref(),
@@ -246,10 +246,9 @@ impl Broker<'_> {
                 }
             }
 
-            if tq.probe_slow
+            if chunk.target_quality.params_copied
                 && chunk.tq_cq.is_some()
-                && tq.probing_rate == 1
-                && tq.probing_speed.is_none()
+                && chunk.target_quality.probing_rate == 1
                 && self.project.args.ffmpeg_filter_args.is_empty()
                 && chunk.proxy.is_none()
             {

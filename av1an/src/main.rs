@@ -24,9 +24,6 @@ use av1an_core::{
     InputPixelFormat,
     InterpolationMethod,
     PixelFormat,
-    ProbingSpeed,
-    ProbingStatistic,
-    ProbingStatisticName,
     ScenecutMethod,
     SplitMethod,
     TargetMetric,
@@ -664,7 +661,7 @@ pub struct CliOpts {
     /// Specify as a range: --target-quality 75-85 for VMAF/SSIMULACRA2
     /// or --target-quality 1.0-1.5 for butteraugli metrics.
     /// Floating-point values are allowed for all metrics.
-    #[clap(long, help_heading = "Target Quality", value_parser = parse_target_qp_range)]
+    #[clap(long, help_heading = "Target Quality", value_parser = TargetQuality::parse_target_qp_range)]
     pub target_quality: Option<(f64, f64)>,
 
     /// Quantizer range bounds for target quality search (disabled by default)
@@ -675,7 +672,7 @@ pub struct CliOpts {
     ///
     /// Specify as a range: --qp-range 10-50
     /// If not specified, encoder defaults are used.
-    #[clap(long, help_heading = "Target Quality", value_parser = parse_qp_range)]
+    #[clap(long, help_heading = "Target Quality", value_parser = TargetQuality::parse_qp_range)]
     pub qp_range: Option<(u32, u32)>,
 
     #[rustfmt::skip]
@@ -709,7 +706,7 @@ pub struct CliOpts {
     ///   --interp-method natural-pchip      # Default: balanced accuracy and stability
     ///   --interp-method quadratic-akima    # Experimental
     ///   --interp-method linear-catmull     # Simple start, smooth finish
-    #[clap(long, help_heading = "Target Quality", value_parser = parse_interp_method, verbatim_doc_comment)]
+    #[clap(long, help_heading = "Target Quality", value_parser = TargetQuality::parse_interp_method, verbatim_doc_comment)]
     pub interp_method: Option<(InterpolationMethod, InterpolationMethod)>,
     /// The metric used for Target Quality mode
     ///
@@ -756,31 +753,24 @@ pub struct CliOpts {
     #[clap(long, default_value_t = 1, value_parser = clap::value_parser!(u16).range(1..=4), help_heading = "Target Quality")]
     pub probing_rate: u16,
 
-    /// Speed for probes. Lower speed for higher quality and accuracy
+    /// Parameters for video encoder during Target Quality probing
     ///
-    /// Speeds:
-    ///   veryfast
-    ///   fast
-    ///   medium
-    ///   slow
-    ///   veryslow
+    /// It is recommended to specify a faster speed/preset/cpu-used and omit
+    /// options that reduce probe accuracy such as "--film-grain"
     ///
-    /// If specified with `--probe-slow`, overrides the respective speed
-    /// parameter (eg. "--cpu-used=", "--preset", etc.). Otherwise defaults to
-    /// "veryfast".
-    #[clap(long, help_heading = "Target Quality", ignore_case = true)]
-    pub probing_speed: Option<ProbingSpeed>,
-
-    /// Use encoding settings for probes specified by --video-params rather than
-    /// faster, less accurate settings
+    /// To use the same parameters as "--video-params", specify "copy"
     ///
-    /// If it is specified, Probing Speed will override the respective
-    /// speed parameter (eg. "--cpu-used=", "--preset", etc.)
+    /// These parameters are for the encoder binary directly, so the ffmpeg
+    /// syntax cannot be used. For example, CRF is specified in ffmpeg via
+    /// "-crf <CRF>", but the x264 binary takes this value with double
+    /// dashes, as in "--crf <CRF>". See the --help output of each encoder for
+    /// a list of valid options. This list of parameters will be merged into
+    /// Av1an's default set of encoder parameters.
     ///
-    /// Note that this always performs encoding in one-pass mode, regardless of
-    /// --passes.
-    #[clap(long, help_heading = "Target Quality")]
-    pub probe_slow: bool,
+    /// If no parameters are specified, Av1an will use its default set of
+    /// encoder parameters
+    #[clap(long, allow_hyphen_values = true, help_heading = "Target Quality")]
+    pub probe_video_params: Option<String>,
 
     #[rustfmt::skip]
     /// VMAF calculation features for target quality probing
@@ -828,147 +818,51 @@ impl CliOpts {
     pub fn target_quality_params(
         &self,
         temp_dir: String,
-        video_params: Vec<String>,
+        probe_video_params: Option<Vec<String>>,
+        params_copied: bool,
         output_pix_format: FFPixelFormat,
-    ) -> anyhow::Result<Option<TargetQuality>> {
-        self.target_quality
-            .map(|tq| {
-                let (default_min, default_max) = self.encoder.get_default_cq_range();
-                let (min_q, max_q) = if let Some((min, max)) = self.qp_range {
-                    (min, max)
-                } else {
-                    (default_min as u32, default_max as u32)
-                };
+    ) -> anyhow::Result<TargetQuality> {
+        let (default_min, default_max) = self.encoder.get_default_cq_range();
+        let (min_q, max_q) = if let Some((min, max)) = self.qp_range {
+            (min, max)
+        } else {
+            (default_min as u32, default_max as u32)
+        };
 
-                let probing_statistic = match self.probing_stat.to_lowercase().as_str() {
-                    "auto" => ProbingStatistic {
-                        name:  ProbingStatisticName::Automatic,
-                        value: None,
-                    },
-                    "mean" => ProbingStatistic {
-                        name:  ProbingStatisticName::Mean,
-                        value: None,
-                    },
-                    "harmonic" => ProbingStatistic {
-                        name:  ProbingStatisticName::Harmonic,
-                        value: None,
-                    },
-                    "root-mean-square" => ProbingStatistic {
-                        name:  ProbingStatisticName::RootMeanSquare,
-                        value: None,
-                    },
-                    "median" => ProbingStatistic {
-                        name:  ProbingStatisticName::Median,
-                        value: None,
-                    },
-                    "mode" => ProbingStatistic {
-                        name:  ProbingStatisticName::Mode,
-                        value: None,
-                    },
-                    "minimum" => ProbingStatistic {
-                        name:  ProbingStatisticName::Minimum,
-                        value: None,
-                    },
-                    "maximum" => ProbingStatistic {
-                        name:  ProbingStatisticName::Maximum,
-                        value: None,
-                    },
-                    probe_statistic if probe_statistic.starts_with("percentile") => {
-                        if probe_statistic.matches('=').count() != 1
-                            || !probe_statistic.starts_with("percentile=")
-                        {
-                            return Err(anyhow!(
-                                "Probing Statistic percentile must have a value between 0.0 and \
-                                 100.0 set using \"=\" (eg. \"--probing-stat percentile=1\")"
-                            ));
-                        }
-                        let value = probe_statistic
-                            .split("=")
-                            .last()
-                            .and_then(|s| s.parse::<f64>().ok())
-                            .and_then(|v| {
-                                if (0.0..=100.0).contains(&v) {
-                                    Some(v)
-                                } else {
-                                    None
-                                }
-                            })
-                            .ok_or_else(|| {
-                                anyhow!(
-                                    "Probing Statistic percentile must be set to a value between \
-                                     0 and 100"
-                                )
-                            })?;
-                        ProbingStatistic {
-                            name:  ProbingStatisticName::Percentile,
-                            value: Some(value),
-                        }
-                    },
-                    probe_statistic if probe_statistic.starts_with("standard-deviation") => {
-                        if probe_statistic.matches('=').count() != 1
-                            || !probe_statistic.starts_with("standard-deviation=")
-                        {
-                            return Err(anyhow!(
-                                "Probing Statistic standard deviation must have a positive or \
-                                 negative value set using \"=\" (eg. \"--probing-stat \
-                                 standard-deviation=-0.25\")"
-                            ));
-                        }
-                        let value = probe_statistic
-                            .split('=')
-                            .next_back()
-                            .and_then(|s| s.parse::<f64>().ok())
-                            .ok_or_else(|| {
-                                anyhow!(
-                                    "Probing Statistic standard deviation must have a value \
-                                     appended"
-                                )
-                            })?;
-                        ProbingStatistic {
-                            name:  ProbingStatisticName::StandardDeviation,
-                            value: Some(value),
-                        }
-                    },
-                    _ => {
-                        return Err(anyhow!("Unknown Probing Statistic: {}", self.probing_stat));
-                    },
-                };
+        let probing_statistic = TargetQuality::parse_probing_statistic(self.probing_stat.as_str())?;
 
-                Ok(TargetQuality {
-                    vmaf_res: self.vmaf_res.clone(),
-                    probe_res: self.probe_res.clone(),
-                    vmaf_scaler: self.scaler.clone(),
-                    vmaf_filter: self.vmaf_filter.clone(),
-                    vmaf_threads: self.vmaf_threads.unwrap_or_else(|| {
-                        available_parallelism()
-                            .expect("Unrecoverable: Failed to get thread count")
-                            .get()
-                    }),
-                    model: self.vmaf_path.clone(),
-                    probes: self.probes,
-                    target: tq,
-                    interp_method: self.interp_method,
-                    min_q,
-                    max_q,
-                    metric: self.target_metric,
-                    encoder: self.encoder,
-                    pix_format: output_pix_format,
-                    temp: temp_dir.clone(),
-                    workers: self.workers,
-                    video_params: video_params.clone(),
-                    vspipe_args: self.vspipe_args.clone(),
-                    probe_slow: self.probe_slow,
-                    probing_speed: self.probing_speed,
-                    probing_rate: self.probing_rate as usize,
-                    probing_vmaf_features: if self.probing_vmaf_features.is_empty() {
-                        vec![VmafFeature::Default]
-                    } else {
-                        self.probing_vmaf_features.clone()
-                    },
-                    probing_statistic,
-                })
-            })
-            .transpose()
+        Ok(TargetQuality {
+            vmaf_res: self.vmaf_res.clone(),
+            probe_res: self.probe_res.clone(),
+            vmaf_scaler: self.scaler.clone(),
+            vmaf_filter: self.vmaf_filter.clone(),
+            vmaf_threads: self.vmaf_threads.unwrap_or_else(|| {
+                available_parallelism()
+                    .expect("Unrecoverable: Failed to get thread count")
+                    .get()
+            }),
+            model: self.vmaf_path.clone(),
+            probes: self.probes,
+            target: self.target_quality,
+            interp_method: self.interp_method,
+            min_q,
+            max_q,
+            metric: self.target_metric,
+            encoder: self.encoder,
+            pix_format: output_pix_format,
+            temp: temp_dir.clone(),
+            workers: self.workers,
+            video_params: probe_video_params,
+            params_copied,
+            vspipe_args: self.vspipe_args.clone(),
+            probing_rate: self.probing_rate as usize,
+            probing_vmaf_features: if self.probing_vmaf_features.is_empty() {
+                vec![VmafFeature::Default]
+            } else {
+                self.probing_vmaf_features.clone()
+            },
+            probing_statistic,
+        })
     }
 }
 
@@ -1111,10 +1005,22 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             format:    args.pix_format,
             bit_depth: args.encoder.get_format_bit_depth(args.pix_format)?,
         };
+        let mut copied_params = false;
+        let probe_video_params =
+            args.probe_video_params.as_ref().and_then(|args| match args.as_str() {
+                "copy" => {
+                    copied_params = true;
+                    Some(video_params.clone())
+                },
+                _ => shlex::split(args)
+                    .ok_or_else(|| anyhow!("Failed to split probe video encoder arguments"))
+                    .ok(),
+            });
 
         let target_quality = args.target_quality_params(
             temp.clone(),
-            video_params.clone(),
+            probe_video_params,
+            copied_params,
             output_pix_format.format,
         )?;
 
@@ -1324,63 +1230,4 @@ fn parse_comma_separated_numbers(string: &str) -> anyhow::Result<Vec<usize>> {
         result.push(val.trim().parse()?);
     }
     Ok(result)
-}
-
-fn parse_target_qp_range(s: &str) -> Result<(f64, f64), String> {
-    if let Some((min_str, max_str)) = s.split_once('-') {
-        let min = min_str.parse::<f64>().map_err(|_| "Invalid range format")?;
-        let max = max_str.parse::<f64>().map_err(|_| "Invalid range format")?;
-        if min >= max {
-            return Err("Min must be < max".to_string());
-        }
-        Ok((min, max))
-    } else {
-        let val = s.parse::<f64>().map_err(|_| "Invalid number")?;
-        let tol = val * 0.01;
-        Ok((val - tol, val + tol))
-    }
-}
-
-fn parse_qp_range(s: &str) -> Result<(u32, u32), String> {
-    if let Some((min_str, max_str)) = s.split_once('-') {
-        let min = min_str.parse::<u32>().map_err(|_| "Invalid range format")?;
-        let max = max_str.parse::<u32>().map_err(|_| "Invalid range format")?;
-        if min >= max {
-            return Err("Min must be < max".to_string());
-        }
-        Ok((min, max))
-    } else {
-        Err("Quality range must be specified as min-max (e.g., 10-50)".to_string())
-    }
-}
-
-pub fn parse_interp_method(s: &str) -> anyhow::Result<(InterpolationMethod, InterpolationMethod)> {
-    let parts: Vec<&str> = s.split('-').collect();
-    if parts.len() != 2 {
-        return Err(anyhow::anyhow!(
-            "Invalid format. Use: --interp-method method4-method5"
-        ));
-    }
-
-    let method4 = parts[0]
-        .parse::<InterpolationMethod>()
-        .map_err(|_| anyhow::anyhow!("Invalid 4th round method: {}", parts[0]))?;
-    let method5 = parts[1]
-        .parse::<InterpolationMethod>()
-        .map_err(|_| anyhow::anyhow!("Invalid 5th round method: {}", parts[1]))?;
-
-    // Validate methods for correct round
-    match method4 {
-        InterpolationMethod::Linear
-        | InterpolationMethod::Quadratic
-        | InterpolationMethod::Natural => {},
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Method '{}' not available for 4th round",
-                parts[0]
-            ))
-        },
-    }
-
-    Ok((method4, method5))
 }
