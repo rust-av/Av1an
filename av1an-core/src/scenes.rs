@@ -33,6 +33,9 @@ use crate::{
     EncodeArgs,
     Encoder,
     SplitMethod,
+    TargetMetric,
+    TargetQuality,
+    VmafFeature,
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -54,6 +57,7 @@ pub struct ZoneOptions {
     pub chroma_noise:        bool,
     pub extra_splits_len:    Option<usize>,
     pub min_scene_len:       usize,
+    pub target_quality:      Option<TargetQuality>,
 }
 
 impl Scene {
@@ -148,6 +152,9 @@ impl Scene {
         let mut extra_splits_len = args.extra_splits_len;
         let mut min_scene_len = args.min_scene_len;
 
+        // Target Quality options
+        let mut target_quality = args.target_quality.clone();
+
         // Parse overrides
         let zone_args: (&str, Vec<(&str, Option<&str>)>) =
             separated_list0::<_, _, _, nom::error::Error<&str>, _, _>(
@@ -187,6 +194,54 @@ impl Scene {
         if let Some(zone_min_scene_len) = zone_args.remove("--min-scene-len") {
             min_scene_len = zone_min_scene_len.unwrap().parse().unwrap();
         }
+        if let Some(zone_target_quality) = zone_args.remove("--target-quality") {
+            let parsed = TargetQuality::parse_target_qp_range(zone_target_quality.unwrap())
+                .map_err(|e| anyhow!("Invalid --target-quality: {}", e))
+                .unwrap();
+            target_quality.target = Some(parsed);
+        }
+        if let Some(zone_target_metric) = zone_args.remove("--target-metric") {
+            let parsed = TargetMetric::from_str(zone_target_metric.unwrap())
+                .map_err(|_| anyhow!("Invalid --target-metric: {}", zone_target_metric.unwrap()))?;
+            target_quality.metric = parsed;
+        }
+        if let Some(zone_qp_range) = zone_args.remove("--qp-range") {
+            let (min, max) = TargetQuality::parse_qp_range(zone_qp_range.unwrap())
+                .map_err(|e| anyhow!("Invalid --qp-range: {}", e))
+                .unwrap();
+            target_quality.min_q = min;
+            target_quality.max_q = max;
+        }
+        if let Some(zone_probes) = zone_args.remove("--probes") {
+            target_quality.probes = zone_probes.unwrap().parse().unwrap();
+        }
+        if let Some(zone_probing_rate) = zone_args.remove("--probing-rate") {
+            target_quality.probing_rate = zone_probing_rate.unwrap().parse().unwrap();
+        }
+        if let Some(zone_probe_res) = zone_args.remove("--probe-res") {
+            target_quality.probe_res = Some(zone_probe_res.unwrap().to_string());
+        }
+        if let Some(zone_probing_stat) = zone_args.remove("--probing-stat") {
+            let parsed = TargetQuality::parse_probing_statistic(zone_probing_stat.unwrap())
+                .map_err(|_| anyhow!("Invalid --probing-stat: {}", zone_probing_stat.unwrap()))
+                .unwrap();
+            target_quality.probing_statistic = parsed;
+        }
+        if let Some(zone_interp_method) = zone_args.remove("--interp-method") {
+            let (method4, method5) =
+                TargetQuality::parse_interp_method(zone_interp_method.unwrap())
+                    .map_err(|e| anyhow!("Invalid --interp-method: {}", e))?;
+            target_quality.interp_method = Some((method4, method5));
+        }
+        // Cannot parse out more than a single feature
+        if let Some(zone_vmaf_features) = zone_args.remove("--probing-vmaf-features") {
+            target_quality.probing_vmaf_features = zone_vmaf_features
+                .unwrap()
+                .split_whitespace()
+                .map(|f| VmafFeature::from_str(f).unwrap())
+                .collect();
+        }
+
         let raw_zone_args = if [Encoder::aom, Encoder::vpx].contains(&encoder) {
             zone_args
                 .into_iter()
@@ -275,6 +330,7 @@ impl Scene {
                 chroma_noise,
                 extra_splits_len,
                 min_scene_len,
+                target_quality: Some(target_quality),
             }),
         })
     }

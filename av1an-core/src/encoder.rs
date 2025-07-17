@@ -11,14 +11,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{
-    ffmpeg::compose_ffmpeg_pipe,
-    inplace_vec,
-    into_array,
-    into_vec,
-    list_index,
-    ProbingSpeed,
-};
+use crate::{ffmpeg::compose_ffmpeg_pipe, inplace_vec, into_array, into_vec, list_index};
 
 const NULL: &str = if cfg!(windows) { "nul" } else { "/dev/null" };
 
@@ -631,7 +624,6 @@ impl Encoder {
         self,
         threads: usize,
         q: usize,
-        speed: ProbingSpeed,
     ) -> Vec<Cow<'static, str>> {
         match &self {
             Self::aom => inplace_vec![
@@ -643,7 +635,7 @@ impl Encoder {
                 "--end-usage=q",
                 "-b",
                 "8",
-                format!("--cpu-used={}", ((speed as u8) * MAXIMUM_SPEED_AOM / 4)),
+                format!("--cpu-used={}", MAXIMUM_SPEED_AOM),
                 format!("--cq-level={q}"),
                 "--enable-filter-intra=0",
                 "--enable-smooth-intra=0",
@@ -668,7 +660,7 @@ impl Encoder {
                 "rav1e",
                 "-y",
                 "-s",
-                ((speed as u8) * MAXIMUM_SPEED_RAV1E / 4).to_string(),
+                MAXIMUM_SPEED_RAV1E.to_string(),
                 "--threads",
                 threads.to_string(),
                 "--tiles",
@@ -689,7 +681,7 @@ impl Encoder {
                 "--pass=1",
                 "--codec=vp9",
                 format!("--threads={threads}"),
-                format!("--cpu-used={}", ((speed as u8) * MAXIMUM_SPEED_VPX / 4)),
+                format!("--cpu-used={}", MAXIMUM_SPEED_VPX),
                 "--end-usage=q",
                 format!("--cq-level={q}"),
                 "--row-mt=1",
@@ -705,7 +697,7 @@ impl Encoder {
                         "--lp",
                         threads.to_string(),
                         "--preset",
-                        ((speed as u8) * MAXIMUM_SPEED_OLD_SVT_AV1 / 4).to_string(),
+                        MAXIMUM_SPEED_OLD_SVT_AV1.to_string(),
                         "--keyint",
                         "240",
                         "--crf",
@@ -769,7 +761,7 @@ impl Encoder {
                         "--lp",
                         threads.to_string(),
                         "--preset",
-                        ((speed as u8) * MAXIMUM_SPEED_SVT_AV1 / 4).to_string(),
+                        MAXIMUM_SPEED_SVT_AV1.to_string(),
                         "--keyint",
                         "240",
                         "--crf",
@@ -792,13 +784,7 @@ impl Encoder {
                 "--threads",
                 threads.to_string(),
                 "--preset",
-                match speed {
-                    ProbingSpeed::VerySlow => "placebo",
-                    ProbingSpeed::Slow => "veryslow",
-                    ProbingSpeed::Medium => "slower",
-                    ProbingSpeed::Fast => "slow",
-                    ProbingSpeed::VeryFast => MAXIMUM_SPEED_X264,
-                },
+                MAXIMUM_SPEED_X264,
                 "--crf",
                 q.to_string(),
             ],
@@ -811,13 +797,7 @@ impl Encoder {
                 "--frame-threads",
                 cmp::min(threads, 16).to_string(),
                 "--preset",
-                match speed {
-                    ProbingSpeed::VerySlow => "veryslow",
-                    ProbingSpeed::Slow => "slower",
-                    ProbingSpeed::Medium => "slow",
-                    ProbingSpeed::Fast => "medium",
-                    ProbingSpeed::VeryFast => MAXIMUM_SPEED_X265,
-                },
+                MAXIMUM_SPEED_X265,
                 "--crf",
                 q.to_string(),
                 "--input",
@@ -829,118 +809,41 @@ impl Encoder {
     /// Returns command used for target quality probing (slow, correctness
     /// focused version)
     #[inline]
-    pub fn construct_target_quality_command_probe_slow(
-        self,
-        q: usize,
-        speed: Option<ProbingSpeed>,
-    ) -> Vec<Cow<'static, str>> {
+    pub fn construct_target_quality_command_probe_slow(self, q: usize) -> Vec<Cow<'static, str>> {
         match &self {
-            Self::aom => {
-                let mut cmd = inplace_vec!["aomenc", "--passes=1", format!("--cq-level={q}"),];
-                if let Some(speed) = speed {
-                    cmd.push(
-                        format!("--cpu-used={}", ((speed as u8) * MAXIMUM_SPEED_AOM / 4)).into(),
-                    );
-                }
-                cmd
-            },
-            Self::rav1e => {
-                let mut cmd = inplace_vec!["rav1e", "-y", "--quantizer", q.to_string(),];
-                if let Some(speed) = speed {
-                    cmd.push(
-                        format!("--speed={}", ((speed as u8) * MAXIMUM_SPEED_RAV1E / 4)).into(),
-                    );
-                }
-                cmd
-            },
-            Self::vpx => {
-                let mut cmd = inplace_vec![
-                    "vpxenc",
-                    "--passes=1",
-                    "--pass=1",
-                    "--codec=vp9",
-                    "--end-usage=q",
-                    format!("--cq-level={q}"),
-                ];
-                if let Some(speed) = speed {
-                    cmd.push(
-                        format!("--cpu-used={}", ((speed as u8) * MAXIMUM_SPEED_VPX / 4)).into(),
-                    );
-                }
-                cmd
-            },
-            Self::svt_av1 => {
-                let mut cmd = inplace_vec!["SvtAv1EncApp", "-i", "stdin", "--crf", q.to_string(),];
-                if let Some(speed) = speed {
-                    cmd.push("--preset".into());
-                    cmd.push(
-                        ((speed as u8)
-                            * (if *USE_OLD_SVT_AV1 {
-                                MAXIMUM_SPEED_OLD_SVT_AV1
-                            } else {
-                                MAXIMUM_SPEED_SVT_AV1
-                            })
-                            / 4)
-                        .to_string()
-                        .into(),
-                    );
-                }
-                cmd
-            },
-            Self::x264 => {
-                let mut cmd = inplace_vec![
-                    "x264",
-                    "--log-level",
-                    "error",
-                    "--demuxer",
-                    "y4m",
-                    "-",
-                    "--no-progress",
-                    "--crf",
-                    q.to_string(),
-                ];
-                if let Some(speed) = speed {
-                    cmd.push("--preset".into());
-                    cmd.push(
-                        (match speed {
-                            ProbingSpeed::VerySlow => "placebo",
-                            ProbingSpeed::Slow => "veryslow",
-                            ProbingSpeed::Medium => "slower",
-                            ProbingSpeed::Fast => "slow",
-                            ProbingSpeed::VeryFast => MAXIMUM_SPEED_X264,
-                        })
-                        .into(),
-                    );
-                }
-                cmd
-            },
-            Self::x265 => {
-                let mut cmd = inplace_vec![
-                    "x265",
-                    "--log-level",
-                    "0",
-                    "--no-progress",
-                    "--y4m",
-                    "--crf",
-                    q.to_string(),
-                    "--input",
-                    "-",
-                ];
-                if let Some(speed) = speed {
-                    cmd.push("--preset".into());
-                    cmd.push(
-                        (match speed {
-                            ProbingSpeed::VerySlow => "veryslow",
-                            ProbingSpeed::Slow => "slower",
-                            ProbingSpeed::Medium => "slow",
-                            ProbingSpeed::Fast => "medium",
-                            ProbingSpeed::VeryFast => MAXIMUM_SPEED_X265,
-                        })
-                        .into(),
-                    );
-                }
-                cmd
-            },
+            Self::aom => inplace_vec!["aomenc", "--passes=1", format!("--cq-level={q}"),],
+            Self::rav1e => inplace_vec!["rav1e", "-y", "--quantizer", q.to_string(),],
+            Self::vpx => inplace_vec![
+                "vpxenc",
+                "--passes=1",
+                "--pass=1",
+                "--codec=vp9",
+                "--end-usage=q",
+                format!("--cq-level={q}"),
+            ],
+            Self::svt_av1 => inplace_vec!["SvtAv1EncApp", "-i", "stdin", "--crf", q.to_string(),],
+            Self::x264 => inplace_vec![
+                "x264",
+                "--log-level",
+                "error",
+                "--demuxer",
+                "y4m",
+                "-",
+                "--no-progress",
+                "--crf",
+                q.to_string(),
+            ],
+            Self::x265 => inplace_vec![
+                "x265",
+                "--log-level",
+                "0",
+                "--no-progress",
+                "--y4m",
+                "--crf",
+                q.to_string(),
+                "--input",
+                "-",
+            ],
         }
     }
 
@@ -969,10 +872,8 @@ impl Encoder {
         q: usize,
         pix_fmt: Pixel,
         probing_rate: usize,
-        probing_speed: Option<ProbingSpeed>,
         vmaf_threads: usize,
-        mut video_params: Vec<String>,
-        probe_slow: bool,
+        custom_video_params: Option<Vec<String>>,
     ) -> (Vec<String>, Vec<Cow<'static, str>>) {
         let pipe = compose_ffmpeg_pipe(
             ["-vf", format!("select=not(mod(n\\,{probing_rate}))").as_str(), "-vsync", "0"],
@@ -991,18 +892,12 @@ impl Encoder {
         probe.push(&probe_name);
         let probe_path = probe.to_str().unwrap().to_owned();
 
-        let params: Vec<Cow<str>> = if probe_slow {
+        let params: Vec<Cow<str>> = if let Some(mut video_params) = custom_video_params {
             let quantizer_patterns =
                 ["--cq-level=", "--passes=", "--pass=", "--crf", "--quantizer"];
             Self::remove_patterns(&mut video_params, &quantizer_patterns);
 
-            // Only remove speed parameters if probing_speed is provided
-            if probing_speed.is_some() {
-                let speed_patterns = ["--cpu-used=", "--preset", "-s", "--speed"];
-                Self::remove_patterns(&mut video_params, &speed_patterns);
-            }
-
-            let mut ps = self.construct_target_quality_command_probe_slow(q, probing_speed);
+            let mut ps = self.construct_target_quality_command_probe_slow(q);
 
             ps.reserve(video_params.len());
             for arg in video_params {
@@ -1011,11 +906,7 @@ impl Encoder {
 
             ps
         } else {
-            self.construct_target_quality_command(
-                vmaf_threads,
-                q,
-                probing_speed.unwrap_or(ProbingSpeed::VeryFast),
-            )
+            self.construct_target_quality_command(vmaf_threads, q)
         };
 
         let output: Vec<Cow<str>> = match self {
