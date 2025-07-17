@@ -14,11 +14,6 @@ __pycache__/
 *.webm
 *.y4m
 
-# Hidden folders
-!.github
-.*
-!.mergify.yml
-
 # Distribution / packaging
 .Python
 build/
