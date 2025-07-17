@@ -2,10 +2,10 @@ use std::{
     borrow::{Borrow, Cow},
     cmp::Ordering,
     collections::HashSet,
-    path::{Path, PathBuf},
+    path::{absolute, Path, PathBuf},
     process::{exit, Command},
 };
-use std::path::absolute;
+
 use anyhow::{bail, ensure};
 use itertools::{chain, Itertools};
 use serde::{Deserialize, Serialize};

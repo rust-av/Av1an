@@ -1,9 +1,7 @@
 #[cfg(test)]
 mod tests;
 
-use std::{
-    path::{ Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 /// Count the number of elements passed to this macro.
 ///

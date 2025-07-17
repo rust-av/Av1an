@@ -1,10 +1,11 @@
 use std::{
     collections::BTreeMap,
     io::{IsTerminal, Read},
+    path::absolute,
     process::{Command, Stdio},
     thread,
 };
-use std::path::absolute;
+
 use anyhow::bail;
 use av_decoders::{DecoderError, DecoderImpl, VapoursynthDecoder, Y4mDecoder};
 use av_scenechange::{
