@@ -69,7 +69,6 @@ vapoursynth = { version = "0.4.0", features = [
 colored = "3.0.0"
 ctrlc = "3.4.7"
 regex = "1.11.1"
-tokio = { version = "1.46", features = ["full"] }
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented

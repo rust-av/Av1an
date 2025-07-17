@@ -552,139 +552,132 @@ impl TargetQuality {
             self.probe_slow,
         );
 
-        let future = async {
-            let source_cmd = if let Some(proxy_cmd) = chunk.proxy_cmd.clone() {
-                proxy_cmd
-            } else {
-                chunk.source_cmd.clone()
-            };
-            let (ff_cmd, output) = cmd.clone();
+        let source_cmd = if let Some(proxy_cmd) = chunk.proxy_cmd.clone() {
+            proxy_cmd
+        } else {
+            chunk.source_cmd.clone()
+        };
+        let (ff_cmd, output) = cmd.clone();
 
-            tokio::task::spawn_blocking(move || {
-                let mut source = if let [pipe_cmd, args @ ..] = &*source_cmd {
-                    std::process::Command::new(pipe_cmd)
+        thread::scope(move |scope| {
+            let mut source = if let [pipe_cmd, args @ ..] = &*source_cmd {
+                std::process::Command::new(pipe_cmd)
+                    .args(args)
+                    .stderr(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .map_err(|e| EncoderCrash {
+                        exit_status:        std::process::ExitStatus::default(),
+                        source_pipe_stderr: format!("Failed to spawn source: {e}").into(),
+                        ffmpeg_pipe_stderr: None,
+                        stderr:             String::new().into(),
+                        stdout:             String::new().into(),
+                    })?
+            } else {
+                unreachable!()
+            };
+
+            let source_stdout = source.stdout.take().unwrap();
+
+            let (mut source_pipe, mut enc_pipe) = {
+                if let Some(ff_cmd) = ff_cmd.as_deref() {
+                    let (ffmpeg, args) = ff_cmd.split_first().expect("not empty");
+                    let mut source_pipe = std::process::Command::new(ffmpeg)
                         .args(args)
-                        .stderr(std::process::Stdio::piped())
+                        .stdin(source_stdout)
                         .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
                         .spawn()
                         .map_err(|e| EncoderCrash {
                             exit_status:        std::process::ExitStatus::default(),
-                            source_pipe_stderr: format!("Failed to spawn source: {e}").into(),
+                            source_pipe_stderr: format!("Failed to spawn ffmpeg: {e}").into(),
                             ffmpeg_pipe_stderr: None,
                             stderr:             String::new().into(),
                             stdout:             String::new().into(),
-                        })?
-                } else {
-                    unreachable!()
-                };
+                        })?;
 
-                let source_stdout = source.stdout.take().unwrap();
+                    let source_pipe_stdout = source_pipe.stdout.take().unwrap();
 
-                let (mut source_pipe, mut enc_pipe) = {
-                    if let Some(ff_cmd) = ff_cmd.as_deref() {
-                        let (ffmpeg, args) = ff_cmd.split_first().expect("not empty");
-                        let mut source_pipe = std::process::Command::new(ffmpeg)
-                            .args(args)
-                            .stdin(source_stdout)
-                            .stdout(std::process::Stdio::piped())
-                            .stderr(std::process::Stdio::piped())
-                            .spawn()
-                            .map_err(|e| EncoderCrash {
-                                exit_status:        std::process::ExitStatus::default(),
-                                source_pipe_stderr: format!("Failed to spawn ffmpeg: {e}").into(),
-                                ffmpeg_pipe_stderr: None,
-                                stderr:             String::new().into(),
-                                stdout:             String::new().into(),
-                            })?;
-
-                        let source_pipe_stdout = source_pipe.stdout.take().unwrap();
-
-                        let enc_pipe = if let [cmd, args @ ..] = &*output {
-                            build_encoder_pipe(cmd.clone(), args, source_pipe_stdout)?
-                        } else {
-                            unreachable!()
-                        };
-                        (Some(source_pipe), enc_pipe)
+                    let enc_pipe = if let [cmd, args @ ..] = &*output {
+                        build_encoder_pipe(cmd.clone(), args, source_pipe_stdout)?
                     } else {
-                        // We unfortunately have to duplicate the code like this
-                        // in order to satisfy the borrow checker for `source_stdout`
-                        let enc_pipe = if let [cmd, args @ ..] = &*output {
-                            build_encoder_pipe(cmd.clone(), args, source_stdout)?
-                        } else {
-                            unreachable!()
-                        };
-                        (None, enc_pipe)
-                    }
-                };
-
-                // Drop stdout to prevent buffer deadlock
-                drop(enc_pipe.stdout.take());
-
-                let source_stderr = source.stderr.take().unwrap();
-                let stderr_thread1 = thread::spawn(move || {
-                    let mut buf = Vec::new();
-                    let mut stderr = source_stderr;
-                    stderr.read_to_end(&mut buf).ok();
-                    buf
-                });
-
-                let source_pipe_stderr = source_pipe.as_mut().map(|p| p.stderr.take().unwrap());
-                let stderr_thread2 = source_pipe_stderr.map(|source_pipe_stderr| {
-                    thread::spawn(move || {
-                        let mut buf = Vec::new();
-                        let mut stderr = source_pipe_stderr;
-                        stderr.read_to_end(&mut buf).ok();
-                        buf
-                    })
-                });
-
-                let enc_pipe_stderr = enc_pipe.stderr.take().unwrap();
-                let stderr_thread3 = thread::spawn(move || {
-                    let mut buf = Vec::new();
-                    let mut stderr = enc_pipe_stderr;
-                    stderr.read_to_end(&mut buf).ok();
-                    buf
-                });
-
-                // Wait for encoder & other processes to finish
-                let enc_status = enc_pipe.wait().map_err(|e| EncoderCrash {
-                    exit_status:        std::process::ExitStatus::default(),
-                    source_pipe_stderr: String::new().into(),
-                    ffmpeg_pipe_stderr: None,
-                    stderr:             format!("Failed to wait for encoder: {e}").into(),
-                    stdout:             String::new().into(),
-                })?;
-
-                if let Some(source_pipe) = source_pipe.as_mut() {
-                    let _ = source_pipe.wait();
-                };
-                let _ = source.wait();
-
-                // Collect stderr after process finishes
-                let stderr_handles = (
-                    stderr_thread1.join().unwrap_or_default(),
-                    stderr_thread2.map(|t| t.join().unwrap_or_default()),
-                    stderr_thread3.join().unwrap_or_default(),
-                );
-
-                if !enc_status.success() {
-                    return Err(EncoderCrash {
-                        exit_status:        enc_status,
-                        source_pipe_stderr: stderr_handles.0.into(),
-                        ffmpeg_pipe_stderr: stderr_handles.1.map(|h| h.into()),
-                        stderr:             stderr_handles.2.into(),
-                        stdout:             String::new().into(),
-                    });
+                        unreachable!()
+                    };
+                    (Some(source_pipe), enc_pipe)
+                } else {
+                    // We unfortunately have to duplicate the code like this
+                    // in order to satisfy the borrow checker for `source_stdout`
+                    let enc_pipe = if let [cmd, args @ ..] = &*output {
+                        build_encoder_pipe(cmd.clone(), args, source_stdout)?
+                    } else {
+                        unreachable!()
+                    };
+                    (None, enc_pipe)
                 }
+            };
 
-                Ok(())
-            })
-            .await
-            .unwrap()
-        };
+            // Drop stdout to prevent buffer deadlock
+            drop(enc_pipe.stdout.take());
 
-        let rt = tokio::runtime::Builder::new_current_thread().enable_io().build().unwrap();
-        rt.block_on(future)?;
+            let source_stderr = source.stderr.take().unwrap();
+            let stderr_thread1 = scope.spawn(move || {
+                let mut buf = Vec::new();
+                let mut stderr = source_stderr;
+                stderr.read_to_end(&mut buf).ok();
+                buf
+            });
+
+            let source_pipe_stderr = source_pipe.as_mut().map(|p| p.stderr.take().unwrap());
+            let stderr_thread2 = source_pipe_stderr.map(|source_pipe_stderr| {
+                scope.spawn(move || {
+                    let mut buf = Vec::new();
+                    let mut stderr = source_pipe_stderr;
+                    stderr.read_to_end(&mut buf).ok();
+                    buf
+                })
+            });
+
+            let enc_pipe_stderr = enc_pipe.stderr.take().unwrap();
+            let stderr_thread3 = scope.spawn(move || {
+                let mut buf = Vec::new();
+                let mut stderr = enc_pipe_stderr;
+                stderr.read_to_end(&mut buf).ok();
+                buf
+            });
+
+            // Wait for encoder & other processes to finish
+            let enc_status = enc_pipe.wait().map_err(|e| EncoderCrash {
+                exit_status:        std::process::ExitStatus::default(),
+                source_pipe_stderr: String::new().into(),
+                ffmpeg_pipe_stderr: None,
+                stderr:             format!("Failed to wait for encoder: {e}").into(),
+                stdout:             String::new().into(),
+            })?;
+
+            if let Some(source_pipe) = source_pipe.as_mut() {
+                let _ = source_pipe.wait();
+            };
+            let _ = source.wait();
+
+            // Collect stderr after process finishes
+            let stderr_handles = (
+                stderr_thread1.join().unwrap_or_default(),
+                stderr_thread2.map(|t| t.join().unwrap_or_default()),
+                stderr_thread3.join().unwrap_or_default(),
+            );
+
+            if !enc_status.success() {
+                return Err(EncoderCrash {
+                    exit_status:        enc_status,
+                    source_pipe_stderr: stderr_handles.0.into(),
+                    ffmpeg_pipe_stderr: stderr_handles.1.map(|h| h.into()),
+                    stderr:             stderr_handles.2.into(),
+                    stdout:             String::new().into(),
+                });
+            }
+
+            Ok(())
+        })?;
 
         let extension = match self.encoder {
             crate::encoder::Encoder::x264 => "264",
