@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
     process::{exit, Command},
 };
-
+use std::path::absolute;
 use anyhow::{bail, ensure};
 use itertools::{chain, Itertools};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,6 @@ use crate::{
     metrics::{vmaf::validate_libvmaf, xpsnr::validate_libxpsnr},
     parse::valid_params,
     target_quality::TargetQuality,
-    util::to_absolute_path,
     vapoursynth::{VSZipVersion, VapoursynthPlugins},
     ChunkMethod,
     ChunkOrdering,
@@ -168,7 +167,7 @@ impl EncodeArgs {
 
         if self.target_quality.is_some() {
             if self.input.is_vapoursynth() {
-                let input_absolute_path = to_absolute_path(self.input.as_path())?;
+                let input_absolute_path = absolute(self.input.as_path())?;
                 if !input_absolute_path.starts_with(std::env::current_dir()?) {
                     warn!(
                         "Target Quality with VapourSynth script file input not in current working \

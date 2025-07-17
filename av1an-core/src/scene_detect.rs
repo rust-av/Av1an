@@ -4,7 +4,7 @@ use std::{
     process::{Command, Stdio},
     thread,
 };
-
+use std::path::absolute;
 use anyhow::bail;
 use av_decoders::{DecoderError, DecoderImpl, VapoursynthDecoder, Y4mDecoder};
 use av_scenechange::{
@@ -23,7 +23,6 @@ use crate::{
     into_smallvec,
     progress_bar,
     scenes::Scene,
-    util::to_absolute_path,
     vapoursynth::resize_node,
     Encoder,
     Input,
@@ -296,7 +295,7 @@ fn build_decoder(
         if input.is_vapoursynth() {
             // Set the CWD to the directory of the user-provided VapourSynth script
             // input path might be relative, get the absolute path
-            let path = to_absolute_path(input.as_vapoursynth_path())?;
+            let path = absolute(input.as_vapoursynth_path())?;
             command.current_dir(path.parent().unwrap());
         }
 

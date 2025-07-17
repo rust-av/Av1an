@@ -23,7 +23,6 @@ use crate::{
         butteraugli::ButteraugliSubMetric,
         xpsnr::{weight_xpsnr, XPSNRSubMetric},
     },
-    util::to_absolute_path,
     ClipInfo,
     Input,
     InputPixelFormat,
@@ -744,7 +743,7 @@ pub fn create_vs_file(
     create_dir_all(&split_folder)?;
 
     if chunk_method == ChunkMethod::DGDECNV {
-        let absolute_source = to_absolute_path(source)?;
+        let absolute_source = absolute(source)?;
         let dgindexnv_output = split_folder.join(match is_proxy {
             true => "index_proxy.dgi",
             false => "index.dgi",
@@ -786,7 +785,7 @@ pub fn generate_loadscript_text(
     is_proxy: bool,
 ) -> anyhow::Result<(String, bool)> {
     let temp: &Path = temp.as_ref();
-    let source = to_absolute_path(source)?;
+    let source = absolute(source)?;
 
     let cache_file = PathAbs::new(temp.join("split").join(format!(
         "{}cache.{}",
@@ -814,7 +813,7 @@ pub fn generate_loadscript_text(
                 true => "index_proxy.dgi",
                 false => "index.dgi",
             });
-            &to_absolute_path(&dgindexnv_output)?
+            &absolute(&dgindexnv_output)?
         },
         _ => &source,
     };
