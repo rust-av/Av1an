@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
     io::{IsTerminal, Read},
-    path::absolute,
     process::{Command, Stdio},
     thread,
 };
@@ -249,82 +248,53 @@ fn build_decoder(
 
     let clip_info = input.clip_info()?;
     let (input_width, input_height) = clip_info.resolution;
-    let decoder = if input.is_vapoursynth()
-        && sc_downscale_height
-            .is_some_and(|downscale_height| downscale_height < (input_height as usize))
-    {
-        // VapoursynthDecoder is the only reliable method for downscaling user-provided
-        // scripts
+    let decoder = if input.is_vapoursynth_script() {
+        // Use VapoursynthDecoder for all VapourSynth scripts (both user-provided and
+        // generated)
         bit_depth = clip_info.format_info.as_bit_depth().unwrap();
-        // Must use from_file in order to set the CWD to the
-        // directory of the user-provided VapourSynth script
-        let mut vs_decoder = VapoursynthDecoder::from_file(input.as_vapoursynth_path())?;
+
+        let mut vs_decoder = if input.is_vapoursynth() {
+            // Must use from_file in order to set the CWD to the
+            // directory of the user-provided VapourSynth script
+            VapoursynthDecoder::from_file(input.as_vapoursynth_path())?
+        } else {
+            // Generated VapourSynth script
+            VapoursynthDecoder::from_file(input.as_script_path())?
+        };
+
         vs_decoder.set_variables(input.as_vspipe_args_hashmap()?)?;
 
-        let downscale_height = sc_downscale_height.unwrap();
-        let downscale_width =
-            (input_width as f64 * (downscale_height as f64 / input_height as f64)).round() as u32;
-        // Register a node modifier callback to perform downscaling
-        vs_decoder.register_node_modifier(Box::new(move |core, node| {
-            // Node is expected to exist
-            let node = node.ok_or_else(|| DecoderError::VapoursynthInternalError {
-                cause: "No output node".to_string(),
-            })?;
+        // Apply downscaling if requested and needed
+        if let Some(downscale_height) = sc_downscale_height {
+            if downscale_height < (input_height as usize) {
+                let downscale_width = (input_width as f64
+                    * (downscale_height as f64 / input_height as f64))
+                    .round() as u32;
+                // Register a node modifier callback to perform downscaling
+                vs_decoder.register_node_modifier(Box::new(move |core, node| {
+                    // Node is expected to exist
+                    let node = node.ok_or_else(|| DecoderError::VapoursynthInternalError {
+                        cause: "No output node".to_string(),
+                    })?;
 
-            let resized_node = resize_node(
-                core,
-                &node,
-                Some((downscale_width / 2) * 2), // Ensure width is divisible by 2
-                Some(downscale_height as u32),
-                None,
-                None,
-            )
-            .map_err(|e| DecoderError::VapoursynthInternalError {
-                cause: e.to_string(),
-            })?;
+                    let resized_node = resize_node(
+                        core,
+                        &node,
+                        Some((downscale_width / 2) * 2), // Ensure width is divisible by 2
+                        Some(downscale_height as u32),
+                        None,
+                        None,
+                    )
+                    .map_err(|e| DecoderError::VapoursynthInternalError {
+                        cause: e.to_string(),
+                    })?;
 
-            Ok(resized_node)
-        }))?;
+                    Ok(resized_node)
+                }))?;
+            }
+        }
 
         Decoder::from_decoder_impl(DecoderImpl::Vapoursynth(vs_decoder))?
-    } else if input.is_vapoursynth_script() {
-        // Generated VapourSynth script or user-provided script without downscaling
-        // VSPipe is still faster than VapoursynthDecoder
-        bit_depth = clip_info.format_info.as_bit_depth().unwrap();
-        let mut command = Command::new("vspipe");
-
-        if input.is_vapoursynth() {
-            // Set the CWD to the directory of the user-provided VapourSynth script
-            // input path might be relative, get the absolute path
-            let path = absolute(input.as_vapoursynth_path())?;
-            command.current_dir(path.parent().unwrap());
-        }
-
-        if let Some(downscale_height) = sc_downscale_height {
-            command.env("AV1AN_DOWNSCALE_HEIGHT", downscale_height.to_string());
-        }
-        if let Some(pixel_format) = sc_pix_format {
-            command.env("AV1AN_PIXEL_FORMAT", format!("{pixel_format:?}"));
-        }
-
-        command
-            .arg("-c")
-            .arg("y4m")
-            .arg(input.as_script_path())
-            .arg("-")
-            .env("AV1AN_PERFORM_SCENE_DETECTION", "true")
-            .env("AV1AN_SCALER", sc_scaler)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        // Append vspipe python arguments to the environment if there are any
-        for arg in input.as_vspipe_args_vec()? {
-            command.args(["-a", &arg]);
-        }
-
-        let y4m_decoder =
-            Y4mDecoder::new(Box::new(command.spawn()?.stdout.unwrap()) as Box<dyn Read>)?;
-        Decoder::from_decoder_impl(DecoderImpl::Y4m(y4m_decoder))?
     } else {
         // FFmpeg piped into Y4mDecoder
         let path = input.as_path();
