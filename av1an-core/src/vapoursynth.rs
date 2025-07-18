@@ -726,7 +726,7 @@ pub fn create_vs_file(
     chunk_method: ChunkMethod,
     scene_detection_downscale_height: Option<usize>,
     scene_detection_pixel_format: Option<FFPixelFormat>,
-    scene_detection_scaler: String,
+    scene_detection_scaler: &str,
     is_proxy: bool,
 ) -> anyhow::Result<(PathBuf, bool)> {
     let (load_script_text, cache_file_already_exists) = generate_loadscript_text(
@@ -782,7 +782,7 @@ pub fn generate_loadscript_text(
     chunk_method: ChunkMethod,
     scene_detection_downscale_height: Option<usize>,
     scene_detection_pixel_format: Option<FFPixelFormat>,
-    scene_detection_scaler: String,
+    scene_detection_scaler: &str,
     is_proxy: bool,
 ) -> anyhow::Result<(String, bool)> {
     let temp: &Path = temp.as_ref();
@@ -860,7 +860,7 @@ pub fn generate_loadscript_text(
     }
     load_script_text = load_script_text.replace(
         "scaler = os.environ.get(\"AV1AN_SCALER\", None)",
-        &format!("scaler = os.environ.get(\"AV1AN_SCALER\", {scene_detection_scaler:?})"),
+        &format!("scaler = os.environ.get(\"AV1AN_SCALER\", {scene_detection_scaler})"),
     );
 
     let cache_file_already_exists = match chunk_method {

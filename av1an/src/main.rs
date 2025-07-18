@@ -15,12 +15,16 @@ use av1an_core::{
     read_in_dir,
     vapoursynth::{get_vapoursynth_plugins, VSZipVersion},
     Av1anContext,
+    Av1anSettings,
     ChunkMethod,
     ChunkOrdering,
+    ChunkSettings,
     ConcatMethod,
-    EncodeArgs,
     Encoder,
+    EncoderSettings,
+    FfmpegSettings,
     Input,
+    InputOutputSettings,
     InputPixelFormat,
     InterpolationMethod,
     PixelFormat,
@@ -28,9 +32,11 @@ use av1an_core::{
     ProbingStatistic,
     ProbingStatisticName,
     ScenecutMethod,
+    ScenecutSettings,
     SplitMethod,
     TargetMetric,
     TargetQuality,
+    TargetQualitySettings,
     Verbosity,
     VmafFeature,
 };
@@ -953,7 +959,6 @@ impl CliOpts {
                     metric: self.target_metric,
                     encoder: self.encoder,
                     pix_format: output_pix_format,
-                    temp: temp_dir.clone(),
                     workers: self.workers,
                     video_params: video_params.clone(),
                     vspipe_args: self.vspipe_args.clone(),
@@ -1018,9 +1023,26 @@ pub(crate) fn resolve_file_paths(path: &Path) -> anyhow::Result<Box<dyn Iterator
 
 /// Returns vector of Encode args ready to be fed to encoder
 #[tracing::instrument(level = "debug")]
-pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
+pub fn parse_cli(
+    args: CliOpts,
+) -> anyhow::Result<(
+    Vec<InputOutputSettings>,
+    Av1anSettings,
+    EncoderSettings,
+    ScenecutSettings,
+    ChunkSettings,
+    TargetQualitySettings,
+    FfmpegSettings,
+)> {
     let input_paths = &*args.input;
     let proxy_paths = &*args.proxy;
+
+    if !proxy_paths.is_empty() {
+        ensure!(
+            input_paths.len() == proxy_paths.len(),
+            "The number of proxy paths, if provided, must equal the number of input paths"
+        );
+    }
 
     let mut inputs = Vec::new();
     for path in input_paths {
@@ -1032,10 +1054,100 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
         proxies.extend(resolve_file_paths(path)?);
     }
 
-    let mut valid_args: Vec<EncodeArgs> = Vec::with_capacity(inputs.len());
-
     // Don't hard error, we can proceed if Vapoursynth isn't available
     let vapoursynth_plugins = get_vapoursynth_plugins().ok();
+
+    let mut valid_io_settings: Vec<InputOutputSettings> = Vec::with_capacity(inputs.len());
+    let av1an_settings = {
+        Av1anSettings {
+            resume:                args.resume,
+            keep:                  args.keep,
+            force:                 args.force,
+            ignore_frame_mismatch: args.ignore_frame_mismatch,
+            max_tries:             args.max_tries,
+            sc_only:               args.sc_only,
+            workers:               args.workers,
+            set_thread_affinity:   args.set_thread_affinity,
+        }
+    };
+    let enc_settings = {
+        EncoderSettings {
+            encoder:           args.encoder,
+            passes:            if let Some(passes) = args.passes {
+                passes
+            } else {
+                args.encoder.get_default_pass()
+            },
+            video_params:      todo!(),
+            tiles:             if self.tile_auto { None } else { Some((1, 1)) },
+            photon_noise:      args
+                .photon_noise
+                .and_then(|arg| if arg == 0 { None } else { Some(arg) }),
+            photon_noise_size: (args.photon_noise_width, args.photon_noise_height),
+            chroma_noise:      args.chroma_noise,
+            zones:             args.zones,
+        }
+    };
+    let sc_settings = {
+        ScenecutSettings {
+            scenes:              args.scenes,
+            split_method:        args.split_method,
+            sc_pix_format:       args.sc_pix_format,
+            sc_method:           args.sc_method,
+            sc_downscale_height: args.sc_downscale_height,
+            scaler:              todo!(),
+            extra_splits_len:    match args.extra_split {
+                Some(0) => None,
+                Some(x) => Some(x),
+                // Make sure it's at least 10 seconds, unless specified by user
+                None => {
+                    Some((clip_info.frame_rate.to_f64().unwrap() * args.extra_split_sec) as usize)
+                },
+            },
+            min_scene_len:       args.min_scene_len,
+            force_keyframes:     parse_comma_separated_numbers(
+                args.force_keyframes.as_deref().unwrap_or(""),
+            )?,
+        }
+    };
+    let chunk_settings = {
+        ChunkSettings {
+            chunk_method: args.chunk_method.unwrap_or_else(|| {
+                vapoursynth_plugins
+                    .map(|p| p.best_available_chunk_method())
+                    .unwrap_or(ChunkMethod::Hybrid)
+            }),
+            chunk_order:  args.chunk_order,
+            concat:       args.concat,
+        }
+    };
+    let tq_settings = {
+        TargetQualitySettings {
+            target_quality: todo!(),
+            vmaf:           args.vmaf,
+            vmaf_path:      args.vmaf_path.clone(),
+            vmaf_res:       args.vmaf_res.clone(),
+            probe_res:      args.probe_res.clone(),
+            vmaf_threads:   args.vmaf_threads,
+            vmaf_filter:    args.vmaf_filter.clone(),
+        }
+    };
+    let ffmpeg_settings = {
+        FfmpegSettings {
+            ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
+                shlex::split(args)
+                    .ok_or_else(|| anyhow!("Failed to split ffmpeg filter arguments"))?
+            } else {
+                Vec::new()
+            },
+            audio_params:       if let Some(args) = args.audio_params.as_ref() {
+                shlex::split(args)
+                    .ok_or_else(|| anyhow!("Failed to split ffmpeg audio encoder arguments"))?
+            } else {
+                into_vec!["-c:a", "copy"]
+            },
+        }
+    };
 
     for (index, input) in inputs.into_iter().enumerate() {
         let temp = if let Some(path) = args.temp.as_ref() {
@@ -1044,19 +1156,14 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             format!(".{}", hash_path(input.as_path()))
         };
 
-        let chunk_method = args.chunk_method.unwrap_or_else(|| {
-            vapoursynth_plugins
-                .map(|p| p.best_available_chunk_method())
-                .unwrap_or(ChunkMethod::Hybrid)
-        });
         let scaler = {
             let mut scaler = args.scaler.to_string().clone();
             let mut scaler_ext =
                 "+accurate_rnd+full_chroma_int+full_chroma_inp+bitexact".to_string();
             if scaler.starts_with("lanczos") {
-                for n in 1..=9 {
-                    if scaler.ends_with(&n.to_string()) {
-                        scaler_ext.push_str(&format!(":param0={}", &n.to_string()));
+                for n in '1'..='9' {
+                    if scaler.ends_with(n) {
+                        scaler_ext.push_str(&format!(":param0={}", n));
                         scaler = "lanczos".to_string();
                     }
                 }
@@ -1094,14 +1201,6 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             None
         };
 
-        let verbosity = if args.quiet {
-            Verbosity::Quiet
-        } else if args.verbose {
-            Verbosity::Verbose
-        } else {
-            Verbosity::Normal
-        };
-
         let video_params = if let Some(args) = args.video_params.as_ref() {
             shlex::split(args).ok_or_else(|| anyhow!("Failed to split video encoder arguments"))?
         } else {
@@ -1123,23 +1222,41 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
         if let Some(proxy) = &proxy {
             proxy.clip_info()?;
         }
-        // TODO make an actual constructor for this
-        let arg = EncodeArgs {
-            ffmpeg_filter_args: if let Some(args) = args.ffmpeg_filter_args.as_ref() {
-                shlex::split(args)
-                    .ok_or_else(|| anyhow!("Failed to split ffmpeg filter arguments"))?
+
+        if !self.no_defaults {
+            if self.video_params.is_empty() {
+                self.video_params = self.encoder.get_default_arguments(self.tiles);
             } else {
-                Vec::new()
-            },
-            temp: temp.clone(),
-            force: args.force,
-            no_defaults: args.no_defaults,
-            passes: if let Some(passes) = args.passes {
-                passes
-            } else {
-                args.encoder.get_default_pass()
-            },
-            video_params: video_params.clone(),
+                // merge video_params with defaults, overriding defaults
+                // TODO: consider using hashmap to store program arguments instead of string
+                // vector
+                let default_video_params = self.encoder.get_default_arguments(self.tiles);
+                let mut skip = false;
+                let mut _default_params: Vec<String> = Vec::new();
+                for param in default_video_params {
+                    if skip && !(param.starts_with("-") && param != "-1") {
+                        skip = false;
+                        continue;
+                    } else {
+                        skip = false;
+                    }
+                    if (param.starts_with("-") && param != "-1")
+                        && self.video_params.contains(&param)
+                    {
+                        skip = true;
+                        continue;
+                    } else {
+                        _default_params.push(param);
+                    }
+                }
+                self.video_params = chain!(_default_params, self.video_params.clone()).collect();
+            }
+        }
+
+        let arg = InputOutputSettings {
+            input,
+            proxy,
+            temp,
             output_file: if let Some(path) = args.output_file.as_ref() {
                 let path = PathAbs::new(path)?;
 
@@ -1161,31 +1278,6 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                     args.encoder
                 )
             },
-            audio_params: if let Some(args) = args.audio_params.as_ref() {
-                shlex::split(args)
-                    .ok_or_else(|| anyhow!("Failed to split ffmpeg audio encoder arguments"))?
-            } else {
-                into_vec!["-c:a", "copy"]
-            },
-            chunk_method,
-            chunk_order: args.chunk_order,
-            concat: args.concat,
-            encoder: args.encoder,
-            extra_splits_len: match args.extra_split {
-                Some(0) => None,
-                Some(x) => Some(x),
-                // Make sure it's at least 10 seconds, unless specified by user
-                None => {
-                    Some((clip_info.frame_rate.to_f64().unwrap() * args.extra_split_sec) as usize)
-                },
-            },
-            photon_noise: args.photon_noise.and_then(|arg| if arg == 0 { None } else { Some(arg) }),
-            photon_noise_size: (args.photon_noise_width, args.photon_noise_height),
-            chroma_noise: args.chroma_noise,
-            sc_pix_format: args.sc_pix_format,
-            keep: args.keep,
-            max_tries: args.max_tries as usize,
-            min_scene_len: args.min_scene_len,
             input_pix_format: {
                 match &input {
                     Input::Video {
@@ -1207,34 +1299,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                     },
                 }
             },
-            input,
-            proxy,
             output_pix_format,
-            resume: args.resume,
-            scenes: args.scenes.clone(),
-            split_method: args.split_method.clone(),
-            sc_method: args.sc_method,
-            sc_only: args.sc_only,
-            sc_downscale_height: args.sc_downscale_height,
-            force_keyframes: parse_comma_separated_numbers(
-                args.force_keyframes.as_deref().unwrap_or(""),
-            )?,
-            target_quality,
-            vmaf: args.vmaf,
-            vmaf_path: args.vmaf_path.clone(),
-            vmaf_res: args.vmaf_res.clone(),
-            probe_res: args.probe_res.clone(),
-            vmaf_threads: args.vmaf_threads,
-            vmaf_filter: args.vmaf_filter.clone(),
-            verbosity,
-            workers: args.workers,
-            tiles: (1, 1), // default value; will be adjusted if tile_auto set
-            tile_auto: args.tile_auto,
-            set_thread_affinity: args.set_thread_affinity,
-            zones: args.zones.clone(),
-            scaler,
-            ignore_frame_mismatch: args.ignore_frame_mismatch,
-            vapoursynth_plugins,
         };
 
         if !args.overwrite {
@@ -1265,10 +1330,18 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             }
         }
 
-        valid_args.push(arg)
+        valid_io_settings.push(arg)
     }
 
-    Ok(valid_args)
+    Ok((
+        valid_io_settings,
+        av1an_settings,
+        enc_settings,
+        sc_settings,
+        chunk_settings,
+        tq_settings,
+        ffmpeg_settings,
+    ))
 }
 
 #[instrument]
@@ -1304,9 +1377,26 @@ pub fn run() -> anyhow::Result<()> {
         log_level,
     )?;
 
-    let args = parse_cli(cli_options)?;
-    for arg in args {
-        Av1anContext::new(arg)?.encode_file()?;
+    let (
+        io_settings,
+        av1an_settings,
+        enc_settings,
+        sc_settings,
+        chunk_settings,
+        tq_settings,
+        ff_settings,
+    ) = parse_cli(cli_options)?;
+    for current_io in io_settings {
+        Av1anContext::new(
+            current_io,
+            av1an_settings,
+            enc_settings,
+            sc_settings,
+            chunk_settings,
+            tq_settings,
+            ff_settings,
+        )?
+        .encode_file()?;
     }
 
     Ok(())

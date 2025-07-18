@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cmp::max,
     collections::{hash_map::DefaultHasher, HashMap},
     fs::{self, read_to_string, File},
@@ -10,7 +11,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize},
         Mutex,
     },
-    thread::available_parallelism,
     time::Instant,
 };
 
@@ -29,7 +29,7 @@ pub use crate::{
     concat::ConcatMethod,
     context::Av1anContext,
     encoder::Encoder,
-    settings::{EncodeArgs, InputPixelFormat, PixelFormat},
+    settings::*,
     target_quality::{InterpolationMethod, TargetQuality},
     util::read_in_dir,
 };
@@ -97,7 +97,6 @@ pub enum Input {
 
 impl Input {
     #[inline]
-    #[allow(clippy::too_many_arguments)]
     pub fn new<P: AsRef<Path> + Into<PathBuf>>(
         path: P,
         vspipe_args: Vec<String>,
@@ -147,7 +146,7 @@ impl Input {
                 chunk_method,
                 scene_detection_downscale_height,
                 scene_detection_pixel_format,
-                scene_detection_scaler.clone().unwrap_or_default(),
+                scene_detection_scaler.as_deref().unwrap_or_default(),
                 is_proxy,
             )?;
             if !cache_file_already_exists {
@@ -162,7 +161,7 @@ impl Input {
                 chunk_method,
                 scene_detection_downscale_height,
                 scene_detection_pixel_format,
-                scene_detection_scaler.unwrap_or_default(),
+                scene_detection_scaler.as_deref().unwrap_or_default(),
                 is_proxy,
             )?;
 
@@ -229,7 +228,7 @@ impl Input {
         &self,
         scene_detection_downscale_height: Option<usize>,
         scene_detection_pixel_format: Option<FFPixelFormat>,
-        scene_detection_scaler: Option<String>,
+        scene_detection_scaler: Option<Cow<'_, str>>,
     ) -> anyhow::Result<String> {
         match &self {
             Input::VapourSynth {
@@ -251,7 +250,7 @@ impl Input {
                         *chunk_method,
                         scene_detection_downscale_height,
                         scene_detection_pixel_format,
-                        scene_detection_scaler.unwrap_or_default(),
+                        &scene_detection_scaler.unwrap_or_default(),
                         *is_proxy,
                     )?;
                     Ok(script_text)
@@ -557,65 +556,6 @@ pub enum TargetMetric {
     XPSNR,
     #[strum(serialize = "xpsnr-weighted")]
     XPSNRWeighted,
-}
-
-/// Determine the optimal number of workers for an encoder
-#[inline]
-pub fn determine_workers(args: &EncodeArgs) -> anyhow::Result<u64> {
-    let res = args.input.clip_info()?.resolution;
-    let tiles = args.tiles;
-    let megapixels = (res.0 * res.1) as f64 / 1e6;
-    // encoder memory and chunk_method memory usage scales with resolution
-    // (megapixels), approximately linearly. Expressed as GB/Megapixel
-    let cm_ram = match args.chunk_method {
-        ChunkMethod::FFMS2 | ChunkMethod::LSMASH | ChunkMethod::BESTSOURCE => 0.3,
-        ChunkMethod::DGDECNV => 0.3,
-        ChunkMethod::Hybrid | ChunkMethod::Select | ChunkMethod::Segment => 0.1,
-    };
-    let enc_ram = match args.encoder {
-        Encoder::aom => 0.4,
-        Encoder::rav1e => 0.7,
-        Encoder::svt_av1 => 1.2,
-        Encoder::vpx => 0.3,
-        Encoder::x264 => 0.7,
-        Encoder::x265 => 0.6,
-    };
-    // This is a rough estimate of how many cpu cores will be fully loaded by an
-    // encoder worker. With rav1e, CPU usage scales with tiles, but not 1:1.
-    // Other encoders don't seem to significantly scale CPU usage with tiles.
-    // CPU threads/worker here is relative to default threading parameters, e.g. aom
-    // will use 1 thread/worker if --threads=1 is set.
-    let cpu_threads = match args.encoder {
-        Encoder::aom => 4,
-        Encoder::rav1e => ((tiles.0 * tiles.1) as f32 * 0.7).ceil() as u64,
-        Encoder::svt_av1 => 6,
-        Encoder::vpx => 3,
-        Encoder::x264 | Encoder::x265 => 8,
-    };
-    // memory usage scales with pixel format, expressed as a multiplier of memory
-    // usage. Roughly the same behavior was observed accross all encoders.
-    let pix_mult = match args.output_pix_format.format {
-        FFPixelFormat::YUV444P | FFPixelFormat::YUV444P10LE | FFPixelFormat::YUV444P12LE => 1.5,
-        FFPixelFormat::YUV422P | FFPixelFormat::YUV422P10LE | FFPixelFormat::YUV422P12LE => 1.25,
-        _ => 1.0,
-    };
-
-    let mut system = sysinfo::System::new();
-    system.refresh_memory();
-    let cpu = available_parallelism()
-        .expect("Unrecoverable: Failed to get thread count")
-        .get() as u64;
-    // sysinfo returns Bytes, convert to GB
-    // use total instead of available, because av1an does not resize worker pool
-    let ram_gb = system.total_memory() as f64 / 1e9;
-
-    Ok(std::cmp::max(
-        std::cmp::min(
-            cpu / cpu_threads,
-            (ram_gb / (megapixels * (enc_ram + cm_ram) * pix_mult)).round() as u64,
-        ),
-        1,
-    ))
 }
 
 #[inline]

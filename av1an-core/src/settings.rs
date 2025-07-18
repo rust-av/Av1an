@@ -6,8 +6,8 @@ use std::{
     process::{exit, Command},
 };
 
-use anyhow::{bail, ensure};
-use itertools::{chain, Itertools};
+use anyhow::bail;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -15,18 +15,13 @@ use crate::{
     concat::ConcatMethod,
     encoder::Encoder,
     ffmpeg::FFPixelFormat,
-    metrics::{vmaf::validate_libvmaf, xpsnr::validate_libxpsnr},
     parse::valid_params,
     target_quality::TargetQuality,
-    util::to_absolute_path,
-    vapoursynth::{VSZipVersion, VapoursynthPlugins},
     ChunkMethod,
     ChunkOrdering,
     Input,
     ScenecutMethod,
     SplitMethod,
-    TargetMetric,
-    Verbosity,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -67,384 +62,87 @@ impl InputPixelFormat {
     }
 }
 
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug)]
-pub struct EncodeArgs {
+#[derive(Debug, Clone)]
+pub struct InputOutputSettings {
     pub input:       Input,
     pub proxy:       Option<Input>,
     pub temp:        String,
     pub output_file: String,
 
-    pub chunk_method:          ChunkMethod,
-    pub chunk_order:           ChunkOrdering,
-    pub scaler:                String,
-    pub scenes:                Option<PathBuf>,
-    pub split_method:          SplitMethod,
-    pub sc_pix_format:         Option<FFPixelFormat>,
-    pub sc_method:             ScenecutMethod,
-    pub sc_only:               bool,
-    pub sc_downscale_height:   Option<usize>,
-    pub extra_splits_len:      Option<usize>,
-    pub min_scene_len:         usize,
-    pub force_keyframes:       Vec<usize>,
+    pub input_pix_format:  InputPixelFormat,
+    pub output_pix_format: PixelFormat,
+}
+
+#[derive(Debug, Clone)]
+pub struct Av1anSettings {
+    pub resume:                bool,
+    pub keep:                  bool,
+    pub force:                 bool,
     pub ignore_frame_mismatch: bool,
+    pub max_tries:             usize,
+    pub sc_only:               bool,
 
-    pub max_tries: usize,
-
-    pub passes:              u8,
-    pub video_params:        Vec<String>,
-    pub tiles:               (u32, u32), /* tile (cols, rows) count; log2 will be applied later
-                                          * for specific encoders */
-    pub encoder:             Encoder,
     pub workers:             usize,
     pub set_thread_affinity: Option<usize>,
-    pub photon_noise:        Option<u8>,
-    pub photon_noise_size:   (Option<u32>, Option<u32>), // Width and Height
-    pub chroma_noise:        bool,
-    pub zones:               Option<PathBuf>,
+}
 
-    // FFmpeg params
-    pub ffmpeg_filter_args: Vec<String>,
-    pub audio_params:       Vec<String>,
-    pub input_pix_format:   InputPixelFormat,
-    pub output_pix_format:  PixelFormat,
+#[derive(Debug, Clone)]
+pub struct EncoderSettings {
+    pub encoder:      Encoder,
+    pub passes:       u8,
+    pub video_params: Vec<String>,
+    // tile (cols, rows) count; log2 will be applied later for specific encoders.
+    // `None` implies automatically select optimal tile count.
+    pub tiles:        Option<(u32, u32)>,
 
-    pub verbosity:   Verbosity,
-    pub resume:      bool,
-    pub keep:        bool,
-    pub force:       bool,
-    pub no_defaults: bool,
-    pub tile_auto:   bool,
+    pub photon_noise:      Option<u8>,
+    // Width and Height
+    pub photon_noise_size: (Option<u32>, Option<u32>),
+    pub chroma_noise:      bool,
 
-    pub concat:         ConcatMethod,
+    pub zones: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScenecutSettings {
+    pub scenes:              Option<PathBuf>,
+    pub split_method:        SplitMethod,
+    pub sc_pix_format:       Option<FFPixelFormat>,
+    pub sc_method:           ScenecutMethod,
+    pub sc_downscale_height: Option<usize>,
+    pub scaler:              String,
+    pub extra_splits_len:    Option<usize>,
+    pub min_scene_len:       usize,
+    pub force_keyframes:     Vec<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChunkSettings {
+    pub chunk_method: ChunkMethod,
+    pub chunk_order:  ChunkOrdering,
+    pub concat:       ConcatMethod,
+}
+
+#[derive(Debug, Clone)]
+pub struct TargetQualitySettings {
     pub target_quality: Option<TargetQuality>,
+    // These only apply to the show VMAF option and not to TQ itself
     pub vmaf:           bool,
     pub vmaf_path:      Option<PathBuf>,
     pub vmaf_res:       String,
     pub probe_res:      Option<String>,
     pub vmaf_threads:   Option<usize>,
     pub vmaf_filter:    Option<String>,
-
-    pub vapoursynth_plugins: Option<VapoursynthPlugins>,
 }
 
-impl EncodeArgs {
-    #[inline]
-    pub fn validate(&mut self) -> anyhow::Result<()> {
-        if self.concat == ConcatMethod::Ivf
-            && !matches!(
-                self.encoder,
-                Encoder::rav1e | Encoder::aom | Encoder::svt_av1 | Encoder::vpx
-            )
-        {
-            bail!(".ivf only supports VP8, VP9, and AV1");
-        }
+#[derive(Debug, Clone)]
+pub struct FfmpegSettings {
+    pub ffmpeg_filter_args: Vec<String>,
+    pub audio_params:       Vec<String>,
+}
 
-        ensure!(self.max_tries > 0);
-
-        ensure!(
-            self.input.as_path().exists(),
-            "Input file {:?} does not exist!",
-            self.input
-        );
-
-        if let Some(proxy) = &self.proxy {
-            ensure!(
-                proxy.as_path().exists(),
-                "Proxy file {:?} does not exist!",
-                proxy
-            );
-
-            // Frame count must match
-            let input_frame_count = self.input.clip_info()?.num_frames;
-            let proxy_frame_count = proxy.clip_info()?.num_frames;
-
-            ensure!(
-                input_frame_count == proxy_frame_count,
-                "Input and Proxy do not have the same number of frames! ({input_frame_count} != \
-                 {proxy_frame_count})",
-            );
-        }
-
-        if self.target_quality.is_some() {
-            if self.input.is_vapoursynth() {
-                let input_absolute_path = to_absolute_path(self.input.as_path())?;
-                if !input_absolute_path.starts_with(std::env::current_dir()?) {
-                    warn!(
-                        "Target Quality with VapourSynth script file input not in current working \
-                         directory. It is recommended to run in the same directory."
-                    );
-                }
-            }
-
-            match self.target_quality.as_ref().unwrap().metric {
-                TargetMetric::VMAF => validate_libvmaf()?,
-                TargetMetric::SSIMULACRA2 => {
-                    ensure!(
-                        self.vapoursynth_plugins.is_some_and(|p| p.vship)
-                            || self
-                                .vapoursynth_plugins
-                                .is_some_and(|p| p.vszip != VSZipVersion::None),
-                        "SSIMULACRA2 metric requires either Vapoursynth-HIP or VapourSynth Zig \
-                         Image Process to be installed"
-                    );
-                    ensure!(
-                        matches!(
-                            self.chunk_method,
-                            ChunkMethod::LSMASH
-                                | ChunkMethod::FFMS2
-                                | ChunkMethod::BESTSOURCE
-                                | ChunkMethod::DGDECNV
-                        ),
-                        "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
-                         SSIMULACRA2"
-                    );
-                },
-                TargetMetric::ButteraugliINF => {
-                    ensure!(
-                        self.vapoursynth_plugins.is_some_and(|p| p.vship)
-                            || self.vapoursynth_plugins.is_some_and(|p| p.julek),
-                        "Butteraugli metric requires either Vapoursynth-HIP or \
-                         vapoursynth-julek-plugin to be installed"
-                    );
-                    ensure!(
-                        matches!(
-                            self.chunk_method,
-                            ChunkMethod::LSMASH
-                                | ChunkMethod::FFMS2
-                                | ChunkMethod::BESTSOURCE
-                                | ChunkMethod::DGDECNV
-                        ),
-                        "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
-                         Butteraugli"
-                    );
-                },
-                TargetMetric::Butteraugli3 => {
-                    ensure!(
-                        self.vapoursynth_plugins.is_some_and(|p| p.vship),
-                        "Butteraugli 3 Norm metric requires Vapoursynth-HIP plugin to be installed"
-                    );
-                    ensure!(
-                        matches!(
-                            self.chunk_method,
-                            ChunkMethod::LSMASH
-                                | ChunkMethod::FFMS2
-                                | ChunkMethod::BESTSOURCE
-                                | ChunkMethod::DGDECNV
-                        ),
-                        "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
-                         Butteraugli 3 Norm"
-                    );
-                },
-                TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => {
-                    let metric_name = if self.target_quality.as_ref().unwrap().metric
-                        == TargetMetric::XPSNRWeighted
-                    {
-                        "Weighted "
-                    } else {
-                        ""
-                    };
-                    if self.target_quality.as_ref().unwrap().probing_rate > 1 {
-                        ensure!(
-                            self.vapoursynth_plugins.is_some_and(|p| p.vszip == VSZipVersion::New),
-                            format!(
-                                "{metric_name}XPSNR metric with probing rate greater than 1 \
-                                 requires VapourSynth-Zig Image Process R7 or newer to be \
-                                 installed"
-                            )
-                        );
-                        ensure!(
-                            matches!(
-                                self.chunk_method,
-                                ChunkMethod::LSMASH
-                                    | ChunkMethod::FFMS2
-                                    | ChunkMethod::BESTSOURCE
-                                    | ChunkMethod::DGDECNV
-                            ),
-                            format!(
-                                "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
-                                 {metric_name}XPSNR with probing rate greater than 1"
-                            )
-                        );
-                    } else {
-                        validate_libxpsnr()?;
-                    }
-                },
-            }
-        }
-
-        if which::which("ffmpeg").is_err() {
-            bail!("FFmpeg not found. Is it installed in system path?");
-        }
-
-        if self.concat == ConcatMethod::MKVMerge && which::which("mkvmerge").is_err() {
-            if self.sc_only {
-                warn!(
-                    "mkvmerge not found, but `--concat mkvmerge` was specified. Make sure to \
-                     install mkvmerge or specify a different concatenation method (e.g. `--concat \
-                     ffmpeg`) before encoding."
-                );
-            } else {
-                bail!(
-                    "mkvmerge not found, but `--concat mkvmerge` was specified. Is it installed \
-                     in system path?"
-                );
-            }
-        }
-
-        if self.encoder == Encoder::x265 && self.concat != ConcatMethod::MKVMerge {
-            bail!(
-                "mkvmerge is required for concatenating x265, as x265 outputs raw HEVC bitstream \
-                 files without the timestamps correctly set, which FFmpeg cannot concatenate \
-                 properly into a mkv file. Specify mkvmerge as the concatenation method by \
-                 setting `--concat mkvmerge`."
-            );
-        }
-
-        if self.encoder == Encoder::vpx && self.concat != ConcatMethod::MKVMerge {
-            warn!(
-                "mkvmerge is recommended for concatenating vpx, as vpx outputs with incorrect \
-                 frame rates, which we can only resolve using mkvmerge. Specify mkvmerge as the \
-                 concatenation method by setting `--concat mkvmerge`."
-            );
-        }
-
-        if self.chunk_method == ChunkMethod::LSMASH {
-            ensure!(
-                self.vapoursynth_plugins.is_some_and(|p| p.lsmash),
-                "LSMASH is not installed, but it was specified as the chunk method"
-            );
-        }
-        if self.chunk_method == ChunkMethod::FFMS2 {
-            ensure!(
-                self.vapoursynth_plugins.is_some_and(|p| p.ffms2),
-                "FFMS2 is not installed, but it was specified as the chunk method"
-            );
-        }
-        if self.chunk_method == ChunkMethod::DGDECNV && which::which("dgindexnv").is_err() {
-            ensure!(
-                self.vapoursynth_plugins.is_some_and(|p| p.dgdecnv),
-                "Either DGDecNV is not installed or DGIndexNV is not in system path, but it was \
-                 specified as the chunk method"
-            );
-        }
-        if self.chunk_method == ChunkMethod::BESTSOURCE {
-            ensure!(
-                self.vapoursynth_plugins.is_some_and(|p| p.bestsource),
-                "BestSource is not installed, but it was specified as the chunk method"
-            );
-        }
-        if self.chunk_method == ChunkMethod::Select {
-            warn!("It is not recommended to use the \"select\" chunk method, as it is very slow");
-        }
-
-        if self.ignore_frame_mismatch {
-            warn!(
-                "The output video's frame count may differ, and target metric calculations may be \
-                 incorrect"
-            );
-        }
-
-        if let Some(vmaf_path) = &self.target_quality.as_ref().and_then(|tq| tq.model.as_ref()) {
-            ensure!(vmaf_path.exists());
-        }
-
-        if let Some(target_quality) = &self.target_quality {
-            if target_quality.probes < 4 {
-                warn!("Target quality with less than 4 probes is experimental and not recommended");
-            }
-
-            if let Some(resolution) = &target_quality.probe_res {
-                match resolution.split('x').collect::<Vec<&str>>().as_slice() {
-                    [width_str, height_str] => {
-                        match (width_str.parse::<u32>(), height_str.parse::<u32>()) {
-                            (Ok(_width), Ok(_height)) => {},
-                            _ => bail!("Failed to parse Probe Resolution"),
-                        }
-                    },
-                    _ => bail!("Probe Resolution must be in the format widthxheight"),
-                }
-            }
-        }
-
-        let encoder_bin = self.encoder.bin();
-        if which::which(encoder_bin).is_err() {
-            bail!(
-                "Encoder {} not found. Is it installed in the system path?",
-                encoder_bin
-            );
-        }
-
-        if self.tile_auto {
-            self.tiles = self.input.calculate_tiles();
-        }
-
-        if !self.no_defaults {
-            if self.video_params.is_empty() {
-                self.video_params = self.encoder.get_default_arguments(self.tiles);
-            } else {
-                // merge video_params with defaults, overriding defaults
-                // TODO: consider using hashmap to store program arguments instead of string
-                // vector
-                let default_video_params = self.encoder.get_default_arguments(self.tiles);
-                let mut skip = false;
-                let mut _default_params: Vec<String> = Vec::new();
-                for param in default_video_params {
-                    if skip && !(param.starts_with("-") && param != "-1") {
-                        skip = false;
-                        continue;
-                    } else {
-                        skip = false;
-                    }
-                    if (param.starts_with("-") && param != "-1")
-                        && self.video_params.contains(&param)
-                    {
-                        skip = true;
-                        continue;
-                    } else {
-                        _default_params.push(param);
-                    }
-                }
-                self.video_params = chain!(_default_params, self.video_params.clone()).collect();
-            }
-        }
-
-        if let Some(strength) = self.photon_noise {
-            if strength > 64 {
-                bail!("Valid strength values for photon noise are 0-64");
-            }
-            if ![Encoder::aom, Encoder::rav1e, Encoder::svt_av1].contains(&self.encoder) {
-                bail!("Photon noise synth is only supported with aomenc, rav1e, and svt-av1");
-            }
-        }
-
-        if self.encoder == Encoder::aom
-            && self.concat != ConcatMethod::MKVMerge
-            && self.video_params.iter().any(|param| param == "--enable-keyframe-filtering=2")
-        {
-            bail!(
-                "keyframe filtering mode 2 currently only works when using mkvmerge as the concat \
-                 method"
-            );
-        }
-
-        if matches!(self.encoder, Encoder::aom | Encoder::vpx)
-            && self.passes != 1
-            && self.video_params.iter().any(|param| param == "--rt")
-        {
-            // --rt must be used with 1-pass mode
-            self.passes = 1;
-        }
-
-        if !self.force {
-            self.validate_encoder_params();
-            self.check_rate_control();
-        }
-
-        Ok(())
-    }
-
-    fn validate_encoder_params(&self) {
+impl EncoderSettings {
+    pub fn validate_encoder_params(&self) {
         let video_params: Vec<&str> = self
             .video_params
             .iter()
@@ -485,7 +183,7 @@ impl EncodeArgs {
     }
 
     /// Warns if rate control was not specified in encoder arguments
-    fn check_rate_control(&self) {
+    pub fn check_rate_control(&self) {
         if self.encoder == Encoder::aom {
             if !self.video_params.iter().any(|f| Self::check_aom_encoder_mode(f)) {
                 warn!("[WARN] --end-usage was not specified");

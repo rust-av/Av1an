@@ -2,9 +2,9 @@ use std::fs;
 
 use anyhow::bail;
 
-use crate::{scenes::Scene, EncodeArgs};
+use crate::{scenes::Scene, EncoderSettings};
 
-pub(crate) fn parse_zones(args: &EncodeArgs, frames: usize) -> anyhow::Result<Vec<Scene>> {
+pub(crate) fn parse_zones(args: &EncoderSettings, frames: usize) -> anyhow::Result<Vec<Scene>> {
     let mut zones = Vec::new();
     if let Some(ref zones_file) = args.zones {
         let input = fs::read_to_string(zones_file)?;

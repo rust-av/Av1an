@@ -89,7 +89,6 @@ pub struct TargetQuality {
     pub interp_method:         Option<(InterpolationMethod, InterpolationMethod)>,
     pub encoder:               Encoder,
     pub pix_format:            FFPixelFormat,
-    pub temp:                  String,
     pub workers:               usize,
     pub video_params:          Vec<String>,
     pub vspipe_args:           Vec<String>,

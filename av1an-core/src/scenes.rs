@@ -31,8 +31,8 @@ use crate::{
     scene_detect::av_scenechange_detect,
     settings::{invalid_params, suggest_fix},
     split::extra_splits,
-    EncodeArgs,
     Encoder,
+    EncoderSettings,
     SplitMethod,
 };
 
@@ -58,7 +58,7 @@ pub struct ZoneOptions {
 }
 
 impl Scene {
-    pub fn parse_from_zone(input: &str, args: &EncodeArgs, frames: usize) -> Result<Self> {
+    pub fn parse_from_zone(input: &str, args: &EncoderSettings, frames: usize) -> Result<Self> {
         let (_, (start, _, end, _, encoder, reset, zone_args)): (
             _,
             (usize, _, usize, _, Encoder, bool, &str),
@@ -376,7 +376,11 @@ impl SceneFactory {
     /// This runs scene detection and populates a list of scenes into the
     /// factory. This function must be called before getting the list of scenes
     /// or writing to the file.
-    pub fn compute_scenes(&mut self, args: &EncodeArgs, zones: &[Scene]) -> anyhow::Result<()> {
+    pub fn compute_scenes(
+        &mut self,
+        args: &EncoderSettings,
+        zones: &[Scene],
+    ) -> anyhow::Result<()> {
         // We should only be calling this when scenes haven't been created yet
         debug_assert!(self.data.scenes.is_none());
 

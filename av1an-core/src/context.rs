@@ -16,11 +16,11 @@ use std::{
     thread::{self, available_parallelism},
 };
 
-use anyhow::Context;
+use anyhow::{bail, ensure, Context, Result};
 use av1_grain::TransferFunction;
 use av_decoders::VapoursynthDecoder;
 use colored::*;
-use itertools::Itertools;
+use itertools::{chain, Itertools};
 use num_traits::cast::ToPrimitive;
 use rand::{prelude::SliceRandom, rng};
 use tracing::{debug, error, info, warn};
@@ -30,12 +30,14 @@ use crate::{
     chunk::Chunk,
     concat::{self, ConcatMethod},
     create_dir,
-    determine_workers,
-    ffmpeg::{compose_ffmpeg_pipe, get_num_frames},
+    ffmpeg::{compose_ffmpeg_pipe, get_num_frames, FFPixelFormat},
     get_done,
     init_done,
     into_vec,
-    metrics::vmaf,
+    metrics::{
+        vmaf::{self, validate_libvmaf},
+        xpsnr::validate_libxpsnr,
+    },
     progress_bar::{
         finish_progress_bar,
         inc_bar,
@@ -52,15 +54,27 @@ use crate::{
     read_chunk_queue,
     save_chunk_queue,
     scenes::{Scene, SceneFactory, ZoneOptions},
-    settings::{EncodeArgs, InputPixelFormat},
+    settings::{
+        Av1anSettings,
+        ChunkSettings,
+        EncoderSettings,
+        FfmpegSettings,
+        InputOutputSettings,
+        InputPixelFormat,
+        ScenecutSettings,
+        TargetQualitySettings,
+    },
     split::segment,
-    vapoursynth::create_vs_file,
+    util::to_absolute_path,
+    vapoursynth::{create_vs_file, get_vapoursynth_plugins, VSZipVersion, VapoursynthPlugins},
     zones::parse_zones,
     ChunkMethod,
     ChunkOrdering,
     DashMap,
     DoneJson,
+    Encoder,
     Input,
+    TargetMetric,
     Verbosity,
 };
 
@@ -69,79 +83,419 @@ pub struct Av1anContext {
     pub frames:               usize,
     pub vs_script:            Option<PathBuf>,
     pub vs_proxy_script:      Option<PathBuf>,
-    pub args:                 EncodeArgs,
+    pub encoder_settings:     EncoderSettings,
+    pub io_settings:          InputOutputSettings,
+    pub av1an_settings:       Av1anSettings,
+    pub sc_settings:          ScenecutSettings,
+    pub chunk_settings:       ChunkSettings,
+    pub tq_settings:          TargetQualitySettings,
+    pub ffmpeg_settings:      FfmpegSettings,
     pub(crate) scene_factory: SceneFactory,
+    pub vapoursynth_plugins:  Option<VapoursynthPlugins>,
 }
 
 impl Av1anContext {
     #[tracing::instrument(level = "debug")]
-    pub fn new(mut args: EncodeArgs) -> anyhow::Result<Self> {
-        args.validate()?;
-
+    pub fn new(
+        encoder_settings: EncoderSettings,
+        io_settings: InputOutputSettings,
+        av1an_settings: Av1anSettings,
+        sc_settings: ScenecutSettings,
+        chunk_settings: ChunkSettings,
+        tq_settings: TargetQualitySettings,
+        ffmpeg_settings: FfmpegSettings,
+    ) -> Result<Self> {
         let mut this = Self {
-            frames: args.input.clip_info()?.num_frames,
+            frames: io_settings.input.clip_info()?.num_frames,
             vs_script: None,
             vs_proxy_script: None,
-            args,
+            encoder_settings,
+            io_settings,
+            av1an_settings,
+            sc_settings,
+            chunk_settings,
+            tq_settings,
+            ffmpeg_settings,
             scene_factory: SceneFactory::new(),
+            // Don't hard error, we can proceed if Vapoursynth isn't available
+            vapoursynth_plugins: get_vapoursynth_plugins().ok(),
         };
+        this.validate()?;
         this.initialize()?;
         Ok(this)
     }
 
+    fn validate(&mut self) -> Result<()> {
+        self.validate_av1an_settings()?;
+        self.validate_io_settings()?;
+        self.validate_encoder_settings()?;
+        self.validate_scenecut_settings()?;
+        self.validate_chunk_settings()?;
+        self.validate_tq_settings()?;
+        self.validate_ffmpeg_settings()?;
+
+        Ok(())
+    }
+
+    fn validate_av1an_settings(&self) -> Result<()> {
+        ensure!(self.av1an_settings.max_tries > 0);
+
+        if self.av1an_settings.ignore_frame_mismatch {
+            warn!(
+                "The output video's frame count may differ, and target metric calculations may be \
+                 incorrect"
+            );
+        }
+
+        Ok(())
+    }
+
+    fn validate_io_settings(&self) -> Result<()> {
+        ensure!(
+            self.io_settings.input.as_path().exists(),
+            "Input file {:?} does not exist!",
+            self.io_settings.input
+        );
+
+        if let Some(proxy) = &self.io_settings.proxy {
+            ensure!(
+                proxy.as_path().exists(),
+                "Proxy file {:?} does not exist!",
+                proxy
+            );
+
+            // Frame count must match
+            let input_frame_count = self.io_settings.input.clip_info()?.num_frames;
+            let proxy_frame_count = proxy.clip_info()?.num_frames;
+
+            ensure!(
+                input_frame_count == proxy_frame_count,
+                "Input and Proxy do not have the same number of frames! ({input_frame_count} != \
+                 {proxy_frame_count})",
+            );
+        }
+
+        Ok(())
+    }
+
+    fn validate_encoder_settings(&mut self) -> Result<()> {
+        let encoder_bin = self.encoder_settings.encoder.bin();
+        if which::which(encoder_bin).is_err() {
+            bail!("Encoder {encoder_bin} not found. Is it installed in the system path?");
+        }
+
+        if let Some(strength) = self.encoder_settings.photon_noise {
+            if strength > 64 {
+                bail!("Valid strength values for photon noise are 0-64");
+            }
+            if ![Encoder::aom, Encoder::rav1e, Encoder::svt_av1]
+                .contains(&self.encoder_settings.encoder)
+            {
+                bail!("Photon noise synth is only supported with aomenc, rav1e, and svt-av1");
+            }
+        }
+
+        if matches!(self.encoder_settings.encoder, Encoder::aom | Encoder::vpx)
+            && self.encoder_settings.passes != 1
+            && self.encoder_settings.video_params.iter().any(|param| param == "--rt")
+        {
+            // --rt must be used with 1-pass mode
+            self.encoder_settings.passes = 1;
+        }
+
+        if !self.av1an_settings.force {
+            self.encoder_settings.validate_encoder_params();
+            self.encoder_settings.check_rate_control();
+        }
+
+        Ok(())
+    }
+
+    fn validate_scenecut_settings(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn validate_chunk_settings(&self) -> Result<()> {
+        if self.chunk_settings.concat == ConcatMethod::Ivf
+            && !matches!(
+                self.encoder_settings.encoder,
+                Encoder::rav1e | Encoder::aom | Encoder::svt_av1 | Encoder::vpx
+            )
+        {
+            bail!(".ivf only supports VP8, VP9, and AV1");
+        }
+
+        if self.chunk_settings.concat == ConcatMethod::MKVMerge && which::which("mkvmerge").is_err()
+        {
+            if self.av1an_settings.sc_only {
+                warn!(
+                    "mkvmerge not found, but `--concat mkvmerge` was specified. Make sure to \
+                     install mkvmerge or specify a different concatenation method (e.g. `--concat \
+                     ffmpeg`) before encoding."
+                );
+            } else {
+                bail!(
+                    "mkvmerge not found, but `--concat mkvmerge` was specified. Is it installed \
+                     in system path?"
+                );
+            }
+        }
+
+        if self.encoder_settings.encoder == Encoder::x265
+            && self.chunk_settings.concat != ConcatMethod::MKVMerge
+        {
+            bail!(
+                "mkvmerge is required for concatenating x265, as x265 outputs raw HEVC bitstream \
+                 files without the timestamps correctly set, which FFmpeg cannot concatenate \
+                 properly into a mkv file. Specify mkvmerge as the concatenation method by \
+                 setting `--concat mkvmerge`."
+            );
+        }
+
+        if self.encoder_settings.encoder == Encoder::vpx
+            && self.chunk_settings.concat != ConcatMethod::MKVMerge
+        {
+            warn!(
+                "mkvmerge is recommended for concatenating vpx, as vpx outputs with incorrect \
+                 frame rates, which we can only resolve using mkvmerge. Specify mkvmerge as the \
+                 concatenation method by setting `--concat mkvmerge`."
+            );
+        }
+
+        match self.chunk_settings.chunk_method {
+            ChunkMethod::LSMASH => ensure!(
+                self.vapoursynth_plugins.is_some_and(|p| p.lsmash),
+                "LSMASH is not installed, but it was specified as the chunk method"
+            ),
+            ChunkMethod::FFMS2 => ensure!(
+                self.vapoursynth_plugins.is_some_and(|p| p.ffms2),
+                "FFMS2 is not installed, but it was specified as the chunk method"
+            ),
+            ChunkMethod::DGDECNV => ensure!(
+                self.vapoursynth_plugins.is_some_and(|p| p.dgdecnv)
+                    && which::which("dgindexnv").is_ok(),
+                "Either DGDecNV is not installed or DGIndexNV is not in system path, but it was \
+                 specified as the chunk method"
+            ),
+            ChunkMethod::BESTSOURCE => ensure!(
+                self.vapoursynth_plugins.is_some_and(|p| p.bestsource),
+                "BestSource is not installed, but it was specified as the chunk method"
+            ),
+            ChunkMethod::Select => warn!(
+                "It is not recommended to use the \"select\" chunk method, as it is very slow"
+            ),
+            _ => (),
+        }
+
+        if self.encoder_settings.encoder == Encoder::aom
+            && self.chunk_settings.concat != ConcatMethod::MKVMerge
+            && self
+                .encoder_settings
+                .video_params
+                .iter()
+                .any(|param| param == "--enable-keyframe-filtering=2")
+        {
+            bail!(
+                "keyframe filtering mode 2 currently only works when using mkvmerge as the concat \
+                 method"
+            );
+        }
+
+        Ok(())
+    }
+
+    fn validate_tq_settings(&self) -> Result<()> {
+        if let Some(vmaf_path) =
+            &self.tq_settings.target_quality.as_ref().and_then(|tq| tq.model.as_ref())
+        {
+            ensure!(vmaf_path.exists());
+        }
+
+        if let Some(target_quality) = &self.tq_settings.target_quality {
+            if self.io_settings.input.is_vapoursynth() {
+                let input_absolute_path = to_absolute_path(self.io_settings.input.as_path())?;
+                if !input_absolute_path.starts_with(std::env::current_dir()?) {
+                    warn!(
+                        "Target Quality with VapourSynth script file input not in current working \
+                         directory. It is recommended to run in the same directory."
+                    );
+                }
+            }
+
+            match target_quality.metric {
+                TargetMetric::VMAF => validate_libvmaf()?,
+                TargetMetric::SSIMULACRA2 => {
+                    ensure!(
+                        self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                            || self
+                                .vapoursynth_plugins
+                                .is_some_and(|p| p.vszip != VSZipVersion::None),
+                        "SSIMULACRA2 metric requires either Vapoursynth-HIP or VapourSynth Zig \
+                         Image Process to be installed"
+                    );
+                    ensure!(
+                        matches!(
+                            self.chunk_settings.chunk_method,
+                            ChunkMethod::LSMASH
+                                | ChunkMethod::FFMS2
+                                | ChunkMethod::BESTSOURCE
+                                | ChunkMethod::DGDECNV
+                        ),
+                        "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
+                         SSIMULACRA2"
+                    );
+                },
+                TargetMetric::ButteraugliINF => {
+                    ensure!(
+                        self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                            || self.vapoursynth_plugins.is_some_and(|p| p.julek),
+                        "Butteraugli metric requires either Vapoursynth-HIP or \
+                         vapoursynth-julek-plugin to be installed"
+                    );
+                    ensure!(
+                        matches!(
+                            self.chunk_settings.chunk_method,
+                            ChunkMethod::LSMASH
+                                | ChunkMethod::FFMS2
+                                | ChunkMethod::BESTSOURCE
+                                | ChunkMethod::DGDECNV
+                        ),
+                        "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
+                         Butteraugli"
+                    );
+                },
+                TargetMetric::Butteraugli3 => {
+                    ensure!(
+                        self.vapoursynth_plugins.is_some_and(|p| p.vship),
+                        "Butteraugli 3 Norm metric requires Vapoursynth-HIP plugin to be installed"
+                    );
+                    ensure!(
+                        matches!(
+                            self.chunk_settings.chunk_method,
+                            ChunkMethod::LSMASH
+                                | ChunkMethod::FFMS2
+                                | ChunkMethod::BESTSOURCE
+                                | ChunkMethod::DGDECNV
+                        ),
+                        "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
+                         Butteraugli 3 Norm"
+                    );
+                },
+                TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => {
+                    let metric_name = if target_quality.metric == TargetMetric::XPSNRWeighted {
+                        "Weighted "
+                    } else {
+                        ""
+                    };
+                    if target_quality.probing_rate > 1 {
+                        ensure!(
+                            self.vapoursynth_plugins.is_some_and(|p| p.vszip == VSZipVersion::New),
+                            format!(
+                                "{metric_name}XPSNR metric with probing rate greater than 1 \
+                                 requires VapourSynth-Zig Image Process R7 or newer to be \
+                                 installed"
+                            )
+                        );
+                        ensure!(
+                            matches!(
+                                self.chunk_settings.chunk_method,
+                                ChunkMethod::LSMASH
+                                    | ChunkMethod::FFMS2
+                                    | ChunkMethod::BESTSOURCE
+                                    | ChunkMethod::DGDECNV
+                            ),
+                            format!(
+                                "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
+                                 {metric_name}XPSNR with probing rate greater than 1"
+                            )
+                        );
+                    } else {
+                        validate_libxpsnr()?;
+                    }
+                },
+            }
+
+            if target_quality.probes < 4 {
+                warn!("Target quality with less than 4 probes is experimental and not recommended");
+            }
+
+            if let Some(resolution) = &target_quality.probe_res {
+                match resolution.split('x').collect::<Vec<&str>>().as_slice() {
+                    [width_str, height_str] => {
+                        match (width_str.parse::<u32>(), height_str.parse::<u32>()) {
+                            (Ok(_width), Ok(_height)) => {},
+                            _ => bail!("Failed to parse Probe Resolution"),
+                        }
+                    },
+                    _ => bail!("Probe Resolution must be in the format widthxheight"),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_ffmpeg_settings(&self) -> Result<()> {
+        if which::which("ffmpeg").is_err() {
+            bail!("FFmpeg not found. Is it installed in system path?");
+        }
+
+        Ok(())
+    }
+
     /// Initialize logging routines and create temporary directories
     #[tracing::instrument(level = "debug")]
-    fn initialize(&mut self) -> anyhow::Result<()> {
-        if !self.args.resume && Path::new(&self.args.temp).is_dir() {
-            fs::remove_dir_all(&self.args.temp).with_context(|| {
+    fn initialize(&mut self) -> Result<()> {
+        if !self.av1an_settings.resume && Path::new(&self.io_settings.temp).is_dir() {
+            fs::remove_dir_all(&self.io_settings.temp).with_context(|| {
                 format!(
                     "Failed to remove temporary directory {temp}",
-                    temp = self.args.temp
+                    temp = self.io_settings.temp
                 )
             })?;
         }
 
-        create_dir!(Path::new(&self.args.temp))?;
-        create_dir!(Path::new(&self.args.temp).join("split"))?;
-        create_dir!(Path::new(&self.args.temp).join("encode"))?;
+        create_dir!(Path::new(&self.io_settings.temp))?;
+        create_dir!(Path::new(&self.io_settings.temp).join("split"))?;
+        create_dir!(Path::new(&self.io_settings.temp).join("encode"))?;
 
-        debug!("temporary directory: {temp}", temp = &self.args.temp);
+        debug!("temporary directory: {temp}", temp = &self.io_settings.temp);
 
-        let done_path = Path::new(&self.args.temp).join("done.json");
+        let done_path = Path::new(&self.io_settings.temp).join("done.json");
         let done_json_exists = done_path.exists();
-        let chunks_json_exists = Path::new(&self.args.temp).join("chunks.json").exists();
+        let chunks_json_exists = Path::new(&self.io_settings.temp).join("chunks.json").exists();
 
-        if self.args.resume {
+        if self.av1an_settings.resume {
             match (done_json_exists, chunks_json_exists) {
                 // both files exist, so there is no problem
                 (true, true) => {},
                 (false, true) => {
                     info!(
                         "resume was set but done.json does not exist in temporary directory {temp}",
-                        temp = self.args.temp
+                        temp = self.io_settings.temp
                     );
-                    self.args.resume = false;
+                    self.av1an_settings.resume = false;
                 },
                 (true, false) => {
                     info!(
                         "resume was set but chunks.json does not exist in temporary directory \
                          {temp}",
-                        temp = self.args.temp
+                        temp = self.io_settings.temp
                     );
-                    self.args.resume = false;
+                    self.av1an_settings.resume = false;
                 },
                 (false, false) => {
                     info!(
                         "resume was set but neither chunks.json nor done.json exist in temporary \
                          directory {temp}",
-                        temp = self.args.temp
+                        temp = self.io_settings.temp
                     );
-                    self.args.resume = false;
+                    self.av1an_settings.resume = false;
                 },
             }
         }
 
-        if self.args.resume && done_json_exists {
+        if self.av1an_settings.resume && done_json_exists {
             let done = fs::read_to_string(done_path)
                 .with_context(|| "Failed to read contents of done.json")?;
             let done: DoneJson =
@@ -150,7 +504,7 @@ impl Av1anContext {
 
             // frames need to be recalculated in this case
             if self.frames == 0 {
-                self.frames = self.args.input.clip_info()?.num_frames;
+                self.frames = self.io_settings.input.clip_info()?.num_frames;
                 done.frames.store(self.frames, atomic::Ordering::Relaxed);
             }
 
@@ -171,7 +525,8 @@ impl Av1anContext {
 
     #[tracing::instrument(skip(self))]
     #[inline]
-    pub fn encode_file(&mut self) -> anyhow::Result<()> {
+    pub fn encode_file(&mut self) -> Result<()> {
+        let tiles = self.encoder_settings.tiles.unwrap_or_else(|| self.input.calculate_tiles());
         let initial_frames =
             get_done().done.iter().map(|ref_multi| ref_multi.frames).sum::<usize>();
 
@@ -187,12 +542,12 @@ impl Av1anContext {
                     ..
                 } => {
                     let (script_path, _) = create_vs_file(
-                        &self.args.temp,
+                        &self.io_settings.temp,
                         path,
-                        self.args.chunk_method,
-                        self.args.sc_downscale_height,
-                        self.args.sc_pix_format,
-                        self.args.scaler.clone(),
+                        self.chunk_settings.chunk_method,
+                        self.sc_settings.sc_downscale_height,
+                        self.sc_settings.sc_pix_format,
+                        &self.sc_settings.scaler,
                         *is_proxy,
                     )?;
                     script_path
@@ -212,9 +567,9 @@ impl Av1anContext {
                 },
                 video_input => av_scenechange::Decoder::from_script(
                     &video_input.as_script_text(
-                        self.args.sc_downscale_height,
-                        self.args.sc_pix_format,
-                        Some(self.args.scaler.clone()),
+                        self.sc_settings.sc_downscale_height,
+                        self.sc_settings.sc_pix_format,
+                        Some(self.sc_settings.scaler.as_str().into()),
                     )?,
                     Some(variables_map),
                 )?,
@@ -230,41 +585,41 @@ impl Av1anContext {
         // !self.resume, but the code still works if we are resuming and the
         // cache file doesn't exist (as it gets generated when vspipe is first
         // called), so it's not worth adding all the extra complexity.
-        if (self.args.input.is_vapoursynth()
-            || (self.args.input.is_video()
+        if (self.io_settings.input.is_vapoursynth()
+            || (self.io_settings.input.is_video()
                 && matches!(
-                    self.args.chunk_method,
+                    self.chunk_settings.chunk_method,
                     ChunkMethod::LSMASH
                         | ChunkMethod::FFMS2
                         | ChunkMethod::DGDECNV
                         | ChunkMethod::BESTSOURCE
                 )))
-            && !self.args.resume
+            && !self.av1an_settings.resume
         {
-            self.vs_script = Some(cache_vs_input(&self.args.input)?);
+            self.vs_script = Some(cache_vs_input(&self.io_settings.input)?);
         }
-        if let Some(proxy) = &self.args.proxy {
+        if let Some(proxy) = &self.io_settings.proxy {
             if proxy.is_vapoursynth()
                 || (proxy.is_video()
                     && matches!(
-                        self.args.chunk_method,
+                        self.chunk_settings.chunk_method,
                         ChunkMethod::LSMASH
                             | ChunkMethod::FFMS2
                             | ChunkMethod::DGDECNV
                             | ChunkMethod::BESTSOURCE
                     )
-                    && !self.args.resume)
+                    && !self.av1an_settings.resume)
             {
                 self.vs_proxy_script = Some(cache_vs_input(proxy)?);
             }
         }
 
-        let clip_info = self.args.input.clip_info()?;
+        let clip_info = self.io_settings.input.clip_info()?;
         let res = clip_info.resolution;
         let fps_ratio = clip_info.frame_rate;
         let fps = fps_ratio.to_f64().unwrap();
         let format = clip_info.format_info;
-        let tfc = clip_info.transfer_function_params_adjusted(&self.args.video_params);
+        let tfc = clip_info.transfer_function_params_adjusted(&self.encoder_settings.video_params);
         info!(
             "Input: {}x{} @ {:.3} fps, {}, {}",
             res.0,
@@ -286,10 +641,10 @@ impl Av1anContext {
 
         let splits = self.split_routine()?.to_vec();
 
-        if self.args.sc_only {
+        if self.av1an_settings.sc_only {
             debug!("scene detection only");
 
-            if let Err(e) = fs::remove_dir_all(&self.args.temp) {
+            if let Err(e) = fs::remove_dir_all(&self.io_settings.temp) {
                 warn!("Failed to delete temp directory: {e}");
             }
 
@@ -299,7 +654,7 @@ impl Av1anContext {
         let (chunk_queue, total_chunks) = self.load_or_gen_chunk_queue(&splits)?;
 
         let mut chunks_done = 0;
-        if self.args.resume {
+        if self.av1an_settings.resume {
             chunks_done = get_done().done.len();
             info!(
                 "encoding resumed with {}/{} chunks completed ({} remaining)",
@@ -309,14 +664,15 @@ impl Av1anContext {
             );
         }
 
-        crossbeam_utils::thread::scope(|s| -> anyhow::Result<()> {
+        crossbeam_utils::thread::scope(|s| -> Result<()> {
             // vapoursynth audio is currently unsupported
-            let audio_thread = if self.args.input.is_video()
-                && (!self.args.resume || !get_done().audio_done.load(atomic::Ordering::SeqCst))
+            let audio_thread = if self.io_settings.input.is_video()
+                && (!self.av1an_settings.resume
+                    || !get_done().audio_done.load(atomic::Ordering::SeqCst))
             {
-                let input = self.args.input.as_video_path();
-                let temp = self.args.temp.as_str();
-                let audio_params = self.args.audio_params.as_slice();
+                let input = self.io_settings.input.as_video_path();
+                let temp = self.io_settings.temp.as_str();
+                let audio_params = self.ffmpeg_settings.audio_params.as_slice();
                 Some(s.spawn(move |_| {
                     let audio_output =
                         crate::ffmpeg::encode_audio(input, temp, audio_params).unwrap();
@@ -339,11 +695,12 @@ impl Av1anContext {
                 None
             };
 
-            if self.args.workers == 0 {
-                self.args.workers = determine_workers(&self.args)? as usize;
+            if self.av1an_settings.workers == 0 {
+                self.av1an_settings.workers = self.determine_workers()? as usize;
             }
-            self.args.workers = cmp::min(self.args.workers, chunk_queue.len());
+            self.av1an_settings.workers = cmp::min(self.av1an_settings.workers, chunk_queue.len());
 
+            // TODO: Move this message and all progress stuff to CLI
             info!(
                 "\n{}{} {} {}{} {} {}{} {} {}{} {}\n{}: {}",
                 "Q".green().bold(),
@@ -351,28 +708,28 @@ impl Av1anContext {
                 format!("{len}", len = chunk_queue.len()).green().bold(),
                 "W".blue().bold(),
                 "orkers".blue(),
-                format!("{workers}", workers = self.args.workers).blue().bold(),
+                format!("{workers}", workers = self.av1an_settings.workers).blue().bold(),
                 "E".purple().bold(),
                 "ncoder".purple(),
-                format!("{encoder}", encoder = self.args.encoder).purple().bold(),
+                format!("{encoder}", encoder = self.encoder_settings.encoder).purple().bold(),
                 "P".purple().bold(),
                 "asses".purple(),
-                format!("{passes}", passes = self.args.passes).purple().bold(),
+                format!("{passes}", passes = self.encoder_settings.passes).purple().bold(),
                 "Params".bold(),
-                self.args.video_params.join(" ").dimmed()
+                self.encoder_settings.video_params.join(" ").dimmed()
             );
 
-            if self.args.verbosity == Verbosity::Normal {
+            if self.encoder_settings.verbosity == Verbosity::Normal {
                 init_progress_bar(
                     self.frames as u64,
                     initial_frames as u64,
                     Some((chunks_done as u32, total_chunks as u32)),
                 );
                 reset_bar_at(initial_frames as u64);
-            } else if self.args.verbosity == Verbosity::Verbose {
+            } else if self.encoder_settings.verbosity == Verbosity::Verbose {
                 init_multi_progress_bar(
                     self.frames as u64,
-                    self.args.workers,
+                    self.encoder_settings.workers,
                     initial_frames as u64,
                     (chunks_done as u32, total_chunks as u32),
                 );
@@ -383,7 +740,7 @@ impl Av1anContext {
                 update_progress_bar_estimates(
                     fps,
                     self.frames,
-                    self.args.verbosity,
+                    self.encoder_settings.verbosity,
                     (chunks_done as u32, total_chunks as u32),
                 );
             }
@@ -395,7 +752,11 @@ impl Av1anContext {
 
             let (tx, rx) = mpsc::channel();
             let handle = s.spawn(|_| {
-                broker.encoding_loop(tx, self.args.set_thread_affinity, total_chunks as u32);
+                broker.encoding_loop(
+                    tx,
+                    self.av1an_settings.set_thread_affinity,
+                    total_chunks as u32,
+                );
             });
 
             // Queue::encoding_loop only sends a message if there was an error (meaning a
@@ -416,23 +777,23 @@ impl Av1anContext {
 
             debug!(
                 "encoding finished, concatenating with {concat}",
-                concat = self.args.concat
+                concat = self.chunk_settings.concat
             );
 
-            match self.args.concat {
+            match self.chunk_settings.concat {
                 ConcatMethod::Ivf => {
                     concat::ivf(
-                        &Path::new(&self.args.temp).join("encode"),
-                        self.args.output_file.as_ref(),
+                        &Path::new(&self.io_settings.temp).join("encode"),
+                        self.io_settings.output_file.as_ref(),
                     )?;
                 },
                 ConcatMethod::MKVMerge => {
                     concat::mkvmerge(
-                        self.args.temp.as_ref(),
-                        self.args.output_file.as_ref(),
-                        self.args.encoder,
+                        self.io_settings.temp.as_ref(),
+                        self.io_settings.output_file.as_ref(),
+                        self.encoder_settings.encoder,
                         total_chunks,
-                        if self.args.ignore_frame_mismatch {
+                        if self.av1an_settings.ignore_frame_mismatch {
                             info!(
                                 "`--ignore-frame-mismatch` set. Don't force output FPS, as an FPS \
                                  changing filter might have been applied."
@@ -448,43 +809,49 @@ impl Av1anContext {
                     )?;
                 },
                 ConcatMethod::FFmpeg => {
-                    concat::ffmpeg(self.args.temp.as_ref(), self.args.output_file.as_ref())?;
+                    concat::ffmpeg(
+                        self.io_settings.temp.as_ref(),
+                        self.io_settings.output_file.as_ref(),
+                    )?;
                 },
             }
 
-            if self.args.vmaf || self.args.target_quality.is_some() {
-                let vmaf_res = if let Some(ref tq) = self.args.target_quality {
+            if self.tq_settings.vmaf || self.tq_settings.target_quality.is_some() {
+                let vmaf_res = if let Some(ref tq) = self.tq_settings.target_quality {
                     if tq.vmaf_res == "inputres" {
-                        let inputres = self.args.input.clip_info()?.resolution;
+                        let inputres = self.io_settings.input.clip_info()?.resolution;
                         format!("{width}x{height}", width = inputres.0, height = inputres.1)
                     } else {
                         tq.vmaf_res.clone()
                     }
                 } else {
-                    self.args.vmaf_res.clone()
+                    self.tq_settings.vmaf_res.clone()
                 };
 
-                let vmaf_model = self.args.vmaf_path.as_deref().or_else(|| {
-                    self.args.target_quality.as_ref().and_then(|tq| tq.model.as_deref())
+                let vmaf_model = self.tq_settings.vmaf_path.as_deref().or_else(|| {
+                    self.tq_settings.target_quality.as_ref().and_then(|tq| tq.model.as_deref())
                 });
                 let vmaf_scaler = "bicubic";
-                let vmaf_filter = self.args.vmaf_filter.as_deref().or_else(|| {
-                    self.args.target_quality.as_ref().and_then(|tq| tq.vmaf_filter.as_deref())
+                let vmaf_filter = self.tq_settings.vmaf_filter.as_deref().or_else(|| {
+                    self.tq_settings
+                        .target_quality
+                        .as_ref()
+                        .and_then(|tq| tq.vmaf_filter.as_deref())
                 });
 
-                if self.args.vmaf {
+                if self.tq_settings.vmaf {
                     let vmaf_threads = available_parallelism().map_or(1, std::num::NonZero::get);
 
                     if let Err(e) = vmaf::plot(
-                        self.args.output_file.as_ref(),
-                        &self.args.input,
+                        self.io_settings.output_file.as_ref(),
+                        &self.io_settings.input,
                         vmaf_model,
                         &vmaf_res,
                         vmaf_scaler,
                         1,
                         vmaf_filter,
                         vmaf_threads,
-                        self.args
+                        self.tq_settings
                             .target_quality
                             .as_ref()
                             .map_or(&[], |tq| &tq.probing_vmaf_features),
@@ -494,14 +861,14 @@ impl Av1anContext {
                 }
             }
 
-            if !Path::new(&self.args.output_file).exists() {
+            if !Path::new(&self.io_settings.output_file).exists() {
                 warn!(
                     "Concatenation failed for unknown reasons! Temp folder will not be deleted: \
                      {temp}",
-                    temp = self.args.temp
+                    temp = self.io_settings.temp
                 );
-            } else if !self.args.keep {
-                if let Err(e) = fs::remove_dir_all(&self.args.temp) {
+            } else if !self.av1an_settings.keep {
+                if let Err(e) = fs::remove_dir_all(&self.io_settings.temp) {
                     warn!("Failed to delete temp directory: {e}");
                 }
             }
@@ -514,7 +881,7 @@ impl Av1anContext {
     }
 
     #[tracing::instrument(level = "debug")]
-    fn read_queue_files(source_path: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    fn read_queue_files(source_path: &Path) -> Result<Vec<PathBuf>> {
         let mut queue_files = fs::read_dir(source_path)
             .with_context(|| {
                 format!("Failed to read queue files from source path {source_path:?}")
@@ -585,8 +952,8 @@ impl Av1anContext {
                 // converts the pixel format
                 let create_ffmpeg_pipe = |pipe_from: Stdio, source_pipe_stderr: ChildStderr| {
                     let ffmpeg_pipe = compose_ffmpeg_pipe(
-                        self.args.ffmpeg_filter_args.as_slice(),
-                        self.args.output_pix_format.format,
+                        self.ffmpeg_settings.ffmpeg_filter_args.as_slice(),
+                        self.ffmpeg_settings.output_pix_format.format,
                     );
 
                     let mut ffmpeg_pipe = if let [ffmpeg, args @ ..] = &*ffmpeg_pipe {
@@ -611,12 +978,12 @@ impl Av1anContext {
                 };
 
                 let (y4m_pipe, source_pipe_stderr, mut ffmpeg_pipe_stderr) =
-                    if self.args.ffmpeg_filter_args.is_empty() {
-                        match &self.args.input_pix_format {
+                    if self.ffmpeg_settings.ffmpeg_filter_args.is_empty() {
+                        match &self.io_settings.input_pix_format {
                             InputPixelFormat::FFmpeg {
                                 format,
                             } => {
-                                if self.args.output_pix_format.format == *format {
+                                if self.io_settings.output_pix_format.format == *format {
                                     (source_pipe_stdout, source_pipe_stderr, None)
                                 } else {
                                     create_ffmpeg_pipe(source_pipe_stdout, source_pipe_stderr)
@@ -625,7 +992,7 @@ impl Av1anContext {
                             InputPixelFormat::VapourSynth {
                                 bit_depth,
                             } => {
-                                if self.args.output_pix_format.bit_depth == *bit_depth {
+                                if self.io_settings.output_pix_format.bit_depth == *bit_depth {
                                     (source_pipe_stdout, source_pipe_stderr, None)
                                 } else {
                                     create_ffmpeg_pipe(source_pipe_stdout, source_pipe_stderr)
@@ -692,8 +1059,11 @@ impl Av1anContext {
                         break;
                     }
 
+                    // TODO: Move all progress bars to CLI
                     if let Ok(line) = simdutf8::basic::from_utf8_mut(&mut buf) {
-                        if self.args.verbosity == Verbosity::Verbose && !line.contains('\n') {
+                        if self.encoder_settings.verbosity == Verbosity::Verbose
+                            && !line.contains('\n')
+                        {
                             update_mp_msg(worker_id, line.trim().to_string());
                         }
                         // This needs to be done before parse_encoded_frames, as it potentially
@@ -704,9 +1074,10 @@ impl Av1anContext {
                         if current_pass == chunk.passes {
                             if let Some(new) = chunk.encoder.parse_encoded_frames(line) {
                                 if new > frame {
-                                    if self.args.verbosity == Verbosity::Normal {
+                                    if self.encoder_settings.verbosity == Verbosity::Normal {
                                         inc_bar(new - frame);
-                                    } else if self.args.verbosity == Verbosity::Verbose {
+                                    } else if self.encoder_settings.verbosity == Verbosity::Verbose
+                                    {
                                         inc_mp_bar(new - frame);
                                     }
                                     frame = new;
@@ -782,11 +1153,11 @@ impl Av1anContext {
         Ok(())
     }
 
-    fn create_encoding_queue(&self, scenes: &[Scene]) -> anyhow::Result<Vec<Chunk>> {
-        let mut chunks = match &self.args.input {
+    fn create_encoding_queue(&self, scenes: &[Scene]) -> Result<Vec<Chunk>> {
+        let mut chunks = match &self.io_settings.input {
             Input::Video {
                 ..
-            } => match self.args.chunk_method {
+            } => match self.chunk_settings.chunk_method {
                 ChunkMethod::FFMS2
                 | ChunkMethod::LSMASH
                 | ChunkMethod::DGDECNV
@@ -806,7 +1177,7 @@ impl Av1anContext {
             },
         };
 
-        match self.args.chunk_order {
+        match self.chunk_settings.chunk_order {
             ChunkOrdering::LongestFirst => {
                 chunks.sort_unstable_by_key(|chunk| Reverse(chunk.frames()));
             },
@@ -826,16 +1197,17 @@ impl Av1anContext {
 
     // If we are not resuming, then do scene detection. Otherwise: get scenes from
     // scenes.json and return that.
-    fn split_routine(&mut self) -> anyhow::Result<&[Scene]> {
-        let scene_file = self.args.scenes.as_ref().map_or_else(
-            || Cow::Owned(Path::new(&self.args.temp).join("scenes.json")),
+    fn split_routine(&mut self) -> Result<&[Scene]> {
+        let scene_file = self.sc_settings.scenes.as_ref().map_or_else(
+            || Cow::Owned(Path::new(&self.io_settings.temp).join("scenes.json")),
             |path| Cow::Borrowed(path.as_path()),
         );
-        if scene_file.exists() && (self.args.scenes.is_some() || self.args.resume) {
+        if scene_file.exists() && (self.sc_settings.scenes.is_some() || self.av1an_settings.resume)
+        {
             self.scene_factory = SceneFactory::from_scenes_file(&scene_file)?;
         } else {
-            let zones = parse_zones(&self.args, self.frames)?;
-            self.scene_factory.compute_scenes(&self.args, &zones)?;
+            let zones = parse_zones(&self.encoder_settings, self.frames)?;
+            self.scene_factory.compute_scenes(&self.encoder_settings, &zones)?;
             self.scene_factory.write_scenes_to_file(scene_file)?;
         }
         self.frames = self.scene_factory.get_frame_count();
@@ -850,7 +1222,7 @@ impl Av1anContext {
         end_frame: usize,
         frame_rate: f64,
         overrides: Option<ZoneOptions>,
-    ) -> anyhow::Result<Chunk> {
+    ) -> Result<Chunk> {
         assert!(
             start_frame < end_frame,
             "Can't make a chunk with <= 0 frames!"
@@ -871,7 +1243,7 @@ impl Av1anContext {
                 end = end_frame - 1
             ),
             "-pix_fmt",
-            self.args.output_pix_format.format.to_pix_fmt_string(),
+            self.io_settings.output_pix_format.format.to_pix_fmt_string(),
             "-strict",
             "-1",
             "-f",
@@ -879,20 +1251,20 @@ impl Av1anContext {
             "-",
         ];
 
-        let output_ext = self.args.encoder.output_extension();
+        let output_ext = self.encoder_settings.encoder.output_extension();
 
         let mut chunk = Chunk {
-            temp: self.args.temp.clone(),
+            temp: self.io_settings.temp.clone(),
             index,
             input: Input::Video {
                 path:         src_path.to_path_buf(),
-                temp:         self.args.temp.clone(),
+                temp:         self.io_settings.temp.clone(),
                 chunk_method: ChunkMethod::Select,
                 is_proxy:     false,
             },
-            proxy: self.args.proxy.as_ref().map(|proxy| Input::Video {
+            proxy: self.io_settings.proxy.as_ref().map(|proxy| Input::Video {
                 path:         proxy.as_path().to_path_buf(),
-                temp:         self.args.temp.clone(),
+                temp:         self.io_settings.temp.clone(),
                 chunk_method: ChunkMethod::Select,
                 is_proxy:     true,
             }),
@@ -903,24 +1275,24 @@ impl Av1anContext {
             end_frame,
             frame_rate,
             video_params: overrides.as_ref().map_or_else(
-                || self.args.video_params.clone(),
+                || self.encoder_settings.video_params.clone(),
                 |ovr| ovr.video_params.clone(),
             ),
-            passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
-            encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
-            noise_size: self.args.photon_noise_size,
+            passes: overrides.as_ref().map_or(self.encoder_settings.passes, |ovr| ovr.passes),
+            encoder: overrides.as_ref().map_or(self.encoder_settings.encoder, |ovr| ovr.encoder),
+            noise_size: self.encoder_settings.photon_noise_size,
             tq_cq: None,
-            ignore_frame_mismatch: self.args.ignore_frame_mismatch,
+            ignore_frame_mismatch: self.av1an_settings.ignore_frame_mismatch,
         };
         chunk.apply_photon_noise_args(
-            overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
-            self.args.chroma_noise,
+            overrides.map_or(self.encoder_settings.photon_noise, |ovr| ovr.photon_noise),
+            self.encoder_settings.chroma_noise,
         )?;
-        if let Some(ref tq) = self.args.target_quality {
+        if let Some(ref tq) = self.tq_settings.target_quality {
             tq.per_shot_target_quality_routine(
                 &mut chunk,
                 None,
-                self.args.vapoursynth_plugins.as_ref(),
+                self.vapoursynth_plugins.as_ref(),
             )?;
         }
         Ok(chunk)
@@ -933,7 +1305,7 @@ impl Av1anContext {
         vs_proxy_script: Option<&Path>,
         scene: &Scene,
         frame_rate: f64,
-    ) -> anyhow::Result<Chunk> {
+    ) -> Result<Chunk> {
         // the frame end boundary is actually a frame that should be included in the
         // next chunk
         let frame_end = scene.end_frame - 1;
@@ -956,29 +1328,29 @@ impl Av1anContext {
         let vspipe_proxy_cmd_gen = vs_proxy_script
             .map(|vs_proxy_script| gen_vspipe_cmd(vs_proxy_script, scene.start_frame, frame_end));
 
-        let output_ext = self.args.encoder.output_extension();
+        let output_ext = self.encoder_settings.encoder.output_extension();
 
         let mut chunk = Chunk {
-            temp: self.args.temp.clone(),
+            temp: self.io_settings.temp.clone(),
             index,
             input: Input::VapourSynth {
                 path:        vs_script.to_path_buf(),
-                vspipe_args: self.args.input.as_vspipe_args_vec()?,
-                script_text: self.args.input.as_script_text(
-                    self.args.sc_downscale_height,
-                    self.args.sc_pix_format,
-                    Some(self.args.scaler.clone()),
+                vspipe_args: self.io_settings.input.as_vspipe_args_vec()?,
+                script_text: self.io_settings.input.as_script_text(
+                    self.sc_settings.sc_downscale_height,
+                    self.sc_settings.sc_pix_format,
+                    Some(self.sc_settings.scaler.as_str().into()),
                 )?,
                 is_proxy:    false,
             },
             proxy: if let Some(vs_proxy_script) = vs_proxy_script {
                 Some(Input::VapourSynth {
                     path:        vs_proxy_script.to_path_buf(),
-                    vspipe_args: self.args.proxy.as_ref().unwrap().as_vspipe_args_vec()?,
-                    script_text: self.args.proxy.as_ref().unwrap().as_script_text(
-                        self.args.sc_downscale_height,
-                        self.args.sc_pix_format,
-                        Some(self.args.scaler.clone()),
+                    vspipe_args: self.io_settings.proxy.as_ref().unwrap().as_vspipe_args_vec()?,
+                    script_text: self.io_settings.proxy.as_ref().unwrap().as_script_text(
+                        self.sc_settings.sc_downscale_height,
+                        self.sc_settings.sc_pix_format,
+                        Some(self.sc_settings.scaler.as_str().into()),
                     )?,
                     is_proxy:    true,
                 })
@@ -992,26 +1364,35 @@ impl Av1anContext {
             end_frame: scene.end_frame,
             frame_rate,
             video_params: scene.zone_overrides.as_ref().map_or_else(
-                || self.args.video_params.clone(),
+                || self.encoder_settings.video_params.clone(),
                 |ovr| ovr.video_params.clone(),
             ),
-            passes: scene.zone_overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
-            encoder: scene.zone_overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
-            noise_size: scene.zone_overrides.as_ref().map_or(self.args.photon_noise_size, |ovr| {
-                (ovr.photon_noise_width, ovr.photon_noise_height)
-            }),
+            passes: scene
+                .zone_overrides
+                .as_ref()
+                .map_or(self.encoder_settings.passes, |ovr| ovr.passes),
+            encoder: scene
+                .zone_overrides
+                .as_ref()
+                .map_or(self.encoder_settings.encoder, |ovr| ovr.encoder),
+            noise_size: scene
+                .zone_overrides
+                .as_ref()
+                .map_or(self.encoder_settings.photon_noise_size, |ovr| {
+                    (ovr.photon_noise_width, ovr.photon_noise_height)
+                }),
             tq_cq: None,
-            ignore_frame_mismatch: self.args.ignore_frame_mismatch,
+            ignore_frame_mismatch: self.av1an_settings.ignore_frame_mismatch,
         };
         chunk.apply_photon_noise_args(
             scene
                 .zone_overrides
                 .as_ref()
-                .map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
+                .map_or(self.encoder_settings.photon_noise, |ovr| ovr.photon_noise),
             scene
                 .zone_overrides
                 .as_ref()
-                .map_or(self.args.chroma_noise, |ovr| ovr.chroma_noise),
+                .map_or(self.encoder_settings.chroma_noise, |ovr| ovr.chroma_noise),
         )?;
         Ok(chunk)
     }
@@ -1022,7 +1403,7 @@ impl Av1anContext {
         vs_script: &Path,
         vs_proxy_script: Option<&Path>,
     ) -> Vec<Chunk> {
-        let frame_rate = self.args.input.clip_info().unwrap().frame_rate.to_f64().unwrap();
+        let frame_rate = self.io_settings.input.clip_info().unwrap().frame_rate.to_f64().unwrap();
         let chunk_queue: Vec<Chunk> = scenes
             .iter()
             .enumerate()
@@ -1036,8 +1417,8 @@ impl Av1anContext {
     }
 
     fn create_video_queue_select(&self, scenes: &[Scene]) -> Vec<Chunk> {
-        let input = self.args.input.as_video_path();
-        let frame_rate = self.args.input.clip_info().unwrap().frame_rate.to_f64().unwrap();
+        let input = self.io_settings.input.as_video_path();
+        let frame_rate = self.io_settings.input.clip_info().unwrap().frame_rate.to_f64().unwrap();
 
         let chunk_queue: Vec<Chunk> = scenes
             .iter()
@@ -1058,19 +1439,19 @@ impl Av1anContext {
         chunk_queue
     }
 
-    fn create_video_queue_segment(&self, scenes: &[Scene]) -> anyhow::Result<Vec<Chunk>> {
-        let input = self.args.input.as_video_path();
-        let frame_rate = self.args.input.clip_info()?.frame_rate.to_f64().unwrap();
+    fn create_video_queue_segment(&self, scenes: &[Scene]) -> Result<Vec<Chunk>> {
+        let input = self.io_settings.input.as_video_path();
+        let frame_rate = self.io_settings.input.clip_info()?.frame_rate.to_f64().unwrap();
 
         debug!("Splitting video");
         segment(
             input,
-            &self.args.temp,
+            &self.io_settings.temp,
             &scenes.iter().skip(1).map(|scene| scene.start_frame).collect::<Vec<usize>>(),
         );
         debug!("Splitting done");
 
-        let source_path = Path::new(&self.args.temp).join("split");
+        let source_path = Path::new(&self.io_settings.temp).join("split");
         let queue_files = Self::read_queue_files(&source_path)?;
 
         assert!(
@@ -1095,9 +1476,9 @@ impl Av1anContext {
         Ok(chunk_queue)
     }
 
-    fn create_video_queue_hybrid(&self, scenes: &[Scene]) -> anyhow::Result<Vec<Chunk>> {
-        let input = self.args.input.as_video_path();
-        let frame_rate = self.args.input.clip_info()?.frame_rate.to_f64().unwrap();
+    fn create_video_queue_hybrid(&self, scenes: &[Scene]) -> Result<Vec<Chunk>> {
+        let input = self.io_settings.input.as_video_path();
+        let frame_rate = self.io_settings.input.clip_info()?.frame_rate.to_f64().unwrap();
 
         let keyframes = crate::ffmpeg::get_keyframes(input).unwrap();
 
@@ -1108,10 +1489,10 @@ impl Av1anContext {
             .collect();
 
         debug!("Segmenting video");
-        segment(input, &self.args.temp, &to_split[1..]);
+        segment(input, &self.io_settings.temp, &to_split[1..]);
         debug!("Segment done");
 
-        let source_path = Path::new(&self.args.temp).join("split");
+        let source_path = Path::new(&self.io_settings.temp).join("split");
         let queue_files = Self::read_queue_files(&source_path)?;
 
         let kf_list = to_split.iter().copied().chain(iter::once(self.frames)).tuple_windows();
@@ -1153,7 +1534,7 @@ impl Av1anContext {
         file: &str,
         frame_rate: f64,
         overrides: Option<ZoneOptions>,
-    ) -> anyhow::Result<Chunk> {
+    ) -> Result<Chunk> {
         let ffmpeg_gen_cmd: Vec<OsString> = into_vec![
             "ffmpeg",
             "-y",
@@ -1165,27 +1546,27 @@ impl Av1anContext {
             "-strict",
             "-1",
             "-pix_fmt",
-            self.args.output_pix_format.format.to_pix_fmt_string(),
+            self.ffmpeg_settings.output_pix_format.format.to_pix_fmt_string(),
             "-f",
             "yuv4mpegpipe",
             "-",
         ];
 
-        let output_ext = self.args.encoder.output_extension();
+        let output_ext = self.encoder_settings.encoder.output_extension();
 
         let num_frames = get_num_frames(Path::new(file))?;
 
         let mut chunk = Chunk {
-            temp: self.args.temp.clone(),
+            temp: self.io_settings.temp.clone(),
             input: Input::Video {
                 path:         PathBuf::from(file),
-                temp:         self.args.temp.clone(),
+                temp:         self.io_settings.temp.clone(),
                 chunk_method: ChunkMethod::Segment,
                 is_proxy:     false,
             },
-            proxy: self.args.proxy.as_ref().map(|proxy| Input::Video {
+            proxy: self.io_settings.proxy.as_ref().map(|proxy| Input::Video {
                 path:         proxy.as_path().to_path_buf(),
-                temp:         self.args.temp.clone(),
+                temp:         self.io_settings.temp.clone(),
                 chunk_method: ChunkMethod::Segment,
                 is_proxy:     true,
             }),
@@ -1197,26 +1578,26 @@ impl Av1anContext {
             end_frame: num_frames,
             frame_rate,
             video_params: overrides.as_ref().map_or_else(
-                || self.args.video_params.clone(),
+                || self.encoder_settings.video_params.clone(),
                 |ovr| ovr.video_params.clone(),
             ),
-            passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
-            encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
-            noise_size: self.args.photon_noise_size,
+            passes: overrides.as_ref().map_or(self.encoder_settings.passes, |ovr| ovr.passes),
+            encoder: overrides.as_ref().map_or(self.encoder_settings.encoder, |ovr| ovr.encoder),
+            noise_size: self.encoder_settings.photon_noise_size,
             tq_cq: None,
-            ignore_frame_mismatch: self.args.ignore_frame_mismatch,
+            ignore_frame_mismatch: self.av1an_settings.ignore_frame_mismatch,
         };
         chunk.apply_photon_noise_args(
-            overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
-            self.args.chroma_noise,
+            overrides.map_or(self.encoder_settings.photon_noise, |ovr| ovr.photon_noise),
+            self.encoder_settings.chroma_noise,
         )?;
         Ok(chunk)
     }
 
     /// Returns unfinished chunks and number of total chunks
-    fn load_or_gen_chunk_queue(&self, splits: &[Scene]) -> anyhow::Result<(Vec<Chunk>, usize)> {
-        if self.args.resume {
-            let mut chunks = read_chunk_queue(self.args.temp.as_ref())?;
+    fn load_or_gen_chunk_queue(&self, splits: &[Scene]) -> Result<(Vec<Chunk>, usize)> {
+        if self.av1an_settings.resume {
+            let mut chunks = read_chunk_queue(self.io_settings.temp.as_ref())?;
             let num_chunks = chunks.len();
 
             let done = get_done();
@@ -1228,8 +1609,68 @@ impl Av1anContext {
         } else {
             let chunks = self.create_encoding_queue(splits)?;
             let num_chunks = chunks.len();
-            save_chunk_queue(&self.args.temp, &chunks)?;
+            save_chunk_queue(&self.io_settings.temp, &chunks)?;
             Ok((chunks, num_chunks))
         }
+    }
+
+    /// Determine the optimal number of workers for an encoder
+    fn determine_workers(&self) -> anyhow::Result<u64> {
+        let res = self.io_settings.input.clip_info()?.resolution;
+        let tiles = self.encoder_settings.tiles;
+        let megapixels = (res.0 * res.1) as f64 / 1e6;
+        // encoder memory and chunk_method memory usage scales with resolution
+        // (megapixels), approximately linearly. Expressed as GB/Megapixel
+        let cm_ram = match self.chunk_settings.chunk_method {
+            ChunkMethod::FFMS2 | ChunkMethod::LSMASH | ChunkMethod::BESTSOURCE => 0.3,
+            ChunkMethod::DGDECNV => 0.3,
+            ChunkMethod::Hybrid | ChunkMethod::Select | ChunkMethod::Segment => 0.1,
+        };
+        let enc_ram = match self.encoder_settings.encoder {
+            Encoder::aom => 0.4,
+            Encoder::rav1e => 0.7,
+            Encoder::svt_av1 => 1.2,
+            Encoder::vpx => 0.3,
+            Encoder::x264 => 0.7,
+            Encoder::x265 => 0.6,
+        };
+        // This is a rough estimate of how many cpu cores will be fully loaded by an
+        // encoder worker. With rav1e, CPU usage scales with tiles, but not 1:1.
+        // Other encoders don't seem to significantly scale CPU usage with tiles.
+        // CPU threads/worker here is relative to default threading parameters, e.g. aom
+        // will use 1 thread/worker if --threads=1 is set.
+        let cpu_threads = match self.encoder_settings.encoder {
+            Encoder::aom => 4,
+            Encoder::rav1e => ((tiles.0 * tiles.1) as f32 * 0.7).ceil() as u64,
+            Encoder::svt_av1 => 6,
+            Encoder::vpx => 3,
+            Encoder::x264 | Encoder::x265 => 8,
+        };
+        // memory usage scales with pixel format, expressed as a multiplier of memory
+        // usage. Roughly the same behavior was observed accross all encoders.
+        let pix_mult = match self.ffmpeg_settings.output_pix_format.format {
+            FFPixelFormat::YUV444P | FFPixelFormat::YUV444P10LE | FFPixelFormat::YUV444P12LE => 1.5,
+            FFPixelFormat::YUV422P | FFPixelFormat::YUV422P10LE | FFPixelFormat::YUV422P12LE => {
+                1.25
+            },
+            _ => 1.0,
+        };
+
+        let mut system = sysinfo::System::new();
+        system.refresh_memory();
+        let cpu = available_parallelism()
+            .expect("Unrecoverable: Failed to get thread count")
+            .get() as u64;
+        // sysinfo returns Bytes, convert to GB
+        // use total instead of available, because av1an does not resize worker pool
+        let ram_gb = system.total_memory() as f64 / 1e9;
+
+        Ok(std::cmp::max(
+            std::cmp::min(
+                cpu / cpu_threads,
+                (ram_gb / (megapixels * (enc_ram + cm_ram) * pix_mult)).round() as u64,
+            ),
+            1,
+        ))
     }
 }
