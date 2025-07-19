@@ -37,7 +37,6 @@ memchr = "2.7.5"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
-parking_lot = "0.12.4"
 pastey = "0.1.0"
 path_abs = { workspace = true }
 plotters = { version = "0.3.1", default-features = false, features = [
@@ -69,7 +68,6 @@ vapoursynth = { version = "0.4.0", features = [
 colored = "3.0.0"
 ctrlc = "3.4.7"
 regex = "1.11.1"
-tokio = { version = "1.46", features = ["full"] }
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented

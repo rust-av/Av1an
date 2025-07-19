@@ -1,19 +1,19 @@
 use std::{
     borrow::Cow,
     cmp::{self, Reverse},
-    convert::TryInto,
     ffi::OsString,
     fs::{self, File},
-    io::Write,
+    io::{BufRead, BufReader, Write},
     iter,
     path::{Path, PathBuf},
-    process::{exit, Stdio},
+    process::{exit, ChildStderr, Command, Stdio},
     sync::{
         atomic::{self, AtomicBool, AtomicUsize},
         mpsc,
         Arc,
+        Mutex,
     },
-    thread::available_parallelism,
+    thread::{self, available_parallelism},
 };
 
 use anyhow::Context;
@@ -23,10 +23,6 @@ use colored::*;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
 use rand::{prelude::SliceRandom, rng};
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::ChildStderr,
-};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -560,12 +556,10 @@ impl Av1anContext {
             enc_cmd = chunk.encoder.man_command(enc_cmd, per_shot_target_quality_cq as usize);
         }
 
-        let rt = tokio::runtime::Builder::new_current_thread().enable_io().build().unwrap();
-
         let (source_pipe_stderr, ffmpeg_pipe_stderr, enc_output, enc_stderr, frame) =
-            rt.block_on(async {
+            thread::scope(|scope| {
                 let mut source_pipe = if let [source, args @ ..] = &*chunk.source_cmd {
-                    let mut command = tokio::process::Command::new(source);
+                    let mut command = Command::new(source);
                     for arg in chunk.input.as_vspipe_args_vec().unwrap() {
                         command.args(["-a", &arg]);
                     }
@@ -579,9 +573,7 @@ impl Av1anContext {
                     unreachable!()
                 };
 
-                let source_pipe_stdout: Stdio =
-                    source_pipe.stdout.take().unwrap().try_into().unwrap();
-
+                let source_pipe_stdout: Stdio = source_pipe.stdout.take().unwrap().into();
                 let source_pipe_stderr = source_pipe.stderr.take().unwrap();
 
                 // converts the pixel format
@@ -592,7 +584,7 @@ impl Av1anContext {
                     );
 
                     let mut ffmpeg_pipe = if let [ffmpeg, args @ ..] = &*ffmpeg_pipe {
-                        tokio::process::Command::new(ffmpeg)
+                        Command::new(ffmpeg)
                             .args(args)
                             .stdin(pipe_from)
                             .stdout(Stdio::piped())
@@ -603,8 +595,7 @@ impl Av1anContext {
                         unreachable!()
                     };
 
-                    let ffmpeg_pipe_stdout: Stdio =
-                        ffmpeg_pipe.stdout.take().unwrap().try_into().unwrap();
+                    let ffmpeg_pipe_stdout: Stdio = ffmpeg_pipe.stdout.take().unwrap().into();
                     let ffmpeg_pipe_stderr = ffmpeg_pipe.stderr.take().unwrap();
                     (
                         ffmpeg_pipe_stdout,
@@ -639,41 +630,40 @@ impl Av1anContext {
                         create_ffmpeg_pipe(source_pipe_stdout, source_pipe_stderr)
                     };
 
-                let mut source_reader = BufReader::new(source_pipe_stderr).lines();
-                let ffmpeg_reader =
-                    ffmpeg_pipe_stderr.take().map(|stderr| BufReader::new(stderr).lines());
+                let source_reader = BufReader::new(source_pipe_stderr);
+                let ffmpeg_reader = ffmpeg_pipe_stderr.take().map(BufReader::new);
 
-                let pipe_stderr = Arc::new(parking_lot::Mutex::new(String::with_capacity(128)));
+                let pipe_stderr = Arc::new(Mutex::new(String::with_capacity(128)));
                 let p_stdr2 = Arc::clone(&pipe_stderr);
 
                 let ffmpeg_stderr = if ffmpeg_reader.is_some() {
-                    Some(Arc::new(parking_lot::Mutex::new(String::with_capacity(
-                        128,
-                    ))))
+                    Some(Arc::new(Mutex::new(String::with_capacity(128))))
                 } else {
                     None
                 };
 
                 let f_stdr2 = ffmpeg_stderr.clone();
 
-                tokio::spawn(async move {
-                    while let Some(line) = source_reader.next_line().await.unwrap() {
-                        p_stdr2.lock().push_str(&line);
-                        p_stdr2.lock().push('\n');
+                scope.spawn(move || {
+                    for line in source_reader.lines() {
+                        let mut lock = p_stdr2.lock().unwrap();
+                        lock.push_str(&line.unwrap());
+                        lock.push('\n');
                     }
                 });
-                if let Some(mut ffmpeg_reader) = ffmpeg_reader {
+                if let Some(ffmpeg_reader) = ffmpeg_reader {
                     let f_stdr2 = f_stdr2.unwrap();
-                    tokio::spawn(async move {
-                        while let Some(line) = ffmpeg_reader.next_line().await.unwrap() {
-                            f_stdr2.lock().push_str(&line);
-                            f_stdr2.lock().push('\n');
+                    scope.spawn(move || {
+                        for line in ffmpeg_reader.lines() {
+                            let mut lock = f_stdr2.lock().unwrap();
+                            lock.push_str(&line.unwrap());
+                            lock.push('\n');
                         }
                     });
                 }
 
                 let mut enc_pipe = if let [encoder, args @ ..] = &*enc_cmd {
-                    tokio::process::Command::new(encoder)
+                    Command::new(encoder)
                         .args(args)
                         .stdin(y4m_pipe)
                         .stdout(Stdio::piped())
@@ -691,7 +681,7 @@ impl Av1anContext {
                 let mut buf = Vec::with_capacity(128);
                 let mut enc_stderr = String::with_capacity(128);
 
-                while let Ok(read) = reader.read_until(b'\r', &mut buf).await {
+                while let Ok(read) = reader.read_until(b'\r', &mut buf) {
                     if read == 0 {
                         break;
                     }
@@ -722,10 +712,10 @@ impl Av1anContext {
                     buf.clear();
                 }
 
-                let enc_output = enc_pipe.wait_with_output().await.unwrap();
+                let enc_output = enc_pipe.wait_with_output().unwrap();
 
-                let source_pipe_stderr = pipe_stderr.lock().clone();
-                let ffmpeg_pipe_stderr = ffmpeg_stderr.map(|x| x.lock().clone());
+                let source_pipe_stderr = pipe_stderr.lock().unwrap().clone();
+                let ffmpeg_pipe_stderr = ffmpeg_stderr.map(|x| x.lock().unwrap().clone());
                 (
                     source_pipe_stderr,
                     ffmpeg_pipe_stderr,

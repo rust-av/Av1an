@@ -13,6 +13,7 @@ __pycache__/
 *.av1
 *.webm
 *.y4m
+*.lwi
 
 # Hidden folders
 !.github
