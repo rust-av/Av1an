@@ -73,7 +73,7 @@ impl FromStr for InterpolationMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetQuality {
     pub vmaf_res:              String,
-    pub probe_res:             Option<String>,
+    pub probe_res:             Option<(u32, u32)>,
     pub vmaf_scaler:           String,
     pub vmaf_filter:           Option<String>,
     pub vmaf_threads:          usize,
@@ -101,7 +101,7 @@ impl TargetQuality {
     pub fn default(temp_dir: String, encoder: Encoder) -> Self {
         Self {
             vmaf_res: "1920x1080".to_string(),
-            probe_res: None,
+            probe_res: Some((1920, 1080)),
             vmaf_scaler: "bicubic".to_string(),
             vmaf_filter: None,
             vmaf_threads: available_parallelism()
@@ -422,11 +422,11 @@ impl TargetQuality {
                         reference_pipe_cmd,
                         chunk.target_quality.vspipe_args.clone(),
                         model,
-                        chunk
+                        &chunk
                             .target_quality
                             .probe_res
-                            .as_ref()
-                            .unwrap_or(&chunk.target_quality.vmaf_res),
+                            .map(|(width, height)| format!("{width}x{height}"))
+                            .unwrap_or(chunk.target_quality.vmaf_res.clone()),
                         &chunk.target_quality.vmaf_scaler,
                         chunk.target_quality.probing_rate,
                         chunk.target_quality.vmaf_filter.as_deref(),
@@ -455,11 +455,11 @@ impl TargetQuality {
                         chunk.target_quality.vspipe_args.clone(),
                         &fl_path,
                         model,
-                        chunk
+                        &chunk
                             .target_quality
                             .probe_res
-                            .as_ref()
-                            .unwrap_or(&chunk.target_quality.vmaf_res),
+                            .map(|(width, height)| format!("{width}x{height}"))
+                            .unwrap_or(chunk.target_quality.vmaf_res.clone()),
                         &chunk.target_quality.vmaf_scaler,
                         chunk.target_quality.probing_rate,
                         chunk.target_quality.vmaf_filter.as_deref(),
@@ -480,7 +480,7 @@ impl TargetQuality {
                         chunk.proxy.as_ref().unwrap_or(&chunk.input),
                         &probe_name,
                         (chunk.start_frame as u32, chunk.end_frame as u32),
-                        chunk.target_quality.probe_res.as_ref(),
+                        chunk.target_quality.probe_res,
                         chunk.target_quality.probing_rate,
                         plugins,
                     )?
@@ -501,7 +501,7 @@ impl TargetQuality {
                         chunk.proxy.as_ref().unwrap_or(&chunk.input),
                         &probe_name,
                         (chunk.start_frame as u32, chunk.end_frame as u32),
-                        chunk.target_quality.probe_res.as_ref(),
+                        chunk.target_quality.probe_res,
                         chunk.target_quality.probing_rate,
                         plugins,
                     )?
@@ -524,7 +524,7 @@ impl TargetQuality {
                             chunk.proxy.as_ref().unwrap_or(&chunk.input),
                             &probe_name,
                             (chunk.start_frame as u32, chunk.end_frame as u32),
-                            chunk.target_quality.probe_res.as_ref(),
+                            chunk.target_quality.probe_res,
                             chunk.target_quality.probing_rate,
                             plugins,
                         )?
@@ -542,11 +542,11 @@ impl TargetQuality {
                         reference_pipe_cmd,
                         chunk.target_quality.vspipe_args.clone(),
                         &fl_path,
-                        chunk
+                        &chunk
                             .target_quality
                             .probe_res
-                            .as_ref()
-                            .unwrap_or(&chunk.target_quality.vmaf_res),
+                            .map(|(width, height)| format!("{width}x{height}"))
+                            .unwrap_or(chunk.target_quality.vmaf_res.clone()),
                         &chunk.target_quality.vmaf_scaler,
                         chunk.target_quality.probing_rate,
                         chunk.frame_rate,
@@ -893,6 +893,48 @@ impl TargetQuality {
             Ok((min, max))
         } else {
             Err("Quality range must be specified as min-max (e.g., 10-50)".to_string())
+        }
+    }
+
+    #[inline]
+    pub fn parse_probe_res(probe_resolution: &str) -> Result<(u32, u32), String> {
+        let parts: Vec<_> = probe_resolution.split('x').collect();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid probe resolution: {probe_resolution}. Expected widthxheight"
+            ));
+        }
+        let width = parts
+            .first()
+            .unwrap()
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid probe resolution width: {probe_resolution}"))?;
+        let height = parts
+            .get(1)
+            .unwrap()
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid probe resolution height: {probe_resolution}"))?;
+
+        Ok((width, height))
+    }
+
+    #[inline]
+    pub fn validate_probes(probes: u32) -> Result<(u32, Option<String>), String> {
+        match probes {
+            probes if probes >= 4 => Ok((probes, None)),
+            1..4 => Ok((
+                probes,
+                Some("Number of probes is recommended to be at least 4".to_string()),
+            )),
+            _ => Err("Number of probes must be greater than 0".to_string()),
+        }
+    }
+
+    #[inline]
+    pub fn validate_probing_rate(probing_rate: usize) -> Result<(usize, Option<String>), String> {
+        match probing_rate {
+            1..=4 => Ok((probing_rate, None)),
+            _ => Err("Probing rate must be an integer from 1 to 4".to_string()),
         }
     }
 }

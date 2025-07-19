@@ -36,7 +36,6 @@ use crate::{
     SplitMethod,
     TargetMetric,
     TargetQuality,
-    VmafFeature,
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -216,13 +215,33 @@ impl Scene {
             target_quality.max_q = max;
         }
         if let Some(zone_probes) = zone_args.remove("--probes") {
-            target_quality.probes = zone_probes.unwrap().parse().unwrap();
+            let parsed = zone_probes
+                .unwrap()
+                .parse()
+                .map_err(|_| anyhow!("Invalid --probes: {}", zone_probes.unwrap()))?;
+            let (probes, warning) = TargetQuality::validate_probes(parsed)
+                .map_err(|e| anyhow!("Invalid --probes: {}: {}", parsed, e))?;
+            if let Some(warning) = warning {
+                warn!("{}", warning);
+            }
+            target_quality.probes = probes;
         }
         if let Some(zone_probing_rate) = zone_args.remove("--probing-rate") {
-            target_quality.probing_rate = zone_probing_rate.unwrap().parse().unwrap();
+            let parsed = zone_probing_rate
+                .unwrap()
+                .parse()
+                .map_err(|_| anyhow!("Invalid --probing-rate: {}", zone_probing_rate.unwrap()))?;
+            let (probing_rate, warning) = TargetQuality::validate_probing_rate(parsed)
+                .map_err(|e| anyhow!("Invalid --probing-rate: {}: {}", parsed, e))?;
+            if let Some(warning) = warning {
+                warn!("{}", warning);
+            }
+            target_quality.probing_rate = probing_rate;
         }
         if let Some(zone_probe_res) = zone_args.remove("--probe-res") {
-            target_quality.probe_res = Some(zone_probe_res.unwrap().to_string());
+            let (width, height) = TargetQuality::parse_probe_res(zone_probe_res.unwrap())
+                .map_err(|e| anyhow!("Invalid --probe-res: {}", e))?;
+            target_quality.probe_res = Some((width, height));
         }
         if let Some(zone_probing_stat) = zone_args.remove("--probing-stat") {
             let parsed = TargetQuality::parse_probing_statistic(zone_probing_stat.unwrap())
@@ -235,14 +254,6 @@ impl Scene {
                 TargetQuality::parse_interp_method(zone_interp_method.unwrap())
                     .map_err(|e| anyhow!("Invalid --interp-method: {}", e))?;
             target_quality.interp_method = Some((method4, method5));
-        }
-        // Cannot parse out more than a single feature
-        if let Some(zone_vmaf_features) = zone_args.remove("--probing-vmaf-features") {
-            target_quality.probing_vmaf_features = zone_vmaf_features
-                .unwrap()
-                .split_whitespace()
-                .map(|f| VmafFeature::from_str(f).unwrap())
-                .collect();
         }
 
         let raw_zone_args = if [Encoder::aom, Encoder::vpx].contains(&encoder) {

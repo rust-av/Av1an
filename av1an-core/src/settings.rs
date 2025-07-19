@@ -343,18 +343,6 @@ impl EncodeArgs {
             warn!("Target quality with fewer than 4 probes is experimental and not recommended");
         }
 
-        if let Some(resolution) = &self.target_quality.probe_res {
-            match resolution.split('x').collect::<Vec<&str>>().as_slice() {
-                [width_str, height_str] => {
-                    match (width_str.parse::<u32>(), height_str.parse::<u32>()) {
-                        (Ok(_width), Ok(_height)) => {},
-                        _ => bail!("Failed to parse Probe Resolution"),
-                    }
-                },
-                _ => bail!("Probe Resolution must be in the format widthxheight"),
-            }
-        }
-
         let encoder_bin = self.encoder.bin();
         if which::which(encoder_bin).is_err() {
             bail!(

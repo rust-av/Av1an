@@ -830,10 +830,16 @@ impl CliOpts {
         };
 
         let probing_statistic = TargetQuality::parse_probing_statistic(self.probing_stat.as_str())?;
+        let mut probe_res = None;
+        if let Some(res) = &self.probe_res {
+            let (width, height) = TargetQuality::parse_probe_res(res)
+                .map_err(|e| anyhow!("Unrecoverable: Failed to parse probe resolution: {}", e))?;
+            probe_res = Some((width, height));
+        }
 
         Ok(TargetQuality {
             vmaf_res: self.vmaf_res.clone(),
-            probe_res: self.probe_res.clone(),
+            probe_res,
             vmaf_scaler: self.scaler.clone(),
             vmaf_filter: self.vmaf_filter.clone(),
             vmaf_threads: self.vmaf_threads.unwrap_or_else(|| {

@@ -898,32 +898,12 @@ pub fn get_comparands<'core>(
     source_node: &Node<'core>,
     encoded: &Path,
     frame_range: (u32, u32),
-    probe_res: Option<&String>,
+    probe_res: Option<(u32, u32)>,
     sample_rate: usize,
 ) -> anyhow::Result<(Node<'core>, Node<'core>)> {
-    let mut probe_resolution: Option<(u32, u32)> = None;
-    if let Some(res) = probe_res {
-        let mut parts = res.split('x');
-        let width = parts
-            .next()
-            .and_then(|x| x.parse::<u32>().ok())
-            .expect("Invalid probe resolution");
-        let height = parts
-            .next()
-            .and_then(|x| x.parse::<u32>().ok())
-            .expect("Invalid probe resolution");
-        probe_resolution = Some((width, height));
-    }
-
-    let chunk_node = get_source_chunk(
-        core,
-        source_node,
-        frame_range,
-        probe_resolution,
-        sample_rate,
-    )?;
+    let chunk_node = get_source_chunk(core, source_node, frame_range, probe_res, sample_rate)?;
     let encoded_node = import_video(core, encoded, Some(false))?;
-    let resized_encoded_node = if let Some((width, height)) = probe_resolution {
+    let resized_encoded_node = if let Some((width, height)) = probe_res {
         resize_node(core, &encoded_node, Some(width), Some(height), None, None)?
     } else {
         let chunk_node_resolution = chunk_node.info().resolution;
@@ -946,7 +926,7 @@ pub fn measure_butteraugli(
     source: &Input,
     encoded: &Path,
     frame_range: (u32, u32),
-    probe_res: Option<&String>,
+    probe_res: Option<(u32, u32)>,
     sample_rate: usize,
     plugins: &VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
@@ -985,7 +965,7 @@ pub fn measure_ssimulacra2(
     source: &Input,
     encoded: &Path,
     frame_range: (u32, u32),
-    probe_res: Option<&String>,
+    probe_res: Option<(u32, u32)>,
     sample_rate: usize,
     plugins: &VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
@@ -1024,7 +1004,7 @@ pub fn measure_xpsnr(
     source: &Input,
     encoded: &Path,
     frame_range: (u32, u32),
-    probe_res: Option<&String>,
+    probe_res: Option<(u32, u32)>,
     sample_rate: usize,
     plugins: &VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
