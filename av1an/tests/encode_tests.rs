@@ -1,14 +1,30 @@
 use std::{
     fs::remove_file,
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use assert_cmd::Command;
 use serial_test::serial;
-use tempfile::{NamedTempFile, TempDir};
+use tempfile::{NamedTempFile, TempDir, TempPath};
 
 fn input_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("tt_sif.y4m")
+}
+
+fn create_vpy_input() -> TempPath {
+    let mut input_file = NamedTempFile::with_suffix(".vpy").unwrap();
+    write!(
+        input_file.as_file_mut(),
+        r#"import vapoursynth as vs
+core = vs.core
+clip = core.lsmas.LWLibavSource(source="{}")
+clip.set_output(0)"#,
+        input_path().to_string_lossy()
+    )
+    .unwrap();
+    input_file.flush().unwrap();
+    input_file.into_temp_path()
 }
 
 // The baseline tests should not include the faster default params, because we
@@ -1197,6 +1213,149 @@ fn encode_test_sc_only() {
         .arg(AOM_FAST_PARAMS)
         .arg("-s")
         .arg(&scenes_file)
+        .arg("--temp")
+        .arg(temp_dir.path())
+        .arg("-o")
+        .arg(&output_file)
+        .assert()
+        .success();
+    assert!(output_file.exists());
+    assert!(output_file.metadata().unwrap().len() > 0);
+}
+
+#[test]
+#[serial]
+fn encode_test_vpy_input() {
+    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = create_vpy_input();
+
+    cmd.arg("-i")
+        .arg(&input_file)
+        .arg("-e")
+        .arg("aom")
+        .arg("--pix-format")
+        .arg("yuv420p")
+        .arg("--sc-method")
+        .arg("fast")
+        .arg("-y")
+        .arg("--temp")
+        .arg(temp_dir.path())
+        .arg("-o")
+        .arg(&output_file)
+        .assert()
+        .success();
+    assert!(output_file.exists());
+    assert!(output_file.metadata().unwrap().len() > 0);
+}
+
+#[test]
+#[serial]
+fn encode_test_sc_downscale() {
+    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = input_path();
+
+    cmd.arg("-i")
+        .arg(&input_file)
+        .arg("-e")
+        .arg("aom")
+        .arg("--pix-format")
+        .arg("yuv420p")
+        .arg("--sc-method")
+        .arg("fast")
+        .arg("--sc-downscale-height")
+        .arg("160")
+        .arg("-y")
+        .arg("--temp")
+        .arg(temp_dir.path())
+        .arg("-o")
+        .arg(&output_file)
+        .assert()
+        .success();
+    assert!(output_file.exists());
+    assert!(output_file.metadata().unwrap().len() > 0);
+}
+
+#[test]
+#[serial]
+fn encode_test_sc_pix_format() {
+    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = input_path();
+
+    cmd.arg("-i")
+        .arg(&input_file)
+        .arg("-e")
+        .arg("aom")
+        .arg("--pix-format")
+        .arg("yuv420p")
+        .arg("--sc-method")
+        .arg("fast")
+        .arg("--sc-pix-format")
+        .arg("yuv420p10le")
+        .arg("-y")
+        .arg("--temp")
+        .arg(temp_dir.path())
+        .arg("-o")
+        .arg(&output_file)
+        .assert()
+        .success();
+    assert!(output_file.exists());
+    assert!(output_file.metadata().unwrap().len() > 0);
+}
+
+#[test]
+#[serial]
+fn encode_test_sc_downscale_vpy_input() {
+    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = create_vpy_input();
+
+    cmd.arg("-i")
+        .arg(&input_file)
+        .arg("-e")
+        .arg("aom")
+        .arg("--pix-format")
+        .arg("yuv420p")
+        .arg("--sc-method")
+        .arg("fast")
+        .arg("--sc-downscale-height")
+        .arg("160")
+        .arg("-y")
+        .arg("--temp")
+        .arg(temp_dir.path())
+        .arg("-o")
+        .arg(&output_file)
+        .assert()
+        .success();
+    assert!(output_file.exists());
+    assert!(output_file.metadata().unwrap().len() > 0);
+}
+
+#[test]
+#[serial]
+fn encode_test_sc_pix_format_vpy_input() {
+    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = create_vpy_input();
+
+    cmd.arg("-i")
+        .arg(&input_file)
+        .arg("-e")
+        .arg("aom")
+        .arg("--pix-format")
+        .arg("yuv420p")
+        .arg("--sc-method")
+        .arg("fast")
+        .arg("--sc-pix-format")
+        .arg("yuv420p10le")
+        .arg("-y")
         .arg("--temp")
         .arg(temp_dir.path())
         .arg("-o")

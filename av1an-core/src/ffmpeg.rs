@@ -10,6 +10,7 @@ use av_format::rational::Rational64;
 use path_abs::{PathAbs, PathInfo};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
+use vapoursynth::format::PresetFormat;
 
 use crate::{into_array, into_vec, ClipInfo, InputPixelFormat};
 
@@ -328,6 +329,37 @@ impl FFPixelFormat {
             FFPixelFormat::YUVJ422P => "yuvj422p",
             FFPixelFormat::YUVJ444P => "yuvj444p",
         }
+    }
+
+    #[inline]
+    pub fn to_vapoursynth_format(&self) -> anyhow::Result<PresetFormat> {
+        use PresetFormat::*;
+
+        Ok(match self {
+            // Vapoursynth doesn't have a Gray10/Gray12 so use the next best thing.
+            // No quality loss from 10/12->16 but might be slightly slower.
+            FFPixelFormat::GRAY10LE => Gray16,
+            FFPixelFormat::GRAY12L => Gray16,
+            FFPixelFormat::GRAY12LE => Gray16,
+            FFPixelFormat::GRAY8 => Gray8,
+            FFPixelFormat::YUV420P => YUV420P8,
+            FFPixelFormat::YUV420P10LE => YUV420P10,
+            FFPixelFormat::YUV420P12LE => YUV420P12,
+            FFPixelFormat::YUV422P => YUV422P8,
+            FFPixelFormat::YUV422P10LE => YUV422P10,
+            FFPixelFormat::YUV422P12LE => YUV422P12,
+            FFPixelFormat::YUV440P => YUV440P8,
+            FFPixelFormat::YUV444P => YUV444P8,
+            FFPixelFormat::YUV444P10LE => YUV444P10,
+            FFPixelFormat::YUV444P12LE => YUV444P12,
+            FFPixelFormat::YUVJ420P => YUV420P8,
+            FFPixelFormat::YUVJ422P => YUV422P8,
+            FFPixelFormat::YUVJ444P => YUV444P8,
+            x => bail!(
+                "pixel format {} cannot be converted to Vapoursynth format",
+                x.to_pix_fmt_string()
+            ),
+        })
     }
 }
 
