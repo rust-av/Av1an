@@ -1,7 +1,12 @@
+use std::str::FromStr;
+
 use crate::{
     context::Av1anContext,
     encoder::Encoder,
     scenes::{Scene, SceneFactory},
+    InterpolationMethod,
+    ProbingStatistic,
+    TargetMetric,
     TargetQuality,
 };
 
@@ -225,4 +230,66 @@ fn validate_zones_no_args_reset() {
     assert_eq!(zone_overrides.min_scene_len, 10);
     assert_eq!(zone_overrides.photon_noise, None);
     assert!(zone_overrides.video_params.is_empty());
+}
+
+#[test]
+fn validate_zones_target_quality() {
+    let desired_target = 85;
+    let desired_metric = TargetMetric::SSIMULACRA2;
+    let desired_probing_rate = 2;
+    let desired_probes = 2;
+    let desired_qp_min = 8;
+    let desired_qp_max = 35;
+    let desired_probe_res = (1280, 720);
+    let desired_probing_stat = ProbingStatistic {
+        name:  crate::ProbingStatisticName::Mode,
+        value: None,
+    };
+    let desired_interpolation_method4 = "natural";
+    let desired_interpolation_method5 = "cubic";
+
+    let input = format!(
+        "0 -1 svt-av1 reset --preset 3 --target-quality {target} --target-metric {metric} \
+         --probing-rate {rate} --probes {probes} --qp-range {min_q}-{max_q} --probe-res \
+         {width}x{height} --probing-stat {stat} --interp-method {method4}-{method5}",
+        target = desired_target,
+        metric = desired_metric,
+        rate = desired_probing_rate,
+        probes = desired_probes,
+        min_q = desired_qp_min,
+        max_q = desired_qp_max,
+        width = desired_probe_res.0,
+        height = desired_probe_res.1,
+        stat = desired_probing_stat.name,
+        method4 = desired_interpolation_method4,
+        method5 = desired_interpolation_method5,
+    );
+    let args = get_test_args();
+
+    let result = Scene::parse_from_zone(&input, &args.args, args.frames).unwrap();
+    let zone_overrides = result.zone_overrides.unwrap();
+    assert!(zone_overrides.target_quality.is_some());
+    let target_quality = zone_overrides.target_quality.unwrap();
+    assert!(target_quality.target.is_some());
+    assert!(target_quality
+        .target
+        .is_some_and(|(low, high)| low >= (desired_target as f64 * 0.99)
+            && high >= (desired_target as f64 * 1.01)));
+    assert_eq!(target_quality.metric, desired_metric);
+    assert_eq!(target_quality.probing_rate, desired_probing_rate);
+    assert_eq!(target_quality.probes, desired_probes);
+    assert_eq!(target_quality.min_q, desired_qp_min);
+    assert_eq!(target_quality.max_q, desired_qp_max);
+    assert_eq!(target_quality.probe_res, Some(desired_probe_res));
+    assert_eq!(
+        target_quality.probing_statistic.name.to_string(),
+        desired_probing_stat.name.to_string()
+    );
+    assert_eq!(
+        target_quality.interp_method,
+        Some((
+            InterpolationMethod::from_str(desired_interpolation_method4).unwrap(),
+            InterpolationMethod::from_str(desired_interpolation_method5).unwrap()
+        ))
+    );
 }
