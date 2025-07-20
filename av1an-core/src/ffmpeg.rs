@@ -177,7 +177,7 @@ pub fn get_keyframes(source: &Path) -> anyhow::Result<Vec<usize>> {
     Ok(frames
         .into_iter()
         .enumerate()
-        .filter_map(|(i, frame)| if frame.key_frame > 0 { Some(i) } else { None })
+        .filter_map(|(i, frame)| (frame.key_frame > 0).then_some(i))
         .collect())
 }
 
@@ -221,7 +221,7 @@ pub fn encode_audio<S: AsRef<OsStr>>(
         encode_audio.stderr(Stdio::piped());
 
         encode_audio.args(["-y", "-hide_banner", "-loglevel", "error"]);
-        encode_audio.args(["-i", input.to_str().unwrap()]);
+        encode_audio.args(["-i", &input.to_string_lossy()]);
         encode_audio.args(["-map_metadata", "0"]);
         encode_audio.args(["-map", "0", "-c", "copy", "-vn", "-dn"]);
 
@@ -243,26 +243,23 @@ pub fn encode_audio<S: AsRef<OsStr>>(
 
 /// Escapes paths in ffmpeg filters if on windows
 #[inline]
-pub fn escape_path_in_filter(path: impl AsRef<Path>) -> String {
-    if cfg!(windows) {
-        PathAbs::new(path.as_ref())
-      .unwrap()
-      .to_str()
-      .unwrap()
-      // This is needed because of how FFmpeg handles absolute file paths on Windows.
-      // https://stackoverflow.com/questions/60440793/how-can-i-use-windows-absolute-paths-with-the-movie-filter-on-ffmpeg
-      .replace('\\', "/")
-      .replace(':', r"\\:")
+pub fn escape_path_in_filter(path: impl AsRef<Path>) -> anyhow::Result<String> {
+    Ok(if cfg!(windows) {
+        PathAbs::new(path.as_ref())?
+            .to_string_lossy()
+            // This is needed because of how FFmpeg handles absolute file paths on Windows.
+            // https://stackoverflow.com/questions/60440793/how-can-i-use-windows-absolute-paths-with-the-movie-filter-on-ffmpeg
+            .replace('\\', "/")
+            .replace(':', r"\\:")
     } else {
-        PathAbs::new(path.as_ref()).unwrap().to_str().unwrap().to_string()
+        PathAbs::new(path.as_ref())?.to_string_lossy().to_string()
     }
     .replace('[', r"\[")
     .replace(']', r"\]")
-    .replace(',', "\\,")
+    .replace(',', "\\,"))
 }
 
 /// Pixel formats supported by ffmpeg
-#[allow(non_camel_case_types)]
 #[derive(Eq, PartialEq, Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum FFPixelFormat {
     GBRP,
@@ -333,28 +330,26 @@ impl FFPixelFormat {
 
     #[inline]
     pub fn to_vapoursynth_format(&self) -> anyhow::Result<PresetFormat> {
-        use PresetFormat::*;
-
         Ok(match self {
             // Vapoursynth doesn't have a Gray10/Gray12 so use the next best thing.
             // No quality loss from 10/12->16 but might be slightly slower.
-            FFPixelFormat::GRAY10LE => Gray16,
-            FFPixelFormat::GRAY12L => Gray16,
-            FFPixelFormat::GRAY12LE => Gray16,
-            FFPixelFormat::GRAY8 => Gray8,
-            FFPixelFormat::YUV420P => YUV420P8,
-            FFPixelFormat::YUV420P10LE => YUV420P10,
-            FFPixelFormat::YUV420P12LE => YUV420P12,
-            FFPixelFormat::YUV422P => YUV422P8,
-            FFPixelFormat::YUV422P10LE => YUV422P10,
-            FFPixelFormat::YUV422P12LE => YUV422P12,
-            FFPixelFormat::YUV440P => YUV440P8,
-            FFPixelFormat::YUV444P => YUV444P8,
-            FFPixelFormat::YUV444P10LE => YUV444P10,
-            FFPixelFormat::YUV444P12LE => YUV444P12,
-            FFPixelFormat::YUVJ420P => YUV420P8,
-            FFPixelFormat::YUVJ422P => YUV422P8,
-            FFPixelFormat::YUVJ444P => YUV444P8,
+            FFPixelFormat::GRAY10LE => PresetFormat::Gray16,
+            FFPixelFormat::GRAY12L => PresetFormat::Gray16,
+            FFPixelFormat::GRAY12LE => PresetFormat::Gray16,
+            FFPixelFormat::GRAY8 => PresetFormat::Gray8,
+            FFPixelFormat::YUV420P => PresetFormat::YUV420P8,
+            FFPixelFormat::YUV420P10LE => PresetFormat::YUV420P10,
+            FFPixelFormat::YUV420P12LE => PresetFormat::YUV420P12,
+            FFPixelFormat::YUV422P => PresetFormat::YUV422P8,
+            FFPixelFormat::YUV422P10LE => PresetFormat::YUV422P10,
+            FFPixelFormat::YUV422P12LE => PresetFormat::YUV422P12,
+            FFPixelFormat::YUV440P => PresetFormat::YUV440P8,
+            FFPixelFormat::YUV444P => PresetFormat::YUV444P8,
+            FFPixelFormat::YUV444P10LE => PresetFormat::YUV444P10,
+            FFPixelFormat::YUV444P12LE => PresetFormat::YUV444P12,
+            FFPixelFormat::YUVJ420P => PresetFormat::YUV420P8,
+            FFPixelFormat::YUVJ422P => PresetFormat::YUV422P8,
+            FFPixelFormat::YUVJ444P => PresetFormat::YUV444P8,
             x => bail!(
                 "pixel format {} cannot be converted to Vapoursynth format",
                 x.to_pix_fmt_string()

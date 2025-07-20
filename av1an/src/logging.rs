@@ -1,12 +1,12 @@
 use std::{
     collections::HashMap,
     env,
-    fmt::Debug,
+    fmt::{Debug, Write},
     io::IsTerminal,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
-use anyhow::anyhow;
+use anyhow::bail;
 use once_cell::sync::OnceCell;
 use tracing_appender::{
     non_blocking::WorkerGuard,
@@ -42,20 +42,22 @@ impl Default for ModuleConfig {
 /// Initialize logging with per-module configuration
 pub fn init_logging(
     console_level: LevelFilter,
-    log_path: Option<PathBuf>,
+    log_path: Option<&Path>,
     file_level: LevelFilter,
 ) -> anyhow::Result<()> {
     let log_path = if let Some(log_file) = log_path.as_ref() {
         let log_path = Path::new(log_file);
         if log_path.starts_with("/") || log_path.is_absolute() {
-            Err(anyhow!("Log file path must be relative"))?
+            bail!("Log file path must be relative");
         }
         let absolute_path = std::path::absolute(log_path).unwrap();
         let log_path = absolute_path
             .strip_prefix(std::env::current_dir().unwrap())
             .unwrap()
             .strip_prefix("logs")
-            .unwrap_or(absolute_path.strip_prefix(std::env::current_dir().unwrap()).unwrap());
+            .unwrap_or_else(|_| {
+                absolute_path.strip_prefix(std::env::current_dir().unwrap()).unwrap()
+            });
         log_path.to_path_buf()
     } else {
         Path::new("av1an.log").to_owned()
@@ -102,7 +104,8 @@ pub fn init_logging(
                 if !filter.is_empty() {
                     filter.push(',');
                 }
-                filter.push_str(&format!("{}={}", module, config.console_level));
+                write!(&mut filter, "{}={}", module, config.console_level)
+                    .expect("write to string should work");
             }
         }
         EnvFilter::try_new(&filter).unwrap()
@@ -115,7 +118,8 @@ pub fn init_logging(
                 if !filter.is_empty() {
                     filter.push(',');
                 }
-                filter.push_str(&format!("{}={}", module, config.file_level));
+                write!(&mut filter, "{}={}", module, config.file_level)
+                    .expect("write to string should work");
             }
         }
         EnvFilter::try_new(&filter).unwrap()

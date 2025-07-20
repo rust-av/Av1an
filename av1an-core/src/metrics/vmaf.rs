@@ -101,7 +101,7 @@ pub fn plot_vmaf_score_file(scores_file: &Path, plot_path: &Path) -> anyhow::Res
         .border_style(BLACK)
         .draw()?;
 
-    root.present().expect("Unable to write result plot to file");
+    root.present()?;
 
     Ok(())
 }
@@ -125,7 +125,7 @@ pub fn validate_libvmaf() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn plot(
     encoded: &Path,
     reference: &Input,
@@ -136,7 +136,7 @@ pub fn plot(
     filter: Option<&str>,
     threads: usize,
     probing_vmaf_features: &[VmafFeature],
-) -> Result<(), Box<EncoderCrash>> {
+) -> anyhow::Result<()> {
     let json_file = encoded.with_extension("json");
     let plot_file = encoded.with_extension("svg");
     let vspipe_args;
@@ -185,7 +185,7 @@ pub fn plot(
         probing_vmaf_features,
     )?;
 
-    plot_vmaf_score_file(&json_file, &plot_file).unwrap();
+    plot_vmaf_score_file(&json_file, &plot_file)?;
     Ok(())
 }
 
@@ -201,7 +201,7 @@ pub fn get_vmaf_model_version(features: &[VmafFeature]) -> &'static str {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn run_vmaf(
     encoded: &Path,
     reference_pipe_cmd: &[impl AsRef<OsStr>],
@@ -216,7 +216,7 @@ pub fn run_vmaf(
     framerate: f64,
     disable_motion: bool,
     probing_vmaf_features: &[VmafFeature],
-) -> Result<(), Box<EncoderCrash>> {
+) -> anyhow::Result<()> {
     let mut filter = if sample_rate > 1 {
         format!(
             "select=not(mod(n\\,{})),setpts={:.4}*PTS,",
@@ -245,19 +245,19 @@ pub fn run_vmaf(
                 }
             )
         } else {
-            format!("path={}", ffmpeg::escape_path_in_filter(&model))
+            format!("path={}", ffmpeg::escape_path_in_filter(&model)?)
         };
         format!(
             "[distorted][ref]libvmaf=log_fmt='json':eof_action=endall:log_path={}:model='{}':\
              n_threads={}",
-            ffmpeg::escape_path_in_filter(stat_file),
+            ffmpeg::escape_path_in_filter(stat_file)?,
             model_path,
             threads
         )
     } else {
         format!(
             "[distorted][ref]libvmaf=log_fmt='json':eof_action=endall:log_path={}{}:n_threads={}",
-            ffmpeg::escape_path_in_filter(stat_file),
+            ffmpeg::escape_path_in_filter(stat_file)?,
             if disable_motion {
                 format!(
                     ":model='version={}\\:motion.motion_force_zero=true'",
@@ -279,7 +279,7 @@ pub fn run_vmaf(
         source_pipe.args(args);
         source_pipe.stdout(Stdio::piped());
         source_pipe.stderr(Stdio::null());
-        source_pipe.spawn().unwrap()
+        source_pipe.spawn()?
     } else {
         unreachable!()
     };
@@ -313,69 +313,45 @@ pub fn run_vmaf(
 
     cmd.arg(format!("{distorted}{reference}{vmaf}"));
     cmd.args(["-f", "null", "-"]);
-    cmd.stdin(source_pipe.stdout.take().unwrap());
+    cmd.stdin(source_pipe.stdout.take().expect("source_pipe stdout should exist"));
     cmd.stderr(Stdio::piped());
     cmd.stdout(Stdio::null());
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output()?;
 
     if !output.status.success() {
-        return Err(Box::new(EncoderCrash {
+        return Err(EncoderCrash {
             exit_status:        output.status,
             source_pipe_stderr: String::new().into(),
             ffmpeg_pipe_stderr: None,
             stderr:             output.stderr.into(),
             stdout:             String::new().into(),
-        }));
+        }
+        .into());
     }
 
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn run_vmaf_weighted(
     encoded: &Path,
     reference_pipe_cmd: &[impl AsRef<OsStr>],
     vspipe_args: Vec<String>,
     model: Option<impl AsRef<Path>>,
-    _res: &str,
-    _scaler: &str,
-    sample_rate: usize,
-    vmaf_filter: Option<&str>,
     threads: usize,
     framerate: f64,
     disable_motion: bool,
     probing_vmaf_features: &[VmafFeature],
 ) -> anyhow::Result<Vec<f64>> {
-    let temp_dir = encoded.parent().unwrap();
-    let vmaf_y_path = temp_dir.join(format!(
-        "vmaf_y_{}.json",
-        encoded.file_stem().unwrap().to_str().unwrap()
-    ));
-    let vmaf_u_path = temp_dir.join(format!(
-        "vmaf_u_{}.json",
-        encoded.file_stem().unwrap().to_str().unwrap()
-    ));
-    let vmaf_v_path = temp_dir.join(format!(
-        "vmaf_v_{}.json",
-        encoded.file_stem().unwrap().to_str().unwrap()
-    ));
-
-    let mut filter = if sample_rate > 1 {
-        format!(
-            "select=not(mod(n\\,{})),setpts={:.4}*PTS,",
-            sample_rate,
-            1.0 / sample_rate as f64,
-        )
-    } else {
-        String::new()
-    };
-
-    if let Some(vmaf_filter) = vmaf_filter {
-        filter.reserve(1 + vmaf_filter.len());
-        filter.push_str(vmaf_filter);
-        filter.push(',');
-    }
+    let temp_dir = encoded.parent().expect("encoded file should have a parent dir");
+    let file_stem = encoded
+        .file_stem()
+        .expect("encoded file should have a file stem")
+        .to_string_lossy();
+    let vmaf_y_path = temp_dir.join(format!("vmaf_y_{}.json", file_stem));
+    let vmaf_u_path = temp_dir.join(format!("vmaf_u_{}.json", file_stem));
+    let vmaf_v_path = temp_dir.join(format!("vmaf_v_{}.json", file_stem));
 
     let model_str = if let Some(model) = model {
         if model.as_ref().as_os_str().to_string_lossy().ends_with(".json") {
@@ -391,7 +367,7 @@ pub fn run_vmaf_weighted(
         } else {
             format!(
                 "path={}{}",
-                ffmpeg::escape_path_in_filter(&model),
+                ffmpeg::escape_path_in_filter(&model)?,
                 if disable_motion {
                     "\\:motion.motion_force_zero=true"
                 } else {
@@ -419,7 +395,7 @@ pub fn run_vmaf_weighted(
         source_pipe.args(args);
         source_pipe.stdout(Stdio::piped());
         source_pipe.stderr(Stdio::null());
-        source_pipe.spawn().unwrap()
+        source_pipe.spawn()?
     } else {
         unreachable!()
     };
@@ -448,13 +424,13 @@ pub fn run_vmaf_weighted(
          [dis_u][ref_u]libvmaf=log_path={}:log_fmt=json:n_threads={}:n_subsample=1:model='{}':\
          eof_action=endall[vmaf_u_out];[dis_v][ref_v]libvmaf=log_path={}:log_fmt=json:\
          n_threads={}:n_subsample=1:model='{}':eof_action=endall[vmaf_v_out]",
-        ffmpeg::escape_path_in_filter(&vmaf_y_path),
+        ffmpeg::escape_path_in_filter(&vmaf_y_path)?,
         threads,
         model_str,
-        ffmpeg::escape_path_in_filter(&vmaf_u_path),
+        ffmpeg::escape_path_in_filter(&vmaf_u_path)?,
         threads,
         model_str,
-        ffmpeg::escape_path_in_filter(&vmaf_v_path),
+        ffmpeg::escape_path_in_filter(&vmaf_v_path)?,
         threads,
         model_str
     );
@@ -462,11 +438,11 @@ pub fn run_vmaf_weighted(
     cmd.arg(filter_complex);
     cmd.args(["-map", "[vmaf_y_out]", "-map", "[vmaf_u_out]", "-map", "[vmaf_v_out]"]);
     cmd.args(["-an", "-sn", "-dn", "-f", "null", "-"]);
-    cmd.stdin(source_pipe.stdout.take().unwrap());
+    cmd.stdin(source_pipe.stdout.take().expect("source_pipe stdout should exist"));
     cmd.stderr(Stdio::piped());
     cmd.stdout(Stdio::null());
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output()?;
 
     let _ = source_pipe.wait();
 
@@ -495,8 +471,8 @@ pub fn run_vmaf_weighted(
     Ok(weighted_scores)
 }
 
-pub fn read_vmaf_file(file: impl AsRef<Path>) -> Result<Vec<f64>, serde_json::Error> {
-    let json_str = std::fs::read_to_string(file).unwrap();
+pub fn read_vmaf_file(file: impl AsRef<Path>) -> anyhow::Result<Vec<f64>> {
+    let json_str = std::fs::read_to_string(file)?;
     let vmaf_results = serde_json::from_str::<VmafResult>(&json_str)?;
     let v = vmaf_results.frames.into_iter().map(|metric| metric.metrics.vmaf).collect();
 

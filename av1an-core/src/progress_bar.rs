@@ -37,10 +37,11 @@ pub fn get_audio_size() -> u64 {
     *AUDIO_BYTES.get().unwrap_or(&0u64)
 }
 
+#[allow(clippy::unwrap_used, reason = "many unwraps on `write!` to terminal")]
 fn pretty_progress_style(resume_frames: u64) -> ProgressStyle {
     ProgressStyle::default_bar()
         .template(INDICATIF_PROGRESS_TEMPLATE)
-        .unwrap()
+        .expect("template is valid")
         .with_key("fps", move |state: &ProgressState, w: &mut dyn Write| {
             let resume_pos = if state.pos() < resume_frames {
                 resume_frames
@@ -89,10 +90,11 @@ fn pretty_progress_style(resume_frames: u64) -> ProgressStyle {
         .progress_chars(PROGRESS_CHARS)
 }
 
+#[allow(clippy::unwrap_used, reason = "many unwraps on `write!` to terminal")]
 fn spinner_style(resume_frames: u64) -> ProgressStyle {
     ProgressStyle::default_spinner()
         .template(INDICATIF_SC_SPINNER_TEMPLATE)
-        .unwrap()
+        .expect("template is valid")
         .with_key("fps", move |state: &ProgressState, w: &mut dyn Write| {
             let resume_pos = if state.pos() < resume_frames {
                 resume_frames
@@ -156,11 +158,15 @@ pub fn dec_bar(dec: u64) {
     }
 
     if let Some((_, pbs)) = MULTI_PROGRESS_BAR.get() {
-        let pb = pbs.last().unwrap();
+        let pb = pbs.last().expect("at least one progress bar exists");
         pb.set_position(pb.position().saturating_sub(dec));
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "https://github.com/rust-lang/rust-clippy/issues/12786"
+)]
 pub fn update_bar_info(kbps: f64, est_size: HumanBytes, chunks: Option<(u32, u32)>) {
     if let Some(pb) = PROGRESS_BAR.get() {
         pb.set_message(format!(", {kbps:.1} Kbps, est. {est_size}"));
@@ -191,7 +197,7 @@ pub fn finish_progress_bar() {
 static MULTI_PROGRESS_BAR: OnceCell<(MultiProgress, Vec<ProgressBar>)> = OnceCell::new();
 
 pub fn set_len(len: u64) {
-    let pb = PROGRESS_BAR.get().unwrap();
+    let pb = PROGRESS_BAR.get().expect("progress bar exists");
     pb.set_length(len);
 }
 
@@ -225,7 +231,9 @@ pub fn init_multi_progress_bar(len: u64, workers: usize, resume_frames: u64, chu
 
         for _ in 1..=workers {
             let pb = ProgressBar::hidden().with_style(
-                ProgressStyle::default_spinner().template("{prefix:.dim} {msg}").unwrap(),
+                ProgressStyle::default_spinner()
+                    .template("{prefix:.dim} {msg}")
+                    .expect("template is valid"),
             );
             pb.set_prefix(format!("[Idle  {digits:digits$}]"));
             pbs.push(mpb.add(pb));
@@ -266,13 +274,17 @@ pub fn update_mp_msg(worker_idx: usize, msg: String) {
 
 pub fn inc_mp_bar(inc: u64) {
     if let Some((_, pbs)) = MULTI_PROGRESS_BAR.get() {
-        pbs.last().unwrap().inc(inc);
+        pbs.last().expect("at least one progress bar exists").inc(inc);
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "https://github.com/rust-lang/rust-clippy/issues/12786"
+)]
 pub fn update_mp_bar_info(kbps: f64, est_size: HumanBytes, chunks: (u32, u32)) {
     if let Some((_, pbs)) = MULTI_PROGRESS_BAR.get() {
-        let pb = pbs.last().unwrap();
+        let pb = pbs.last().expect("at least one progress bar exists");
         pb.set_message(format!(", {kbps:.1} Kbps, est. {est_size}"));
         pb.set_prefix(format!(
             "[{done}/{total} Chunks] ",

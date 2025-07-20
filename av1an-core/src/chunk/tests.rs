@@ -4,7 +4,7 @@ use super::*;
 use crate::ChunkMethod;
 
 #[test]
-fn test_chunk_name_1() {
+fn chunk_name_1() {
     let ch = Chunk {
         temp:                  "none".to_owned(),
         index:                 1,
@@ -31,7 +31,7 @@ fn test_chunk_name_1() {
     assert_eq!("00001", ch.name());
 }
 #[test]
-fn test_chunk_name_10000() {
+fn chunk_name_10000() {
     let ch = Chunk {
         temp:                  "none".to_owned(),
         index:                 10000,
@@ -59,7 +59,7 @@ fn test_chunk_name_10000() {
 }
 
 #[test]
-fn test_chunk_output() {
+fn chunk_output() {
     let ch = Chunk {
         temp:                  "d".to_owned(),
         index:                 1,
@@ -87,11 +87,11 @@ fn test_chunk_output() {
     // Convert output path to PathBuf for comparison
     let expected_output: PathBuf = ["d", "encode", "00001.ivf"].iter().collect();
 
-    assert_eq!(expected_output.to_str().unwrap(), ch.output());
+    assert_eq!(expected_output.to_string_lossy(), ch.output());
 }
 
 #[test]
-fn test_chunk_frames() {
+fn chunk_frames() {
     let ch = Chunk {
         temp:                  "none".to_owned(),
         index:                 1,
@@ -119,15 +119,15 @@ fn test_chunk_frames() {
 }
 
 #[test]
-fn test_apply_photon_noise_args_with_noise() -> anyhow::Result<()> {
+fn apply_photon_noise_args_with_noise() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let mut ch = Chunk {
-        temp:                  temp_dir.path().to_str().unwrap().to_owned(),
+        temp:                  temp_dir.path().to_string_lossy().to_string(),
         index:                 1,
         input:                 Input::new(
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-files/blank_1080p.mkv"),
             vec![],
-            temp_dir.path().to_str().unwrap(),
+            &temp_dir.path().to_string_lossy(),
             ChunkMethod::LSMASH,
             None,
             None,
@@ -155,15 +155,15 @@ fn test_apply_photon_noise_args_with_noise() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_apply_photon_noise_args_no_noise() -> anyhow::Result<()> {
+fn apply_photon_noise_args_no_noise() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let mut ch = Chunk {
-        temp:                  temp_dir.path().to_str().unwrap().to_owned(),
+        temp:                  temp_dir.path().to_string_lossy().to_string(),
         index:                 1,
         input:                 Input::Video {
             path:         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-files/blank_1080p.mkv"),
-            temp:         temp_dir.path().to_str().unwrap().to_owned(),
+            temp:         temp_dir.path().to_string_lossy().to_string(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
         },
@@ -188,15 +188,15 @@ fn test_apply_photon_noise_args_no_noise() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_apply_photon_noise_args_unsupported_encoder() -> anyhow::Result<()> {
+fn apply_photon_noise_args_unsupported_encoder() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let mut ch = Chunk {
-        temp:                  temp_dir.path().to_str().unwrap().to_owned(),
+        temp:                  temp_dir.path().to_string_lossy().to_string(),
         index:                 1,
         input:                 Input::Video {
             path:         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("test-files/blank_1080p.mkv"),
-            temp:         temp_dir.path().to_str().unwrap().to_owned(),
+            temp:         temp_dir.path().to_string_lossy().to_string(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
         },

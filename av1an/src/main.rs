@@ -1,9 +1,9 @@
 use std::{
-    io::{self, Write},
+    fmt::Write as FmtWrite,
+    io::{self, Write as IoWrite},
     panic,
     path::{Path, PathBuf},
-    process,
-    process::exit,
+    process::{self, exit},
     thread::available_parallelism,
 };
 
@@ -62,10 +62,16 @@ fn version() -> &'static str {
         let vapoursynth_plugins = get_vapoursynth_plugins()
             .map_err(|e| warn!("Failed to detect VapourSynth plugins: {}", e))
             .ok();
-        if let Some(plugins) = vapoursynth_plugins {
-            let isfound = |found: bool| if found { "Found" } else { "Not found" };
-            format!(
+        vapoursynth_plugins.map_or_else(
+            || {
                 "\
+* VapourSynth: Not Found"
+                    .to_string()
+            },
+            |plugins| {
+                let isfound = |found: bool| if found { "Found" } else { "Not found" };
+                format!(
+                    "\
 * VapourSynth Plugins
   systems.innocent.lsmas : {}
   com.vapoursynth.ffms2  : {}
@@ -74,19 +80,16 @@ fn version() -> &'static str {
   com.julek.plugin : {}
   com.julek.vszip : {}
   com.lumen.vship : {}",
-                isfound(plugins.lsmash),
-                isfound(plugins.ffms2),
-                isfound(plugins.dgdecnv),
-                isfound(plugins.bestsource),
-                isfound(plugins.julek),
-                isfound(plugins.vszip != VSZipVersion::None),
-                isfound(plugins.vship)
-            )
-        } else {
-            "\
-* VapourSynth: Not Found"
-                .to_string()
-        }
+                    isfound(plugins.lsmash),
+                    isfound(plugins.ffms2),
+                    isfound(plugins.dgdecnv),
+                    isfound(plugins.bestsource),
+                    isfound(plugins.julek),
+                    isfound(plugins.vszip != VSZipVersion::None),
+                    isfound(plugins.vship)
+                )
+            },
+        )
     }
 
     fn get_encoder_info() -> String {
@@ -886,13 +889,7 @@ impl CliOpts {
                             .split("=")
                             .last()
                             .and_then(|s| s.parse::<f64>().ok())
-                            .and_then(|v| {
-                                if (0.0..=100.0).contains(&v) {
-                                    Some(v)
-                                } else {
-                                    None
-                                }
-                            })
+                            .and_then(|v| (0.0..=100.0).contains(&v).then_some(v))
                             .ok_or_else(|| {
                                 anyhow!(
                                     "Probing Statistic percentile must be set to a value between \
@@ -988,7 +985,6 @@ fn confirm(prompt: &str) -> io::Result<bool> {
             other => {
                 println!("Sorry, response {other:?} is not understood.");
                 buf.clear();
-                continue;
             },
         }
     }
@@ -1038,25 +1034,23 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
     let vapoursynth_plugins = get_vapoursynth_plugins().ok();
 
     for (index, input) in inputs.into_iter().enumerate() {
-        let temp = if let Some(path) = args.temp.as_ref() {
-            path.to_str().unwrap().to_owned()
-        } else {
-            format!(".{}", hash_path(input.as_path()))
-        };
+        let temp = args.temp.as_ref().map_or_else(
+            || format!(".{}", hash_path(input.as_path())),
+            |path| path.to_string_lossy().to_string(),
+        );
 
         let chunk_method = args.chunk_method.unwrap_or_else(|| {
-            vapoursynth_plugins
-                .map(|p| p.best_available_chunk_method())
-                .unwrap_or(ChunkMethod::Hybrid)
+            vapoursynth_plugins.map_or(ChunkMethod::Hybrid, |p| p.best_available_chunk_method())
         });
         let scaler = {
-            let mut scaler = args.scaler.to_string().clone();
+            let mut scaler = args.scaler.clone();
             let mut scaler_ext =
                 "+accurate_rnd+full_chroma_int+full_chroma_inp+bitexact".to_string();
             if scaler.starts_with("lanczos") {
                 for n in 1..=9 {
                     if scaler.ends_with(&n.to_string()) {
-                        scaler_ext.push_str(&format!(":param0={}", &n.to_string()));
+                        write!(&mut scaler_ext, ":param0={}", &n.to_string())
+                            .expect("write to string should work");
                         scaler = "lanczos".to_string();
                     }
                 }
@@ -1072,13 +1066,13 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             chunk_method,
             args.sc_downscale_height,
             args.sc_pix_format,
-            Some(scaler.clone()),
+            Some(&scaler),
             false,
         )?;
 
         // Assumes proxies supplied are the same number as inputs. Otherwise gets the
         // first proxy if available
-        let proxy_path = proxies.get(index).or(proxies.first());
+        let proxy_path = proxies.get(index).or_else(|| proxies.first());
         let proxy = if let Some(path) = proxy_path {
             Some(Input::new(
                 path,
@@ -1087,7 +1081,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 chunk_method,
                 args.sc_downscale_height,
                 args.sc_pix_format,
-                Some(scaler.clone()),
+                Some(&scaler),
                 true,
             )?)
         } else {
@@ -1192,7 +1186,10 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                         path, ..
                     } if !input.is_vapoursynth_script() => InputPixelFormat::FFmpeg {
                         format: clip_info.format_info.as_pixel_format().with_context(|| {
-                            format!("FFmpeg failed to get pixel format for input video {path:?}")
+                            format!(
+                                "FFmpeg failed to get pixel format for input video {}",
+                                path.display()
+                            )
                         })?,
                     },
                     Input::VapourSynth {
@@ -1202,7 +1199,10 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                         path, ..
                     } => InputPixelFormat::VapourSynth {
                         bit_depth: clip_info.format_info.as_bit_depth().with_context(|| {
-                            format!("VapourSynth failed to get bit depth for input video {path:?}")
+                            format!(
+                                "VapourSynth failed to get bit depth for input video {}",
+                                path.display()
+                            )
                         })?,
                     },
                 }
@@ -1243,7 +1243,8 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 if path.exists()
                     && (args.never_overwrite
                         || !confirm(&format!(
-                            "Output file {path:?} exists. Do you want to overwrite it? [y/N]: "
+                            "Output file {} exists. Do you want to overwrite it? [y/N]: ",
+                            path.display()
                         ))?)
                 {
                     println!("Not overwriting, aborting.");
@@ -1255,8 +1256,8 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 if path.exists()
                     && (args.never_overwrite
                         || !confirm(&format!(
-                            "Default output file {path:?} exists. Do you want to overwrite it? \
-                             [y/N]: "
+                            "Default output file {} exists. Do you want to overwrite it? [y/N]: ",
+                            path.display()
                         ))?)
                 {
                     println!("Not overwriting, aborting.");
@@ -1265,7 +1266,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             }
         }
 
-        valid_args.push(arg)
+        valid_args.push(arg);
     }
 
     Ok(valid_args)
@@ -1300,7 +1301,7 @@ pub fn run() -> anyhow::Result<()> {
             Verbosity::Normal => LevelFilter::INFO,
             Verbosity::Verbose => LevelFilter::INFO,
         },
-        log_file,
+        log_file.as_deref(),
         log_level,
     )?;
 

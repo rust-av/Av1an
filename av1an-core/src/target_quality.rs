@@ -103,7 +103,7 @@ impl TargetQuality {
         &self,
         chunk: &Chunk,
         worker_id: Option<usize>,
-        plugins: Option<&VapoursynthPlugins>,
+        plugins: Option<VapoursynthPlugins>,
     ) -> anyhow::Result<u32> {
         // History of probe results as quantizer-score pairs
         let mut quantizer_score_history: Vec<(u32, f64)> = vec![];
@@ -141,7 +141,7 @@ impl TargetQuality {
                     _ => self.target,
                 },
                 self.interp_method,
-            );
+            )?;
 
             if let Some((quantizer, score)) = quantizer_score_history
                 .iter()
@@ -248,42 +248,45 @@ impl TargetQuality {
             }
         }
 
-        let final_quantizer_score = if let Some(highest_quantizer_score_within_range) =
-            quantizer_score_history
-                .iter()
-                .filter(|(_, score)| {
-                    within_range(
-                        match self.metric {
-                            TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
-                            _ => *score,
-                        },
-                        self.target,
-                    )
-                })
-                .max_by_key(|(quantizer, _)| *quantizer)
-        {
-            // Multiple probes within tolerance, choose the highest
-            highest_quantizer_score_within_range
-        } else {
-            // No quantizers within tolerance, choose the quantizer closest to target
-            let target_midpoint = (self.target.0 + self.target.1) / 2.0;
-            quantizer_score_history
-                .iter()
-                .min_by(|(_, score1), (_, score2)| {
-                    let score_1 = match self.metric {
-                        TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score1,
-                        _ => *score1,
-                    };
-                    let score_2 = match self.metric {
-                        TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score2,
-                        _ => *score2,
-                    };
-                    let difference1 = (score_1 - target_midpoint).abs();
-                    let difference2 = (score_2 - target_midpoint).abs();
-                    difference1.partial_cmp(&difference2).unwrap_or(Ordering::Equal)
-                })
-                .unwrap()
-        };
+        let final_quantizer_score = quantizer_score_history
+            .iter()
+            .filter(|(_, score)| {
+                within_range(
+                    match self.metric {
+                        TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
+                        _ => *score,
+                    },
+                    self.target,
+                )
+            })
+            .max_by_key(|(quantizer, _)| *quantizer)
+            .map_or_else(
+                || {
+                    // No quantizers within tolerance, choose the quantizer closest to target
+                    let target_midpoint = f64::midpoint(self.target.0, self.target.1);
+                    quantizer_score_history
+                        .iter()
+                        .min_by(|(_, score1), (_, score2)| {
+                            let score_1 = match self.metric {
+                                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
+                                    -score1
+                                },
+                                _ => *score1,
+                            };
+                            let score_2 = match self.metric {
+                                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
+                                    -score2
+                                },
+                                _ => *score2,
+                            };
+                            let difference1 = (score_1 - target_midpoint).abs();
+                            let difference2 = (score_2 - target_midpoint).abs();
+                            difference1.partial_cmp(&difference2).unwrap_or(Ordering::Equal)
+                        })
+                        .expect("quantizer_score_history is not empty")
+                },
+                |highest_quantizer_score_within_range| highest_quantizer_score_within_range,
+            );
 
         // Note: if the score is to be returned in the future, ensure to invert it back
         // if metric is inverse (eg. Butteraugli)
@@ -294,14 +297,13 @@ impl TargetQuality {
         &self,
         chunk: &Chunk,
         quantizer: usize,
-        plugins: Option<&VapoursynthPlugins>,
+        plugins: Option<VapoursynthPlugins>,
     ) -> anyhow::Result<f64> {
         let probe_name = self.encode_probe(chunk, quantizer)?;
-        let reference_pipe_cmd = if let Some(proxy_cmd) = &chunk.proxy_cmd {
-            proxy_cmd.as_slice()
-        } else {
-            chunk.source_cmd.as_slice()
-        };
+        let reference_pipe_cmd =
+            chunk.proxy_cmd.as_ref().map_or(chunk.source_cmd.as_slice(), |proxy_cmd| {
+                proxy_cmd.as_slice()
+            });
 
         let aggregate_frame_scores = |scores: Vec<f64>| -> anyhow::Result<f64> {
             let mut statistics = MetricStatistics::new(scores);
@@ -352,13 +354,13 @@ impl TargetQuality {
                     let value = self
                         .probing_statistic
                         .value
-                        .ok_or(anyhow::anyhow!("Percentile statistic requires a value"))?;
+                        .ok_or_else(|| anyhow::anyhow!("Percentile statistic requires a value"))?;
                     statistics.percentile(value as usize)
                 },
                 ProbingStatisticName::StandardDeviation => {
-                    let value = self.probing_statistic.value.ok_or(anyhow::anyhow!(
-                        "Standard deviation statistic requires a value"
-                    ))?;
+                    let value = self.probing_statistic.value.ok_or_else(|| {
+                        anyhow::anyhow!("Standard deviation statistic requires a value")
+                    })?;
                     let sigma_distance = value * statistics.standard_deviation();
                     let statistic = statistics.mean() + sigma_distance;
                     statistic.clamp(statistics.minimum(), statistics.maximum())
@@ -404,10 +406,6 @@ impl TargetQuality {
                         reference_pipe_cmd,
                         self.vspipe_args.clone(),
                         model,
-                        self.probe_res.as_ref().unwrap_or(&self.vmaf_res),
-                        &self.vmaf_scaler,
-                        self.probing_rate,
-                        self.vmaf_filter.as_deref(),
                         self.vmaf_threads,
                         chunk.frame_rate,
                         disable_motion,
@@ -522,7 +520,7 @@ impl TargetQuality {
                         chunk.frame_rate,
                     )?;
 
-                    let (aggregate, scores) = read_xpsnr_file(fl_path, submetric);
+                    let (aggregate, scores) = read_xpsnr_file(fl_path, submetric)?;
 
                     match self.probing_statistic.name {
                         ProbingStatisticName::Automatic => Ok(aggregate),
@@ -552,11 +550,10 @@ impl TargetQuality {
             self.probe_slow,
         );
 
-        let source_cmd = if let Some(proxy_cmd) = chunk.proxy_cmd.clone() {
-            proxy_cmd
-        } else {
-            chunk.source_cmd.clone()
-        };
+        let source_cmd = chunk
+            .proxy_cmd
+            .clone()
+            .map_or_else(|| chunk.source_cmd.clone(), |proxy_cmd| proxy_cmd);
         let (ff_cmd, output) = cmd.clone();
 
         thread::scope(move |scope| {
@@ -577,7 +574,7 @@ impl TargetQuality {
                 unreachable!()
             };
 
-            let source_stdout = source.stdout.take().unwrap();
+            let source_stdout = source.stdout.take().expect("source stdout should exist");
 
             let (mut source_pipe, mut enc_pipe) = {
                 if let Some(ff_cmd) = ff_cmd.as_deref() {
@@ -596,10 +593,11 @@ impl TargetQuality {
                             stdout:             String::new().into(),
                         })?;
 
-                    let source_pipe_stdout = source_pipe.stdout.take().unwrap();
+                    let source_pipe_stdout =
+                        source_pipe.stdout.take().expect("source_pipe stdout should exist");
 
                     let enc_pipe = if let [cmd, args @ ..] = &*output {
-                        build_encoder_pipe(cmd.clone(), args, source_pipe_stdout)?
+                        build_encoder_pipe(cmd, args, source_pipe_stdout)?
                     } else {
                         unreachable!()
                     };
@@ -608,7 +606,7 @@ impl TargetQuality {
                     // We unfortunately have to duplicate the code like this
                     // in order to satisfy the borrow checker for `source_stdout`
                     let enc_pipe = if let [cmd, args @ ..] = &*output {
-                        build_encoder_pipe(cmd.clone(), args, source_stdout)?
+                        build_encoder_pipe(cmd, args, source_stdout)?
                     } else {
                         unreachable!()
                     };
@@ -619,7 +617,7 @@ impl TargetQuality {
             // Drop stdout to prevent buffer deadlock
             drop(enc_pipe.stdout.take());
 
-            let source_stderr = source.stderr.take().unwrap();
+            let source_stderr = source.stderr.take().expect("source stderr should exist");
             let stderr_thread1 = scope.spawn(move || {
                 let mut buf = Vec::new();
                 let mut stderr = source_stderr;
@@ -627,7 +625,9 @@ impl TargetQuality {
                 buf
             });
 
-            let source_pipe_stderr = source_pipe.as_mut().map(|p| p.stderr.take().unwrap());
+            let source_pipe_stderr = source_pipe
+                .as_mut()
+                .map(|p| p.stderr.take().expect("source_pipe stderr should exist"));
             let stderr_thread2 = source_pipe_stderr.map(|source_pipe_stderr| {
                 scope.spawn(move || {
                     let mut buf = Vec::new();
@@ -637,7 +637,7 @@ impl TargetQuality {
                 })
             });
 
-            let enc_pipe_stderr = enc_pipe.stderr.take().unwrap();
+            let enc_pipe_stderr = enc_pipe.stderr.take().expect("enc_pipe stderr should exist");
             let stderr_thread3 = scope.spawn(move || {
                 let mut buf = Vec::new();
                 let mut stderr = enc_pipe_stderr;
@@ -697,20 +697,20 @@ impl TargetQuality {
         &self,
         chunk: &mut Chunk,
         worker_id: Option<usize>,
-        plugins: Option<&VapoursynthPlugins>,
+        plugins: Option<VapoursynthPlugins>,
     ) -> anyhow::Result<()> {
         chunk.tq_cq = Some(self.per_shot_target_quality(chunk, worker_id, plugins)?);
         Ok(())
     }
 }
 
-#[allow(clippy::result_large_err)]
+#[expect(clippy::result_large_err)]
 fn build_encoder_pipe(
-    cmd: Cow<'_, str>,
+    cmd: &str,
     args: &[Cow<'_, str>],
     in_pipe: impl Into<Stdio>,
 ) -> Result<Child, EncoderCrash> {
-    std::process::Command::new(cmd.as_ref())
+    std::process::Command::new(cmd)
         .args(args.iter().map(AsRef::as_ref))
         .stdin(in_pipe)
         .stdout(std::process::Stdio::piped())
@@ -731,9 +731,9 @@ fn predict_quantizer(
     quantizer_score_history: &[(u32, f64)],
     target_range: (f64, f64),
     interp_method: Option<(InterpolationMethod, InterpolationMethod)>,
-) -> u32 {
-    let target = (target_range.0 + target_range.1) / 2.0;
-    let binary_search = (lower_quantizer_limit + upper_quantizer_limit) / 2;
+) -> anyhow::Result<u32> {
+    let target = f64::midpoint(target_range.0, target_range.1);
+    let binary_search = u32::midpoint(lower_quantizer_limit, upper_quantizer_limit);
 
     let predicted_quantizer = match quantizer_score_history.len() {
         0..=1 => binary_search as f64,
@@ -758,8 +758,7 @@ fn predict_quantizer(
                 },
                 3 => {
                     // 4th probe: configurable method
-                    let method =
-                        interp_method.map(|(m, _)| m).unwrap_or(InterpolationMethod::Natural);
+                    let method = interp_method.map_or(InterpolationMethod::Natural, |(m, _)| m);
                     match method {
                         InterpolationMethod::Linear => linear_interpolate(
                             &[scores[0], scores[1]],
@@ -779,10 +778,9 @@ fn predict_quantizer(
                 },
                 4 => {
                     // 5th probe: configurable method
-                    let method =
-                        interp_method.map(|(_, m)| m).unwrap_or(InterpolationMethod::Pchip);
-                    let s: &[f64; 4] = &scores[..4].try_into().unwrap();
-                    let q: &[f64; 4] = &quantizers[..4].try_into().unwrap();
+                    let method = interp_method.map_or(InterpolationMethod::Pchip, |(_, m)| m);
+                    let s: &[f64; 4] = &scores[..4].try_into()?;
+                    let q: &[f64; 4] = &quantizers[..4].try_into()?;
 
                     match method {
                         InterpolationMethod::Linear => {
@@ -813,7 +811,7 @@ fn predict_quantizer(
     };
 
     // Round the result of the interpolation to the nearest integer
-    (predicted_quantizer.round() as u32).clamp(lower_quantizer_limit, upper_quantizer_limit)
+    Ok((predicted_quantizer.round() as u32).clamp(lower_quantizer_limit, upper_quantizer_limit))
 }
 
 fn within_range(score: f64, target_range: (f64, f64)) -> bool {
@@ -842,7 +840,7 @@ pub enum SkipProbingReason {
     None,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn log_probes(
     quantizer_score_history: &[(u32, f64)],
     metric: TargetMetric,
@@ -903,13 +901,13 @@ mod tests {
     // Full algorithm simulation tests
     fn get_score_map(case: usize) -> HashMap<u32, f64> {
         match case {
-            1 => [(35, 80.08)].iter().cloned().collect(),
-            2 => [(17, 80.03), (35, 65.73)].iter().cloned().collect(),
-            3 => [(17, 83.15), (22, 80.02), (35, 71.94)].iter().cloned().collect(),
-            4 => [(17, 85.81), (30, 80.92), (32, 80.01), (35, 78.05)].iter().cloned().collect(),
+            1 => std::iter::once(&(35, 80.08)).copied().collect(),
+            2 => [(17, 80.03), (35, 65.73)].iter().copied().collect(),
+            3 => [(17, 83.15), (22, 80.02), (35, 71.94)].iter().copied().collect(),
+            4 => [(17, 85.81), (30, 80.92), (32, 80.01), (35, 78.05)].iter().copied().collect(),
             5 => [(35, 83.31), (53, 81.22), (55, 80.03), (61, 73.56), (64, 67.56)]
                 .iter()
-                .cloned()
+                .copied()
                 .collect(),
             6 => [
                 (35, 86.99),
@@ -922,7 +920,7 @@ mod tests {
                 (70, 64.90),
             ]
             .iter()
-            .cloned()
+            .copied()
             .collect(),
             _ => panic!("Unknown case"),
         }
@@ -936,7 +934,8 @@ mod tests {
         let target_range = (79.5, 80.5);
 
         for _ in 1..=10 {
-            let next_quantizer = predict_quantizer(lo, hi, &history, target_range, None);
+            let next_quantizer = predict_quantizer(lo, hi, &history, target_range, None)
+                .expect("predict_quantizer should succeed");
 
             // Check if this quantizer was already probed
             if let Some((_quantizer, _score)) =
@@ -966,11 +965,14 @@ mod tests {
     }
 
     #[test]
-    fn test_all_cases() {
+    fn target_quality_all_cases() {
         for case in 1..=6 {
             let result = run_av1an_simulation(case);
             assert!(!result.is_empty());
-            assert!(within_range(result.last().unwrap().1, (79.5, 80.5)));
+            assert!(within_range(
+                result.last().expect("result is not empty").1,
+                (79.5, 80.5)
+            ));
         }
     }
 }

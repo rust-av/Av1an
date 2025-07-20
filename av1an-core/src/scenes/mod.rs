@@ -165,30 +165,31 @@ impl Scene {
             .parse(zone_args)
             .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         let mut zone_args = zone_args.1.into_iter().collect::<HashMap<_, _>>();
-        if let Some(zone_passes) = zone_args.remove("--passes") {
-            passes = zone_passes.unwrap().parse().unwrap();
+        if let Some(Some(zone_passes)) = zone_args.remove("--passes") {
+            passes = zone_passes.parse()?;
         } else if [Encoder::aom, Encoder::vpx].contains(&encoder) && zone_args.contains_key("--rt")
         {
             passes = 1;
         }
-        if let Some(zone_photon_noise) = zone_args.remove("--photon-noise") {
-            photon_noise = Some(zone_photon_noise.unwrap().parse().unwrap());
+        if let Some(Some(zone_photon_noise)) = zone_args.remove("--photon-noise") {
+            photon_noise = Some(zone_photon_noise.parse()?);
         }
-        if let Some(zone_photon_noise_height) = zone_args.remove("--photon-noise-height") {
-            photon_noise_height = Some(zone_photon_noise_height.unwrap().parse().unwrap());
+        if let Some(Some(zone_photon_noise_height)) = zone_args.remove("--photon-noise-height") {
+            photon_noise_height = Some(zone_photon_noise_height.parse()?);
         }
-        if let Some(zone_photon_noise_width) = zone_args.remove("--photon-noise-width") {
-            photon_noise_width = Some(zone_photon_noise_width.unwrap().parse().unwrap());
+        if let Some(Some(zone_photon_noise_width)) = zone_args.remove("--photon-noise-width") {
+            photon_noise_width = Some(zone_photon_noise_width.parse()?);
         }
-        if let Some(zone_chroma_noise) = zone_args.remove("--chroma-noise") {
-            chroma_noise = zone_chroma_noise.unwrap().parse().unwrap();
+        if let Some(Some(zone_chroma_noise)) = zone_args.remove("--chroma-noise") {
+            chroma_noise = zone_chroma_noise.parse()?;
         }
-        if let Some(zone_xs) = zone_args.remove("-x").or_else(|| zone_args.remove("--extra-split"))
+        if let Some(Some(zone_xs)) =
+            zone_args.remove("-x").or_else(|| zone_args.remove("--extra-split"))
         {
-            extra_splits_len = Some(zone_xs.unwrap().parse().unwrap());
+            extra_splits_len = Some(zone_xs.parse()?);
         }
-        if let Some(zone_min_scene_len) = zone_args.remove("--min-scene-len") {
-            min_scene_len = zone_min_scene_len.unwrap().parse().unwrap();
+        if let Some(Some(zone_min_scene_len)) = zone_args.remove("--min-scene-len") {
+            min_scene_len = zone_min_scene_len.parse()?;
         }
         let raw_zone_args = if [Encoder::aom, Encoder::vpx].contains(&encoder) {
             zone_args
@@ -209,7 +210,7 @@ impl Scene {
         if !args.force {
             let help_text = {
                 let [cmd, arg] = encoder.help_command();
-                String::from_utf8(Command::new(cmd).arg(arg).output().unwrap().stdout).unwrap()
+                String::from_utf8_lossy(&Command::new(cmd).arg(arg).output()?.stdout).to_string()
             };
             let valid_params = valid_params(&help_text, encoder);
             let interleaved_args: Vec<&str> = raw_zone_args
@@ -316,9 +317,9 @@ impl SceneFactory {
         let file = File::open(scene_path)?;
         let mut data: ScenesData = serde_json::from_reader(file).with_context(|| {
             format!(
-                "Failed to parse scenes file {:?}, this likely means that the scenes file is \
+                "Failed to parse scenes file {}, this likely means that the scenes file is \
                  corrupted",
-                scene_path.as_ref()
+                scene_path.as_ref().display()
             )
         })?;
         if data.scenes.is_some() && data.split_scenes.is_none() {
@@ -337,7 +338,7 @@ impl SceneFactory {
     }
 
     /// Retrieve the pre-extra-split scenes data
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn get_scenecuts(&self) -> anyhow::Result<&[Scene]> {
         if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
@@ -360,7 +361,7 @@ impl SceneFactory {
     }
 
     /// Write the scenes data to the specified file as JSON
-    pub fn write_scenes_to_file<P: AsRef<Path>>(&mut self, scene_path: P) -> anyhow::Result<()> {
+    pub fn write_scenes_to_file<P: AsRef<Path>>(&self, scene_path: P) -> anyhow::Result<()> {
         if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
         }
@@ -465,11 +466,11 @@ impl SceneFactory {
 
         if let Some(split_len @ 1..) = args.extra_splits_len {
             self.data.split_scenes = Some(extra_splits(
-                self.data.scenes.as_deref().unwrap(),
+                self.data.scenes.as_deref().expect("scenes is set"),
                 split_len,
                 &scores,
             ));
-            let scenes_after = self.data.split_scenes.as_ref().unwrap().len();
+            let scenes_after = self.data.split_scenes.as_ref().expect("split_scenes is set").len();
             info!(
                 "scenecut: found {scenes_before} scene(s) [with extra_splits ({split_len} \
                  frames): {scenes_after} scene(s)]"

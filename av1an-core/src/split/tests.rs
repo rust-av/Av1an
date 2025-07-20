@@ -2,7 +2,7 @@ use super::*;
 use crate::{encoder::Encoder, into_vec, scenes::ZoneOptions};
 
 #[test]
-fn test_extra_split_no_segments() {
+fn extra_split_no_segments() {
     let split_size = 240;
     let done = extra_splits(
         &[Scene {
@@ -22,7 +22,7 @@ fn test_extra_split_no_segments() {
 }
 
 #[test]
-fn test_extra_split_segments() {
+fn extra_split_segments() {
     let split_size = 130;
     let done = extra_splits(
         &[
@@ -92,7 +92,7 @@ fn test_extra_split_segments() {
 }
 
 #[test]
-fn test_extra_split_preserves_zone_overrides() {
+fn extra_split_preserves_zone_overrides() {
     let split_size = 130;
     let done = extra_splits(
         &[
@@ -180,7 +180,7 @@ fn test_extra_split_preserves_zone_overrides() {
         match scene.start_frame {
             460..=727 => {
                 assert!(scene.zone_overrides.is_some());
-                let overrides = scene.zone_overrides.unwrap();
+                let overrides = scene.zone_overrides.expect("zone overrides should exist");
                 assert_eq!(overrides.video_params, vec![
                     "--speed".to_owned(),
                     "8".to_owned()
@@ -188,7 +188,7 @@ fn test_extra_split_preserves_zone_overrides() {
             },
             1399..=1708 => {
                 assert!(scene.zone_overrides.is_some());
-                let overrides = scene.zone_overrides.unwrap();
+                let overrides = scene.zone_overrides.expect("zone overrides should exist");
                 assert_eq!(overrides.video_params, vec![
                     "--speed".to_owned(),
                     "3".to_owned()

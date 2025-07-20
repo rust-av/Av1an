@@ -251,6 +251,10 @@ pub fn valid_params(help_text: &str, encoder: Encoder) -> HashSet<Cow<'_, str>> 
                 // So we need to ensure that in this case the short parameter is also handled.
                 let s = s.get("-x/".len()..).map_or(s, |stripped| {
                     if stripped.starts_with("--") {
+                        #[expect(
+                            clippy::string_slice,
+                            reason = "we know the first two chars are '--'"
+                        )]
                         params.insert(Cow::Borrowed(&s[..2]));
 
                         stripped
@@ -279,7 +283,7 @@ pub fn valid_params(help_text: &str, encoder: Encoder) -> HashSet<Cow<'_, str>> 
                 // In some weird cases (like with x264) there may be a dash followed by a non
                 // alphanumeric character, so we just ignore that.
                 if idx > 1 {
-                    params.insert(Cow::Borrowed(&s[..idx]));
+                    params.insert(Cow::Owned(s.chars().take(idx).collect()));
                 }
             } else {
                 // It's a little concerning how *two* encoders manage to have buggy help output.

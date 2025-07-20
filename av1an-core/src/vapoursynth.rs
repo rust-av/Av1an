@@ -136,12 +136,12 @@ fn is_vszip_r7_or_newer(env: &Environment) -> bool {
 }
 
 #[inline]
-pub fn get_clip_info(source: &Input, vspipe_args_map: OwnedMap) -> anyhow::Result<ClipInfo> {
+pub fn get_clip_info(source: &Input, vspipe_args_map: &OwnedMap) -> anyhow::Result<ClipInfo> {
     const CONTEXT_MSG: &str = "get_clip_info";
     const OUTPUT_INDEX: i32 = 0;
 
     let mut environment = Environment::new().context(CONTEXT_MSG)?;
-    if environment.set_variables(&vspipe_args_map).is_err() {
+    if environment.set_variables(vspipe_args_map).is_err() {
         bail!("Failed to set vspipe arguments");
     };
     if source.is_vapoursynth() {
@@ -155,7 +155,7 @@ pub fn get_clip_info(source: &Input, vspipe_args_map: OwnedMap) -> anyhow::Resul
     }
 
     #[cfg(feature = "vapoursynth_new_api")]
-    let (node, _) = environment.get_output(OUTPUT_INDEX).unwrap();
+    let (node, _) = environment.get_output(OUTPUT_INDEX)?;
     #[cfg(not(feature = "vapoursynth_new_api"))]
     let node = environment.get_output(OUTPUT_INDEX).unwrap();
 
@@ -257,7 +257,7 @@ fn get_transfer(env: &Environment) -> anyhow::Result<u8> {
     const OUTPUT_INDEX: i32 = 0;
 
     #[cfg(feature = "vapoursynth_new_api")]
-    let (node, _) = env.get_output(OUTPUT_INDEX).unwrap();
+    let (node, _) = env.get_output(OUTPUT_INDEX)?;
     #[cfg(not(feature = "vapoursynth_new_api"))]
     let node = env.get_output(OUTPUT_INDEX).unwrap();
 
@@ -299,10 +299,12 @@ impl PluginId {
 fn get_plugin(core: CoreRef, plugin_id: PluginId) -> anyhow::Result<Plugin> {
     let plugin = core.get_plugin_by_id(plugin_id.as_str())?;
 
-    plugin.ok_or(anyhow::anyhow!(
-        "Failed to get VapourSynth {plugin_id} plugin",
-        plugin_id = plugin_id.as_str()
-    ))
+    plugin.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Failed to get VapourSynth {plugin_id} plugin",
+            plugin_id = plugin_id.as_str()
+        )
+    })
 }
 
 fn import_lsmash<'core>(
@@ -310,7 +312,7 @@ fn import_lsmash<'core>(
     encoded: &Path,
     cache: Option<bool>,
 ) -> anyhow::Result<Node<'core>> {
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let lsmash = get_plugin(core, PluginId::Lsmash)?;
     let absolute_encoded_path = absolute(encoded)?;
 
@@ -321,10 +323,7 @@ fn import_lsmash<'core>(
     )?;
     // Enable cache by default.
     if let Some(cache) = cache {
-        arguments.set_int("cache", match cache {
-            true => 1,
-            false => 0,
-        })?;
+        arguments.set_int("cache", if cache { 1 } else { 0 })?;
     }
     // Allow hardware acceleration, falls back to software decoding.
     arguments.set_int("prefer_hw", 3)?;
@@ -346,7 +345,7 @@ fn import_ffms2<'core>(
     encoded: &Path,
     cache: Option<bool>,
 ) -> anyhow::Result<Node<'core>> {
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let ffms2 = get_plugin(core, PluginId::Ffms2)?;
     let absolute_encoded_path = absolute(encoded)?;
 
@@ -358,10 +357,7 @@ fn import_ffms2<'core>(
 
     // Enable cache by default.
     if let Some(cache) = cache {
-        arguments.set_int("cache", match cache {
-            true => 1,
-            false => 0,
-        })?;
+        arguments.set_int("cache", if cache { 1 } else { 0 })?;
     }
 
     let error_message = format!(
@@ -381,7 +377,7 @@ fn import_bestsource<'core>(
     encoded: &Path,
     cache: Option<bool>,
 ) -> anyhow::Result<Node<'core>> {
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let bestsource = get_plugin(core, PluginId::BestSource)?;
     let absolute_encoded_path = absolute(encoded)?;
 
@@ -397,10 +393,7 @@ fn import_bestsource<'core>(
     // absolute path in *cachepath* with track number and index extension
     // appended
     if let Some(cache) = cache {
-        arguments.set_int("cachemode", match cache {
-            true => 3,
-            false => 0,
-        })?;
+        arguments.set_int("cachemode", if cache { 3 } else { 0 })?;
     }
 
     let error_message = format!(
@@ -439,7 +432,7 @@ fn trim_node<'core>(
     start: u32,
     end: u32,
 ) -> anyhow::Result<Node<'core>> {
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let std = get_plugin(core, PluginId::Std)?;
 
     let mut arguments = vapoursynth::map::OwnedMap::new(api);
@@ -464,7 +457,7 @@ pub fn resize_node<'core>(
     format: Option<PresetFormat>,
     matrix_in_s: Option<&'static str>,
 ) -> anyhow::Result<Node<'core>> {
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let std = get_plugin(core, PluginId::Resize)?;
 
     let mut arguments = vapoursynth::map::OwnedMap::new(api);
@@ -499,7 +492,7 @@ fn select_every<'core>(
     node: &Node<'core>,
     n: usize,
 ) -> anyhow::Result<Node<'core>> {
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let std = get_plugin(core, PluginId::Std)?;
 
     let mut arguments = vapoursynth::map::OwnedMap::new(api);
@@ -519,13 +512,13 @@ fn compare_ssimulacra2<'core>(
     core: CoreRef<'core>,
     source: &Node<'core>,
     encoded: &Node<'core>,
-    plugins: &VapoursynthPlugins,
+    plugins: VapoursynthPlugins,
 ) -> anyhow::Result<(Node<'core>, &'static str)> {
     if !plugins.vship && plugins.vszip == VSZipVersion::None {
         return Err(anyhow::anyhow!("SSIMULACRA2 not available"));
     }
 
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let plugin = get_plugin(
         core,
         if plugins.vship {
@@ -585,7 +578,7 @@ fn compare_butteraugli<'core>(
     source: &Node<'core>,
     encoded: &Node<'core>,
     submetric: ButteraugliSubMetric,
-    plugins: &VapoursynthPlugins,
+    plugins: VapoursynthPlugins,
 ) -> anyhow::Result<(Node<'core>, &'static str)> {
     if !plugins.vship && !plugins.julek {
         return Err(anyhow::anyhow!("butteraugli not available"));
@@ -601,7 +594,7 @@ fn compare_butteraugli<'core>(
         }
     );
 
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
     let plugin = get_plugin(
         core,
         if plugins.vship {
@@ -674,9 +667,9 @@ fn compare_xpsnr<'core>(
     core: CoreRef<'core>,
     source: &Node<'core>,
     encoded: &Node<'core>,
-    plugins: &VapoursynthPlugins,
+    plugins: VapoursynthPlugins,
 ) -> anyhow::Result<Node<'core>> {
-    let api = API::get().ok_or(anyhow::anyhow!("Failed to get VapourSynth API"))?;
+    let api = API::get().ok_or_else(|| anyhow::anyhow!("Failed to get VapourSynth API"))?;
 
     if plugins.vszip != VSZipVersion::New {
         return Err(anyhow::anyhow!("XPSNR not available"));
@@ -725,7 +718,7 @@ pub fn create_vs_file(
     chunk_method: ChunkMethod,
     scene_detection_downscale_height: Option<usize>,
     scene_detection_pixel_format: Option<FFPixelFormat>,
-    scene_detection_scaler: String,
+    scene_detection_scaler: &str,
     is_proxy: bool,
 ) -> anyhow::Result<(PathBuf, bool)> {
     let (load_script_text, cache_file_already_exists) = generate_loadscript_text(
@@ -744,9 +737,10 @@ pub fn create_vs_file(
 
     if chunk_method == ChunkMethod::DGDECNV {
         let absolute_source = absolute(source)?;
-        let dgindexnv_output = split_folder.join(match is_proxy {
-            true => "index_proxy.dgi",
-            false => "index.dgi",
+        let dgindexnv_output = split_folder.join(if is_proxy {
+            "index_proxy.dgi"
+        } else {
+            "index.dgi"
         });
 
         if !dgindexnv_output.exists() {
@@ -763,9 +757,10 @@ pub fn create_vs_file(
         }
     }
 
-    let load_script_path = split_folder.join(match is_proxy {
-        true => "loadscript_proxy.vpy",
-        false => "loadscript.vpy",
+    let load_script_path = split_folder.join(if is_proxy {
+        "loadscript_proxy.vpy"
+    } else {
+        "loadscript.vpy"
     });
     let mut load_script = File::create(&load_script_path)?;
 
@@ -781,7 +776,7 @@ pub fn generate_loadscript_text(
     chunk_method: ChunkMethod,
     scene_detection_downscale_height: Option<usize>,
     scene_detection_pixel_format: Option<FFPixelFormat>,
-    scene_detection_scaler: String,
+    scene_detection_scaler: &str,
     is_proxy: bool,
 ) -> anyhow::Result<(String, bool)> {
     let temp: &Path = temp.as_ref();
@@ -809,9 +804,10 @@ pub fn generate_loadscript_text(
     // Only used for DGDECNV
     let dgindex_path = match chunk_method {
         ChunkMethod::DGDECNV => {
-            let dgindexnv_output = temp.join("split").join(match is_proxy {
-                true => "index_proxy.dgi",
-                false => "index.dgi",
+            let dgindexnv_output = temp.join("split").join(if is_proxy {
+                "index_proxy.dgi"
+            } else {
+                "index.dgi"
             });
             &absolute(&dgindexnv_output)?
         },
@@ -947,7 +943,7 @@ pub fn measure_butteraugli(
     frame_range: (u32, u32),
     probe_res: Option<&String>,
     sample_rate: usize,
-    plugins: &VapoursynthPlugins,
+    plugins: VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
@@ -986,7 +982,7 @@ pub fn measure_ssimulacra2(
     frame_range: (u32, u32),
     probe_res: Option<&String>,
     sample_rate: usize,
-    plugins: &VapoursynthPlugins,
+    plugins: VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;
@@ -1025,7 +1021,7 @@ pub fn measure_xpsnr(
     frame_range: (u32, u32),
     probe_res: Option<&String>,
     sample_rate: usize,
-    plugins: &VapoursynthPlugins,
+    plugins: VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
     let mut environment = Environment::new()?;
     let args = source.as_vspipe_args_map()?;

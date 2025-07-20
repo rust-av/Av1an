@@ -43,9 +43,8 @@ impl Chunk {
         Path::new(&self.temp)
             .join("encode")
             .join(format!("{}.{}", self.name(), self.output_ext))
-            .to_str()
-            .unwrap()
-            .to_owned()
+            .to_string_lossy()
+            .to_string()
     }
 
     pub const fn frames(&self) -> usize {
@@ -64,11 +63,11 @@ impl Chunk {
                 debug!("Generating grain table at ISO {iso_setting}");
                 let clip_info = self.input.clip_info()?;
                 let (mut width, mut height) = clip_info.resolution;
-                if self.noise_size.0.is_some() {
-                    width = self.noise_size.0.unwrap();
+                if let Some(w) = self.noise_size.0 {
+                    width = w;
                 }
-                if self.noise_size.1.is_some() {
-                    height = self.noise_size.1.unwrap();
+                if let Some(h) = self.noise_size.1 {
+                    height = h;
                 }
                 let transfer_function =
                     clip_info.transfer_function_params_adjusted(&self.video_params);

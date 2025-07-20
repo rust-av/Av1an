@@ -36,7 +36,7 @@ impl MetricStatistics {
         self.get_or_compute("median", |scores| {
             let mid = scores.len() / 2;
             if scores.len() % 2 == 0 {
-                (sorted_scores[mid - 1] + sorted_scores[mid]) / 2.0
+                f64::midpoint(sorted_scores[mid - 1], sorted_scores[mid])
             } else {
                 sorted_scores[mid]
             }
@@ -61,13 +61,19 @@ impl MetricStatistics {
 
     pub fn minimum(&mut self) -> f64 {
         self.get_or_compute("minimum", |scores| {
-            *scores.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0)
+            *scores
+                .iter()
+                .min_by(|a, b| a.partial_cmp(b).expect("should not have NaN in scores set"))
+                .unwrap_or(&0.0)
         })
     }
 
     pub fn maximum(&mut self) -> f64 {
         self.get_or_compute("maximum", |scores| {
-            *scores.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0)
+            *scores
+                .iter()
+                .max_by(|a, b| a.partial_cmp(b).expect("should not have NaN in scores set"))
+                .unwrap_or(&0.0)
         })
     }
 

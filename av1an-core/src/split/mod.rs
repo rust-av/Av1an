@@ -13,7 +13,11 @@ use av_scenechange::ScenecutResult;
 
 use crate::scenes::Scene;
 
-pub fn segment(input: impl AsRef<Path>, temp: impl AsRef<Path>, segments: &[usize]) {
+pub fn segment(
+    input: impl AsRef<Path>,
+    temp: impl AsRef<Path>,
+    segments: &[usize],
+) -> anyhow::Result<()> {
     let input = input.as_ref();
     let temp = temp.as_ref();
     let mut cmd = Command::new("ffmpeg");
@@ -27,8 +31,8 @@ pub fn segment(input: impl AsRef<Path>, temp: impl AsRef<Path>, segments: &[usiz
 
     if segments.is_empty() {
         let split_path = Path::new(temp).join("split").join("0.mkv");
-        let split_str = split_path.to_str().unwrap();
-        cmd.arg(split_str);
+        let split_str = split_path.to_string_lossy();
+        cmd.arg(split_str.as_ref());
     } else {
         let segments_to_string = segments.iter().map(ToString::to_string).collect::<Vec<String>>();
         let segments_joined = segments_to_string.join(",");
@@ -37,8 +41,10 @@ pub fn segment(input: impl AsRef<Path>, temp: impl AsRef<Path>, segments: &[usiz
         let split_path = Path::new(temp).join("split").join("%05d.mkv");
         cmd.arg(split_path);
     }
-    let out = cmd.output().unwrap();
-    assert!(out.status.success(), "FFmpeg failed to segment: {out:#?}");
+    let out = cmd.output()?;
+    anyhow::ensure!(out.status.success(), "FFmpeg failed to segment: {out:#?}");
+
+    Ok(())
 }
 
 pub fn extra_splits(

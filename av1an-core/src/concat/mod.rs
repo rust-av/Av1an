@@ -56,7 +56,11 @@ pub fn sort_files_by_filename(files: &mut [PathBuf]) {
     files.sort_unstable_by_key(|x| {
         // If the temp directory follows the expected format of 00000.ivf, 00001.ivf,
         // etc., then these unwraps will not fail
-        x.file_stem().unwrap().to_str().unwrap().parse::<u32>().unwrap()
+        x.file_stem()
+            .expect("should have file stem")
+            .to_string_lossy()
+            .parse::<u32>()
+            .expect("files should follow numeric pattern")
     });
 }
 
@@ -73,24 +77,20 @@ pub fn ivf(input: &Path, out: &Path) -> anyhow::Result<()> {
     let mut muxer = MuxerContext::new(IvfMuxer::new(), Writer::new(output));
 
     let global_info = {
-        let acc = AccReader::new(std::fs::File::open(&files[0]).unwrap());
+        let acc = AccReader::new(std::fs::File::open(&files[0])?);
         let mut demuxer = DemuxerContext::new(IvfDemuxer::new(), acc);
 
-        demuxer.read_headers().unwrap();
+        demuxer.read_headers()?;
 
         // attempt to set the duration correctly
         let duration = demuxer.info.duration.unwrap_or(0)
-            + files
-                .iter()
-                .skip(1)
-                .filter_map(|file| {
-                    let acc = AccReader::new(std::fs::File::open(file).unwrap());
-                    let mut demuxer = DemuxerContext::new(IvfDemuxer::new(), acc);
+            + files.iter().skip(1).try_fold(0u64, |sum, file| -> anyhow::Result<_> {
+                let acc = AccReader::new(std::fs::File::open(file)?);
+                let mut demuxer = DemuxerContext::new(IvfDemuxer::new(), acc);
 
-                    demuxer.read_headers().unwrap();
-                    demuxer.info.duration
-                })
-                .sum::<u64>();
+                demuxer.read_headers()?;
+                Ok(sum + demuxer.info.duration.unwrap_or(0))
+            })?;
 
         let mut info = demuxer.info;
         info.duration = Some(duration);
@@ -128,7 +128,9 @@ pub fn ivf(input: &Path, out: &Path) -> anyhow::Result<()> {
                         trace!("received packet with pos: {:?}", packet.pos);
                         muxer.write_packet(Arc::new(packet))?;
                     },
-                    Event::Continue => continue,
+                    Event::Continue => {
+                        // do nothing
+                    },
                     Event::Eof => {
                         trace!("EOF received.");
                         break;
@@ -152,7 +154,12 @@ pub fn ivf(input: &Path, out: &Path) -> anyhow::Result<()> {
 #[tracing::instrument(level = "debug")]
 fn read_encoded_chunks(encode_dir: &Path) -> anyhow::Result<Vec<DirEntry>> {
     Ok(fs::read_dir(encode_dir)
-        .with_context(|| format!("Failed to read encoded chunks from {:?}", &encode_dir))?
+        .with_context(|| {
+            format!(
+                "Failed to read encoded chunks from {}",
+                encode_dir.display()
+            )
+        })?
         .collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -187,17 +194,11 @@ pub fn mkvmerge(
         p.as_ref().display().to_string()
     }
 
-    let mut audio_file = PathBuf::from(&temp_dir);
-    audio_file.push("audio.mkv");
+    let audio_file = PathBuf::from(&temp_dir).join("audio.mkv");
     let audio_file = PathAbs::new(&audio_file)?;
-    let audio_file = if audio_file.as_path().exists() {
-        Some(fix_path(audio_file))
-    } else {
-        None
-    };
+    let audio_file = audio_file.as_path().exists().then(|| fix_path(audio_file));
 
-    let mut encode_dir = PathBuf::from(temp_dir);
-    encode_dir.push("encode");
+    let encode_dir = PathBuf::from(temp_dir).join("encode");
 
     let output = PathAbs::new(output)?;
 
@@ -232,13 +233,13 @@ pub fn mkvmerge(
 
         let group_options_json_contents = mkvmerge_options_json(
             chunk_group,
-            &fix_path(group_options_output_path.to_str().unwrap()),
+            &fix_path(group_options_output_path.to_string_lossy().as_ref()),
             None,
             output_fps,
         );
 
         let mut group_options_json = File::create(group_options_path)?;
-        group_options_json.write_all(group_options_json_contents.as_bytes())?;
+        group_options_json.write_all(group_options_json_contents?.as_bytes())?;
 
         let mut group_cmd = Command::new("mkvmerge");
         group_cmd.current_dir(&encode_dir);
@@ -265,13 +266,13 @@ pub fn mkvmerge(
     let options_path = PathBuf::from(&temp_dir).join("options.json");
     let options_json_contents = mkvmerge_options_json(
         &chunk_group_options_names,
-        &fix_path(output.to_str().unwrap()),
+        &fix_path(output.to_string_lossy().as_ref()),
         audio_file.as_deref(),
         output_fps,
     );
 
     let mut options_json = File::create(options_path)?;
-    options_json.write_all(options_json_contents.as_bytes())?;
+    options_json.write_all(options_json_contents?.as_bytes())?;
 
     let mut cmd = Command::new("mkvmerge");
     cmd.current_dir(temp_dir);
@@ -297,19 +298,19 @@ pub fn mkvmerge(
 /// Create mkvmerge options.json
 #[tracing::instrument(level = "debug")]
 pub fn mkvmerge_options_json(
-    chunks: &Vec<String>,
+    chunks: &[String],
     output: &str,
     audio: Option<&str>,
     output_fps: Option<Rational64>,
-) -> String {
+) -> anyhow::Result<String> {
     let mut file_string = String::with_capacity(
         64 + output.len()
             + audio.map_or(0, |a| a.len() + 2)
             + chunks.iter().map(|s| s.len() + 4).sum::<usize>(),
     );
-    write!(file_string, "[\"-o\", {output:?}").unwrap();
+    write!(file_string, "[\"-o\", {output:?}")?;
     if let Some(audio) = audio {
-        write!(file_string, ", {audio:?}").unwrap();
+        write!(file_string, ", {audio:?}")?;
     }
     if let Some(output_fps) = output_fps {
         write!(
@@ -317,17 +318,16 @@ pub fn mkvmerge_options_json(
             ", \"--default-duration\", \"0:{}/{}fps\", \"[\"",
             output_fps.numer(),
             output_fps.denom()
-        )
-        .unwrap();
+        )?;
     } else {
         file_string.push_str(", \"[\"");
     }
-    chunks.iter().for_each(|chunk| {
-        write!(file_string, ", \"{chunk}\"").unwrap();
-    });
+    for chunk in chunks {
+        write!(file_string, ", \"{chunk}\"")?;
+    }
     file_string.push_str(",\"]\"]");
 
-    file_string
+    Ok(file_string)
 }
 
 /// Concatenates using ffmpeg (does not work with x265, and may have incorrect
@@ -365,17 +365,14 @@ pub fn ffmpeg(temp: &Path, output: &Path) -> anyhow::Result<()> {
     let temp = temp.as_path();
 
     let concat = temp.join("concat");
-    let concat_file = concat.to_str().unwrap();
+    let concat_file = concat.to_string_lossy();
 
     write_concat_file(temp)?;
 
     let audio_file = {
         let file = temp.join("audio.mkv");
-        if file.exists() && file.metadata().unwrap().len() > 1000 {
-            Some(file)
-        } else {
-            None
-        }
+        (file.exists() && file.metadata().expect("file should have metadata").len() > 1000)
+            .then_some(file)
     };
 
     let mut cmd = Command::new("ffmpeg");
@@ -394,7 +391,7 @@ pub fn ffmpeg(temp: &Path, output: &Path) -> anyhow::Result<()> {
             "-safe",
             "0",
             "-i",
-            concat_file,
+            &concat_file,
             "-i",
         ])
         .arg(file)
@@ -411,7 +408,7 @@ pub fn ffmpeg(temp: &Path, output: &Path) -> anyhow::Result<()> {
             "-safe",
             "0",
             "-i",
-            concat_file,
+            &concat_file,
         ])
         .args(["-map", "0", "-c", "copy"])
         .arg(output);

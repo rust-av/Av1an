@@ -31,7 +31,7 @@ use crate::{
 };
 
 #[tracing::instrument(level = "debug")]
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn av_scenechange_detect(
     input: &Input,
     encoder: Encoder,
@@ -54,13 +54,13 @@ pub fn av_scenechange_detect(
     }
 
     let input2 = input.clone();
-    let frame_thread = thread::spawn(move || {
-        let frames = input2.clip_info().unwrap().num_frames;
+    let frame_thread = thread::spawn(move || -> anyhow::Result<usize> {
+        let frames = input2.clip_info()?.num_frames;
         if verbosity != Verbosity::Quiet {
             progress_bar::convert_to_progress(0);
             progress_bar::set_len(frames as u64);
         }
-        frames
+        Ok(frames)
     });
 
     let (scenes, scores) = scene_detect(
@@ -81,7 +81,7 @@ pub fn av_scenechange_detect(
         sc_downscale_height,
         zones,
     )?;
-    let frames = frame_thread.join().unwrap();
+    let frames = frame_thread.join().expect("should join frame_thread successfully")?;
 
     progress_bar::finish_progress_bar();
 
@@ -89,7 +89,7 @@ pub fn av_scenechange_detect(
 }
 
 /// Detect scene changes using rav1e scene detector.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn scene_detect(
     input: &Input,
     encoder: Encoder,
@@ -140,14 +140,15 @@ pub fn scene_detect(
             },
             ..DetectionOptions::default()
         };
-        let frame_limit = if let Some(zone) = cur_zone {
-            Some(zone.end_frame - zone.start_frame)
-        } else if let Some(next_idx) = next_zone_idx {
-            let zone = &zones[next_idx];
-            Some(zone.start_frame - frames_read)
-        } else {
-            None
-        };
+        let frame_limit = cur_zone.map_or_else(
+            || {
+                next_zone_idx.map(|next_idx| {
+                    let zone = &zones[next_idx];
+                    zone.start_frame - frames_read
+                })
+            },
+            |zone| Some(zone.end_frame - zone.start_frame),
+        );
         let callback = callback.map(|cb| {
             |frames, _keyframes| {
                 cb(frames + frames_read);
@@ -191,12 +192,10 @@ pub fn scene_detect(
 
         scenes.push(Scene {
             start_frame:    scenes.last().map(|scene| scene.end_frame).unwrap_or_default(),
-            end_frame:      if let Some(limit) = frame_limit {
+            end_frame:      frame_limit.map_or(total_frames, |limit| {
                 frames_read += limit;
                 frames_read
-            } else {
-                total_frames
-            },
+            }),
             zone_overrides: cur_zone.and_then(|zone| zone.zone_overrides.clone()),
         });
         if let Some(next_idx) = next_zone_idx {
@@ -316,7 +315,7 @@ fn build_decoder(
             .stderr(Stdio::null())
             .spawn()?
             .stdout
-            .unwrap();
+            .expect("ffmpeg should have stdout");
         let decoder_impl = DecoderImpl::Y4m(Y4mDecoder::new(Box::new(stdout) as Box<dyn Read>)?);
 
         Decoder::from_decoder_impl(decoder_impl)?

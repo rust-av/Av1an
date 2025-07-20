@@ -12,10 +12,11 @@ use std::{
     thread::available_parallelism,
 };
 
+use anyhow::bail;
 use cfg_if::cfg_if;
 use smallvec::SmallVec;
 use thiserror::Error;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, warn};
 
 use crate::{
     context::Av1anContext,
@@ -65,8 +66,12 @@ impl Debug for StringOrBytes {
 
 impl From<Vec<u8>> for StringOrBytes {
     fn from(bytes: Vec<u8>) -> Self {
-        if simdutf8::basic::from_utf8(&bytes).is_ok() {
-            Self::String(unsafe { String::from_utf8_unchecked(bytes) })
+        #[expect(
+            clippy::option_if_let_else,
+            reason = "https://github.com/rust-lang/rust-clippy/issues/15142"
+        )]
+        if let Ok(res) = simdutf8::basic::from_utf8(&bytes) {
+            Self::String(res.to_string())
         } else {
             Self::Bytes(bytes)
         }
@@ -76,15 +81,6 @@ impl From<Vec<u8>> for StringOrBytes {
 impl From<String> for StringOrBytes {
     fn from(s: String) -> Self {
         Self::String(s)
-    }
-}
-
-impl StringOrBytes {
-    pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            Self::String(s) => s.as_bytes(),
-            Self::Bytes(b) => b,
-        }
     }
 }
 
@@ -122,18 +118,18 @@ impl Broker<'_> {
         tx: Sender<()>,
         set_thread_affinity: Option<usize>,
         total_chunks: u32,
-    ) {
+    ) -> anyhow::Result<()> {
         if !self.chunk_queue.is_empty() {
             let (sender, receiver) = crossbeam_channel::bounded(self.chunk_queue.len());
 
             for chunk in &self.chunk_queue {
-                sender.send(chunk.clone()).unwrap();
+                sender.send(chunk.clone())?;
             }
             drop(sender);
 
             crossbeam_utils::thread::scope(|s| {
                 let terminations_requested = Arc::new(AtomicU8::new(0));
-                let terminations_requested_clone = terminations_requested.clone();
+                let terminations_requested_clone = Arc::clone(&terminations_requested);
                 ctrlc::set_handler(move || {
                     let count = terminations_requested_clone.fetch_add(1, Ordering::SeqCst) + 1;
                     if count == 1 {
@@ -142,10 +138,10 @@ impl Broker<'_> {
                         error!("Shutting down all workers...");
                     }
                 })
-                .unwrap();
+                .expect("should set ctrlc handler");
 
                 let consumers: Vec<_> = (0..self.project.args.workers)
-                    .map(|idx| (receiver.clone(), &self, idx, terminations_requested.clone()))
+                    .map(|idx| (receiver.clone(), &self, idx, Arc::clone(&terminations_requested)))
                     .map(|(rx, queue, worker_id, terminations_requested)| {
                         let tx = tx.clone();
                         s.spawn(move |_| {
@@ -177,10 +173,8 @@ impl Broker<'_> {
                             while let Ok(mut chunk) = rx.recv() {
                                 if terminations_requested.load(Ordering::SeqCst) == 0 {
                                     if let Err(e) = queue.encode_chunk(&mut chunk, worker_id, &terminations_requested, total_chunks) {
-                                        if let Some(e) = e {
                                             error!("[chunk {index}] {e}", index = chunk.index);
-                                        }
-                                        tx.send(()).unwrap();
+                                        tx.send(()).expect("should send successfully");
                                         return Err(());
                                     }
                                 }
@@ -190,17 +184,19 @@ impl Broker<'_> {
                     })
                     .collect();
                 for consumer in consumers {
-                    consumer.join().unwrap().ok();
+                    consumer.join().expect("consumer should join successfully").ok();
                 }
 
                 if terminations_requested.load(Ordering::SeqCst) > 0 {
-                    tx.send(()).unwrap();
+                    tx.send(()).expect("should send successfully");
                 }
             })
-            .unwrap();
+            .expect("thread should spawn successfully");
 
             finish_progress_bar();
         }
+
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, chunk, terminations_requested), fields(chunk_index = format!("{:>05}", chunk.index)))]
@@ -210,7 +206,7 @@ impl Broker<'_> {
         worker_id: usize,
         terminations_requested: &Arc<AtomicU8>,
         total_chunks: u32,
-    ) -> Result<(), Option<Box<EncoderCrash>>> {
+    ) -> anyhow::Result<()> {
         let st_time = Instant::now();
 
         // we display the index, so we need to subtract 1 to get the max index
@@ -231,15 +227,16 @@ impl Broker<'_> {
                 let res = tq.per_shot_target_quality_routine(
                     chunk,
                     Some(worker_id),
-                    self.project.args.vapoursynth_plugins.as_ref(),
+                    self.project.args.vapoursynth_plugins,
                 );
                 if let Err(e) = res {
                     if r#try >= self.project.args.max_tries {
-                        error!(
+                        bail!(
                             "Target Quality failed after {} tries on chunk {}:\n{}",
-                            r#try, chunk.index, e
+                            r#try,
+                            chunk.index,
+                            e
                         );
-                        return Err(None);
                     }
                 } else {
                     break;
@@ -253,7 +250,7 @@ impl Broker<'_> {
                 && self.project.args.ffmpeg_filter_args.is_empty()
                 && chunk.proxy.is_none()
             {
-                let optimal_q = chunk.tq_cq.unwrap();
+                let optimal_q = chunk.tq_cq.expect("tq_cq is some");
                 let extension = match self.project.args.encoder {
                     crate::encoder::Encoder::x264 => "264",
                     crate::encoder::Encoder::x265 => "hevc",
@@ -265,23 +262,21 @@ impl Broker<'_> {
 
                 if probe_file.exists() {
                     let encode_dir = std::path::Path::new(&self.project.args.temp).join("encode");
-                    std::fs::create_dir_all(&encode_dir).unwrap();
+                    std::fs::create_dir_all(&encode_dir)?;
                     let output_file =
                         encode_dir.join(format!("{index:05}.{extension}", index = chunk.index));
-                    std::fs::copy(&probe_file, &output_file).unwrap();
+                    std::fs::copy(&probe_file, &output_file)?;
 
                     inc_mp_bar(chunk.frames() as u64);
 
                     let progress_file = Path::new(&self.project.args.temp).join("done.json");
                     get_done().done.insert(chunk.name(), DoneChunk {
                         frames:     chunk.frames(),
-                        size_bytes: output_file.metadata().unwrap().len(),
+                        size_bytes: output_file.metadata()?.len(),
                     });
 
-                    let mut progress_file = File::create(progress_file).unwrap();
-                    progress_file
-                        .write_all(serde_json::to_string(get_done()).unwrap().as_bytes())
-                        .unwrap();
+                    let mut progress_file = File::create(progress_file)?;
+                    progress_file.write_all(serde_json::to_string(get_done())?.as_bytes())?;
 
                     update_progress_bar_estimates(
                         chunk.frame_rate,
@@ -296,11 +291,10 @@ impl Broker<'_> {
         }
 
         if terminations_requested.load(Ordering::SeqCst) > 0 {
-            trace!(
+            bail!(
                 "Termination requested after Target Quality. Skipping chunk {}",
                 chunk.index
             );
-            return Err(None);
         }
 
         // space padding at the beginning to align with "finished chunk"
@@ -319,20 +313,19 @@ impl Broker<'_> {
 
                     // If user presses CTRL+C more than once, do not let the worker finish
                     if terminations_requested.load(Ordering::SeqCst) > 1 {
-                        trace!(
+                        bail!(
                             "Termination requested after Worker restart. Skipping chunk {}",
                             chunk.index
                         );
-                        return Err(None);
                     }
 
                     if r#try == self.project.args.max_tries {
-                        error!(
-                            "[chunk {index}] encoder failed {tries} times, shutting down worker",
+                        bail!(
+                            "[chunk {index}] encoder failed {tries} times, shutting down worker: \
+                             {e}",
                             index = chunk.index,
                             tries = self.project.args.max_tries
                         );
-                        return Err(Some(e));
                     }
                     // avoids double-print of the error message as both a WARN and ERROR,
                     // since `Broker::encoding_loop` will print the error message as well
@@ -358,10 +351,8 @@ impl Broker<'_> {
                 .len(),
         });
 
-        let mut progress_file = File::create(progress_file).unwrap();
-        progress_file
-            .write_all(serde_json::to_string(get_done()).unwrap().as_bytes())
-            .unwrap();
+        let mut progress_file = File::create(progress_file)?;
+        progress_file.write_all(serde_json::to_string(get_done())?.as_bytes())?;
 
         update_progress_bar_estimates(
             chunk.frame_rate,

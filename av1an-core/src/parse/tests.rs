@@ -1,7 +1,6 @@
 use crate::parse::*;
 
 #[test]
-#[allow(clippy::cognitive_complexity)]
 fn valid_params_works() {
     use std::borrow::Borrow;
 
@@ -165,6 +164,7 @@ fn aom_vpx_parsing() {
 
     if is_x86_feature_detected!("sse4.1") && is_x86_feature_detected!("ssse3") {
         for (s, ans) in test_cases {
+            // SAFETY: asserted that machine has required CPU features
             assert_eq!(unsafe { parse_aom_vpx_frames_sse41(s.as_bytes()) }, ans);
         }
     }

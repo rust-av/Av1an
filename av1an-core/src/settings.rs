@@ -66,7 +66,7 @@ impl InputPixelFormat {
     }
 }
 
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct EncodeArgs {
     pub input:       Input,
@@ -165,7 +165,7 @@ impl EncodeArgs {
             );
         }
 
-        if self.target_quality.is_some() {
+        if let Some(target_quality) = self.target_quality.as_ref() {
             if self.input.is_vapoursynth() {
                 let input_absolute_path = absolute(self.input.as_path())?;
                 if !input_absolute_path.starts_with(std::env::current_dir()?) {
@@ -176,7 +176,7 @@ impl EncodeArgs {
                 }
             }
 
-            match self.target_quality.as_ref().unwrap().metric {
+            match target_quality.metric {
                 TargetMetric::VMAF => validate_libvmaf()?,
                 TargetMetric::SSIMULACRA2 => {
                     ensure!(
@@ -236,14 +236,12 @@ impl EncodeArgs {
                     );
                 },
                 TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => {
-                    let metric_name = if self.target_quality.as_ref().unwrap().metric
-                        == TargetMetric::XPSNRWeighted
-                    {
+                    let metric_name = if target_quality.metric == TargetMetric::XPSNRWeighted {
                         "Weighted "
                     } else {
                         ""
                     };
-                    if self.target_quality.as_ref().unwrap().probing_rate > 1 {
+                    if target_quality.probing_rate > 1 {
                         ensure!(
                             self.vapoursynth_plugins.is_some_and(|p| p.vszip == VSZipVersion::New),
                             format!(
@@ -392,17 +390,17 @@ impl EncodeArgs {
                     if skip && !(param.starts_with("-") && param != "-1") {
                         skip = false;
                         continue;
-                    } else {
-                        skip = false;
                     }
+
+                    skip = false;
                     if (param.starts_with("-") && param != "-1")
                         && self.video_params.contains(&param)
                     {
                         skip = true;
                         continue;
-                    } else {
-                        _default_params.push(param);
                     }
+
+                    _default_params.push(param);
                 }
                 self.video_params = chain!(_default_params, self.video_params.clone()).collect();
             }
@@ -436,14 +434,14 @@ impl EncodeArgs {
         }
 
         if !self.force {
-            self.validate_encoder_params();
+            self.validate_encoder_params()?;
             self.check_rate_control();
         }
 
         Ok(())
     }
 
-    fn validate_encoder_params(&self) {
+    fn validate_encoder_params(&self) -> anyhow::Result<()> {
         let video_params: Vec<&str> = self
             .video_params
             .iter()
@@ -462,7 +460,7 @@ impl EncodeArgs {
 
         let help_text = {
             let [cmd, arg] = self.encoder.help_command();
-            String::from_utf8(Command::new(cmd).arg(arg).output().unwrap().stdout).unwrap()
+            String::from_utf8_lossy(&Command::new(cmd).arg(arg).output()?.stdout).to_string()
         };
         let valid_params = valid_params(&help_text, self.encoder);
         let invalid_params = invalid_params(&video_params, &valid_params);
@@ -481,6 +479,8 @@ impl EncodeArgs {
             println!("\nTo continue anyway, run av1an with '--force'");
             exit(1);
         }
+
+        Ok(())
     }
 
     /// Warns if rate control was not specified in encoder arguments
@@ -551,13 +551,7 @@ pub(crate) fn suggest_fix<'a>(
         .iter()
         .map(|arg| (arg, strsim::jaro_winkler(arg, wrong_arg)))
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Less))
-        .and_then(|(suggestion, score)| {
-            if score > MIN_THRESHOLD {
-                Some(suggestion.borrow())
-            } else {
-                None
-            }
-        })
+        .and_then(|(suggestion, score)| (score > MIN_THRESHOLD).then(|| suggestion.borrow()))
 }
 
 pub(crate) fn insert_noise_table_params(
@@ -568,7 +562,7 @@ pub(crate) fn insert_noise_table_params(
     match encoder {
         Encoder::aom => {
             video_params.retain(|param| !param.starts_with("--denoise-noise-level="));
-            video_params.push(format!("--film-grain-table={}", table.to_str().unwrap()));
+            video_params.push(format!("--film-grain-table={}", table.to_string_lossy()));
         },
         Encoder::svt_av1 => {
             let film_grain_idx =
@@ -578,7 +572,7 @@ pub(crate) fn insert_noise_table_params(
                 video_params.remove(idx);
             }
             video_params.push("--fgs-table".to_string());
-            video_params.push(table.to_str().unwrap().to_string());
+            video_params.push(table.to_string_lossy().to_string());
         },
         Encoder::rav1e => {
             let photon_noise_idx =
@@ -588,7 +582,7 @@ pub(crate) fn insert_noise_table_params(
                 video_params.remove(idx);
             }
             video_params.push("--photon-noise-table".to_string());
-            video_params.push(table.to_str().unwrap().to_string());
+            video_params.push(table.to_string_lossy().to_string());
         },
         _ => bail!("This encoder does not support grain synth through av1an"),
     }

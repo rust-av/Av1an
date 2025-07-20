@@ -40,7 +40,7 @@ pub fn validate_libxpsnr() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn run_xpsnr(
     encoded: &Path,
     reference_pipe_cmd: &[impl AsRef<OsStr>],
@@ -50,7 +50,7 @@ pub fn run_xpsnr(
     scaler: &str,
     sample_rate: usize,
     framerate: f64,
-) -> Result<(), Box<EncoderCrash>> {
+) -> anyhow::Result<()> {
     let filter = if sample_rate > 1 {
         format!(
             "select=not(mod(n\\,{})),setpts={:.4}*PTS,",
@@ -63,7 +63,7 @@ pub fn run_xpsnr(
 
     let xpsnr = format!(
         "[distorted][ref]xpsnr=stats_file={}:eof_action=endall",
-        ffmpeg::escape_path_in_filter(stat_file)
+        ffmpeg::escape_path_in_filter(stat_file)?
     );
 
     let mut source_pipe = if let [cmd, args @ ..] = reference_pipe_cmd {
@@ -75,7 +75,7 @@ pub fn run_xpsnr(
         source_pipe.args(args);
         source_pipe.stdout(Stdio::piped());
         source_pipe.stderr(Stdio::null());
-        source_pipe.spawn().unwrap()
+        source_pipe.spawn()?
     } else {
         unreachable!()
     };
@@ -107,35 +107,39 @@ pub fn run_xpsnr(
 
     cmd.arg(format!("{distorted}{reference}{xpsnr}"));
     cmd.args(["-f", "null", "-"]);
-    cmd.stdin(source_pipe.stdout.take().unwrap());
+    cmd.stdin(source_pipe.stdout.take().expect("source_pipe stdout should exist"));
     cmd.stderr(Stdio::piped());
     cmd.stdout(Stdio::null());
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output()?;
 
     if !output.status.success() {
         println!(
             "FFmpeg exited with status {}",
-            String::from_utf8(output.stdout.clone()).unwrap()
+            String::from_utf8_lossy(&output.stdout)
         );
-        return Err(Box::new(EncoderCrash {
+        return Err(EncoderCrash {
             exit_status:        output.status,
             source_pipe_stderr: String::new().into(),
             ffmpeg_pipe_stderr: None,
             stderr:             output.stderr.into(),
             stdout:             String::new().into(),
-        }));
+        }
+        .into());
     }
 
     Ok(())
 }
 
-pub fn read_xpsnr_file(file: impl AsRef<Path>, submetric: XPSNRSubMetric) -> (f64, Vec<f64>) {
-    let log_str = std::fs::read_to_string(file).unwrap();
+pub fn read_xpsnr_file(
+    file: impl AsRef<Path>,
+    submetric: XPSNRSubMetric,
+) -> anyhow::Result<(f64, Vec<f64>)> {
+    let log_str = std::fs::read_to_string(file)?;
     let frame_regex = regex::Regex::new(
         r".*XPSNR y: *([0-9\.]+|inf) *XPSNR u: *([0-9\.]+|inf) *XPSNR v: *([0-9\.]+|inf)",
     )
-    .unwrap();
+    .expect("regex should be valid");
 
     let final_line = log_str
         .lines()
@@ -145,7 +149,7 @@ pub fn read_xpsnr_file(file: impl AsRef<Path>, submetric: XPSNRSubMetric) -> (f6
     let final_regex = regex::Regex::new(
         r"XPSNR average, \d+ frames  y: *([0-9\.]+|inf)  u: *([0-9\.]+|inf)  v: *([0-9\.]+|inf)  \(minimum: *([0-9\.]+|inf)\)",
     )
-    .unwrap();
+    .expect("regex should be valid");
 
     let parse_float_or_inf = |s: &str| {
         if s == "inf" {
@@ -154,7 +158,9 @@ pub fn read_xpsnr_file(file: impl AsRef<Path>, submetric: XPSNRSubMetric) -> (f6
             s.parse::<f64>().unwrap_or(f64::INFINITY)
         }
     };
-    let final_captures = final_regex.captures(final_line).unwrap();
+    let final_captures = final_regex
+        .captures(final_line)
+        .ok_or_else(|| anyhow!("failed to find regex match in XPSNR log"))?;
     let final_yuv = (
         parse_float_or_inf(&final_captures[1]),
         parse_float_or_inf(&final_captures[2]),
@@ -168,38 +174,37 @@ pub fn read_xpsnr_file(file: impl AsRef<Path>, submetric: XPSNRSubMetric) -> (f6
                 let min_psnr = captures
                     .iter()
                     .skip(1)
-                    .map(|value| parse_float_or_inf(value.unwrap().as_str()))
+                    .map(|value| parse_float_or_inf(value.expect("match should exist").as_str()))
                     .fold(f64::INFINITY, f64::min);
                 frame_values.push(min_psnr);
             } else {
                 let parsed_values: Vec<f64> = captures
                     .iter()
                     .skip(1)
-                    .map(|value| parse_float_or_inf(value.unwrap().as_str()))
+                    .map(|value| parse_float_or_inf(value.expect("match should exist").as_str()))
                     .collect();
 
                 let weighted =
-                    ((4.0 * parsed_values[0]) + parsed_values[1] + parsed_values[2]) / 6.0;
+                    (4.0f64.mul_add(parsed_values[0], parsed_values[1]) + parsed_values[2]) / 6.0;
                 frame_values.push(weighted);
             }
         }
     }
 
-    match submetric {
+    Ok(match submetric {
         XPSNRSubMetric::Minimum => (final_yuv.0.min(final_yuv.1).min(final_yuv.2), frame_values),
         XPSNRSubMetric::Weighted => {
             let weighted = weight_xpsnr(final_yuv.0, final_yuv.1, final_yuv.2);
 
             (weighted, frame_values)
         },
-    }
+    })
 }
 
 pub fn weight_xpsnr(y: f64, u: f64, v: f64) -> f64 {
     -10.0
         * f64::log10(
-            ((4.0 * f64::powf(10.0, -y / 10.0))
-                + f64::powf(10.0, -u / 10.0)
+            (4.0f64.mul_add(f64::powf(10.0, -y / 10.0), f64::powf(10.0, -u / 10.0))
                 + f64::powf(10.0, -v / 10.0))
                 / 6.0,
         )

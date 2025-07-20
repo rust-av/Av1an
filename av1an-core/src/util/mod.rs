@@ -30,9 +30,10 @@ macro_rules! inplace_vec {
     use std::borrow::Cow;
 
     const SIZE: usize = $crate::count!($($x)*);
-    #[allow(unused_assignments)]
-    #[allow(clippy::transmute_undefined_repr)]
-    #[allow(clippy::macro_metavars_in_unsafe)]
+    #[expect(unused_assignments)]
+    #[expect(clippy::transmute_undefined_repr)]
+    #[expect(clippy::macro_metavars_in_unsafe)]
+    // SAFETY: the returned value ends up being a valid `Vec`
     unsafe {
       let mut v: Vec<MaybeUninit<Cow<_>>> = Vec::with_capacity(SIZE);
       v.set_len(SIZE);
@@ -103,7 +104,7 @@ macro_rules! into_smallvec {
 #[macro_export]
 macro_rules! create_dir {
     ($loc:expr) => {
-        match std::fs::create_dir(&$loc) {
+        match std::fs::create_dir_all(&$loc) {
             Ok(()) => Ok(()),
             Err(e) => match e.kind() {
                 std::io::ErrorKind::AlreadyExists => Ok(()),
@@ -127,12 +128,6 @@ pub(crate) fn printable_base10_digits(x: usize) -> u32 {
 pub fn read_in_dir(path: &Path) -> anyhow::Result<impl Iterator<Item = PathBuf>> {
     let dir = std::fs::read_dir(path)?;
     Ok(dir.into_iter().filter_map(Result::ok).filter_map(|d| {
-        d.file_type().map_or(None, |file_type| {
-            if file_type.is_file() {
-                Some(d.path())
-            } else {
-                None
-            }
-        })
+        d.file_type().map_or(None, |file_type| (!file_type.is_dir()).then(|| d.path()))
     }))
 }
