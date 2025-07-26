@@ -29,7 +29,7 @@ const MAXIMUM_SPEED_SVT_AV1: u8 = 12;
 const MAXIMUM_SPEED_X264: &str = "medium";
 const MAXIMUM_SPEED_X265: &str = "fast";
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(
     Clone,
     Copy,
@@ -72,7 +72,10 @@ pub(crate) fn parse_svt_av1_version(version: &[u8]) -> Option<(u32, u32, u32)> {
 }
 
 pub static USE_OLD_SVT_AV1: Lazy<bool> = Lazy::new(|| {
-    let version = Command::new("SvtAv1EncApp").arg("--version").output().unwrap();
+    let version = Command::new("SvtAv1EncApp")
+        .arg("--version")
+        .output()
+        .expect("failed to run svt-av1");
 
     if let Some((major, minor, _)) = parse_svt_av1_version(&version.stdout) {
         match major {
@@ -468,7 +471,7 @@ impl Encoder {
                 Some(
                     version_line
                         .split_once('-')
-                        .unwrap()
+                        .expect("unexpected aom version string format")
                         .1
                         .replace("(default)", "")
                         .trim()
@@ -488,7 +491,7 @@ impl Encoder {
                 Some(
                     version_line
                         .split_once('-')
-                        .unwrap()
+                        .expect("unexpected vpx version string format")
                         .1
                         .replace("(default)", "")
                         .trim()
@@ -511,7 +514,14 @@ impl Encoder {
                 let result = Command::new("x265").arg("--version").output().ok()?;
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 let version_line = stderr.lines().find(|line| line.starts_with("x265"))?;
-                Some(version_line.split_once(':').unwrap().1.trim().to_string())
+                Some(
+                    version_line
+                        .split_once(':')
+                        .expect("unexpected x265 version string format")
+                        .1
+                        .trim()
+                        .to_string(),
+                )
             },
         }
     }
@@ -610,6 +620,7 @@ impl Encoder {
                 cfg_if! {
                   if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
                     if is_x86_feature_detected!("sse4.1") && is_x86_feature_detected!("ssse3") {
+                      // SAFETY: We verified that the CPU has the required feature set
                       return unsafe { parse_aom_vpx_frames_sse41(line.as_bytes()) };
                     }
                   }
@@ -867,7 +878,7 @@ impl Encoder {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[inline]
     /// Constructs tuple of commands for target quality probing
     pub fn probe_cmd(
@@ -880,14 +891,12 @@ impl Encoder {
         vmaf_threads: usize,
         custom_video_params: Option<Vec<String>>,
     ) -> (Option<Vec<String>>, Vec<Cow<'static, str>>) {
-        let pipe = if probing_rate > 1 {
-            Some(compose_ffmpeg_pipe(
+        let pipe = (probing_rate > 1).then(|| {
+            compose_ffmpeg_pipe(
                 ["-vf", format!("select=not(mod(n\\,{probing_rate}))").as_str(), "-vsync", "0"],
                 pix_fmt,
-            ))
-        } else {
-            None
-        };
+            )
+        });
 
         let extension = match self {
             Encoder::x264 => "264",
@@ -896,27 +905,26 @@ impl Encoder {
         };
         let probe_name = format!("v_{chunk_index:05}_{q}.{extension}");
 
-        let mut probe = PathBuf::from(temp);
-        probe.push("split");
-        probe.push(&probe_name);
-        let probe_path = probe.to_str().unwrap().to_owned();
+        let probe = PathBuf::from(temp).join("split").join(&probe_name);
+        let probe_path = probe.to_string_lossy().to_string();
 
-        let params: Vec<Cow<str>> = if let Some(mut video_params) = custom_video_params {
-            let quantizer_patterns =
-                ["--cq-level=", "--passes=", "--pass=", "--crf", "--quantizer"];
-            Self::remove_patterns(&mut video_params, &quantizer_patterns);
+        let params: Vec<Cow<str>> = custom_video_params.map_or_else(
+            || self.construct_target_quality_command(vmaf_threads, q),
+            |mut video_params| {
+                let quantizer_patterns =
+                    ["--cq-level=", "--passes=", "--pass=", "--crf", "--quantizer"];
+                Self::remove_patterns(&mut video_params, &quantizer_patterns);
 
-            let mut ps = self.construct_target_quality_command_probe_slow(q);
+                let mut ps = self.construct_target_quality_command_probe_slow(q);
 
-            ps.reserve(video_params.len());
-            for arg in video_params {
-                ps.push(Cow::Owned(arg));
-            }
+                ps.reserve(video_params.len());
+                for arg in video_params {
+                    ps.push(Cow::Owned(arg));
+                }
 
-            ps
-        } else {
-            self.construct_target_quality_command(vmaf_threads, q)
-        };
+                ps
+            },
+        );
 
         let output: Vec<Cow<str>> = match self {
             Self::svt_av1 => chain!(params, into_array!["-b", probe_path]).collect(),

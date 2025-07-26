@@ -171,54 +171,51 @@ impl Scene {
             .parse(zone_args)
             .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         let mut zone_args = zone_args.1.into_iter().collect::<HashMap<_, _>>();
-        if let Some(zone_passes) = zone_args.remove("--passes") {
-            passes = zone_passes.unwrap().parse().unwrap();
+        if let Some(Some(zone_passes)) = zone_args.remove("--passes") {
+            passes = zone_passes.parse()?;
         } else if [Encoder::aom, Encoder::vpx].contains(&encoder) && zone_args.contains_key("--rt")
         {
             passes = 1;
         }
-        if let Some(zone_photon_noise) = zone_args.remove("--photon-noise") {
-            photon_noise = Some(zone_photon_noise.unwrap().parse().unwrap());
+        if let Some(Some(zone_photon_noise)) = zone_args.remove("--photon-noise") {
+            photon_noise = Some(zone_photon_noise.parse()?);
         }
-        if let Some(zone_photon_noise_height) = zone_args.remove("--photon-noise-height") {
-            photon_noise_height = Some(zone_photon_noise_height.unwrap().parse().unwrap());
+        if let Some(Some(zone_photon_noise_height)) = zone_args.remove("--photon-noise-height") {
+            photon_noise_height = Some(zone_photon_noise_height.parse()?);
         }
-        if let Some(zone_photon_noise_width) = zone_args.remove("--photon-noise-width") {
-            photon_noise_width = Some(zone_photon_noise_width.unwrap().parse().unwrap());
+        if let Some(Some(zone_photon_noise_width)) = zone_args.remove("--photon-noise-width") {
+            photon_noise_width = Some(zone_photon_noise_width.parse()?);
         }
-        if let Some(zone_chroma_noise) = zone_args.remove("--chroma-noise") {
-            chroma_noise = zone_chroma_noise.unwrap().parse().unwrap();
+        if let Some(Some(zone_chroma_noise)) = zone_args.remove("--chroma-noise") {
+            chroma_noise = zone_chroma_noise.parse()?;
         }
-        if let Some(zone_xs) = zone_args.remove("-x").or_else(|| zone_args.remove("--extra-split"))
+        if let Some(Some(zone_xs)) =
+            zone_args.remove("-x").or_else(|| zone_args.remove("--extra-split"))
         {
-            extra_splits_len = Some(zone_xs.unwrap().parse().unwrap());
+            extra_splits_len = Some(zone_xs.parse()?);
         }
-        if let Some(zone_min_scene_len) = zone_args.remove("--min-scene-len") {
-            min_scene_len = zone_min_scene_len.unwrap().parse().unwrap();
+        if let Some(Some(zone_min_scene_len)) = zone_args.remove("--min-scene-len") {
+            min_scene_len = zone_min_scene_len.parse()?;
         }
-        if let Some(zone_target_quality) = zone_args.remove("--target-quality") {
-            let parsed = TargetQuality::parse_target_qp_range(zone_target_quality.unwrap())
-                .map_err(|e| anyhow!("Invalid --target-quality: {}", e))
-                .unwrap();
+        if let Some(Some(zone_target_quality)) = zone_args.remove("--target-quality") {
+            let parsed = TargetQuality::parse_target_qp_range(zone_target_quality)
+                .map_err(|e| anyhow!("Invalid --target-quality: {}", e))?;
             target_quality.target = Some(parsed);
         }
-        if let Some(zone_target_metric) = zone_args.remove("--target-metric") {
-            let parsed = TargetMetric::from_str(zone_target_metric.unwrap())
-                .map_err(|_| anyhow!("Invalid --target-metric: {}", zone_target_metric.unwrap()))?;
+        if let Some(Some(zone_target_metric)) = zone_args.remove("--target-metric") {
+            let parsed = TargetMetric::from_str(zone_target_metric)
+                .map_err(|_| anyhow!("Invalid --target-metric: {}", zone_target_metric))?;
             target_quality.metric = parsed;
         }
-        if let Some(zone_qp_range) = zone_args.remove("--qp-range") {
-            let (min, max) = TargetQuality::parse_qp_range(zone_qp_range.unwrap())
-                .map_err(|e| anyhow!("Invalid --qp-range: {}", e))
-                .unwrap();
+        if let Some(Some(zone_qp_range)) = zone_args.remove("--qp-range") {
+            let (min, max) = TargetQuality::parse_qp_range(zone_qp_range)
+                .map_err(|e| anyhow!("Invalid --qp-range: {}", e))?;
             target_quality.min_q = min;
             target_quality.max_q = max;
         }
-        if let Some(zone_probes) = zone_args.remove("--probes") {
-            let parsed = zone_probes
-                .unwrap()
-                .parse()
-                .map_err(|_| anyhow!("Invalid --probes: {}", zone_probes.unwrap()))?;
+        if let Some(Some(zone_probes)) = zone_args.remove("--probes") {
+            let parsed =
+                zone_probes.parse().map_err(|_| anyhow!("Invalid --probes: {}", zone_probes))?;
             let (probes, warning) = TargetQuality::validate_probes(parsed)
                 .map_err(|e| anyhow!("Invalid --probes: {}: {}", parsed, e))?;
             if let Some(warning) = warning {
@@ -226,11 +223,10 @@ impl Scene {
             }
             target_quality.probes = probes;
         }
-        if let Some(zone_probing_rate) = zone_args.remove("--probing-rate") {
+        if let Some(Some(zone_probing_rate)) = zone_args.remove("--probing-rate") {
             let parsed = zone_probing_rate
-                .unwrap()
                 .parse()
-                .map_err(|_| anyhow!("Invalid --probing-rate: {}", zone_probing_rate.unwrap()))?;
+                .map_err(|_| anyhow!("Invalid --probing-rate: {}", zone_probing_rate))?;
             let (probing_rate, warning) = TargetQuality::validate_probing_rate(parsed)
                 .map_err(|e| anyhow!("Invalid --probing-rate: {}: {}", parsed, e))?;
             if let Some(warning) = warning {
@@ -238,21 +234,19 @@ impl Scene {
             }
             target_quality.probing_rate = probing_rate;
         }
-        if let Some(zone_probe_res) = zone_args.remove("--probe-res") {
-            let (width, height) = TargetQuality::parse_probe_res(zone_probe_res.unwrap())
+        if let Some(Some(zone_probe_res)) = zone_args.remove("--probe-res") {
+            let (width, height) = TargetQuality::parse_probe_res(zone_probe_res)
                 .map_err(|e| anyhow!("Invalid --probe-res: {}", e))?;
             target_quality.probe_res = Some((width, height));
         }
-        if let Some(zone_probing_stat) = zone_args.remove("--probing-stat") {
-            let parsed = TargetQuality::parse_probing_statistic(zone_probing_stat.unwrap())
-                .map_err(|_| anyhow!("Invalid --probing-stat: {}", zone_probing_stat.unwrap()))
-                .unwrap();
+        if let Some(Some(zone_probing_stat)) = zone_args.remove("--probing-stat") {
+            let parsed = TargetQuality::parse_probing_statistic(zone_probing_stat)
+                .map_err(|_| anyhow!("Invalid --probing-stat: {}", zone_probing_stat))?;
             target_quality.probing_statistic = parsed;
         }
-        if let Some(zone_interp_method) = zone_args.remove("--interp-method") {
-            let (method4, method5) =
-                TargetQuality::parse_interp_method(zone_interp_method.unwrap())
-                    .map_err(|e| anyhow!("Invalid --interp-method: {}", e))?;
+        if let Some(Some(zone_interp_method)) = zone_args.remove("--interp-method") {
+            let (method4, method5) = TargetQuality::parse_interp_method(zone_interp_method)
+                .map_err(|e| anyhow!("Invalid --interp-method: {}", e))?;
             target_quality.interp_method = Some((method4, method5));
         }
 
@@ -275,7 +269,7 @@ impl Scene {
         if !args.force {
             let help_text = {
                 let [cmd, arg] = encoder.help_command();
-                String::from_utf8(Command::new(cmd).arg(arg).output().unwrap().stdout).unwrap()
+                String::from_utf8_lossy(&Command::new(cmd).arg(arg).output()?.stdout).to_string()
             };
             let valid_params = valid_params(&help_text, encoder);
             let interleaved_args: Vec<&str> = raw_zone_args
@@ -383,9 +377,9 @@ impl SceneFactory {
         let file = File::open(scene_path)?;
         let mut data: ScenesData = serde_json::from_reader(file).with_context(|| {
             format!(
-                "Failed to parse scenes file {:?}, this likely means that the scenes file is \
+                "Failed to parse scenes file {}, this likely means that the scenes file is \
                  corrupted",
-                scene_path.as_ref()
+                scene_path.as_ref().display()
             )
         })?;
         if data.scenes.is_some() && data.split_scenes.is_none() {
@@ -404,7 +398,7 @@ impl SceneFactory {
     }
 
     /// Retrieve the pre-extra-split scenes data
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn get_scenecuts(&self) -> anyhow::Result<&[Scene]> {
         if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
@@ -427,7 +421,7 @@ impl SceneFactory {
     }
 
     /// Write the scenes data to the specified file as JSON
-    pub fn write_scenes_to_file<P: AsRef<Path>>(&mut self, scene_path: P) -> anyhow::Result<()> {
+    pub fn write_scenes_to_file<P: AsRef<Path>>(&self, scene_path: P) -> anyhow::Result<()> {
         if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
         }
@@ -532,11 +526,11 @@ impl SceneFactory {
 
         if let Some(split_len @ 1..) = args.extra_splits_len {
             self.data.split_scenes = Some(extra_splits(
-                self.data.scenes.as_deref().unwrap(),
+                self.data.scenes.as_deref().expect("scenes is set"),
                 split_len,
                 &scores,
             ));
-            let scenes_after = self.data.split_scenes.as_ref().unwrap().len();
+            let scenes_after = self.data.split_scenes.as_ref().expect("split_scenes is set").len();
             info!(
                 "scenecut: found {scenes_before} scene(s) [with extra_splits ({split_len} \
                  frames): {scenes_after} scene(s)]"
