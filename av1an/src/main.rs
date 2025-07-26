@@ -215,9 +215,10 @@ pub struct CliOpts {
     #[clap(long)]
     pub verbose: bool,
 
-    /// Log file location under ./logs [default: ./logs/av1an.log]
+    /// Log file location
     ///
-    /// Must be a relative path. Prepending with ./logs is optional.
+    /// If not specified, the log file location will be `./logs/av1an.log` and
+    /// the current day will be appended.
     #[clap(short, long)]
     pub log_file: Option<String>,
 
@@ -1282,7 +1283,7 @@ pub fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let log_file = cli_options.log_file.as_ref().map(PathBuf::from);
+    let log_file = cli_options.log_file.as_ref().map(PathAbs::new).transpose()?;
     let log_level = cli_options.log_level;
     let verbosity = {
         if cli_options.quiet {
@@ -1301,7 +1302,7 @@ pub fn run() -> anyhow::Result<()> {
             Verbosity::Normal => LevelFilter::INFO,
             Verbosity::Verbose => LevelFilter::INFO,
         },
-        log_file.as_deref(),
+        log_file,
         log_level,
     )?;
 
