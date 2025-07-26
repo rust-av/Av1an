@@ -927,12 +927,13 @@ impl Av1anContext {
             overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
             self.args.chroma_noise,
         )?;
-        // Only performs Target Quality if target is Some
-        self.args.target_quality.per_shot_target_quality_routine(
-            &mut chunk,
-            None,
-            self.args.vapoursynth_plugins,
-        )?;
+        if chunk.target_quality.target.is_some() {
+            chunk.tq_cq = Some(chunk.target_quality.per_shot_target_quality(
+                &chunk,
+                None,
+                self.args.vapoursynth_plugins,
+            )?);
+        }
         Ok(chunk)
     }
 
@@ -1020,12 +1021,12 @@ impl Av1anContext {
             noise_size: scene.zone_overrides.as_ref().map_or(self.args.photon_noise_size, |ovr| {
                 (ovr.photon_noise_width, ovr.photon_noise_height)
             }),
-            target_quality: scene
-                .zone_overrides
-                .as_ref()
-                .map_or(self.args.target_quality.clone(), |ovr| {
-                    ovr.target_quality.clone().unwrap_or(self.args.target_quality.clone())
-                }),
+            target_quality: scene.zone_overrides.as_ref().map_or(
+                self.args.target_quality.clone(),
+                |ovr| {
+                    ovr.target_quality.clone().unwrap_or_else(|| self.args.target_quality.clone())
+                },
+            ),
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };

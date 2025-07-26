@@ -859,7 +859,7 @@ impl CliOpts {
             metric: self.target_metric,
             encoder: self.encoder,
             pix_format: output_pix_format,
-            temp: temp_dir.clone(),
+            temp: temp_dir,
             workers: self.workers,
             video_params: probe_video_params,
             params_copied,

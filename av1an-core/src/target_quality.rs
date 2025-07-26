@@ -130,13 +130,15 @@ impl TargetQuality {
         }
     }
 
-    fn per_shot_target_quality(
+    #[inline]
+    pub fn per_shot_target_quality(
         &self,
-        target: (f64, f64),
         chunk: &Chunk,
         worker_id: Option<usize>,
         plugins: Option<VapoursynthPlugins>,
     ) -> anyhow::Result<u32> {
+        anyhow::ensure!(self.target.is_some(), "Target must be some");
+        let target = self.target.expect("target is some");
         // History of probe results as quantizer-score pairs
         let mut quantizer_score_history: Vec<(u32, f64)> = vec![];
 
@@ -146,7 +148,7 @@ impl TargetQuality {
                     worker_id,
                     format!(
                         "Targeting {metric} Quality {min}-{max} - Testing {quantizer}",
-                        metric = chunk.target_quality.metric,
+                        metric = self.metric,
                         min = target.0,
                         max = target.1,
                         quantizer = next_quantizer
@@ -156,15 +158,15 @@ impl TargetQuality {
         };
 
         // Initialize quantizer limits from specified range or encoder defaults
-        let mut lower_quantizer_limit = chunk.target_quality.min_q;
-        let mut upper_quantizer_limit = chunk.target_quality.max_q;
+        let mut lower_quantizer_limit = self.min_q;
+        let mut upper_quantizer_limit = self.max_q;
 
         loop {
             let next_quantizer = predict_quantizer(
                 lower_quantizer_limit,
                 upper_quantizer_limit,
                 &quantizer_score_history,
-                match chunk.target_quality.metric {
+                match self.metric {
                     // For inverse metrics, target must be inverted for ascending comparisons
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
                         let (min, max) = target;
@@ -172,7 +174,7 @@ impl TargetQuality {
                     },
                     _ => target,
                 },
-                chunk.target_quality.interp_method,
+                self.interp_method,
             )?;
 
             if let Some((quantizer, score)) = quantizer_score_history
@@ -182,14 +184,14 @@ impl TargetQuality {
                 // Predicted quantizer has already been probed
                 log_probes(
                     &quantizer_score_history,
-                    chunk.target_quality.metric,
+                    self.metric,
                     target,
                     chunk.frames() as u32,
-                    chunk.target_quality.probing_rate as u32,
-                    chunk.target_quality.video_params.as_ref(),
+                    self.probing_rate as u32,
+                    self.video_params.as_ref(),
                     &chunk.name(),
                     *quantizer,
-                    match chunk.target_quality.metric {
+                    match self.metric {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => *score,
                     },
@@ -204,13 +206,13 @@ impl TargetQuality {
                 let value = self.probe(chunk, next_quantizer as usize, plugins)?;
 
                 // Butteraugli is an inverse metric, invert score for comparisons
-                match chunk.target_quality.metric {
+                match self.metric {
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -value,
                     _ => value,
                 }
             };
             let score_within_range = within_range(
-                match chunk.target_quality.metric {
+                match self.metric {
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                     _ => score,
                 },
@@ -219,19 +221,17 @@ impl TargetQuality {
 
             quantizer_score_history.push((next_quantizer, score));
 
-            if score_within_range
-                || quantizer_score_history.len() >= chunk.target_quality.probes as usize
-            {
+            if score_within_range || quantizer_score_history.len() >= self.probes as usize {
                 log_probes(
                     &quantizer_score_history,
-                    chunk.target_quality.metric,
+                    self.metric,
                     target,
                     chunk.frames() as u32,
-                    chunk.target_quality.probing_rate as u32,
-                    chunk.target_quality.video_params.as_ref(),
+                    self.probing_rate as u32,
+                    self.video_params.as_ref(),
                     &chunk.name(),
                     next_quantizer,
-                    match chunk.target_quality.metric {
+                    match self.metric {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
                     },
@@ -244,7 +244,7 @@ impl TargetQuality {
                 break;
             }
 
-            let target_range = match chunk.target_quality.metric {
+            let target_range = match self.metric {
                 TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => (-target.1, -target.0),
                 _ => target,
             };
@@ -259,14 +259,14 @@ impl TargetQuality {
             if lower_quantizer_limit > upper_quantizer_limit {
                 log_probes(
                     &quantizer_score_history,
-                    chunk.target_quality.metric,
+                    self.metric,
                     target,
                     chunk.frames() as u32,
-                    chunk.target_quality.probing_rate as u32,
-                    chunk.target_quality.video_params.as_ref(),
+                    self.probing_rate as u32,
+                    self.video_params.as_ref(),
                     &chunk.name(),
                     next_quantizer,
-                    match chunk.target_quality.metric {
+                    match self.metric {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
                     },
@@ -284,7 +284,7 @@ impl TargetQuality {
             .iter()
             .filter(|(_, score)| {
                 within_range(
-                    match chunk.target_quality.metric {
+                    match self.metric {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => *score,
                     },
@@ -299,13 +299,13 @@ impl TargetQuality {
                     quantizer_score_history
                         .iter()
                         .min_by(|(_, score1), (_, score2)| {
-                            let score_1 = match chunk.target_quality.metric {
+                            let score_1 = match self.metric {
                                 TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
                                     -score1
                                 },
                                 _ => *score1,
                             };
-                            let score_2 = match chunk.target_quality.metric {
+                            let score_2 = match self.metric {
                                 TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
                                     -score2
                                 },
@@ -340,9 +340,9 @@ impl TargetQuality {
         let aggregate_frame_scores = |scores: Vec<f64>| -> anyhow::Result<f64> {
             let mut statistics = MetricStatistics::new(scores);
 
-            let aggregate = match chunk.target_quality.probing_statistic.name {
+            let aggregate = match self.probing_statistic.name {
                 ProbingStatisticName::Automatic => {
-                    if chunk.target_quality.metric == TargetMetric::VMAF {
+                    if self.metric == TargetMetric::VMAF {
                         // Preserve legacy VMAF aggregation
                         return Ok(statistics.percentile(1));
                     }
@@ -355,7 +355,7 @@ impl TargetQuality {
 
                     // Based on quantizer - lower quantizer leads to more accurate scores (lower
                     // variance) (citation needed)
-                    if chunk.target_quality.encoder.get_cq_relative_percentage(quantizer) > 0.25 {
+                    if self.encoder.get_cq_relative_percentage(quantizer) > 0.25 {
                         // Liberal: Use mean to determine aggregate
                         statistics.mean()
                     } else {
@@ -375,7 +375,7 @@ impl TargetQuality {
                     statistics.percentile(value as usize)
                 },
                 ProbingStatisticName::StandardDeviation => {
-                    let value = chunk.target_quality.probing_statistic.value.ok_or_else(|| {
+                    let value = self.probing_statistic.value.ok_or_else(|| {
                         anyhow::anyhow!("Standard deviation statistic requires a value")
                     })?;
                     let sigma_distance = value * statistics.standard_deviation();
@@ -390,10 +390,9 @@ impl TargetQuality {
             Ok(aggregate)
         };
 
-        match chunk.target_quality.metric {
+        match self.metric {
             TargetMetric::VMAF => {
-                let features: HashSet<_> =
-                    chunk.target_quality.probing_vmaf_features.iter().copied().collect();
+                let features: HashSet<_> = self.probing_vmaf_features.iter().copied().collect();
                 let use_weighted = features.contains(&VmafFeature::Weighted);
                 let disable_motion = features.contains(&VmafFeature::Motionless);
 
@@ -412,19 +411,19 @@ impl TargetQuality {
                     get_vmaf_model_version(&self.probing_vmaf_features)
                 )));
 
-                let model = if chunk.target_quality.model.is_none() {
+                let model = if self.model.is_none() {
                     default_model.as_ref()
                 } else {
-                    chunk.target_quality.model.as_ref()
+                    self.model.as_ref()
                 };
 
                 let vmaf_scores = if use_weighted {
                     run_vmaf_weighted(
                         &probe_name,
                         reference_pipe_cmd,
-                        chunk.target_quality.vspipe_args.clone(),
+                        self.vspipe_args.clone(),
                         model,
-                        chunk.target_quality.vmaf_threads,
+                        self.vmaf_threads,
                         chunk.frame_rate,
                         disable_motion,
                         &self.probing_vmaf_features,
@@ -446,17 +445,17 @@ impl TargetQuality {
                     run_vmaf(
                         &probe_name,
                         reference_pipe_cmd,
-                        chunk.target_quality.vspipe_args.clone(),
+                        self.vspipe_args.clone(),
                         &fl_path,
                         model,
-                        &chunk.target_quality.probe_res.map_or_else(
-                            || chunk.target_quality.vmaf_res.clone(),
+                        &self.probe_res.map_or_else(
+                            || self.vmaf_res.clone(),
                             |(width, height)| format!("{width}x{height}"),
                         ),
-                        &chunk.target_quality.vmaf_scaler,
-                        chunk.target_quality.probing_rate,
-                        chunk.target_quality.vmaf_filter.as_deref(),
-                        chunk.target_quality.vmaf_threads,
+                        &self.vmaf_scaler,
+                        self.probing_rate,
+                        self.vmaf_filter.as_deref(),
+                        self.vmaf_threads,
                         chunk.frame_rate,
                         disable_motion,
                         &self.probing_vmaf_features,
@@ -473,8 +472,8 @@ impl TargetQuality {
                         chunk.proxy.as_ref().unwrap_or(&chunk.input),
                         &probe_name,
                         (chunk.start_frame as u32, chunk.end_frame as u32),
-                        chunk.target_quality.probe_res,
-                        chunk.target_quality.probing_rate,
+                        self.probe_res,
+                        self.probing_rate,
                         plugins,
                     )?
                 } else {
@@ -486,7 +485,7 @@ impl TargetQuality {
             TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
                 let scores = if let Some(plugins) = plugins {
                     measure_butteraugli(
-                        match chunk.target_quality.metric {
+                        match self.metric {
                             TargetMetric::ButteraugliINF => ButteraugliSubMetric::InfiniteNorm,
                             TargetMetric::Butteraugli3 => ButteraugliSubMetric::ThreeNorm,
                             _ => unreachable!(),
@@ -494,8 +493,8 @@ impl TargetQuality {
                         chunk.proxy.as_ref().unwrap_or(&chunk.input),
                         &probe_name,
                         (chunk.start_frame as u32, chunk.end_frame as u32),
-                        chunk.target_quality.probe_res,
-                        chunk.target_quality.probing_rate,
+                        self.probe_res,
+                        self.probing_rate,
                         plugins,
                     )?
                 } else {
@@ -505,20 +504,20 @@ impl TargetQuality {
                 aggregate_frame_scores(scores)
             },
             TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => {
-                let submetric = if chunk.target_quality.metric == TargetMetric::XPSNR {
+                let submetric = if self.metric == TargetMetric::XPSNR {
                     XPSNRSubMetric::Minimum
                 } else {
                     XPSNRSubMetric::Weighted
                 };
-                if chunk.target_quality.probing_rate > 1 {
+                if self.probing_rate > 1 {
                     let scores = if let Some(plugins) = plugins {
                         measure_xpsnr(
                             submetric,
                             chunk.proxy.as_ref().unwrap_or(&chunk.input),
                             &probe_name,
                             (chunk.start_frame as u32, chunk.end_frame as u32),
-                            chunk.target_quality.probe_res,
-                            chunk.target_quality.probing_rate,
+                            self.probe_res,
+                            self.probing_rate,
                             plugins,
                         )?
                     } else {
@@ -533,20 +532,20 @@ impl TargetQuality {
                     run_xpsnr(
                         &probe_name,
                         reference_pipe_cmd,
-                        chunk.target_quality.vspipe_args.clone(),
+                        self.vspipe_args.clone(),
                         &fl_path,
-                        &chunk.target_quality.probe_res.map_or_else(
-                            || chunk.target_quality.vmaf_res.clone(),
+                        &self.probe_res.map_or_else(
+                            || self.vmaf_res.clone(),
                             |(width, height)| format!("{width}x{height}"),
                         ),
-                        &chunk.target_quality.vmaf_scaler,
-                        chunk.target_quality.probing_rate,
+                        &self.vmaf_scaler,
+                        self.probing_rate,
                         chunk.frame_rate,
                     )?;
 
                     let (aggregate, scores) = read_xpsnr_file(fl_path, submetric)?;
 
-                    match chunk.target_quality.probing_statistic.name {
+                    match self.probing_statistic.name {
                         ProbingStatisticName::Automatic => Ok(aggregate),
                         _ => aggregate_frame_scores(scores),
                     }
@@ -556,20 +555,20 @@ impl TargetQuality {
     }
 
     fn encode_probe(&self, chunk: &Chunk, q: usize) -> Result<PathBuf, Box<EncoderCrash>> {
-        let vmaf_threads = if chunk.target_quality.vmaf_threads == 0 {
-            vmaf_auto_threads(chunk.target_quality.workers)
+        let vmaf_threads = if self.vmaf_threads == 0 {
+            vmaf_auto_threads(self.workers)
         } else {
-            chunk.target_quality.vmaf_threads
+            self.vmaf_threads
         };
 
-        let cmd = chunk.target_quality.encoder.probe_cmd(
-            chunk.target_quality.temp.clone(),
+        let cmd = self.encoder.probe_cmd(
+            self.temp.clone(),
             chunk.index,
             q,
-            chunk.target_quality.pix_format,
-            chunk.target_quality.probing_rate,
+            self.pix_format,
+            self.probing_rate,
             vmaf_threads,
-            chunk.target_quality.video_params.clone(),
+            self.video_params.clone(),
         );
 
         let source_cmd = chunk
@@ -701,7 +700,7 @@ impl TargetQuality {
             Ok(())
         })?;
 
-        let extension = match chunk.target_quality.encoder {
+        let extension = match self.encoder {
             crate::encoder::Encoder::x264 => "264",
             crate::encoder::Encoder::x265 => "hevc",
             _ => "ivf",
@@ -712,19 +711,6 @@ impl TargetQuality {
             .join(format!("v_{index:05}_{q}.{extension}", index = chunk.index));
 
         Ok(probe_name)
-    }
-
-    #[inline]
-    pub fn per_shot_target_quality_routine(
-        &self,
-        chunk: &mut Chunk,
-        worker_id: Option<usize>,
-        plugins: Option<VapoursynthPlugins>,
-    ) -> anyhow::Result<()> {
-        if let Some(target) = chunk.target_quality.target {
-            chunk.tq_cq = Some(self.per_shot_target_quality(target, chunk, worker_id, plugins)?);
-        }
-        Ok(())
     }
 
     #[inline]

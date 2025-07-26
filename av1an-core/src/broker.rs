@@ -224,22 +224,26 @@ impl Broker<'_> {
                 ),
             );
             for r#try in 1..=self.project.args.max_tries {
-                let res = self.project.args.target_quality.per_shot_target_quality_routine(
+                let res = chunk.target_quality.per_shot_target_quality(
                     chunk,
                     Some(worker_id),
                     self.project.args.vapoursynth_plugins,
                 );
-                if let Err(e) = res {
-                    if r#try >= self.project.args.max_tries {
-                        bail!(
-                            "Target Quality failed after {} tries on chunk {}:\n{}",
-                            r#try,
-                            chunk.index,
-                            e
-                        );
-                    }
-                } else {
-                    break;
+                match res {
+                    Ok(cq) => {
+                        chunk.tq_cq = Some(cq);
+                        break;
+                    },
+                    Err(e) => {
+                        if r#try >= self.project.args.max_tries {
+                            bail!(
+                                "Target Quality failed after {} tries on chunk {}:\n{}",
+                                r#try,
+                                chunk.index,
+                                e
+                            );
+                        }
+                    },
                 }
             }
 
