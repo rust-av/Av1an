@@ -31,28 +31,30 @@ use crate::{
     scene_detect::av_scenechange_detect,
     settings::{invalid_params, suggest_fix},
     split::extra_splits,
-    EncodeArgs, Encoder, SplitMethod,
+    EncodeArgs,
+    Encoder,
+    SplitMethod,
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Scene {
-    pub start_frame: usize,
+    pub start_frame:    usize,
     // Reminding again that end_frame is *exclusive*
-    pub end_frame: usize,
+    pub end_frame:      usize,
     pub zone_overrides: Option<ZoneOptions>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneOptions {
-    pub encoder: Encoder,
-    pub passes: u8,
-    pub video_params: Vec<String>,
-    pub photon_noise: Option<u8>,
+    pub encoder:             Encoder,
+    pub passes:              u8,
+    pub video_params:        Vec<String>,
+    pub photon_noise:        Option<u8>,
     pub photon_noise_height: Option<u32>,
-    pub photon_noise_width: Option<u32>,
-    pub chroma_noise: bool,
-    pub extra_splits_len: Option<usize>,
-    pub min_scene_len: usize,
+    pub photon_noise_width:  Option<u32>,
+    pub chroma_noise:        bool,
+    pub extra_splits_len:    Option<usize>,
+    pub min_scene_len:       usize,
 }
 
 impl Scene {
@@ -304,8 +306,8 @@ impl Scene {
         }
 
         Ok(Self {
-            start_frame: start,
-            end_frame: end,
+            start_frame:    start,
+            end_frame:      end,
             zone_overrides: Some(ZoneOptions {
                 encoder,
                 passes,
@@ -331,8 +333,8 @@ pub struct SceneFactory {
 /// A serializable data struct containing scenecut data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenesData {
-    frames: usize,
-    scenes: Option<Vec<Scene>>,
+    frames:       usize,
+    scenes:       Option<Vec<Scene>>,
     split_scenes: Option<Vec<Scene>>,
 }
 
@@ -341,8 +343,8 @@ impl SceneFactory {
     pub fn new() -> Self {
         Self {
             data: ScenesData {
-                frames: 0,
-                scenes: None,
+                frames:       0,
+                scenes:       None,
                 split_scenes: None,
             },
         }
@@ -369,7 +371,9 @@ impl SceneFactory {
         }
         get_done().frames.store(data.frames, atomic::Ordering::SeqCst);
 
-        Ok(Self { data })
+        Ok(Self {
+            data,
+        })
     }
 
     /// Retrieve the pre-extra-split scenes data
@@ -440,8 +444,8 @@ impl SceneFactory {
                     if zone.start_frame > frames_processed {
                         // No overrides for unspecified frames between zones
                         scenes.push(Scene {
-                            start_frame: frames_processed,
-                            end_frame: zone.start_frame,
+                            start_frame:    frames_processed,
+                            end_frame:      zone.start_frame,
                             zone_overrides: None,
                         });
                     }
@@ -453,8 +457,8 @@ impl SceneFactory {
                 }
                 if frames > frames_processed {
                     scenes.push(Scene {
-                        start_frame: frames_processed,
-                        end_frame: frames,
+                        start_frame:    frames_processed,
+                        end_frame:      frames,
                         zone_overrides: None,
                     });
                 }
