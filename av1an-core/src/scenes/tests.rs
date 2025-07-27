@@ -12,72 +12,67 @@ fn get_test_args() -> Av1anContext {
         ffmpeg::FFPixelFormat,
         into_vec,
         settings::{EncodeArgs, InputPixelFormat, PixelFormat},
-        ChunkMethod,
-        ChunkOrdering,
-        Input,
-        ScenecutMethod,
-        SplitMethod,
-        Verbosity,
+        ChunkMethod, ChunkOrdering, Input, ScenecutMethod, SplitMethod, Verbosity,
     };
 
     let args = EncodeArgs {
-        ffmpeg_filter_args:    Vec::new(),
-        temp:                  String::new(),
-        force:                 false,
-        no_defaults:           false,
-        passes:                2,
-        video_params:          into_vec!["--cq-level=40", "--cpu-used=0", "--aq-mode=1"],
-        output_file:           String::new(),
-        audio_params:          Vec::new(),
-        chunk_method:          ChunkMethod::LSMASH,
-        chunk_order:           ChunkOrdering::Random,
-        concat:                ConcatMethod::FFmpeg,
-        encoder:               Encoder::aom,
-        extra_splits_len:      Some(100),
-        photon_noise:          Some(10),
-        photon_noise_size:     (None, None),
-        chroma_noise:          false,
-        sc_pix_format:         None,
-        keep:                  false,
-        max_tries:             3,
-        min_scene_len:         10,
-        input_pix_format:      InputPixelFormat::FFmpeg {
+        ffmpeg_filter_args: Vec::new(),
+        temp: String::new(),
+        force: false,
+        no_defaults: false,
+        passes: 2,
+        video_params: into_vec!["--cq-level=40", "--cpu-used=0", "--aq-mode=1"],
+        output_file: String::new(),
+        audio_params: Vec::new(),
+        chunk_method: ChunkMethod::LSMASH,
+        chunk_order: ChunkOrdering::Random,
+        concat: ConcatMethod::FFmpeg,
+        encoder: Encoder::aom,
+        extra_splits_len: Some(100),
+        photon_noise: Some(10),
+        photon_noise_size: (None, None),
+        chroma_noise: false,
+        sc_pix_format: None,
+        keep: false,
+        max_tries: 3,
+        min_scene_len: 10,
+        input_pix_format: InputPixelFormat::FFmpeg {
             format: FFPixelFormat::YUV420P10LE,
         },
-        input:                 Input::Video {
-            path:         PathBuf::new(),
-            temp:         String::new(),
+        input: Input::Video {
+            path: PathBuf::new(),
+            temp: String::new(),
             chunk_method: ChunkMethod::LSMASH,
-            is_proxy:     false,
+            is_proxy: false,
         },
-        proxy:                 None,
-        output_pix_format:     PixelFormat {
-            format:    FFPixelFormat::YUV420P10LE,
+        proxy: None,
+        output_pix_format: PixelFormat {
+            format: FFPixelFormat::YUV420P10LE,
             bit_depth: 10,
         },
-        resume:                false,
-        scenes:                None,
-        split_method:          SplitMethod::AvScenechange,
-        sc_method:             ScenecutMethod::Standard,
-        sc_only:               false,
-        sc_downscale_height:   None,
-        force_keyframes:       Vec::new(),
-        target_quality:        None,
-        vmaf:                  false,
-        verbosity:             Verbosity::Normal,
-        workers:               1,
-        tiles:                 (1, 1),
-        tile_auto:             false,
-        set_thread_affinity:   None,
-        zones:                 None,
-        scaler:                String::new(),
+        resume: false,
+        scenes: None,
+        split_method: SplitMethod::AvScenechange,
+        sc_method: ScenecutMethod::Standard,
+        sc_only: false,
+        sc_downscale_height: None,
+        force_keyframes: Vec::new(),
+        target_quality: None,
+        vmaf: false,
+        verbosity: Verbosity::Normal,
+        workers: 1,
+        tiles: (1, 1),
+        tile_auto: false,
+        set_thread_affinity: None,
+        zones: None,
+        scaler: String::new(),
         ignore_frame_mismatch: false,
-        vmaf_path:             None,
-        vmaf_res:              "1920x1080".to_string(),
-        vmaf_threads:          None,
-        vmaf_filter:           None,
-        probe_res:             None,
-        vapoursynth_plugins:   None,
+        vmaf_path: None,
+        vmaf_res: "1920x1080".to_string(),
+        vmaf_threads: None,
+        vmaf_filter: None,
+        probe_res: None,
+        vapoursynth_plugins: None,
     };
     Av1anContext {
         vs_script: None,
@@ -229,4 +224,22 @@ fn validate_zones_no_args_reset() {
     assert_eq!(zone_overrides.min_scene_len, 10);
     assert_eq!(zone_overrides.photon_noise, None);
     assert!(zone_overrides.video_params.is_empty());
+}
+
+#[test]
+fn test_parse_from_zone_collects_multiple_errors() {
+    let input = "7000 6500 x264 --invalid-param=123";
+    let args = get_test_args();
+
+    let result = Scene::parse_from_zone(input, &args.args, args.frames);
+    assert!(result.is_err());
+
+    let error_message = result.unwrap_err().to_string();
+
+    // Should contain multiple errors
+    assert!(error_message.contains("Start frame must be earlier than the end frame"));
+    assert!(error_message.contains("Start and end frames must not be past the end of the video"));
+    assert!(error_message
+        .contains("Zone specifies using x264, but this cannot be used in the same file as aom"));
+    assert!(error_message.contains("Zone includes encoder change but previous args were kept"));
 }

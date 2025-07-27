@@ -6,7 +6,7 @@ use std::{
     fs::File,
     io::Write,
     path::Path,
-    process::{exit, Command},
+    process::Command,
     str::FromStr,
     sync::atomic,
 };
@@ -31,34 +31,34 @@ use crate::{
     scene_detect::av_scenechange_detect,
     settings::{invalid_params, suggest_fix},
     split::extra_splits,
-    EncodeArgs,
-    Encoder,
-    SplitMethod,
+    EncodeArgs, Encoder, SplitMethod,
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Scene {
-    pub start_frame:    usize,
+    pub start_frame: usize,
     // Reminding again that end_frame is *exclusive*
-    pub end_frame:      usize,
+    pub end_frame: usize,
     pub zone_overrides: Option<ZoneOptions>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneOptions {
-    pub encoder:             Encoder,
-    pub passes:              u8,
-    pub video_params:        Vec<String>,
-    pub photon_noise:        Option<u8>,
+    pub encoder: Encoder,
+    pub passes: u8,
+    pub video_params: Vec<String>,
+    pub photon_noise: Option<u8>,
     pub photon_noise_height: Option<u32>,
-    pub photon_noise_width:  Option<u32>,
-    pub chroma_noise:        bool,
-    pub extra_splits_len:    Option<usize>,
-    pub min_scene_len:       usize,
+    pub photon_noise_width: Option<u32>,
+    pub chroma_noise: bool,
+    pub extra_splits_len: Option<usize>,
+    pub min_scene_len: usize,
 }
 
 impl Scene {
     pub fn parse_from_zone(input: &str, args: &EncodeArgs, frames: usize) -> Result<Self> {
+        let mut errors: Vec<String> = Vec::new();
+
         let (_, (start, _, end, _, encoder, reset, zone_args)): (
             _,
             (usize, _, usize, _, Encoder, bool, &str),
@@ -96,30 +96,29 @@ impl Scene {
             .parse(input)
             .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         if start >= end {
-            bail!("Start frame must be earlier than the end frame");
+            errors.push("Start frame must be earlier than the end frame".to_string());
         }
         if start >= frames || end > frames {
-            bail!("Start and end frames must not be past the end of the video");
+            errors.push("Start and end frames must not be past the end of the video".to_string());
         }
         if encoder.format() != args.encoder.format() {
-            bail!(
+            errors.push(format!(
                 "Zone specifies using {}, but this cannot be used in the same file as {}",
-                encoder,
-                args.encoder,
-            );
+                encoder, args.encoder,
+            ));
         }
         if encoder != args.encoder {
             if encoder.get_format_bit_depth(args.output_pix_format.format).is_err() {
-                bail!(
+                errors.push(format!(
                     "Output pixel format {:?} is not supported by {} (used in zones file)",
-                    args.output_pix_format.format,
-                    encoder
-                );
+                    args.output_pix_format.format, encoder
+                ));
             }
             if !reset {
-                bail!(
+                errors.push(
                     "Zone includes encoder change but previous args were kept. You probably meant \
                      to specify \"reset\"."
+                        .to_string(),
                 );
             }
         }
@@ -166,30 +165,66 @@ impl Scene {
             .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         let mut zone_args = zone_args.1.into_iter().collect::<HashMap<_, _>>();
         if let Some(Some(zone_passes)) = zone_args.remove("--passes") {
-            passes = zone_passes.parse()?;
+            match zone_passes.parse::<u8>() {
+                Ok(p) => passes = p,
+                Err(_) => errors.push(format!("Invalid value '{}' for --passes", zone_passes)),
+            }
         } else if [Encoder::aom, Encoder::vpx].contains(&encoder) && zone_args.contains_key("--rt")
         {
             passes = 1;
         }
         if let Some(Some(zone_photon_noise)) = zone_args.remove("--photon-noise") {
-            photon_noise = Some(zone_photon_noise.parse()?);
+            match zone_photon_noise.parse::<u8>() {
+                Ok(p) => photon_noise = Some(p),
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --photon-noise",
+                    zone_photon_noise
+                )),
+            }
         }
         if let Some(Some(zone_photon_noise_height)) = zone_args.remove("--photon-noise-height") {
-            photon_noise_height = Some(zone_photon_noise_height.parse()?);
+            match zone_photon_noise_height.parse::<u32>() {
+                Ok(h) => photon_noise_height = Some(h),
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --photon-noise-height",
+                    zone_photon_noise_height
+                )),
+            }
         }
         if let Some(Some(zone_photon_noise_width)) = zone_args.remove("--photon-noise-width") {
-            photon_noise_width = Some(zone_photon_noise_width.parse()?);
+            match zone_photon_noise_width.parse::<u32>() {
+                Ok(w) => photon_noise_width = Some(w),
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --photon-noise-width",
+                    zone_photon_noise_width
+                )),
+            }
         }
         if let Some(Some(zone_chroma_noise)) = zone_args.remove("--chroma-noise") {
-            chroma_noise = zone_chroma_noise.parse()?;
+            match zone_chroma_noise.parse::<bool>() {
+                Ok(c) => chroma_noise = c,
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --chroma-noise",
+                    zone_chroma_noise
+                )),
+            }
         }
         if let Some(Some(zone_xs)) =
             zone_args.remove("-x").or_else(|| zone_args.remove("--extra-split"))
         {
-            extra_splits_len = Some(zone_xs.parse()?);
+            match zone_xs.parse::<usize>() {
+                Ok(x) => extra_splits_len = Some(x),
+                Err(_) => errors.push(format!("Invalid value '{}' for -x/--extra-split", zone_xs)),
+            }
         }
         if let Some(Some(zone_min_scene_len)) = zone_args.remove("--min-scene-len") {
-            min_scene_len = zone_min_scene_len.parse()?;
+            match zone_min_scene_len.parse::<usize>() {
+                Ok(m) => min_scene_len = m,
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --min-scene-len",
+                    zone_min_scene_len
+                )),
+            }
         }
         let raw_zone_args = if [Encoder::aom, Encoder::vpx].contains(&encoder) {
             zone_args
@@ -230,15 +265,13 @@ impl Scene {
             let invalid_params = invalid_params(&interleaved_args, &valid_params);
 
             for wrong_param in &invalid_params {
-                eprintln!("'{wrong_param}' isn't a valid parameter for {encoder}");
+                let mut error_msg =
+                    format!("'{}' isn't a valid parameter for {}", wrong_param, encoder);
                 if let Some(suggestion) = suggest_fix(wrong_param, &valid_params) {
-                    eprintln!("\tDid you mean '{suggestion}'?");
+                    use std::fmt::Write;
+                    write!(error_msg, " (did you mean '{}'?)", suggestion).unwrap();
                 }
-            }
-
-            if !invalid_params.is_empty() {
-                println!("\nTo continue anyway, run av1an with '--force'");
-                exit(1);
+                errors.push(error_msg);
             }
         }
 
@@ -266,9 +299,13 @@ impl Scene {
             video_params.push(arg);
         }
 
+        if !errors.is_empty() {
+            bail!("{}", errors.join("\n"));
+        }
+
         Ok(Self {
-            start_frame:    start,
-            end_frame:      end,
+            start_frame: start,
+            end_frame: end,
             zone_overrides: Some(ZoneOptions {
                 encoder,
                 passes,
@@ -294,8 +331,8 @@ pub struct SceneFactory {
 /// A serializable data struct containing scenecut data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenesData {
-    frames:       usize,
-    scenes:       Option<Vec<Scene>>,
+    frames: usize,
+    scenes: Option<Vec<Scene>>,
     split_scenes: Option<Vec<Scene>>,
 }
 
@@ -304,8 +341,8 @@ impl SceneFactory {
     pub fn new() -> Self {
         Self {
             data: ScenesData {
-                frames:       0,
-                scenes:       None,
+                frames: 0,
+                scenes: None,
                 split_scenes: None,
             },
         }
@@ -332,9 +369,7 @@ impl SceneFactory {
         }
         get_done().frames.store(data.frames, atomic::Ordering::SeqCst);
 
-        Ok(Self {
-            data,
-        })
+        Ok(Self { data })
     }
 
     /// Retrieve the pre-extra-split scenes data
@@ -405,8 +440,8 @@ impl SceneFactory {
                     if zone.start_frame > frames_processed {
                         // No overrides for unspecified frames between zones
                         scenes.push(Scene {
-                            start_frame:    frames_processed,
-                            end_frame:      zone.start_frame,
+                            start_frame: frames_processed,
+                            end_frame: zone.start_frame,
                             zone_overrides: None,
                         });
                     }
@@ -418,8 +453,8 @@ impl SceneFactory {
                 }
                 if frames > frames_processed {
                     scenes.push(Scene {
-                        start_frame:    frames_processed,
-                        end_frame:      frames,
+                        start_frame: frames_processed,
+                        end_frame: frames,
                         zone_overrides: None,
                     });
                 }
