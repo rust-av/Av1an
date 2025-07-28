@@ -451,25 +451,22 @@ impl Av1anContext {
                 },
             }
 
-            if self.args.vmaf || self.args.target_quality.is_some() {
-                let vmaf_res = if let Some(ref tq) = self.args.target_quality {
-                    if tq.vmaf_res == "inputres" {
-                        let inputres = self.args.input.clip_info()?.resolution;
-                        format!("{width}x{height}", width = inputres.0, height = inputres.1)
-                    } else {
-                        tq.vmaf_res.clone()
-                    }
+            if self.args.vmaf {
+                let vmaf_res = if self.args.target_quality.vmaf_res == "inputres" {
+                    let inputres = self.args.input.clip_info()?.resolution;
+                    format!("{width}x{height}", width = inputres.0, height = inputres.1)
                 } else {
-                    self.args.vmaf_res.clone()
+                    self.args.target_quality.vmaf_res.clone()
                 };
 
-                let vmaf_model = self.args.vmaf_path.as_deref().or_else(|| {
-                    self.args.target_quality.as_ref().and_then(|tq| tq.model.as_deref())
-                });
+                let vmaf_model =
+                    self.args.vmaf_path.as_deref().or(self.args.target_quality.model.as_deref());
                 let vmaf_scaler = "bicubic";
-                let vmaf_filter = self.args.vmaf_filter.as_deref().or_else(|| {
-                    self.args.target_quality.as_ref().and_then(|tq| tq.vmaf_filter.as_deref())
-                });
+                let vmaf_filter = self.args.vmaf_filter.as_deref().or(self
+                    .args
+                    .target_quality
+                    .vmaf_filter
+                    .as_deref());
 
                 if self.args.vmaf {
                     let vmaf_threads = available_parallelism().map_or(1, std::num::NonZero::get);
@@ -483,10 +480,7 @@ impl Av1anContext {
                         1,
                         vmaf_filter,
                         vmaf_threads,
-                        self.args
-                            .target_quality
-                            .as_ref()
-                            .map_or(&[], |tq| &tq.probing_vmaf_features),
+                        &self.args.target_quality.probing_vmaf_features,
                     ) {
                         error!("VMAF calculation failed with error: {e}");
                     }
@@ -923,6 +917,9 @@ impl Av1anContext {
             passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
             encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
             noise_size: self.args.photon_noise_size,
+            target_quality: overrides.as_ref().map_or(self.args.target_quality.clone(), |ovr| {
+                ovr.target_quality.clone().map_or(self.args.target_quality.clone(), |tq| tq)
+            }),
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
@@ -930,8 +927,12 @@ impl Av1anContext {
             overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
             self.args.chroma_noise,
         )?;
-        if let Some(ref tq) = self.args.target_quality {
-            tq.per_shot_target_quality_routine(&mut chunk, None, self.args.vapoursynth_plugins)?;
+        if chunk.target_quality.target.is_some() {
+            chunk.tq_cq = Some(chunk.target_quality.per_shot_target_quality(
+                &chunk,
+                None,
+                self.args.vapoursynth_plugins,
+            )?);
         }
         Ok(chunk)
     }
@@ -1020,6 +1021,12 @@ impl Av1anContext {
             noise_size: scene.zone_overrides.as_ref().map_or(self.args.photon_noise_size, |ovr| {
                 (ovr.photon_noise_width, ovr.photon_noise_height)
             }),
+            target_quality: scene.zone_overrides.as_ref().map_or(
+                self.args.target_quality.clone(),
+                |ovr| {
+                    ovr.target_quality.clone().unwrap_or_else(|| self.args.target_quality.clone())
+                },
+            ),
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
@@ -1243,6 +1250,9 @@ impl Av1anContext {
             passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
             encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
             noise_size: self.args.photon_noise_size,
+            target_quality: overrides.as_ref().map_or(self.args.target_quality.clone(), |ovr| {
+                ovr.target_quality.clone().map_or(self.args.target_quality.clone(), |tq| tq)
+            }),
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };

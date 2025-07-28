@@ -155,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "av-decoders"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3778ec4ac567969eaafbb556bb43a0a34ed21afc51a3c1ec1e467cf727a7dfc"
+checksum = "1a3e35d17e9df9c26170781708199dceb8baeb1bcd63e784a10c10d33ec4af67"
 dependencies = [
  "num-rational",
  "thiserror 2.0.12",

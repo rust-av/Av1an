@@ -7,7 +7,7 @@ use av1_grain::{generate_photon_noise_params, write_grain_table, NoiseGenArgs};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use crate::{encoder::Encoder, settings::insert_noise_table_params, Input};
+use crate::{encoder::Encoder, settings::insert_noise_table_params, Input, TargetQuality};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunk {
@@ -26,6 +26,7 @@ pub struct Chunk {
     pub video_params:          Vec<String>,
     pub encoder:               Encoder,
     pub noise_size:            (Option<u32>, Option<u32>),
+    pub target_quality:        TargetQuality,
     // do not break compatibility with output produced by older versions of av1an
     /// Optional target quality CQ level
     #[serde(rename = "per_shot_target_quality_cq")]
