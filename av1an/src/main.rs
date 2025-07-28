@@ -442,7 +442,11 @@ pub struct CliOpts {
     ///
     /// Methods that require an external vapoursynth plugin:
     ///
-    /// lsmash - Generally the best and most accurate method. Does not require
+    /// bestsource - Require a slow indexing pass once per file, but is the most
+    /// accurate. Does not require intermediate files, requires the BestSource
+    /// vapoursynth plugin to be installed.
+    ///
+    /// lsmash - Generally accurate and fast. Does not require
     /// intermediate files. Errors generally only occur if the input file
     /// itself is broken (for example, if the video bitstream is invalid in some
     /// way, video players usually try to recover from the errors as much as
@@ -450,18 +454,14 @@ pub struct CliOpts {
     /// instead throw an error). Requires the lsmashsource vapoursynth
     /// plugin to be installed.
     ///
-    /// ffms2 - Accurate and does not require intermediate files. Can sometimes
-    /// have bizarre bugs that are not present in lsmash (that can
+    /// ffms2 - Generally accurate and does not require intermediate files. Can
+    /// sometimes have bizarre bugs that are not present in lsmash (that can
     /// cause artifacts in the piped output). Slightly faster than lsmash for
     /// y4m input. Requires the ffms2 vapoursynth plugin to be installed.
     ///
     /// dgdecnv - Very fast, but only decodes AVC, HEVC, MPEG-2, and VC1. Does
     /// not require intermediate files. Requires dgindexnv to be present in
     /// system path, NVIDIA GPU that support CUDA video decoding, and dgdecnv
-    /// vapoursynth plugin to be installed.
-    ///
-    /// bestsource - Very slow but accurate. Linearly decodes input files, very
-    /// slow. Does not require intermediate files, requires the BestSource
     /// vapoursynth plugin to be installed.
     ///
     /// Methods that only require ffmpeg:
@@ -482,8 +482,8 @@ pub struct CliOpts {
     /// exact, as it can only split on keyframes in the source.
     /// Requires intermediate files (which can be large).
     ///
-    /// Default: lsmash (if available), otherwise ffms2 (if available),
-    /// otherwise DGDecNV (if available), otherwise bestsource (if available),
+    /// Default: bestsource (if available), otherwise lsmash (if available),
+    /// otherwise ffms2 (if available), otherwise DGDecNV (if available),
     /// otherwise hybrid.
     #[clap(short = 'm', long, help_heading = "Encoding")]
     pub chunk_method: Option<ChunkMethod>,

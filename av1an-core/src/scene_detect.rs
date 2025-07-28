@@ -284,6 +284,38 @@ fn build_decoder(
         }
 
         Decoder::from_decoder_impl(DecoderImpl::Vapoursynth(vs_decoder))?
+    } else if input.is_vapoursynth_script() {
+        // User provides a video input but is using a Vapoursynth-based chunk method.
+        // This may be slower than using ffmpeg but by using the same source filter,
+        // we ensure consistency in decoding.
+        let mut command = Command::new("vspipe");
+
+        if let Some(downscale_height) = sc_downscale_height {
+            command.env("AV1AN_DOWNSCALE_HEIGHT", downscale_height.to_string());
+        }
+        if let Some(pixel_format) = sc_pix_format {
+            command.env("AV1AN_PIXEL_FORMAT", format!("{pixel_format:?}"));
+        }
+
+        command
+            .arg("-c")
+            .arg("y4m")
+            .arg(input.as_script_path())
+            .arg("-")
+            .env("AV1AN_PERFORM_SCENE_DETECTION", "true")
+            .env("AV1AN_SCALER", sc_scaler)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        // Append vspipe python arguments to the environment if there are any
+        for arg in input.as_vspipe_args_vec()? {
+            command.args(["-a", &arg]);
+        }
+
+        let y4m_decoder = Y4mDecoder::new(Box::new(
+            command.spawn()?.stdout.expect("vspipe should have stdout"),
+        ) as Box<dyn Read>)?;
+        Decoder::from_decoder_impl(DecoderImpl::Y4m(y4m_decoder))?
     } else {
         // FFmpeg is faster if the user provides video input
         let path = input.as_path();

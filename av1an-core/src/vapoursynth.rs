@@ -43,14 +43,14 @@ pub struct VapoursynthPlugins {
 impl VapoursynthPlugins {
     #[inline]
     pub fn best_available_chunk_method(&self) -> ChunkMethod {
-        if self.lsmash {
+        if self.bestsource {
+            ChunkMethod::BESTSOURCE
+        } else if self.lsmash {
             ChunkMethod::LSMASH
         } else if self.ffms2 {
             ChunkMethod::FFMS2
         } else if self.dgdecnv {
             ChunkMethod::DGDECNV
-        } else if self.bestsource {
-            ChunkMethod::BESTSOURCE
         } else {
             ChunkMethod::Hybrid
         }
