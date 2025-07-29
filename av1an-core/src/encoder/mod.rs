@@ -71,6 +71,21 @@ pub(crate) fn parse_svt_av1_version(version: &[u8]) -> Option<(u32, u32, u32)> {
     }
 }
 
+#[tracing::instrument(level = "debug")]
+pub(crate) fn parse_svt_av1_unprocessed_tokens(output: &[u8]) -> Option<Vec<String>> {
+    let start_idx = memchr::memmem::find(output, b"Unprocessed tokens:")?;
+    let sub_output = output.get(start_idx..)?;
+    let end_idx = sub_output.iter().position(|&b| b == b'\n')?;
+    let unprocessed_tokens_line = simdutf8::basic::from_utf8(sub_output.get(0..end_idx)?).ok()?;
+    let unprocessed_tokens = unprocessed_tokens_line
+        .split_ascii_whitespace()
+        .skip(2)
+        .map(String::from)
+        .collect::<Vec<_>>();
+
+    Some(unprocessed_tokens)
+}
+
 pub static USE_OLD_SVT_AV1: Lazy<bool> = Lazy::new(|| {
     let version = Command::new("SvtAv1EncApp")
         .arg("--version")
@@ -83,9 +98,21 @@ pub static USE_OLD_SVT_AV1: Lazy<bool> = Lazy::new(|| {
             1.. => false,
         }
     } else {
-        // assume an old version of SVT-AV1 if the version failed to parse, as
-        // the format for v0.9.0+ should be the same
-        true
+        // If the version failed to parse, check if it accepts old arguments
+        let output = Command::new("SvtAv1EncApp")
+            .arg("--cdef-level")
+            .arg("0")
+            .output()
+            .expect("failed to run svt-av1");
+
+        let out = if output.stdout.is_empty() {
+            output.stderr
+        } else {
+            output.stdout
+        };
+        // assume an old version of SVT-AV1 if the version and unprocessed tokens failed
+        // to parse, as the format for v0.9.0+ should be the same
+        parse_svt_av1_unprocessed_tokens(&out).is_none_or(|tokens| tokens.is_empty())
     }
 });
 
