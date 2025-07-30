@@ -55,7 +55,7 @@ use crate::{
     settings::{EncodeArgs, InputPixelFormat},
     split::segment,
     vapoursynth::create_vs_file,
-    zones::parse_zones,
+    zones::{parse_zones, validate_zones},
     ChunkMethod,
     ChunkOrdering,
     DashMap,
@@ -843,6 +843,7 @@ impl Av1anContext {
             self.scene_factory = SceneFactory::from_scenes_file(&scene_file)?;
         } else {
             let zones = parse_zones(&self.args, self.frames)?;
+            validate_zones(&self.args, &zones)?;
             self.scene_factory.compute_scenes(&self.args, &zones)?;
             self.scene_factory.write_scenes_to_file(scene_file)?;
         }
