@@ -98,7 +98,7 @@ fn get_test_args() -> Av1anContext {
 fn validate_zones_args() {
     let input = "45 729 aom --cq-level=20 --photon-noise 4 -x 60 --min-scene-len 12";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 45);
     assert_eq!(result.end_frame, 729);
@@ -118,7 +118,7 @@ fn validate_zones_args() {
 fn validate_rav1e_zone_with_photon_noise() {
     let input = "45 729 rav1e reset --speed 6 --photon-noise 4";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 45);
     assert_eq!(result.end_frame, 729);
@@ -136,7 +136,7 @@ fn validate_rav1e_zone_with_photon_noise() {
 fn validate_zones_reset() {
     let input = "729 1337 aom reset --cq-level=20 --cpu-used=5";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 729);
     assert_eq!(result.end_frame, 1337);
@@ -160,7 +160,7 @@ fn validate_zones_reset() {
 fn validate_zones_encoder_changed() {
     let input = "729 1337 rav1e reset -s 3 -q 45";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 729);
     assert_eq!(result.end_frame, 1337);
@@ -224,7 +224,7 @@ fn validate_zones_no_args_reset() {
     let args = get_test_args();
 
     // This is weird, but can technically work for some encoders so we'll allow it.
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 5000);
     assert_eq!(result.end_frame, 6900);
@@ -238,21 +238,26 @@ fn validate_zones_no_args_reset() {
 }
 
 #[test]
-fn test_parse_from_zone_collects_multiple_errors() {
+fn parse_from_zone_collects_multiple_errors() {
     let input = "7000 6500 x264 --invalid-param=123";
     let args = get_test_args();
 
     let result = Scene::parse_from_zone(input, &args.args, args.frames);
-    assert!(result.is_err());
 
-    let error_message = result.unwrap_err().to_string();
-
-    // Should contain multiple errors
-    assert!(error_message.contains("Start frame must be earlier than the end frame"));
-    assert!(error_message.contains("Start and end frames must not be past the end of the video"));
-    assert!(error_message
-        .contains("Zone specifies using x264, but this cannot be used in the same file as aom"));
-    assert!(error_message.contains("Zone includes encoder change but previous args were kept"));
+    match result {
+        Ok(_) => {
+            panic!("Expected error instead of success or warnings");
+        },
+        Err(e) => {
+            let error = e.to_string();
+            assert!(error.contains("Start frame must be earlier than the end frame"));
+            assert!(error.contains("Start and end frames must not be past the end of the video"));
+            assert!(error.contains(
+                "Zone specifies using x264, but this cannot be used in the same file as aom"
+            ));
+            assert!(error.contains("Zone includes encoder change but previous args were kept"));
+        },
+    }
 }
 
 #[test]
@@ -289,7 +294,7 @@ fn validate_zones_target_quality() {
     );
     let args = get_test_args();
 
-    let result = Scene::parse_from_zone(&input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(&input, &args.args, args.frames)
         .expect("should parse zone successfully");
     let zone_overrides = result.zone_overrides.expect("should have zone overrides");
     assert!(zone_overrides.target_quality.is_some());
