@@ -9,7 +9,7 @@ use std::{
     thread::{self, available_parallelism},
 };
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
@@ -35,7 +35,6 @@ use crate::{
     progress_bar::update_mp_msg,
     vapoursynth::{measure_butteraugli, measure_ssimulacra2, measure_xpsnr, VapoursynthPlugins},
     Encoder,
-    ProbingSpeed,
     ProbingStatistic,
     ProbingStatisticName,
     TargetMetric,
@@ -74,15 +73,14 @@ impl FromStr for InterpolationMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetQuality {
     pub vmaf_res:              String,
-    pub probe_res:             Option<String>,
+    pub probe_res:             Option<(u32, u32)>,
     pub vmaf_scaler:           String,
     pub vmaf_filter:           Option<String>,
     pub vmaf_threads:          usize,
     pub model:                 Option<PathBuf>,
     pub probing_rate:          usize,
-    pub probing_speed:         Option<ProbingSpeed>,
     pub probes:                u32,
-    pub target:                (f64, f64),
+    pub target:                Option<(f64, f64)>,
     pub metric:                TargetMetric,
     pub min_q:                 u32,
     pub max_q:                 u32,
@@ -91,20 +89,56 @@ pub struct TargetQuality {
     pub pix_format:            FFPixelFormat,
     pub temp:                  String,
     pub workers:               usize,
-    pub video_params:          Vec<String>,
+    pub video_params:          Option<Vec<String>>,
+    pub params_copied:         bool,
     pub vspipe_args:           Vec<String>,
-    pub probe_slow:            bool,
     pub probing_vmaf_features: Vec<VmafFeature>,
     pub probing_statistic:     ProbingStatistic,
 }
 
 impl TargetQuality {
-    fn per_shot_target_quality(
+    #[inline]
+    pub fn default(temp_dir: &str, encoder: Encoder) -> Self {
+        Self {
+            vmaf_res: "1920x1080".to_string(),
+            probe_res: Some((1920, 1080)),
+            vmaf_scaler: "bicubic".to_string(),
+            vmaf_filter: None,
+            vmaf_threads: available_parallelism()
+                .expect("Unrecoverable: Failed to get thread count")
+                .get(),
+            model: None,
+            probing_rate: 1,
+            probes: 4,
+            target: None,
+            metric: TargetMetric::VMAF,
+            min_q: encoder.get_default_cq_range().0 as u32,
+            max_q: encoder.get_default_cq_range().1 as u32,
+            interp_method: None,
+            encoder,
+            pix_format: FFPixelFormat::YUV420P10LE,
+            temp: temp_dir.to_owned(),
+            workers: 1,
+            video_params: None,
+            params_copied: false,
+            vspipe_args: vec![],
+            probing_vmaf_features: vec![VmafFeature::Default],
+            probing_statistic: ProbingStatistic {
+                name:  ProbingStatisticName::Automatic,
+                value: None,
+            },
+        }
+    }
+
+    #[inline]
+    pub fn per_shot_target_quality(
         &self,
         chunk: &Chunk,
         worker_id: Option<usize>,
         plugins: Option<VapoursynthPlugins>,
     ) -> anyhow::Result<u32> {
+        anyhow::ensure!(self.target.is_some(), "Target must be some");
+        let target = self.target.expect("target is some");
         // History of probe results as quantizer-score pairs
         let mut quantizer_score_history: Vec<(u32, f64)> = vec![];
 
@@ -115,8 +149,8 @@ impl TargetQuality {
                     format!(
                         "Targeting {metric} Quality {min}-{max} - Testing {quantizer}",
                         metric = self.metric,
-                        min = self.target.0,
-                        max = self.target.1,
+                        min = target.0,
+                        max = target.1,
                         quantizer = next_quantizer
                     ),
                 );
@@ -135,10 +169,10 @@ impl TargetQuality {
                 match self.metric {
                     // For inverse metrics, target must be inverted for ascending comparisons
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                        let (min, max) = self.target;
+                        let (min, max) = target;
                         (-max, -min)
                     },
-                    _ => self.target,
+                    _ => target,
                 },
                 self.interp_method,
             )?;
@@ -151,10 +185,10 @@ impl TargetQuality {
                 log_probes(
                     &quantizer_score_history,
                     self.metric,
-                    self.target,
+                    target,
                     chunk.frames() as u32,
                     self.probing_rate as u32,
-                    self.probing_speed,
+                    self.video_params.as_ref(),
                     &chunk.name(),
                     *quantizer,
                     match self.metric {
@@ -182,7 +216,7 @@ impl TargetQuality {
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                     _ => score,
                 },
-                self.target,
+                target,
             );
 
             quantizer_score_history.push((next_quantizer, score));
@@ -191,10 +225,10 @@ impl TargetQuality {
                 log_probes(
                     &quantizer_score_history,
                     self.metric,
-                    self.target,
+                    target,
                     chunk.frames() as u32,
                     self.probing_rate as u32,
-                    self.probing_speed,
+                    self.video_params.as_ref(),
                     &chunk.name(),
                     next_quantizer,
                     match self.metric {
@@ -211,10 +245,8 @@ impl TargetQuality {
             }
 
             let target_range = match self.metric {
-                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                    (-self.target.1, -self.target.0)
-                },
-                _ => self.target,
+                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => (-target.1, -target.0),
+                _ => target,
             };
 
             if score > target_range.1 {
@@ -228,10 +260,10 @@ impl TargetQuality {
                 log_probes(
                     &quantizer_score_history,
                     self.metric,
-                    self.target,
+                    target,
                     chunk.frames() as u32,
                     self.probing_rate as u32,
-                    self.probing_speed,
+                    self.video_params.as_ref(),
                     &chunk.name(),
                     next_quantizer,
                     match self.metric {
@@ -256,14 +288,14 @@ impl TargetQuality {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => *score,
                     },
-                    self.target,
+                    target,
                 )
             })
             .max_by_key(|(quantizer, _)| *quantizer)
             .map_or_else(
                 || {
                     // No quantizers within tolerance, choose the quantizer closest to target
-                    let target_midpoint = f64::midpoint(self.target.0, self.target.1);
+                    let target_midpoint = f64::midpoint(target.0, target.1);
                     quantizer_score_history
                         .iter()
                         .min_by(|(_, score1), (_, score2)| {
@@ -321,29 +353,14 @@ impl TargetQuality {
                         statistic.clamp(statistics.minimum(), statistics.maximum())
                     };
 
-                    // Based on probing speed and quantizer
-                    // Probing slower leads to more accurate scores (lower variance)
-                    // Lower quantizer leads to more accurate scores (lower variance) (needs
-                    // testing)
-                    match self.probing_speed.unwrap_or(ProbingSpeed::VeryFast) {
-                        ProbingSpeed::VerySlow | ProbingSpeed::Slow => {
-                            if self.encoder.get_cq_relative_percentage(quantizer) < 0.75 {
-                                // Conservative: Use outliers to determine aggregate
-                                statistics.percentile(1)
-                            } else {
-                                // Less conservative: Use -1 sigma to determine aggregate
-                                sigma_1
-                            }
-                        },
-                        _ => {
-                            if self.encoder.get_cq_relative_percentage(quantizer) > 0.25 {
-                                // Liberal: Use mean to determine aggregate
-                                statistics.mean()
-                            } else {
-                                // Less liberal: Use -1 sigma to determine aggregate
-                                sigma_1
-                            }
-                        },
+                    // Based on quantizer - lower quantizer leads to more accurate scores (lower
+                    // variance) (citation needed)
+                    if self.encoder.get_cq_relative_percentage(quantizer) > 0.25 {
+                        // Liberal: Use mean to determine aggregate
+                        statistics.mean()
+                    } else {
+                        // Less liberal: Use -1 sigma to determine aggregate
+                        sigma_1
                     }
                 },
                 ProbingStatisticName::Mean => statistics.mean(),
@@ -431,7 +448,10 @@ impl TargetQuality {
                         self.vspipe_args.clone(),
                         &fl_path,
                         model,
-                        self.probe_res.as_ref().unwrap_or(&self.vmaf_res),
+                        &self.probe_res.map_or_else(
+                            || self.vmaf_res.clone(),
+                            |(width, height)| format!("{width}x{height}"),
+                        ),
                         &self.vmaf_scaler,
                         self.probing_rate,
                         self.vmaf_filter.as_deref(),
@@ -452,7 +472,7 @@ impl TargetQuality {
                         chunk.proxy.as_ref().unwrap_or(&chunk.input),
                         &probe_name,
                         (chunk.start_frame as u32, chunk.end_frame as u32),
-                        self.probe_res.as_ref(),
+                        self.probe_res,
                         self.probing_rate,
                         plugins,
                     )?
@@ -473,7 +493,7 @@ impl TargetQuality {
                         chunk.proxy.as_ref().unwrap_or(&chunk.input),
                         &probe_name,
                         (chunk.start_frame as u32, chunk.end_frame as u32),
-                        self.probe_res.as_ref(),
+                        self.probe_res,
                         self.probing_rate,
                         plugins,
                     )?
@@ -496,7 +516,7 @@ impl TargetQuality {
                             chunk.proxy.as_ref().unwrap_or(&chunk.input),
                             &probe_name,
                             (chunk.start_frame as u32, chunk.end_frame as u32),
-                            self.probe_res.as_ref(),
+                            self.probe_res,
                             self.probing_rate,
                             plugins,
                         )?
@@ -514,7 +534,10 @@ impl TargetQuality {
                         reference_pipe_cmd,
                         self.vspipe_args.clone(),
                         &fl_path,
-                        self.probe_res.as_ref().unwrap_or(&self.vmaf_res),
+                        &self.probe_res.map_or_else(
+                            || self.vmaf_res.clone(),
+                            |(width, height)| format!("{width}x{height}"),
+                        ),
                         &self.vmaf_scaler,
                         self.probing_rate,
                         chunk.frame_rate,
@@ -544,10 +567,8 @@ impl TargetQuality {
             q,
             self.pix_format,
             self.probing_rate,
-            self.probing_speed,
             vmaf_threads,
             self.video_params.clone(),
-            self.probe_slow,
         );
 
         let source_cmd = chunk
@@ -693,14 +714,195 @@ impl TargetQuality {
     }
 
     #[inline]
-    pub fn per_shot_target_quality_routine(
-        &self,
-        chunk: &mut Chunk,
-        worker_id: Option<usize>,
-        plugins: Option<VapoursynthPlugins>,
-    ) -> anyhow::Result<()> {
-        chunk.tq_cq = Some(self.per_shot_target_quality(chunk, worker_id, plugins)?);
-        Ok(())
+    pub fn parse_probing_statistic(stat: &str) -> anyhow::Result<ProbingStatistic> {
+        Ok(match stat.to_lowercase().as_str() {
+            "auto" => ProbingStatistic {
+                name:  ProbingStatisticName::Automatic,
+                value: None,
+            },
+            "mean" => ProbingStatistic {
+                name:  ProbingStatisticName::Mean,
+                value: None,
+            },
+            "harmonic" => ProbingStatistic {
+                name:  ProbingStatisticName::Harmonic,
+                value: None,
+            },
+            "root-mean-square" => ProbingStatistic {
+                name:  ProbingStatisticName::RootMeanSquare,
+                value: None,
+            },
+            "median" => ProbingStatistic {
+                name:  ProbingStatisticName::Median,
+                value: None,
+            },
+            "mode" => ProbingStatistic {
+                name:  ProbingStatisticName::Mode,
+                value: None,
+            },
+            "minimum" => ProbingStatistic {
+                name:  ProbingStatisticName::Minimum,
+                value: None,
+            },
+            "maximum" => ProbingStatistic {
+                name:  ProbingStatisticName::Maximum,
+                value: None,
+            },
+            probe_statistic if probe_statistic.starts_with("percentile") => {
+                if probe_statistic.matches('=').count() != 1
+                    || !probe_statistic.starts_with("percentile=")
+                {
+                    return Err(anyhow!(
+                        "Probing Statistic percentile must have a value between 0.0 and 100.0 set \
+                         using \"=\" (eg. \"--probing-stat percentile=1\")"
+                    ));
+                }
+                let value = probe_statistic
+                    .split("=")
+                    .last()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .and_then(|v| (0.0..=100.0).contains(&v).then_some(v))
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Probing Statistic percentile must be set to a value between 0 and 100"
+                        )
+                    })?;
+                ProbingStatistic {
+                    name:  ProbingStatisticName::Percentile,
+                    value: Some(value),
+                }
+            },
+            probe_statistic if probe_statistic.starts_with("standard-deviation") => {
+                if probe_statistic.matches('=').count() != 1
+                    || !probe_statistic.starts_with("standard-deviation=")
+                {
+                    return Err(anyhow!(
+                        "Probing Statistic standard deviation must have a positive or negative \
+                         value set using \"=\" (eg. \"--probing-stat standard-deviation=-0.25\")"
+                    ));
+                }
+                let value = probe_statistic
+                    .split('=')
+                    .next_back()
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .ok_or_else(|| {
+                        anyhow!("Probing Statistic standard deviation must have a value appended")
+                    })?;
+                ProbingStatistic {
+                    name:  ProbingStatisticName::StandardDeviation,
+                    value: Some(value),
+                }
+            },
+            _ => {
+                return Err(anyhow!("Unknown Probing Statistic: {}", stat));
+            },
+        })
+    }
+
+    #[inline]
+    pub fn parse_target_qp_range(s: &str) -> Result<(f64, f64), String> {
+        if let Some((min_str, max_str)) = s.split_once('-') {
+            let min = min_str.parse::<f64>().map_err(|_| "Invalid range format")?;
+            let max = max_str.parse::<f64>().map_err(|_| "Invalid range format")?;
+            if min >= max {
+                return Err("Min must be < max".to_string());
+            }
+            Ok((min, max))
+        } else {
+            let val = s.parse::<f64>().map_err(|_| "Invalid number")?;
+            let tol = val * 0.01;
+            Ok((val - tol, val + tol))
+        }
+    }
+
+    #[inline]
+    pub fn parse_interp_method(
+        s: &str,
+    ) -> anyhow::Result<(InterpolationMethod, InterpolationMethod)> {
+        let parts: Vec<&str> = s.split('-').collect();
+        if parts.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "Invalid format. Use: --interp-method method4-method5"
+            ));
+        }
+
+        let method4 = parts[0]
+            .parse::<InterpolationMethod>()
+            .map_err(|_| anyhow::anyhow!("Invalid 4th round method: {}", parts[0]))?;
+        let method5 = parts[1]
+            .parse::<InterpolationMethod>()
+            .map_err(|_| anyhow::anyhow!("Invalid 5th round method: {}", parts[1]))?;
+
+        // Validate methods for correct round
+        match method4 {
+            InterpolationMethod::Linear
+            | InterpolationMethod::Quadratic
+            | InterpolationMethod::Natural => {},
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Method '{}' not available for 4th round",
+                    parts[0]
+                ))
+            },
+        }
+
+        Ok((method4, method5))
+    }
+
+    #[inline]
+    pub fn parse_qp_range(s: &str) -> Result<(u32, u32), String> {
+        if let Some((min_str, max_str)) = s.split_once('-') {
+            let min = min_str.parse::<u32>().map_err(|_| "Invalid range format")?;
+            let max = max_str.parse::<u32>().map_err(|_| "Invalid range format")?;
+            if min >= max {
+                return Err("Min must be < max".to_string());
+            }
+            Ok((min, max))
+        } else {
+            Err("Quality range must be specified as min-max (e.g., 10-50)".to_string())
+        }
+    }
+
+    #[inline]
+    pub fn parse_probe_res(probe_resolution: &str) -> Result<(u32, u32), String> {
+        let parts: Vec<_> = probe_resolution.split('x').collect();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid probe resolution: {probe_resolution}. Expected widthxheight"
+            ));
+        }
+        let width = parts
+            .first()
+            .expect("Probe resolution has width and height")
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid probe resolution width: {probe_resolution}"))?;
+        let height = parts
+            .get(1)
+            .expect("Probe resolution has width and height")
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid probe resolution height: {probe_resolution}"))?;
+
+        Ok((width, height))
+    }
+
+    #[inline]
+    pub fn validate_probes(probes: u32) -> Result<(u32, Option<String>), String> {
+        match probes {
+            probes if probes >= 4 => Ok((probes, None)),
+            1..4 => Ok((
+                probes,
+                Some("Number of probes is recommended to be at least 4".to_string()),
+            )),
+            _ => Err("Number of probes must be greater than 0".to_string()),
+        }
+    }
+
+    #[inline]
+    pub fn validate_probing_rate(probing_rate: usize) -> Result<(usize, Option<String>), String> {
+        match probing_rate {
+            1..=4 => Ok((probing_rate, None)),
+            _ => Err("Probing rate must be an integer from 1 to 4".to_string()),
+        }
     }
 }
 
@@ -847,7 +1049,7 @@ pub fn log_probes(
     target: (f64, f64),
     frames: u32,
     probing_rate: u32,
-    probing_speed: Option<ProbingSpeed>,
+    video_params: Option<&Vec<String>>,
     chunk_name: &str,
     target_quantizer: u32,
     target_score: f64,
@@ -868,8 +1070,8 @@ pub fn log_probes(
     }
 
     debug!(
-        "chunk {name}: Target={min}-{max}, Metric={target_metric}, P-Rate={rate}, \
-         P-Speed={speed:?}, {frame_count} frames
+        "chunk {name}: Target={min}-{max}, Metric={target_metric}, P-Rate={rate}, {frame_count} \
+         frames{custom_params_string}
        TQ-Probes: {history:.2?}{suffix}
        Final Q={target_quantizer:.0}, Final Score={target_score:.2}",
         name = chunk_name,
@@ -877,8 +1079,13 @@ pub fn log_probes(
         max = target.1,
         target_metric = metric,
         rate = probing_rate,
-        speed = probing_speed.unwrap_or(ProbingSpeed::VeryFast),
         frame_count = frames,
+        custom_params_string = video_params
+            .map(|params| format!(
+                ", P-Video-Params: {params_string}",
+                params_string = params.join(" ")
+            ))
+            .unwrap_or_default(),
         history = sorted_quantizer_scores,
         suffix = match skip {
             SkipProbingReason::None => "",

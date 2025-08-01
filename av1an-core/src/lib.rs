@@ -22,7 +22,7 @@ use chunk::Chunk;
 use dashmap::DashMap;
 use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString, FromRepr, IntoStaticStr};
+use strum::{Display, EnumString, IntoStaticStr};
 use tracing::info;
 
 pub use crate::{
@@ -652,22 +652,6 @@ fn read_chunk_queue(temp: &Path) -> anyhow::Result<Vec<Chunk>> {
         .with_context(|| format!("Failed to read chunk queue file {}", file.display()))?;
 
     Ok(serde_json::from_str(&contents)?)
-}
-
-#[derive(
-    Serialize, Deserialize, Debug, EnumString, IntoStaticStr, Display, Clone, Copy, FromRepr,
-)]
-pub enum ProbingSpeed {
-    #[strum(serialize = "veryslow")]
-    VerySlow = 0,
-    #[strum(serialize = "slow")]
-    Slow = 1,
-    #[strum(serialize = "medium")]
-    Medium = 2,
-    #[strum(serialize = "fast")]
-    Fast = 3,
-    #[strum(serialize = "veryfast")]
-    VeryFast = 4,
 }
 
 #[derive(Serialize, Deserialize, Debug, EnumString, IntoStaticStr, Display, Clone)]

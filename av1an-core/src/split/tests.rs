@@ -119,6 +119,7 @@ fn extra_split_preserves_zone_overrides() {
                     photon_noise_width:  None,
                     chroma_noise:        false,
                     video_params:        into_vec!["--speed", "8"],
+                    target_quality:      None,
                 }),
             },
             Scene {
@@ -159,6 +160,7 @@ fn extra_split_preserves_zone_overrides() {
                     photon_noise_width:  None,
                     chroma_noise:        false,
                     video_params:        into_vec!["--speed", "3"],
+                    target_quality:      None,
                 }),
             },
             Scene {

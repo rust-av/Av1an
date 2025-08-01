@@ -3,11 +3,10 @@ use std::{
     env,
     fmt::{Debug, Write},
     io::IsTerminal,
-    path::Path,
 };
 
-use anyhow::bail;
 use once_cell::sync::OnceCell;
+use path_abs::{PathAbs, PathInfo};
 use tracing_appender::{
     non_blocking::WorkerGuard,
     rolling::{RollingFileAppender, Rotation},
@@ -42,27 +41,9 @@ impl Default for ModuleConfig {
 /// Initialize logging with per-module configuration
 pub fn init_logging(
     console_level: LevelFilter,
-    log_path: Option<&Path>,
+    log_path: Option<PathAbs>,
     file_level: LevelFilter,
 ) -> anyhow::Result<()> {
-    let log_path = if let Some(log_file) = log_path.as_ref() {
-        let log_path = Path::new(log_file);
-        if log_path.starts_with("/") || log_path.is_absolute() {
-            bail!("Log file path must be relative");
-        }
-        let absolute_path = std::path::absolute(log_path).unwrap();
-        let log_path = absolute_path
-            .strip_prefix(std::env::current_dir().unwrap())
-            .unwrap()
-            .strip_prefix("logs")
-            .unwrap_or_else(|_| {
-                absolute_path.strip_prefix(std::env::current_dir().unwrap()).unwrap()
-            });
-        log_path.to_path_buf()
-    } else {
-        Path::new("av1an.log").to_owned()
-    };
-
     // Set up our module configurations
     let mut module_configs = HashMap::new();
 
@@ -126,16 +107,14 @@ pub fn init_logging(
     };
 
     // Set up file appender
-    let file_appender = if log_path.parent().unwrap_or_else(|| Path::new("")) == Path::new("")
-        && log_path.file_name().unwrap() == "av1an.log"
-    {
-        RollingFileAppender::new(Rotation::DAILY, "logs", "av1an.log")
-    } else {
+    let file_appender = if let Some(log_path) = log_path {
         RollingFileAppender::new(
             Rotation::NEVER,
-            Path::new("logs").join(log_path.parent().unwrap_or_else(|| Path::new(""))),
-            log_path.file_name().unwrap(),
+            log_path.parent()?,
+            log_path.file_name().unwrap_or_else(|| std::ffi::OsStr::new("av1an.log")),
         )
+    } else {
+        RollingFileAppender::new(Rotation::DAILY, "logs", "av1an.log")
     };
 
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);

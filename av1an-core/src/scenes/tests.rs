@@ -1,7 +1,13 @@
+use std::str::FromStr;
+
 use crate::{
     context::Av1anContext,
     encoder::Encoder,
     scenes::{Scene, SceneFactory},
+    InterpolationMethod,
+    ProbingStatistic,
+    TargetMetric,
+    TargetQuality,
 };
 
 fn get_test_args() -> Av1anContext {
@@ -62,7 +68,7 @@ fn get_test_args() -> Av1anContext {
         sc_only:               false,
         sc_downscale_height:   None,
         force_keyframes:       Vec::new(),
-        target_quality:        None,
+        target_quality:        TargetQuality::default("", Encoder::aom),
         vmaf:                  false,
         verbosity:             Verbosity::Normal,
         workers:               1,
@@ -92,7 +98,7 @@ fn get_test_args() -> Av1anContext {
 fn validate_zones_args() {
     let input = "45 729 aom --cq-level=20 --photon-noise 4 -x 60 --min-scene-len 12";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 45);
     assert_eq!(result.end_frame, 729);
@@ -112,7 +118,7 @@ fn validate_zones_args() {
 fn validate_rav1e_zone_with_photon_noise() {
     let input = "45 729 rav1e reset --speed 6 --photon-noise 4";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 45);
     assert_eq!(result.end_frame, 729);
@@ -130,7 +136,7 @@ fn validate_rav1e_zone_with_photon_noise() {
 fn validate_zones_reset() {
     let input = "729 1337 aom reset --cq-level=20 --cpu-used=5";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 729);
     assert_eq!(result.end_frame, 1337);
@@ -154,7 +160,7 @@ fn validate_zones_reset() {
 fn validate_zones_encoder_changed() {
     let input = "729 1337 rav1e reset -s 3 -q 45";
     let args = get_test_args();
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 729);
     assert_eq!(result.end_frame, 1337);
@@ -218,7 +224,7 @@ fn validate_zones_no_args_reset() {
     let args = get_test_args();
 
     // This is weird, but can technically work for some encoders so we'll allow it.
-    let result = Scene::parse_from_zone(input, &args.args, args.frames)
+    let (result, _warnings) = Scene::parse_from_zone(input, &args.args, args.frames)
         .expect("should parse zone successfully");
     assert_eq!(result.start_frame, 5000);
     assert_eq!(result.end_frame, 6900);
@@ -232,19 +238,89 @@ fn validate_zones_no_args_reset() {
 }
 
 #[test]
-fn test_parse_from_zone_collects_multiple_errors() {
+fn parse_from_zone_collects_multiple_errors() {
     let input = "7000 6500 x264 --invalid-param=123";
     let args = get_test_args();
 
     let result = Scene::parse_from_zone(input, &args.args, args.frames);
-    assert!(result.is_err());
 
-    let error_message = result.unwrap_err().to_string();
+    match result {
+        Ok(_) => {
+            panic!("Expected error instead of success or warnings");
+        },
+        Err(e) => {
+            let error = e.to_string();
+            assert!(error.contains("Start frame must be earlier than the end frame"));
+            assert!(error.contains("Start and end frames must not be past the end of the video"));
+            assert!(error.contains(
+                "Zone specifies using x264, but this cannot be used in the same file as aom"
+            ));
+            assert!(error.contains("Zone includes encoder change but previous args were kept"));
+        },
+    }
+}
 
-    // Should contain multiple errors
-    assert!(error_message.contains("Start frame must be earlier than the end frame"));
-    assert!(error_message.contains("Start and end frames must not be past the end of the video"));
-    assert!(error_message
-        .contains("Zone specifies using x264, but this cannot be used in the same file as aom"));
-    assert!(error_message.contains("Zone includes encoder change but previous args were kept"));
+#[test]
+fn validate_zones_target_quality() {
+    let desired_target = 85;
+    let desired_metric = TargetMetric::SSIMULACRA2;
+    let desired_probing_rate = 2;
+    let desired_probes = 2;
+    let desired_qp_min = 8;
+    let desired_qp_max = 35;
+    let desired_probe_res = (1280, 720);
+    let desired_probing_stat = ProbingStatistic {
+        name:  crate::ProbingStatisticName::Mode,
+        value: None,
+    };
+    let desired_interpolation_method4 = "natural";
+    let desired_interpolation_method5 = "cubic";
+
+    let input = format!(
+        "0 -1 svt-av1 reset --preset 3 --target-quality {target} --target-metric {metric} \
+         --probing-rate {rate} --probes {probes} --qp-range {min_q}-{max_q} --probe-res \
+         {width}x{height} --probing-stat {stat} --interp-method {method4}-{method5}",
+        target = desired_target,
+        metric = desired_metric,
+        rate = desired_probing_rate,
+        probes = desired_probes,
+        min_q = desired_qp_min,
+        max_q = desired_qp_max,
+        width = desired_probe_res.0,
+        height = desired_probe_res.1,
+        stat = desired_probing_stat.name,
+        method4 = desired_interpolation_method4,
+        method5 = desired_interpolation_method5,
+    );
+    let args = get_test_args();
+
+    let (result, _warnings) = Scene::parse_from_zone(&input, &args.args, args.frames)
+        .expect("should parse zone successfully");
+    let zone_overrides = result.zone_overrides.expect("should have zone overrides");
+    assert!(zone_overrides.target_quality.is_some());
+    let target_quality = zone_overrides.target_quality.expect("should have target quality");
+    assert!(target_quality.target.is_some());
+    assert!(target_quality
+        .target
+        .is_some_and(|(low, high)| low >= (desired_target as f64 * 0.99)
+            && high >= (desired_target as f64 * 1.01)));
+    assert_eq!(target_quality.metric, desired_metric);
+    assert_eq!(target_quality.probing_rate, desired_probing_rate);
+    assert_eq!(target_quality.probes, desired_probes);
+    assert_eq!(target_quality.min_q, desired_qp_min);
+    assert_eq!(target_quality.max_q, desired_qp_max);
+    assert_eq!(target_quality.probe_res, Some(desired_probe_res));
+    assert_eq!(
+        target_quality.probing_statistic.name.to_string(),
+        desired_probing_stat.name.to_string()
+    );
+    assert_eq!(
+        target_quality.interp_method,
+        Some((
+            InterpolationMethod::from_str(desired_interpolation_method4)
+                .expect("should be a valid InterpolationMethod"),
+            InterpolationMethod::from_str(desired_interpolation_method5)
+                .expect("should be a valid InterpolationMethod")
+        ))
+    );
 }

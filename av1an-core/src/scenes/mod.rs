@@ -34,6 +34,8 @@ use crate::{
     EncodeArgs,
     Encoder,
     SplitMethod,
+    TargetMetric,
+    TargetQuality,
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -55,10 +57,16 @@ pub struct ZoneOptions {
     pub chroma_noise:        bool,
     pub extra_splits_len:    Option<usize>,
     pub min_scene_len:       usize,
+    pub target_quality:      Option<TargetQuality>,
 }
 
 impl Scene {
-    pub fn parse_from_zone(input: &str, args: &EncodeArgs, frames: usize) -> Result<Self> {
+    pub fn parse_from_zone(
+        input: &str,
+        args: &EncodeArgs,
+        frames: usize,
+    ) -> Result<(Self, Option<Vec<String>>)> {
+        let mut warnings: Vec<String> = Vec::new();
         let mut errors: Vec<String> = Vec::new();
 
         let (_, (start, _, end, _, encoder, reset, zone_args)): (
@@ -151,6 +159,9 @@ impl Scene {
         let mut extra_splits_len = args.extra_splits_len;
         let mut min_scene_len = args.min_scene_len;
 
+        // Target Quality options
+        let mut target_quality = args.target_quality.clone();
+
         // Parse overrides
         let zone_args: (&str, Vec<(&str, Option<&str>)>) =
             separated_list0::<_, nom::error::Error<&str>, _, _>(
@@ -228,6 +239,100 @@ impl Scene {
                 )),
             }
         }
+        if let Some(Some(zone_target_quality)) = zone_args.remove("--target-quality") {
+            match TargetQuality::parse_target_qp_range(zone_target_quality) {
+                Ok(target) => target_quality.target = Some(target),
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --target-quality: {}",
+                    zone_target_quality, e
+                )),
+            }
+        }
+        if let Some(Some(zone_target_metric)) = zone_args.remove("--target-metric") {
+            match TargetMetric::from_str(zone_target_metric) {
+                Ok(metric) => target_quality.metric = metric,
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --target-metric",
+                    zone_target_metric
+                )),
+            }
+        }
+        if let Some(Some(zone_qp_range)) = zone_args.remove("--qp-range") {
+            match TargetQuality::parse_qp_range(zone_qp_range) {
+                Ok((min, max)) => {
+                    target_quality.min_q = min;
+                    target_quality.max_q = max;
+                },
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --qp-range: {}",
+                    zone_qp_range, e
+                )),
+            }
+        }
+        if let Some(Some(zone_probes)) = zone_args.remove("--probes") {
+            match zone_probes.parse() {
+                Ok(probes) => match TargetQuality::validate_probes(probes) {
+                    Ok((_, warning)) => {
+                        if let Some(warning) = warning {
+                            warnings.push(warning);
+                        }
+                        target_quality.probes = probes;
+                    },
+                    Err(e) => {
+                        errors.push(format!("Invalid value '{}' for --probes: {}", probes, e));
+                    },
+                },
+                Err(_) => errors.push(format!("Invalid value '{}' for --probes", zone_probes)),
+            }
+        }
+        if let Some(Some(zone_probing_rate)) = zone_args.remove("--probing-rate") {
+            match zone_probing_rate.parse() {
+                Ok(rate) => match TargetQuality::validate_probing_rate(rate) {
+                    Ok((_, warning)) => {
+                        if let Some(warning) = warning {
+                            warnings.push(warning);
+                        }
+                        target_quality.probing_rate = rate;
+                    },
+                    Err(e) => errors.push(format!(
+                        "Invalid value '{}' for --probing-rate: {}",
+                        rate, e
+                    )),
+                },
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --probing-rate",
+                    zone_probing_rate
+                )),
+            }
+        }
+        if let Some(Some(zone_probe_res)) = zone_args.remove("--probe-res") {
+            match TargetQuality::parse_probe_res(zone_probe_res) {
+                Ok((width, height)) => target_quality.probe_res = Some((width, height)),
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --probe-res: {}",
+                    zone_probe_res, e
+                )),
+            }
+        }
+        if let Some(Some(zone_probing_stat)) = zone_args.remove("--probing-stat") {
+            match TargetQuality::parse_probing_statistic(zone_probing_stat) {
+                Ok(statistic) => target_quality.probing_statistic = statistic,
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --probing-stat: {}",
+                    zone_probing_stat, e
+                )),
+            }
+        }
+        if let Some(Some(zone_interp_method)) = zone_args.remove("--interp-method") {
+            match TargetQuality::parse_interp_method(zone_interp_method) {
+                Ok((method4, method5)) => target_quality.interp_method = Some((method4, method5)),
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --interp-method: {}",
+                    zone_interp_method, e
+                )),
+            }
+        }
+
         let raw_zone_args = if [Encoder::aom, Encoder::vpx].contains(&encoder) {
             zone_args
                 .into_iter()
@@ -305,21 +410,29 @@ impl Scene {
             bail!("{}", errors.join("\n"));
         }
 
-        Ok(Self {
-            start_frame:    start,
-            end_frame:      end,
-            zone_overrides: Some(ZoneOptions {
-                encoder,
-                passes,
-                video_params,
-                photon_noise,
-                photon_noise_height,
-                photon_noise_width,
-                chroma_noise,
-                extra_splits_len,
-                min_scene_len,
-            }),
-        })
+        Ok((
+            Self {
+                start_frame:    start,
+                end_frame:      end,
+                zone_overrides: Some(ZoneOptions {
+                    encoder,
+                    passes,
+                    video_params,
+                    photon_noise,
+                    photon_noise_height,
+                    photon_noise_width,
+                    chroma_noise,
+                    extra_splits_len,
+                    min_scene_len,
+                    target_quality: Some(target_quality),
+                }),
+            },
+            if warnings.is_empty() {
+                None
+            } else {
+                Some(warnings)
+            },
+        ))
     }
 }
 
