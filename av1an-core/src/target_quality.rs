@@ -252,7 +252,7 @@ impl TargetQuality {
             if score > target_range.1 {
                 lower_quantizer_limit = (next_quantizer + 1).min(upper_quantizer_limit);
             } else if score < target_range.0 {
-                upper_quantizer_limit = (next_quantizer - 1).max(lower_quantizer_limit);
+                upper_quantizer_limit = next_quantizer.saturating_sub(1).max(lower_quantizer_limit);
             }
 
             // Ensure quantizer limits are valid
@@ -809,7 +809,11 @@ impl TargetQuality {
             }
             Ok((min, max))
         } else {
-            let val = s.parse::<f64>().map_err(|_| "Invalid number")?;
+            let mut val = s.parse::<f64>().map_err(|_| "Invalid number")?;
+            // Convert 0 to 0.001 to avoid degenerate range issues
+            if val == 0.0 {
+                val = 0.001;
+            }
             let tol = val * 0.01;
             Ok((val - tol, val + tol))
         }
