@@ -256,7 +256,7 @@ impl TargetQuality {
             }
 
             // Ensure quantizer limits are valid
-            if lower_quantizer_limit > upper_quantizer_limit {
+            if lower_quantizer_limit >= upper_quantizer_limit {
                 log_probes(
                     &quantizer_score_history,
                     self.metric,
