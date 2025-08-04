@@ -204,7 +204,7 @@ impl Av1anContext {
                 Input::VapourSynth {
                     path, ..
                 } => {
-                    let dec = VapoursynthDecoder::from_file(path, Some(variables_map))?;
+                    let dec = VapoursynthDecoder::from_file(path, variables_map)?;
                     av_scenechange::Decoder::from_decoder_impl(
                         av_decoders::DecoderImpl::Vapoursynth(dec),
                     )?
