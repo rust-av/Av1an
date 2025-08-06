@@ -215,7 +215,7 @@ impl Av1anContext {
                         self.args.sc_pix_format,
                         Some(&self.args.scaler),
                     )?,
-                    Some(variables_map),
+                    variables_map,
                 )?,
             };
             // Getting the details will evaluate the script and produce the VapourSynth

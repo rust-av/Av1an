@@ -155,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "av-decoders"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a3e35d17e9df9c26170781708199dceb8baeb1bcd63e784a10c10d33ec4af67"
+checksum = "ce3eb4b0697edeafbbb6f15bcf22dde7ae7d8e7449211111a9bbb554862ed9a7"
 dependencies = [
  "num-rational",
  "thiserror 2.0.12",
@@ -191,9 +191,9 @@ dependencies = [
 
 [[package]]
 name = "av-scenechange"
-version = "0.17.2"
+version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38f6b9f8f5de6471673416c48d143210b225879ecbb0e7fb49dde1c004ced424"
+checksum = "5da809cb3aee6dac33f909ee9987ce6aafc91d7359386a03a048305fd1a66fcd"
 dependencies = [
  "aligned",
  "anyhow",
