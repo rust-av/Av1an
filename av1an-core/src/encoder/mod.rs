@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::{
     borrow::Cow,
     cmp,
@@ -11,9 +14,40 @@ use std::{
 use arrayvec::ArrayVec;
 use cfg_if::cfg_if;
 use itertools::chain;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 static SVT_AV1_QUARTER_STEP_SUPPORT: OnceLock<bool> = OnceLock::new();
+
+pub static USE_OLD_SVT_AV1: Lazy<bool> = Lazy::new(|| {
+    let version = Command::new("SvtAv1EncApp")
+        .arg("--version")
+        .output()
+        .expect("failed to run svt-av1");
+
+    if let Some((major, minor, _)) = parse_svt_av1_version(&version.stdout) {
+        match major {
+            0 => minor < 9,
+            1.. => false,
+        }
+    } else {
+        // If the version failed to parse, check if it accepts old arguments
+        let output = Command::new("SvtAv1EncApp")
+            .arg("--cdef-level")
+            .arg("0")
+            .output()
+            .expect("failed to run svt-av1");
+
+        let out = if output.stdout.is_empty() {
+            output.stderr
+        } else {
+            output.stdout
+        };
+        // assume an old version of SVT-AV1 if the version and unprocessed tokens failed
+        // to parse, as the format for v0.9.0+ should be the same
+        parse_svt_av1_unprocessed_tokens(&out).is_none_or(|tokens| tokens.is_empty())
+    }
+});
 
 use crate::{
     ffmpeg::{compose_ffmpeg_pipe, FFPixelFormat},
@@ -29,7 +63,8 @@ const NULL: &str = if cfg!(windows) { "nul" } else { "/dev/null" };
 const MAXIMUM_SPEED_AOM: u8 = 6;
 const MAXIMUM_SPEED_RAV1E: u8 = 10;
 const MAXIMUM_SPEED_VPX: u8 = 9;
-const MAXIMUM_SPEED_SVT_AV1: u8 = 10;
+const MAXIMUM_SPEED_OLD_SVT_AV1: u8 = 8;
+const MAXIMUM_SPEED_SVT_AV1: u8 = 12;
 const MAXIMUM_SPEED_X264: &str = "medium";
 const MAXIMUM_SPEED_X265: &str = "fast";
 
@@ -53,6 +88,41 @@ pub enum Encoder {
     svt_av1,
     x264,
     x265,
+}
+
+#[tracing::instrument(level = "debug")]
+pub(crate) fn parse_svt_av1_version(version: &[u8]) -> Option<(u32, u32, u32)> {
+    let v_idx = memchr::memchr(b'v', version)?;
+    let s = version.get(v_idx + 1..)?;
+    let s = simdutf8::basic::from_utf8(s).ok()?;
+    let version = s
+        .split_ascii_whitespace()
+        .next()?
+        .split('.')
+        .filter_map(|s| s.split('-').next())
+        .filter_map(|s| s.parse::<u32>().ok())
+        .collect::<ArrayVec<u32, 3>>();
+
+    if let [major, minor, patch] = version[..] {
+        Some((major, minor, patch))
+    } else {
+        None
+    }
+}
+
+#[tracing::instrument(level = "debug")]
+pub(crate) fn parse_svt_av1_unprocessed_tokens(output: &[u8]) -> Option<Vec<String>> {
+    let start_idx = memchr::memmem::find(output, b"Unprocessed tokens:")?;
+    let sub_output = output.get(start_idx..)?;
+    let end_idx = sub_output.iter().position(|&b| b == b'\n')?;
+    let unprocessed_tokens_line = simdutf8::basic::from_utf8(sub_output.get(0..end_idx)?).ok()?;
+    let unprocessed_tokens = unprocessed_tokens_line
+        .split_ascii_whitespace()
+        .skip(2)
+        .map(String::from)
+        .collect::<Vec<_>>();
+
+    Some(unprocessed_tokens)
 }
 
 #[tracing::instrument(level = "debug")]
@@ -711,23 +781,89 @@ impl Encoder {
                 "--kf-max-dist=9999"
             ],
             Self::svt_av1 => {
-                inplace_vec![
-                    "SvtAv1EncApp",
-                    "-i",
-                    "stdin",
-                    "--lp",
-                    threads.to_string(),
-                    "--preset",
-                    MAXIMUM_SPEED_SVT_AV1.to_string(),
-                    "--keyint",
-                    "240",
-                    "--crf",
-                    format_q(q),
-                    "--tile-rows",
-                    "1",
-                    "--tile-columns",
-                    "2",
-                ]
+                if *USE_OLD_SVT_AV1 {
+                    inplace_vec![
+                        "SvtAv1EncApp",
+                        "-i",
+                        "stdin",
+                        "--lp",
+                        threads.to_string(),
+                        "--preset",
+                        MAXIMUM_SPEED_OLD_SVT_AV1.to_string(),
+                        "--keyint",
+                        "240",
+                        "--crf",
+                        format_q(q),
+                        "--tile-rows",
+                        "1",
+                        "--tile-columns",
+                        "2",
+                        "--pred-struct",
+                        "0",
+                        "--sg-filter-mode",
+                        "0",
+                        "--enable-restoration-filtering",
+                        "0",
+                        "--cdef-level",
+                        "0",
+                        "--disable-dlf",
+                        "0",
+                        "--mrp-level",
+                        "0",
+                        "--enable-mfmv",
+                        "0",
+                        "--enable-local-warp",
+                        "0",
+                        "--enable-global-motion",
+                        "0",
+                        "--enable-interintra-comp",
+                        "0",
+                        "--obmc-level",
+                        "0",
+                        "--rdoq-level",
+                        "0",
+                        "--filter-intra-level",
+                        "0",
+                        "--enable-intra-edge-filter",
+                        "0",
+                        "--enable-pic-based-rate-est",
+                        "0",
+                        "--pred-me",
+                        "0",
+                        "--bipred-3x3",
+                        "0",
+                        "--compound",
+                        "0",
+                        "--ext-block",
+                        "0",
+                        "--hbd-md",
+                        "0",
+                        "--palette-level",
+                        "0",
+                        "--umv",
+                        "0",
+                        "--tf-level",
+                        "3",
+                    ]
+                } else {
+                    inplace_vec![
+                        "SvtAv1EncApp",
+                        "-i",
+                        "stdin",
+                        "--lp",
+                        threads.to_string(),
+                        "--preset",
+                        MAXIMUM_SPEED_SVT_AV1.to_string(),
+                        "--keyint",
+                        "240",
+                        "--crf",
+                        format_q(q),
+                        "--tile-rows",
+                        "1",
+                        "--tile-columns",
+                        "2",
+                    ]
+                }
             },
             Self::x264 => inplace_vec![
                 "x264",
