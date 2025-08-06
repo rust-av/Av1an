@@ -136,13 +136,13 @@ impl TargetQuality {
         chunk: &Chunk,
         worker_id: Option<usize>,
         plugins: Option<VapoursynthPlugins>,
-    ) -> anyhow::Result<u32> {
+    ) -> anyhow::Result<f32> {
         anyhow::ensure!(self.target.is_some(), "Target must be some");
         let target = self.target.expect("target is some");
         // History of probe results as quantizer-score pairs
-        let mut quantizer_score_history: Vec<(u32, f64)> = vec![];
+        let mut quantizer_score_history: Vec<(f32, f64)> = vec![];
 
-        let update_progress_bar = |next_quantizer: u32| {
+        let update_progress_bar = |next_quantizer: f32| {
             if let Some(worker_id) = worker_id {
                 update_mp_msg(
                     worker_id,
@@ -158,16 +158,21 @@ impl TargetQuality {
         };
 
         // Initialize quantizer limits from specified range or encoder defaults
-        let mut lower_quantizer_limit = self.min_q;
-        let mut upper_quantizer_limit = self.max_q;
+        let step = match self.encoder {
+            Encoder::x264 | Encoder::x265 => 0.25,
+            Encoder::svt_av1 if crate::encoder::svt_av1_supports_quarter_steps(&self.temp) => 0.25,
+            _ => 1.0,
+        };
+        let mut lower_quantizer_limit = self.min_q as f32;
+        let mut upper_quantizer_limit = self.max_q as f32;
 
         loop {
             let next_quantizer = predict_quantizer(
                 lower_quantizer_limit,
                 upper_quantizer_limit,
                 &quantizer_score_history,
+                // Invert for butteraugli
                 match self.metric {
-                    // For inverse metrics, target must be inverted for ascending comparisons
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
                         let (min, max) = target;
                         (-max, -min)
@@ -175,11 +180,12 @@ impl TargetQuality {
                     _ => target,
                 },
                 self.interp_method,
+                step,
             )?;
 
             if let Some((quantizer, score)) = quantizer_score_history
                 .iter()
-                .find(|(quantizer, _)| *quantizer == next_quantizer)
+                .find(|(quantizer, _)| *quantizer == next_quantizer as f32)
             {
                 // Predicted quantizer has already been probed
                 log_probes(
@@ -200,10 +206,10 @@ impl TargetQuality {
                 break;
             }
 
-            update_progress_bar(next_quantizer);
+            update_progress_bar(next_quantizer as f32);
 
             let score = {
-                let value = self.probe(chunk, next_quantizer as usize, plugins)?;
+                let value = self.probe(chunk, next_quantizer, plugins)?;
 
                 // Butteraugli is an inverse metric, invert score for comparisons
                 match self.metric {
@@ -219,7 +225,7 @@ impl TargetQuality {
                 target,
             );
 
-            quantizer_score_history.push((next_quantizer, score));
+            quantizer_score_history.push((next_quantizer as f32, score));
 
             if score_within_range || quantizer_score_history.len() >= self.probes as usize {
                 log_probes(
@@ -250,9 +256,9 @@ impl TargetQuality {
             };
 
             if score > target_range.1 {
-                lower_quantizer_limit = (next_quantizer + 1).min(upper_quantizer_limit);
+                lower_quantizer_limit = ((next_quantizer as f32) + step).min(upper_quantizer_limit);
             } else if score < target_range.0 {
-                upper_quantizer_limit = next_quantizer.saturating_sub(1).max(lower_quantizer_limit);
+                upper_quantizer_limit = ((next_quantizer as f32) - step).max(lower_quantizer_limit);
             }
 
             // Ensure quantizer limits are valid
@@ -265,7 +271,7 @@ impl TargetQuality {
                     self.probing_rate as u32,
                     self.video_params.as_ref(),
                     &chunk.name(),
-                    next_quantizer,
+                    next_quantizer as f32,
                     match self.metric {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
@@ -291,7 +297,7 @@ impl TargetQuality {
                     target,
                 )
             })
-            .max_by_key(|(quantizer, _)| *quantizer)
+            .max_by(|(q1, _), (q2, _)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Equal))
             .map_or_else(
                 || {
                     // No quantizers within tolerance, choose the quantizer closest to target
@@ -328,7 +334,7 @@ impl TargetQuality {
     fn probe(
         &self,
         chunk: &Chunk,
-        quantizer: usize,
+        quantizer: f32,
         plugins: Option<VapoursynthPlugins>,
     ) -> anyhow::Result<f64> {
         let probe_name = self.encode_probe(chunk, quantizer)?;
@@ -355,7 +361,7 @@ impl TargetQuality {
 
                     // Based on quantizer - lower quantizer leads to more accurate scores (lower
                     // variance) (citation needed)
-                    if self.encoder.get_cq_relative_percentage(quantizer) > 0.25 {
+                    if self.encoder.get_cq_relative_percentage(quantizer as usize) > 0.25 {
                         // Liberal: Use mean to determine aggregate
                         statistics.mean()
                     } else {
@@ -554,7 +560,7 @@ impl TargetQuality {
         }
     }
 
-    fn encode_probe(&self, chunk: &Chunk, q: usize) -> Result<PathBuf, Box<EncoderCrash>> {
+    fn encode_probe(&self, chunk: &Chunk, q: f32) -> Result<PathBuf, Box<EncoderCrash>> {
         let vmaf_threads = if self.vmaf_threads == 0 {
             vmaf_auto_threads(self.workers)
         } else {
@@ -706,11 +712,10 @@ impl TargetQuality {
             _ => "ivf",
         };
 
-        let probe_name = std::path::Path::new(&chunk.temp)
-            .join("split")
-            .join(format!("v_{index:05}_{q}.{extension}", index = chunk.index));
+        let q_str = crate::encoder::format_q(q);
+        let probe_name = format!("v_{index:05}_{q_str}.{extension}", index = chunk.index);
 
-        Ok(probe_name)
+        Ok(std::path::Path::new(&chunk.temp).join("split").join(&probe_name))
     }
 
     #[inline]
@@ -932,14 +937,15 @@ fn build_encoder_pipe(
 }
 
 fn predict_quantizer(
-    lower_quantizer_limit: u32,
-    upper_quantizer_limit: u32,
-    quantizer_score_history: &[(u32, f64)],
+    lower_quantizer_limit: f32,
+    upper_quantizer_limit: f32,
+    quantizer_score_history: &[(f32, f64)],
     target_range: (f64, f64),
     interp_method: Option<(InterpolationMethod, InterpolationMethod)>,
-) -> anyhow::Result<u32> {
+    step: f32,
+) -> anyhow::Result<f32> {
     let target = f64::midpoint(target_range.0, target_range.1);
-    let binary_search = u32::midpoint(lower_quantizer_limit, upper_quantizer_limit);
+    let binary_search = f32::midpoint(lower_quantizer_limit, upper_quantizer_limit);
 
     let predicted_quantizer = match quantizer_score_history.len() {
         0..=1 => binary_search as f64,
@@ -1017,7 +1023,10 @@ fn predict_quantizer(
     };
 
     // Round the result of the interpolation to the nearest integer
-    Ok((predicted_quantizer.round() as u32).clamp(lower_quantizer_limit, upper_quantizer_limit))
+    Ok(
+        (((predicted_quantizer / step as f64).round() * step as f64) as f32)
+            .clamp(lower_quantizer_limit, upper_quantizer_limit),
+    )
 }
 
 fn within_range(score: f64, target_range: (f64, f64)) -> bool {
@@ -1048,20 +1057,21 @@ pub enum SkipProbingReason {
 
 #[expect(clippy::too_many_arguments)]
 pub fn log_probes(
-    quantizer_score_history: &[(u32, f64)],
+    quantizer_score_history: &[(f32, f64)],
     metric: TargetMetric,
     target: (f64, f64),
     frames: u32,
     probing_rate: u32,
     video_params: Option<&Vec<String>>,
     chunk_name: &str,
-    target_quantizer: u32,
+    target_quantizer: f32,
     target_score: f64,
     skip: SkipProbingReason,
 ) {
     // Sort history by quantizer
     let mut sorted_quantizer_scores = quantizer_score_history.to_vec();
-    sorted_quantizer_scores.sort_by_key(|(quantizer, _)| *quantizer);
+    sorted_quantizer_scores
+        .sort_by(|(q1, _), (q2, _)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Equal));
     // Butteraugli is an inverse metric and needs to be inverted back before display
     if matches!(
         metric,
@@ -1077,7 +1087,7 @@ pub fn log_probes(
         "chunk {name}: Target={min}-{max}, Metric={target_metric}, P-Rate={rate}, {frame_count} \
          frames{custom_params_string}
        TQ-Probes: {history:.2?}{suffix}
-       Final Q={target_quantizer:.0}, Final Score={target_score:.2}",
+       Final Q={target_quantizer:.2}, Final Score={target_score:.2}",
         name = chunk_name,
         min = target.0,
         max = target.1,
@@ -1105,48 +1115,55 @@ pub fn log_probes(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
 
     // Full algorithm simulation tests
-    fn get_score_map(case: usize) -> HashMap<u32, f64> {
+    fn get_score_map(case: usize) -> Vec<(f32, f64)> {
         match case {
-            1 => std::iter::once(&(35, 80.08)).copied().collect(),
-            2 => [(17, 80.03), (35, 65.73)].iter().copied().collect(),
-            3 => [(17, 83.15), (22, 80.02), (35, 71.94)].iter().copied().collect(),
-            4 => [(17, 85.81), (30, 80.92), (32, 80.01), (35, 78.05)].iter().copied().collect(),
-            5 => [(35, 83.31), (53, 81.22), (55, 80.03), (61, 73.56), (64, 67.56)]
-                .iter()
-                .copied()
-                .collect(),
-            6 => [
-                (35, 86.99),
-                (53, 84.41),
-                (57, 82.47),
-                (59, 81.14),
-                (60, 80.09),
-                (61, 78.58),
-                (69, 68.57),
-                (70, 64.90),
-            ]
-            .iter()
-            .copied()
-            .collect(),
+            1 => vec![(35.0, 80.08)],
+            2 => vec![(17.0, 80.03), (35.0, 65.73)],
+            3 => vec![(17.0, 83.15), (22.0, 80.02), (35.0, 71.94)],
+            4 => vec![(17.0, 85.81), (30.0, 80.92), (32.0, 80.01), (35.0, 78.05)],
+            5 => vec![(35.0, 83.31), (53.0, 81.22), (55.0, 80.03), (61.0, 73.56), (64.0, 67.56)],
+            6 => vec![
+                (35.0, 86.99),
+                (53.0, 84.41),
+                (57.0, 82.47),
+                (59.0, 81.14),
+                (60.0, 80.09),
+                (61.0, 78.58),
+                (69.0, 68.57),
+                (70.0, 64.90),
+            ],
             _ => panic!("Unknown case"),
         }
     }
 
-    fn run_av1an_simulation(case: usize) -> Vec<(u32, f64)> {
+    fn run_av1an_simulation(case: usize) -> Vec<(f32, f64)> {
         let scores = get_score_map(case);
         let mut history = vec![];
-        let mut lo = 1u32;
-        let mut hi = 70u32;
+        let mut lo = 1.0f32;
+        let mut hi = 70.0f32;
         let target_range = (79.5, 80.5);
 
         for _ in 1..=10 {
-            let next_quantizer = predict_quantizer(lo, hi, &history, target_range, None)
+            if lo > hi {
+                break;
+            }
+            let next_quantizer = predict_quantizer(lo, hi, &history, target_range, None, 1.0)
                 .expect("predict_quantizer should succeed");
+
+            // Round to nearest available quantizer in test data
+            let next_quantizer = if let Some((closest_q, _)) =
+                scores.iter().min_by(|(q1, _), (q2, _)| {
+                    ((*q1 - next_quantizer).abs())
+                        .partial_cmp(&((*q2 - next_quantizer).abs()))
+                        .unwrap()
+                }) {
+                *closest_q
+            } else {
+                next_quantizer
+            };
 
             // Check if this quantizer was already probed
             if let Some((_quantizer, _score)) =
@@ -1155,17 +1172,17 @@ mod tests {
                 break;
             }
 
-            if let Some(&score) = scores.get(&next_quantizer) {
-                history.push((next_quantizer, score));
+            if let Some((_, score)) = scores.iter().find(|(q, _)| *q == next_quantizer) {
+                history.push((next_quantizer, *score));
 
-                if within_range(score, target_range) {
+                if within_range(*score, target_range) {
                     break;
                 }
 
-                if score > target_range.1 {
-                    lo = (next_quantizer + 1).min(hi);
-                } else if score < target_range.0 {
-                    hi = (next_quantizer - 1).max(lo);
+                if *score > target_range.1 {
+                    lo = (next_quantizer + 1.0).min(hi);
+                } else if *score < target_range.0 {
+                    hi = (next_quantizer - 1.0).max(lo);
                 }
             } else {
                 break;
@@ -1179,11 +1196,12 @@ mod tests {
     fn target_quality_all_cases() {
         for case in 1..=6 {
             let result = run_av1an_simulation(case);
-            assert!(!result.is_empty());
-            assert!(within_range(
-                result.last().expect("result is not empty").1,
-                (79.5, 80.5)
-            ));
+            assert!(!result.is_empty(), "Case {} returned empty result", case);
+            assert!(
+                within_range(result.last().expect("result is not empty").1, (79.5, 80.5)),
+                "Case {} final score not in range",
+                case
+            );
         }
     }
 }

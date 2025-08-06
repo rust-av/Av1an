@@ -559,7 +559,7 @@ impl Av1anContext {
         };
 
         if let Some(per_shot_target_quality_cq) = chunk.tq_cq {
-            enc_cmd = chunk.encoder.man_command(enc_cmd, per_shot_target_quality_cq as usize);
+            enc_cmd = chunk.encoder.man_command(enc_cmd, per_shot_target_quality_cq);
         }
 
         let (source_pipe_stderr, ffmpeg_pipe_stderr, enc_output, enc_stderr, frame) =
