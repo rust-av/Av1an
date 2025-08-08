@@ -247,8 +247,10 @@ fn build_decoder(
 
         // Must use from_file in order to set the CWD to the
         // directory of the user-provided VapourSynth script
-        let mut vs_decoder = VapoursynthDecoder::from_file(input.as_vapoursynth_path())?;
-        vs_decoder.set_variables(input.as_vspipe_args_hashmap()?)?;
+        let mut vs_decoder = VapoursynthDecoder::from_file(
+            input.as_vapoursynth_path(),
+            input.as_vspipe_args_hashmap()?,
+        )?;
 
         if sc_downscale_height.is_some() || sc_pix_format.is_some() {
             let downscale_height = sc_downscale_height.map(|dh| dh as u32);
