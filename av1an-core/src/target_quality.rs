@@ -185,7 +185,7 @@ impl TargetQuality {
 
             if let Some((quantizer, score)) = quantizer_score_history
                 .iter()
-                .find(|(quantizer, _)| *quantizer == next_quantizer as f32)
+                .find(|(quantizer, _)| *quantizer == next_quantizer)
             {
                 // Predicted quantizer has already been probed
                 log_probes(
@@ -206,7 +206,7 @@ impl TargetQuality {
                 break;
             }
 
-            update_progress_bar(next_quantizer as f32);
+            update_progress_bar(next_quantizer);
 
             let score = {
                 let value = self.probe(chunk, next_quantizer, plugins)?;
@@ -225,7 +225,7 @@ impl TargetQuality {
                 target,
             );
 
-            quantizer_score_history.push((next_quantizer as f32, score));
+            quantizer_score_history.push((next_quantizer, score));
 
             if score_within_range || quantizer_score_history.len() >= self.probes as usize {
                 log_probes(
@@ -256,9 +256,9 @@ impl TargetQuality {
             };
 
             if score > target_range.1 {
-                lower_quantizer_limit = ((next_quantizer as f32) + step).min(upper_quantizer_limit);
+                lower_quantizer_limit = ((next_quantizer) + step).min(upper_quantizer_limit);
             } else if score < target_range.0 {
-                upper_quantizer_limit = ((next_quantizer as f32) - step).max(lower_quantizer_limit);
+                upper_quantizer_limit = ((next_quantizer) - step).max(lower_quantizer_limit);
             }
 
             // Ensure quantizer limits are valid
@@ -271,7 +271,7 @@ impl TargetQuality {
                     self.probing_rate as u32,
                     self.video_params.as_ref(),
                     &chunk.name(),
-                    next_quantizer as f32,
+                    next_quantizer,
                     match self.metric {
                         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
                         _ => score,
