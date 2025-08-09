@@ -10,7 +10,7 @@
 //!   block).
 //! - macOS: uses `IOPMAssertionCreateWithName` (tight unsafe FFI, CFStrings
 //!   created safely).
-//
+//!
 //! Drop the guard to release the inhibition.
 
 /// What to keep awake.
