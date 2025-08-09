@@ -13,6 +13,7 @@ use av1an_core::{
     hash_path,
     into_vec,
     read_in_dir,
+    sleep_guard::{Scope, SleepGuard},
     vapoursynth::{get_vapoursynth_plugins, VSZipVersion},
     Av1anContext,
     ChunkMethod,
@@ -1225,6 +1226,10 @@ pub fn run() -> anyhow::Result<()> {
     )?;
 
     let args = parse_cli(cli_options)?;
+
+    // enable keep awake during encodes
+    let _guard = SleepGuard::acquire(Scope::System, "av1an", "Encoding video")?;
+
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;
     }
