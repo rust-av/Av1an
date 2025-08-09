@@ -4,10 +4,12 @@
 //! the idle subsystem) from going to sleep while it is alive.
 //
 //! Platforms:
-//! - Linux: uses logind's `Inhibit` D-Bus API (org.freedesktop.login1).
-//!   Stores `dbus::arg::OwnedFd` directly — no raw-FD manipulation.
-//! - Windows: uses `SetThreadExecutionState` (small FFI call in a tight unsafe block).
-//! - macOS: uses `IOPMAssertionCreateWithName` (tight unsafe FFI, CFStrings created safely).
+//! - Linux: uses logind's `Inhibit` D-Bus API (org.freedesktop.login1). Stores
+//!   `dbus::arg::OwnedFd` directly — no raw-FD manipulation.
+//! - Windows: uses `SetThreadExecutionState` (small FFI call in a tight unsafe
+//!   block).
+//! - macOS: uses `IOPMAssertionCreateWithName` (tight unsafe FFI, CFStrings
+//!   created safely).
 //
 //! Drop the guard to release the inhibition.
 
@@ -41,7 +43,8 @@ impl SleepGuard {
         })
     }
 
-    /// Acquire using a default app name (the current executable name) and a generic reason.
+    /// Acquire using a default app name (the current executable name) and a
+    /// generic reason.
     #[inline]
     pub fn acquire_default(scope: Scope) -> anyhow::Result<Self> {
         let app = std::env::current_exe()
@@ -66,11 +69,19 @@ impl PlatformGuard {
     #[inline]
     fn acquire(scope: Scope, app: &str, why: &str) -> anyhow::Result<Self> {
         #[cfg(target_os = "linux")]
-        { return Ok(Self::Linux(linux_impl::LinuxGuard::new(scope, app, why)?)); }
+        {
+            return Ok(Self::Linux(linux_impl::LinuxGuard::new(scope, app, why)?));
+        }
         #[cfg(target_os = "windows")]
-        { return Ok(Self::Windows(windows_impl::WindowsGuard::new(scope, app, why)?)); }
+        {
+            return Ok(Self::Windows(windows_impl::WindowsGuard::new(
+                scope, app, why,
+            )?));
+        }
         #[cfg(target_os = "macos")]
-        { return Ok(Self::Mac(mac_impl::MacGuard::new(scope, app, why)?)); }
+        {
+            return Ok(Self::Mac(mac_impl::MacGuard::new(scope, app, why)?));
+        }
 
         #[allow(unreachable_code)]
         Err(anyhow::anyhow!("unsupported platform"))
@@ -80,6 +91,7 @@ impl PlatformGuard {
 #[cfg(target_os = "linux")]
 mod linux_impl {
     use dbus::{arg::OwnedFd, blocking::Connection};
+
     use super::*;
 
     /// Holds the D-Bus-owned inhibition file descriptor.
@@ -109,7 +121,9 @@ mod linux_impl {
                 (what, app_name, reason, "block"),
             )?;
 
-            Ok(Self { _fd: fd })
+            Ok(Self {
+                _fd: fd
+            })
         }
     }
 }
@@ -130,8 +144,12 @@ mod windows_impl {
 
             let mut flags: u32 = ES_CONTINUOUS;
             match scope {
-                Scope::System => { flags |= ES_SYSTEM_REQUIRED; }
-                Scope::IdleOnly => { flags |= ES_DISPLAY_REQUIRED; }
+                Scope::System => {
+                    flags |= ES_SYSTEM_REQUIRED;
+                },
+                Scope::IdleOnly => {
+                    flags |= ES_DISPLAY_REQUIRED;
+                },
             }
 
             // SAFETY: Calling documented Windows API with constant flags.
@@ -148,7 +166,9 @@ mod windows_impl {
             // Clear the requirement and keep ES_CONTINUOUS.
             const ES_CONTINUOUS: u32 = 0x80000000;
             // SAFETY: Restoring to a benign state.
-            unsafe { windows_sys::Win32::System::Power::SetThreadExecutionState(ES_CONTINUOUS); }
+            unsafe {
+                windows_sys::Win32::System::Power::SetThreadExecutionState(ES_CONTINUOUS);
+            }
         }
     }
 }
@@ -176,8 +196,7 @@ mod mac_impl {
     }
 
     fn cfstr(s: &str) -> *const std::ffi::c_void {
-        use core_foundation::string::CFString;
-        use core_foundation::base::TCFType;
+        use core_foundation::{base::TCFType, string::CFString};
         let cf = CFString::new(s);
         cf.as_concrete_TypeRef() as *const std::ffi::c_void
     }
@@ -205,16 +224,23 @@ mod mac_impl {
                 )
             };
             if ret != 0 {
-                return Err(anyhow::anyhow!("IOPMAssertionCreateWithName failed: {}", ret));
+                return Err(anyhow::anyhow!(
+                    "IOPMAssertionCreateWithName failed: {}",
+                    ret
+                ));
             }
-            Ok(Self { id })
+            Ok(Self {
+                id,
+            })
         }
     }
 
     impl Drop for MacGuard {
         fn drop(&mut self) {
             // SAFETY: Releasing a valid assertion id is defined.
-            unsafe { let _ = IOPMAssertionRelease(self.id); }
+            unsafe {
+                let _ = IOPMAssertionRelease(self.id);
+            }
         }
     }
 }
