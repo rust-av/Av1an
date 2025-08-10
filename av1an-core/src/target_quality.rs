@@ -1158,7 +1158,7 @@ mod tests {
                 scores.iter().min_by(|(q1, _), (q2, _)| {
                     ((*q1 - next_quantizer).abs())
                         .partial_cmp(&((*q2 - next_quantizer).abs()))
-                        .unwrap()
+                        .expect("partial_cmp should succeed")
                 }) {
                 *closest_q
             } else {

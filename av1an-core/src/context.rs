@@ -814,7 +814,7 @@ impl Av1anContext {
                 scenes,
                 path.as_path(),
                 self.vs_proxy_script.as_deref(),
-                vspipe_args,
+                vspipe_args.iter().map(|arg| arg.as_str()).collect::<Vec<_>>().as_slice(),
             )?,
         };
 
@@ -946,7 +946,7 @@ impl Av1anContext {
         index: usize,
         vs_script: &Path,
         vs_proxy_script: Option<&Path>,
-        vspipe_args: &Vec<String>,
+        vspipe_args: &[&str],
         scene: &Scene,
         frame_rate: f64,
     ) -> anyhow::Result<Chunk> {
@@ -956,7 +956,7 @@ impl Av1anContext {
 
         fn gen_vspipe_cmd(
             vs_script: &Path,
-            vs_args: &Vec<String>,
+            vs_args: &[&str],
             scene_start: usize,
             scene_end: usize,
         ) -> Vec<OsString> {
@@ -1064,7 +1064,7 @@ impl Av1anContext {
         scenes: &[Scene],
         vs_script: &Path,
         vs_proxy_script: Option<&Path>,
-        vspipe_args: &Vec<String>,
+        vspipe_args: &[&str],
     ) -> anyhow::Result<Vec<Chunk>> {
         let frame_rate = self
             .args
