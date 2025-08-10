@@ -1,4 +1,4 @@
-//! Cross-platform sleep inhibition guard (maximized safety).
+//! Cross-platform sleep inhibition guard.
 //
 //! This module exposes a small RAII guard that prevents the system (or just
 //! the idle subsystem) from going to sleep while it is alive.
@@ -13,16 +13,14 @@
 //!
 //! Drop the guard to release the inhibition.
 
-/// What to keep awake.
-#[derive(Clone, Copy, Debug)]
-pub enum Scope {
-    /// Block system sleep (idle suspend). On Linux this maps to `"sleep"`;
-    /// on macOS this uses a system/idle assertion; on Windows it sets
-    /// `ES_SYSTEM_REQUIRED`.
-    System,
-    /// Block *idle* actions only (no suspend; mostly screen blank, idle sleep).
-    /// On Linux this maps to `"idle"`.
-    IdleOnly,
+#[derive(Debug, thiserror::Error)]
+pub enum SleepInhibitError {
+    #[error("D-Bus connection failed: {0}")]
+    DBusConnection(#[from] dbus::Error),
+    #[error("Power management API failed: {0}")]
+    PowerManagement(String),
+    #[error("Sleep inhibition not supported on this platform")]
+    UnsupportedPlatform,
 }
 
 /// RAII guard that holds a platform-specific sleep inhibition.
@@ -37,21 +35,21 @@ impl SleepGuard {
     /// `app` is the application name presented to the OS, and `why` is a human
     /// readable reason.
     #[inline]
-    pub fn acquire(scope: Scope, app: &str, why: &str) -> anyhow::Result<Self> {
+    pub fn acquire(app: &str, why: &str) -> anyhow::Result<Self> {
         Ok(Self {
-            _guard: PlatformGuard::acquire(scope, app, why)?,
+            _guard: PlatformGuard::acquire(app, why)?,
         })
     }
 
     /// Acquire using a default app name (the current executable name) and a
     /// generic reason.
     #[inline]
-    pub fn acquire_default(scope: Scope) -> anyhow::Result<Self> {
+    pub fn acquire_default() -> anyhow::Result<Self> {
         let app = std::env::current_exe()
             .ok()
             .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()))
             .unwrap_or_else(|| "app".into());
-        Self::acquire(scope, &app, "prevent system sleep")
+        Self::acquire(&app, "prevent system sleep")
     }
 }
 
@@ -67,20 +65,18 @@ enum PlatformGuard {
 
 impl PlatformGuard {
     #[inline]
-    fn acquire(scope: Scope, app: &str, why: &str) -> anyhow::Result<Self> {
+    fn acquire(app: &str, why: &str) -> anyhow::Result<Self> {
         #[cfg(target_os = "linux")]
         {
-            return Ok(Self::Linux(linux_impl::LinuxGuard::new(scope, app, why)?));
+            return Ok(Self::Linux(linux_impl::LinuxGuard::new(app, why)?));
         }
         #[cfg(target_os = "windows")]
         {
-            return Ok(Self::Windows(windows_impl::WindowsGuard::new(
-                scope, app, why,
-            )?));
+            return Ok(Self::Windows(windows_impl::WindowsGuard::new(app, why)?));
         }
         #[cfg(target_os = "macos")]
         {
-            return Ok(Self::Mac(mac_impl::MacGuard::new(scope, app, why)?));
+            return Ok(Self::Mac(mac_impl::MacGuard::new(app, why)?));
         }
 
         #[allow(unreachable_code)]
@@ -101,25 +97,22 @@ mod linux_impl {
     }
 
     impl LinuxGuard {
-        pub fn new(scope: Scope, app_name: &str, reason: &str) -> anyhow::Result<Self> {
-            let conn = Connection::new_system()?;
+        pub fn new(app_name: &str, reason: &str) -> Result<Self, SleepInhibitError> {
+            let conn = Connection::new_system().map_err(SleepInhibitError::DBusConnection)?;
+
             let proxy = conn.with_proxy(
                 "org.freedesktop.login1",
                 "/org/freedesktop/login1",
                 std::time::Duration::from_secs(5),
             );
 
-            let what = match scope {
-                Scope::System => "sleep",
-                Scope::IdleOnly => "idle",
-            };
-
-            // Call Inhibit(what, who, why, mode) -> unix fd (OwnedFd closes on drop).
-            let (fd,): (OwnedFd,) = proxy.method_call(
-                "org.freedesktop.login1.Manager",
-                "Inhibit",
-                (what, app_name, reason, "block"),
-            )?;
+            let (fd,): (OwnedFd,) = proxy
+                .method_call(
+                    "org.freedesktop.login1.Manager",
+                    "Inhibit",
+                    ("sleep", app_name, reason, "block"),
+                )
+                .map_err(SleepInhibitError::DBusConnection)?;
 
             Ok(Self {
                 _fd: fd
@@ -135,27 +128,20 @@ mod windows_impl {
     pub struct WindowsGuard;
 
     impl WindowsGuard {
-        pub fn new(scope: Scope, _app: &str, _reason: &str) -> anyhow::Result<Self> {
+        pub fn new(_app: &str, _reason: &str) -> Result<Self, SleepInhibitError> {
             // Map scope to execution state flags.
             // ES_CONTINUOUS is always set to make the request sticky for this call.
             const ES_CONTINUOUS: u32 = 0x80000000;
             const ES_SYSTEM_REQUIRED: u32 = 0x00000001;
-            const ES_DISPLAY_REQUIRED: u32 = 0x00000002;
 
-            let mut flags: u32 = ES_CONTINUOUS;
-            match scope {
-                Scope::System => {
-                    flags |= ES_SYSTEM_REQUIRED;
-                },
-                Scope::IdleOnly => {
-                    flags |= ES_DISPLAY_REQUIRED;
-                },
-            }
+            let flags: u32 = ES_CONTINUOUS | ES_SYSTEM_REQUIRED;
 
             // SAFETY: Calling documented Windows API with constant flags.
             let prev = unsafe { windows_sys::Win32::System::Power::SetThreadExecutionState(flags) };
             if prev == 0 {
-                return Err(anyhow::anyhow!("SetThreadExecutionState failed"));
+                return Err(SleepInhibitError::PowerManagement(
+                    "SetThreadExecutionState failed".into(),
+                ));
             }
             Ok(Self)
         }
@@ -206,12 +192,8 @@ mod mac_impl {
     }
 
     impl MacGuard {
-        pub fn new(scope: Scope, _app: &str, why: &str) -> anyhow::Result<Self> {
-            // Map scope to IOPM assertion type.
-            let assertion_type = match scope {
-                Scope::System => "NoIdleSleepAssertion",
-                Scope::IdleOnly => "NoDisplaySleepAssertion",
-            };
+        pub fn new(_app: &str, why: &str) -> anyhow::Result<Self> {
+            let assertion_type = "NoIdleSleepAssertion";
 
             let mut id: IOPMAssertionID = 0;
             // SAFETY: FFI call with well-formed CFStrings that live across the call.
