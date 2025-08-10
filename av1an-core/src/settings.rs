@@ -177,7 +177,7 @@ impl EncodeArgs {
         if self.target_quality.target.is_some() {
             match self.target_quality.metric {
                 TargetMetric::VMAF => validate_libvmaf()?,
-                TargetMetric::SSIMULACRA2 => self.validate_ssimululacra2()?,
+                TargetMetric::SSIMULACRA2 => self.validate_ssimulacra2()?,
                 TargetMetric::ButteraugliINF => self.validate_butteraugli_inf()?,
                 TargetMetric::Butteraugli3 => self.validate_butteraugli_3()?,
                 TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => self
@@ -427,23 +427,17 @@ impl EncodeArgs {
     }
 
     #[inline]
-    pub fn validate_ssimululacra2(&self) -> anyhow::Result<()> {
+    pub fn validate_ssimulacra2(&self) -> anyhow::Result<()> {
         ensure!(
             self.vapoursynth_plugins.is_some_and(|p| p.vship)
                 || self.vapoursynth_plugins.is_some_and(|p| p.vszip != VSZipVersion::None),
             "SSIMULACRA2 metric requires either Vapoursynth-HIP or VapourSynth Zig Image Process \
              to be installed"
         );
-        ensure!(
-            matches!(
-                self.chunk_method,
-                ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::BESTSOURCE
-                    | ChunkMethod::DGDECNV
-            ),
+        self.ensure_chunk_method(
             "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for SSIMULACRA2"
-        );
+                .to_string(),
+        )?;
 
         Ok(())
     }
@@ -456,16 +450,10 @@ impl EncodeArgs {
             "Butteraugli metric requires either Vapoursynth-HIP or vapoursynth-julek-plugin to be \
              installed"
         );
-        ensure!(
-            matches!(
-                self.chunk_method,
-                ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::BESTSOURCE
-                    | ChunkMethod::DGDECNV
-            ),
-            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for Butteraugli"
-        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for butteraugli"
+                .to_string(),
+        )?;
 
         Ok(())
     }
@@ -476,16 +464,10 @@ impl EncodeArgs {
             self.vapoursynth_plugins.is_some_and(|p| p.vship),
             "Butteraugli 3 Norm metric requires Vapoursynth-HIP plugin to be installed"
         );
-        ensure!(
-            matches!(
-                self.chunk_method,
-                ChunkMethod::LSMASH
-                    | ChunkMethod::FFMS2
-                    | ChunkMethod::BESTSOURCE
-                    | ChunkMethod::DGDECNV
-            ),
-            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for Butteraugli 3 Norm"
-        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for butteraugli 3-Norm"
+                .to_string(),
+        )?;
 
         Ok(())
     }
@@ -505,23 +487,28 @@ impl EncodeArgs {
                      VapourSynth-Zig Image Process R7 or newer to be installed"
                 )
             );
-            ensure!(
-                matches!(
-                    self.chunk_method,
-                    ChunkMethod::LSMASH
-                        | ChunkMethod::FFMS2
-                        | ChunkMethod::BESTSOURCE
-                        | ChunkMethod::DGDECNV
-                ),
-                format!(
-                    "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for {metric_name} \
-                     metric with probing rate greater than 1"
-                )
-            );
+            self.ensure_chunk_method(format!(
+                "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for {metric_name} \
+                 metric with probing rate greater than 1"
+            ))?;
         } else {
             validate_libxpsnr()?;
         }
 
+        Ok(())
+    }
+
+    fn ensure_chunk_method(&self, error_message: String) -> anyhow::Result<()> {
+        ensure!(
+            matches!(
+                self.chunk_method,
+                ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::BESTSOURCE
+                    | ChunkMethod::DGDECNV
+            ),
+            error_message
+        );
         Ok(())
     }
 }
