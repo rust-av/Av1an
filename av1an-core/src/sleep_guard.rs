@@ -15,6 +15,7 @@
 
 #[derive(Debug, thiserror::Error)]
 pub enum SleepInhibitError {
+    #[cfg(target_os = "linux")]
     #[error("D-Bus connection failed: {0}")]
     DBusConnection(#[from] dbus::Error),
     #[error("Power management API failed: {0}")]
@@ -96,6 +97,16 @@ mod linux_impl {
         _fd: OwnedFd,
     }
 
+    /// See https://www.freedesktop.org/wiki/Software/systemd/inhibit/
+    /// The Inhibit method takes four arguments:
+    /// - what: "sleep" indicates we want to prevent sleep/suspend
+    /// - who: The application name requesting the inhibition
+    /// - why: Human-readable reason for the inhibition
+    /// - mode: "block" completely blocks sleep, "delay" only delays it
+    ///
+    /// Returns a file descriptor that must be kept open to maintain the
+    /// inhibition. The FD is closed automatically when this value is
+    /// dropped.
     impl LinuxGuard {
         pub fn new(app_name: &str, reason: &str) -> Result<Self, SleepInhibitError> {
             let conn = Connection::new_system().map_err(SleepInhibitError::DBusConnection)?;
@@ -125,15 +136,30 @@ mod linux_impl {
 mod windows_impl {
     use super::*;
 
+    /// Informs the system that the state being set should remain in effect
+    /// until the next call that uses ES_CONTINUOUS and one of the other
+    /// state flags is cleared.
+    const ES_CONTINUOUS: u32 = 0x80000000;
+
+    /// Forces the system to be in the working state by resetting the system
+    /// idle timer.
+    const ES_SYSTEM_REQUIRED: u32 = 0x00000001;
+
     pub struct WindowsGuard;
 
+    /// See https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate
+    /// SetThreadExecutionState modifies the system's sleep timer behavior.
+    /// Parameters used:
+    /// - ES_CONTINUOUS (0x80000000): State remains in effect until the next
+    ///   call
+    /// - ES_SYSTEM_REQUIRED (0x00000001): Forces the system to stay in working
+    ///   state
+    ///
+    /// The system is automatically allowed to sleep again when this guard is
+    /// dropped by clearing ES_SYSTEM_REQUIRED while maintaining
+    /// ES_CONTINUOUS.
     impl WindowsGuard {
         pub fn new(_app: &str, _reason: &str) -> Result<Self, SleepInhibitError> {
-            // Map scope to execution state flags.
-            // ES_CONTINUOUS is always set to make the request sticky for this call.
-            const ES_CONTINUOUS: u32 = 0x80000000;
-            const ES_SYSTEM_REQUIRED: u32 = 0x00000001;
-
             let flags: u32 = ES_CONTINUOUS | ES_SYSTEM_REQUIRED;
 
             // SAFETY: Calling documented Windows API with constant flags.
@@ -150,7 +176,6 @@ mod windows_impl {
     impl Drop for WindowsGuard {
         fn drop(&mut self) {
             // Clear the requirement and keep ES_CONTINUOUS.
-            const ES_CONTINUOUS: u32 = 0x80000000;
             // SAFETY: Restoring to a benign state.
             unsafe {
                 windows_sys::Win32::System::Power::SetThreadExecutionState(ES_CONTINUOUS);
@@ -191,9 +216,20 @@ mod mac_impl {
         id: IOPMAssertionID,
     }
 
+    /// See https://developer.apple.com/documentation/iokit/1557134-IOPMAssertionCreateWithName
+    /// IOPMAssertionCreateWithName creates a power assertion that prevents
+    /// system sleep. Parameters:
+    /// - assertion_type: "PreventSystemSleep" prevents the entire system from
+    ///   sleeping
+    /// - level: 255 (kIOPMAssertionLevelOn) activates the assertion
+    /// - assertion_name: A human-readable reason for the assertion
+    /// - assertion_id: Returns an ID that must be released to remove the
+    ///   assertion
+    ///
+    /// The assertion is automatically released when this guard is dropped.
     impl MacGuard {
         pub fn new(_app: &str, why: &str) -> anyhow::Result<Self> {
-            let assertion_type = "NoIdleSleepAssertion";
+            let assertion_type = "PreventSystemSleep";
 
             let mut id: IOPMAssertionID = 0;
             // SAFETY: FFI call with well-formed CFStrings that live across the call.
