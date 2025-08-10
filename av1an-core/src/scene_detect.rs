@@ -179,7 +179,7 @@ pub fn scene_detect(
                 );
             }
         }
-        scores.extend(&sc_result.scores);
+        scores.extend(sc_result.scores.iter().map(|(k, v)| (k + frames_read, *v)));
 
         let scene_changes = sc_result.scene_changes;
         for (start, end) in scene_changes.iter().copied().tuple_windows() {
