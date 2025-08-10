@@ -30,7 +30,7 @@ pub struct Chunk {
     // do not break compatibility with output produced by older versions of av1an
     /// Optional target quality CQ level
     #[serde(rename = "per_shot_target_quality_cq")]
-    pub tq_cq:                 Option<u32>,
+    pub tq_cq:                 Option<f32>,
     pub ignore_frame_mismatch: bool,
 }
 

@@ -1,7 +1,15 @@
 #[cfg(test)]
 mod tests;
 
-use std::{borrow::Cow, cmp, fmt::Display, iter::Iterator, path::PathBuf, process::Command};
+use std::{
+    borrow::Cow,
+    cmp,
+    fmt::Display,
+    iter::Iterator,
+    path::PathBuf,
+    process::Command,
+    sync::OnceLock,
+};
 
 use arrayvec::ArrayVec;
 use cfg_if::cfg_if;
@@ -9,6 +17,37 @@ use itertools::chain;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+static SVT_AV1_QUARTER_STEP_SUPPORT: OnceLock<bool> = OnceLock::new();
+
+pub static USE_OLD_SVT_AV1: Lazy<bool> = Lazy::new(|| {
+    let version = Command::new("SvtAv1EncApp")
+        .arg("--version")
+        .output()
+        .expect("failed to run svt-av1");
+
+    if let Some((major, minor, _)) = parse_svt_av1_version(&version.stdout) {
+        match major {
+            0 => minor < 9,
+            1.. => false,
+        }
+    } else {
+        // If the version failed to parse, check if it accepts old arguments
+        let output = Command::new("SvtAv1EncApp")
+            .arg("--cdef-level")
+            .arg("0")
+            .output()
+            .expect("failed to run svt-av1");
+
+        let out = if output.stdout.is_empty() {
+            output.stderr
+        } else {
+            output.stdout
+        };
+        // assume an old version of SVT-AV1 if the version and unprocessed tokens failed
+        // to parse, as the format for v0.9.0+ should be the same
+        parse_svt_av1_unprocessed_tokens(&out).is_none_or(|tokens| tokens.is_empty())
+    }
+});
 
 use crate::{
     ffmpeg::{compose_ffmpeg_pipe, FFPixelFormat},
@@ -86,35 +125,40 @@ pub(crate) fn parse_svt_av1_unprocessed_tokens(output: &[u8]) -> Option<Vec<Stri
     Some(unprocessed_tokens)
 }
 
-pub static USE_OLD_SVT_AV1: Lazy<bool> = Lazy::new(|| {
-    let version = Command::new("SvtAv1EncApp")
-        .arg("--version")
-        .output()
-        .expect("failed to run svt-av1");
+#[tracing::instrument(level = "debug")]
+pub(crate) fn svt_av1_supports_quarter_steps(temp: &str) -> bool {
+    *SVT_AV1_QUARTER_STEP_SUPPORT.get_or_init(|| {
+        use std::{fs, io::Write, path::Path, process::Stdio};
 
-    if let Some((major, minor, _)) = parse_svt_av1_version(&version.stdout) {
-        match major {
-            0 => minor < 9,
-            1.. => false,
-        }
+        let test_file = Path::new(temp).join("test_q.y4m");
+        let result = (|| -> Option<bool> {
+            let mut f = fs::File::create(&test_file).ok()?;
+            writeln!(f, "YUV4MPEG2 W320 H240 F30:1 Ip A0:0 C420jpeg").ok()?;
+            writeln!(f, "FRAME").ok()?;
+            f.write_all(&vec![0u8; 320 * 240 + 2 * 160 * 120]).ok()?;
+            drop(f);
+
+            Command::new("SvtAv1EncApp")
+                .args(["-i", test_file.to_str()?, "--crf", "50.75", "-b", NULL])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .ok()
+                .map(|s| s.success())
+        })();
+
+        let _ = fs::remove_file(test_file);
+        result.unwrap_or(false)
+    })
+}
+
+pub(crate) fn format_q(q: f32) -> String {
+    if q.fract().abs() < 1e-6 {
+        format!("{:.0}", q)
     } else {
-        // If the version failed to parse, check if it accepts old arguments
-        let output = Command::new("SvtAv1EncApp")
-            .arg("--cdef-level")
-            .arg("0")
-            .output()
-            .expect("failed to run svt-av1");
-
-        let out = if output.stdout.is_empty() {
-            output.stderr
-        } else {
-            output.stdout
-        };
-        // assume an old version of SVT-AV1 if the version and unprocessed tokens failed
-        // to parse, as the format for v0.9.0+ should be the same
-        parse_svt_av1_unprocessed_tokens(&out).is_none_or(|tokens| tokens.is_empty())
+        format!("{:.2}", q)
     }
-});
+}
 
 impl Display for Encoder {
     #[inline]
@@ -598,26 +642,31 @@ impl Encoder {
         }
     }
 
-    fn replace_q(self, index: usize, q: usize) -> (usize, String) {
+    fn replace_q(self, index: usize, q: f32) -> (usize, String) {
         match self {
-            Self::aom | Self::vpx => (index, format!("--cq-level={q}")),
-            Self::rav1e | Self::svt_av1 | Self::x265 | Self::x264 => (index + 1, q.to_string()),
+            Self::aom | Self::vpx => (index, format!("--cq-level={}", q.round() as usize)),
+            Self::rav1e => (index + 1, (q.round() as usize).to_string()),
+            Self::svt_av1 | Self::x265 | Self::x264 => {
+                let q_str = format_q(q);
+                (index + 1, q_str)
+            },
         }
     }
 
-    fn insert_q(self, q: usize) -> ArrayVec<String, 2> {
+    fn insert_q(self, q: f32) -> ArrayVec<String, 2> {
         let mut output = ArrayVec::new();
         match self {
             Self::aom | Self::vpx => {
-                output.push(format!("--cq-level={q}"));
+                output.push(format!("--cq-level={}", q.round() as usize));
             },
             Self::rav1e => {
                 output.push("--quantizer".into());
-                output.push(q.to_string());
+                output.push((q.round() as usize).to_string());
             },
             Self::svt_av1 | Self::x264 | Self::x265 => {
                 output.push("--crf".into());
-                output.push(q.to_string());
+                let q_str = format_q(q);
+                output.push(q_str);
             },
         }
         output
@@ -625,7 +674,7 @@ impl Encoder {
 
     /// Returns changed q/crf in command line arguments
     #[inline]
-    pub fn man_command(self, mut params: Vec<String>, q: usize) -> Vec<String> {
+    pub fn man_command(self, mut params: Vec<String>, q: f32) -> Vec<String> {
         let index = list_index(&params, self.q_match_fn());
         if let Some(index) = index {
             let (replace_index, replace_q) = self.replace_q(index, q);
@@ -666,7 +715,7 @@ impl Encoder {
     pub fn construct_target_quality_command(
         self,
         threads: usize,
-        q: usize,
+        q: f32,
     ) -> Vec<Cow<'static, str>> {
         match &self {
             Self::aom => inplace_vec![
@@ -709,7 +758,7 @@ impl Encoder {
                 "--tiles",
                 "16",
                 "--quantizer",
-                q.to_string(),
+                (q.round() as usize).to_string(),
                 "--low-latency",
                 "--rdo-lookahead-frames",
                 "5",
@@ -744,7 +793,7 @@ impl Encoder {
                         "--keyint",
                         "240",
                         "--crf",
-                        q.to_string(),
+                        format_q(q),
                         "--tile-rows",
                         "1",
                         "--tile-columns",
@@ -808,7 +857,7 @@ impl Encoder {
                         "--keyint",
                         "240",
                         "--crf",
-                        q.to_string(),
+                        format_q(q),
                         "--tile-rows",
                         "1",
                         "--tile-columns",
@@ -829,7 +878,7 @@ impl Encoder {
                 "--preset",
                 MAXIMUM_SPEED_X264,
                 "--crf",
-                q.to_string(),
+                format!("{:.2}", q),
             ],
             Self::x265 => inplace_vec![
                 "x265",
@@ -842,7 +891,7 @@ impl Encoder {
                 "--preset",
                 MAXIMUM_SPEED_X265,
                 "--crf",
-                q.to_string(),
+                format!("{:.2}", q),
                 "--input",
                 "-",
             ],
@@ -852,19 +901,25 @@ impl Encoder {
     /// Returns command used for target quality probing (slow, correctness
     /// focused version)
     #[inline]
-    pub fn construct_target_quality_command_probe_slow(self, q: usize) -> Vec<Cow<'static, str>> {
+    pub fn construct_target_quality_command_probe_slow(self, q: f32) -> Vec<Cow<'static, str>> {
         match &self {
-            Self::aom => inplace_vec!["aomenc", "--passes=1", format!("--cq-level={q}"),],
-            Self::rav1e => inplace_vec!["rav1e", "-y", "--quantizer", q.to_string(),],
+            Self::aom => {
+                inplace_vec!["aomenc", "--passes=1", format!("--cq-level={}", q.round() as usize)]
+            },
+            Self::rav1e => {
+                inplace_vec!["rav1e", "-y", "--quantizer", (q.round() as usize).to_string()]
+            },
             Self::vpx => inplace_vec![
                 "vpxenc",
                 "--passes=1",
                 "--pass=1",
                 "--codec=vp9",
                 "--end-usage=q",
-                format!("--cq-level={q}"),
+                format!("--cq-level={}", q.round() as usize),
             ],
-            Self::svt_av1 => inplace_vec!["SvtAv1EncApp", "-i", "stdin", "--crf", q.to_string(),],
+            Self::svt_av1 => {
+                inplace_vec!["SvtAv1EncApp", "-i", "stdin", "--crf", format_q(q),]
+            },
             Self::x264 => inplace_vec![
                 "x264",
                 "--log-level",
@@ -874,7 +929,7 @@ impl Encoder {
                 "-",
                 "--no-progress",
                 "--crf",
-                q.to_string(),
+                format!("{:.2}", q),
             ],
             Self::x265 => inplace_vec![
                 "x265",
@@ -883,7 +938,7 @@ impl Encoder {
                 "--no-progress",
                 "--y4m",
                 "--crf",
-                q.to_string(),
+                format!("{:.2}", q),
                 "--input",
                 "-",
             ],
@@ -912,7 +967,7 @@ impl Encoder {
         self,
         temp: String,
         chunk_index: usize,
-        q: usize,
+        q: f32,
         pix_fmt: FFPixelFormat,
         probing_rate: usize,
         vmaf_threads: usize,
@@ -930,7 +985,8 @@ impl Encoder {
             Encoder::x265 => "hevc",
             _ => "ivf",
         };
-        let probe_name = format!("v_{chunk_index:05}_{q}.{extension}");
+        let q_str = format_q(q);
+        let probe_name = format!("v_{index:05}_{q_str}.{extension}", index = chunk_index);
 
         let probe = PathBuf::from(temp).join("split").join(&probe_name);
         let probe_path = probe.to_string_lossy().to_string();

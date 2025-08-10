@@ -259,9 +259,11 @@ impl Broker<'_> {
                     crate::encoder::Encoder::x265 => "hevc",
                     _ => "ivf",
                 };
-                let probe_file = std::path::Path::new(&self.project.args.temp).join("split").join(
-                    format!("v_{index:05}_{optimal_q}.{extension}", index = chunk.index),
-                );
+                let probe_file =
+                    std::path::Path::new(&self.project.args.temp).join("split").join({
+                        let q_str = crate::encoder::format_q(optimal_q);
+                        format!("v_{:05}_{}.{}", chunk.index, q_str, extension)
+                    });
 
                 if probe_file.exists() {
                     let encode_dir = std::path::Path::new(&self.project.args.temp).join("encode");
