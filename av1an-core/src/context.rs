@@ -800,7 +800,7 @@ impl Av1anContext {
                     let vs_script =
                         self.vs_script.as_ref().expect("vs_script should exist").as_path();
                     let vs_proxy_script = self.vs_proxy_script.as_deref();
-                    self.create_video_queue_vs(scenes, vs_script, vs_proxy_script, &Vec::new())?
+                    self.create_video_queue_vs(scenes, vs_script, vs_proxy_script, &[])?
                 },
                 ChunkMethod::Hybrid => self.create_video_queue_hybrid(scenes)?,
                 ChunkMethod::Select => self.create_video_queue_select(scenes)?,
