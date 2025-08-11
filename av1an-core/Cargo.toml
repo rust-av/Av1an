@@ -21,7 +21,7 @@ arrayvec = "0.7.2"
 av-decoders = { version = "0.3.1", features = ["vapoursynth"] }
 av-format = "0.7.0"
 av-ivf = "0.5.0"
-av-scenechange = { version = "0.17.2", default-features = false, features = [
+av-scenechange = { version = "0.17.3", default-features = false, features = [
     "vapoursynth",
 ] }
 av1-grain = { version = "0.2.4", default-features = false, features = [
@@ -54,7 +54,7 @@ smallvec = { version = "1.15.1", default-features = false, features = [
 ] }
 strsim = "0.11.0"
 strum = { version = "0.27.2", features = ["derive"] }
-sysinfo = "0.36.1"
+sysinfo = "0.37.0"
 textwrap = "0.16.0"
 thiserror = "2.0.11"
 tracing = { workspace = true }
