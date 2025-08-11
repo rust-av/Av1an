@@ -6,7 +6,7 @@ use std::{
     fs::File,
     io::Write,
     path::Path,
-    process::{exit, Command},
+    process::Command,
     str::FromStr,
     sync::atomic,
 };
@@ -61,7 +61,14 @@ pub struct ZoneOptions {
 }
 
 impl Scene {
-    pub fn parse_from_zone(input: &str, args: &EncodeArgs, frames: usize) -> Result<Self> {
+    pub fn parse_from_zone(
+        input: &str,
+        args: &EncodeArgs,
+        frames: usize,
+    ) -> Result<(Self, Option<Vec<String>>)> {
+        let mut warnings: Vec<String> = Vec::new();
+        let mut errors: Vec<String> = Vec::new();
+
         let (_, (start, _, end, _, encoder, reset, zone_args)): (
             _,
             (usize, _, usize, _, Encoder, bool, &str),
@@ -99,30 +106,29 @@ impl Scene {
             .parse(input)
             .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         if start >= end {
-            bail!("Start frame must be earlier than the end frame");
+            errors.push("Start frame must be earlier than the end frame".to_string());
         }
         if start >= frames || end > frames {
-            bail!("Start and end frames must not be past the end of the video");
+            errors.push("Start and end frames must not be past the end of the video".to_string());
         }
         if encoder.format() != args.encoder.format() {
-            bail!(
+            errors.push(format!(
                 "Zone specifies using {}, but this cannot be used in the same file as {}",
-                encoder,
-                args.encoder,
-            );
+                encoder, args.encoder,
+            ));
         }
         if encoder != args.encoder {
             if encoder.get_format_bit_depth(args.output_pix_format.format).is_err() {
-                bail!(
+                errors.push(format!(
                     "Output pixel format {:?} is not supported by {} (used in zones file)",
-                    args.output_pix_format.format,
-                    encoder
-                );
+                    args.output_pix_format.format, encoder
+                ));
             }
             if !reset {
-                bail!(
+                errors.push(
                     "Zone includes encoder change but previous args were kept. You probably meant \
                      to specify \"reset\"."
+                        .to_string(),
                 );
             }
         }
@@ -172,82 +178,159 @@ impl Scene {
             .map_err(|e| anyhow!("Invalid zone file syntax: {}", e))?;
         let mut zone_args = zone_args.1.into_iter().collect::<HashMap<_, _>>();
         if let Some(Some(zone_passes)) = zone_args.remove("--passes") {
-            passes = zone_passes.parse()?;
+            match zone_passes.parse::<u8>() {
+                Ok(p) => passes = p,
+                Err(_) => errors.push(format!("Invalid value '{}' for --passes", zone_passes)),
+            }
         } else if [Encoder::aom, Encoder::vpx].contains(&encoder) && zone_args.contains_key("--rt")
         {
             passes = 1;
         }
         if let Some(Some(zone_photon_noise)) = zone_args.remove("--photon-noise") {
-            photon_noise = Some(zone_photon_noise.parse()?);
+            match zone_photon_noise.parse::<u8>() {
+                Ok(p) => photon_noise = Some(p),
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --photon-noise",
+                    zone_photon_noise
+                )),
+            }
         }
         if let Some(Some(zone_photon_noise_height)) = zone_args.remove("--photon-noise-height") {
-            photon_noise_height = Some(zone_photon_noise_height.parse()?);
+            match zone_photon_noise_height.parse::<u32>() {
+                Ok(h) => photon_noise_height = Some(h),
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --photon-noise-height",
+                    zone_photon_noise_height
+                )),
+            }
         }
         if let Some(Some(zone_photon_noise_width)) = zone_args.remove("--photon-noise-width") {
-            photon_noise_width = Some(zone_photon_noise_width.parse()?);
+            match zone_photon_noise_width.parse::<u32>() {
+                Ok(w) => photon_noise_width = Some(w),
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --photon-noise-width",
+                    zone_photon_noise_width
+                )),
+            }
         }
         if let Some(Some(zone_chroma_noise)) = zone_args.remove("--chroma-noise") {
-            chroma_noise = zone_chroma_noise.parse()?;
+            match zone_chroma_noise.parse::<bool>() {
+                Ok(c) => chroma_noise = c,
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --chroma-noise",
+                    zone_chroma_noise
+                )),
+            }
         }
         if let Some(Some(zone_xs)) =
             zone_args.remove("-x").or_else(|| zone_args.remove("--extra-split"))
         {
-            extra_splits_len = Some(zone_xs.parse()?);
+            match zone_xs.parse::<usize>() {
+                Ok(x) => extra_splits_len = Some(x),
+                Err(_) => errors.push(format!("Invalid value '{}' for -x/--extra-split", zone_xs)),
+            }
         }
         if let Some(Some(zone_min_scene_len)) = zone_args.remove("--min-scene-len") {
-            min_scene_len = zone_min_scene_len.parse()?;
+            match zone_min_scene_len.parse::<usize>() {
+                Ok(m) => min_scene_len = m,
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --min-scene-len",
+                    zone_min_scene_len
+                )),
+            }
         }
         if let Some(Some(zone_target_quality)) = zone_args.remove("--target-quality") {
-            let parsed = TargetQuality::parse_target_qp_range(zone_target_quality)
-                .map_err(|e| anyhow!("Invalid --target-quality: {}", e))?;
-            target_quality.target = Some(parsed);
+            match TargetQuality::parse_target_qp_range(zone_target_quality) {
+                Ok(target) => target_quality.target = Some(target),
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --target-quality: {}",
+                    zone_target_quality, e
+                )),
+            }
         }
         if let Some(Some(zone_target_metric)) = zone_args.remove("--target-metric") {
-            let parsed = TargetMetric::from_str(zone_target_metric)
-                .map_err(|_| anyhow!("Invalid --target-metric: {}", zone_target_metric))?;
-            target_quality.metric = parsed;
+            match TargetMetric::from_str(zone_target_metric) {
+                Ok(metric) => target_quality.metric = metric,
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --target-metric",
+                    zone_target_metric
+                )),
+            }
         }
         if let Some(Some(zone_qp_range)) = zone_args.remove("--qp-range") {
-            let (min, max) = TargetQuality::parse_qp_range(zone_qp_range)
-                .map_err(|e| anyhow!("Invalid --qp-range: {}", e))?;
-            target_quality.min_q = min;
-            target_quality.max_q = max;
+            match TargetQuality::parse_qp_range(zone_qp_range) {
+                Ok((min, max)) => {
+                    target_quality.min_q = min;
+                    target_quality.max_q = max;
+                },
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --qp-range: {}",
+                    zone_qp_range, e
+                )),
+            }
         }
         if let Some(Some(zone_probes)) = zone_args.remove("--probes") {
-            let parsed =
-                zone_probes.parse().map_err(|_| anyhow!("Invalid --probes: {}", zone_probes))?;
-            let (probes, warning) = TargetQuality::validate_probes(parsed)
-                .map_err(|e| anyhow!("Invalid --probes: {}: {}", parsed, e))?;
-            if let Some(warning) = warning {
-                warn!("{}", warning);
+            match zone_probes.parse() {
+                Ok(probes) => match TargetQuality::validate_probes(probes) {
+                    Ok((_, warning)) => {
+                        if let Some(warning) = warning {
+                            warnings.push(warning);
+                        }
+                        target_quality.probes = probes;
+                    },
+                    Err(e) => {
+                        errors.push(format!("Invalid value '{}' for --probes: {}", probes, e));
+                    },
+                },
+                Err(_) => errors.push(format!("Invalid value '{}' for --probes", zone_probes)),
             }
-            target_quality.probes = probes;
         }
         if let Some(Some(zone_probing_rate)) = zone_args.remove("--probing-rate") {
-            let parsed = zone_probing_rate
-                .parse()
-                .map_err(|_| anyhow!("Invalid --probing-rate: {}", zone_probing_rate))?;
-            let (probing_rate, warning) = TargetQuality::validate_probing_rate(parsed)
-                .map_err(|e| anyhow!("Invalid --probing-rate: {}: {}", parsed, e))?;
-            if let Some(warning) = warning {
-                warn!("{}", warning);
+            match zone_probing_rate.parse() {
+                Ok(rate) => match TargetQuality::validate_probing_rate(rate) {
+                    Ok((_, warning)) => {
+                        if let Some(warning) = warning {
+                            warnings.push(warning);
+                        }
+                        target_quality.probing_rate = rate;
+                    },
+                    Err(e) => errors.push(format!(
+                        "Invalid value '{}' for --probing-rate: {}",
+                        rate, e
+                    )),
+                },
+                Err(_) => errors.push(format!(
+                    "Invalid value '{}' for --probing-rate",
+                    zone_probing_rate
+                )),
             }
-            target_quality.probing_rate = probing_rate;
         }
         if let Some(Some(zone_probe_res)) = zone_args.remove("--probe-res") {
-            let (width, height) = TargetQuality::parse_probe_res(zone_probe_res)
-                .map_err(|e| anyhow!("Invalid --probe-res: {}", e))?;
-            target_quality.probe_res = Some((width, height));
+            match TargetQuality::parse_probe_res(zone_probe_res) {
+                Ok((width, height)) => target_quality.probe_res = Some((width, height)),
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --probe-res: {}",
+                    zone_probe_res, e
+                )),
+            }
         }
         if let Some(Some(zone_probing_stat)) = zone_args.remove("--probing-stat") {
-            let parsed = TargetQuality::parse_probing_statistic(zone_probing_stat)
-                .map_err(|_| anyhow!("Invalid --probing-stat: {}", zone_probing_stat))?;
-            target_quality.probing_statistic = parsed;
+            match TargetQuality::parse_probing_statistic(zone_probing_stat) {
+                Ok(statistic) => target_quality.probing_statistic = statistic,
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --probing-stat: {}",
+                    zone_probing_stat, e
+                )),
+            }
         }
         if let Some(Some(zone_interp_method)) = zone_args.remove("--interp-method") {
-            let (method4, method5) = TargetQuality::parse_interp_method(zone_interp_method)
-                .map_err(|e| anyhow!("Invalid --interp-method: {}", e))?;
-            target_quality.interp_method = Some((method4, method5));
+            match TargetQuality::parse_interp_method(zone_interp_method) {
+                Ok((method4, method5)) => target_quality.interp_method = Some((method4, method5)),
+                Err(e) => errors.push(format!(
+                    "Invalid value '{}' for --interp-method: {}",
+                    zone_interp_method, e
+                )),
+            }
         }
 
         let raw_zone_args = if [Encoder::aom, Encoder::vpx].contains(&encoder) {
@@ -289,15 +372,13 @@ impl Scene {
             let invalid_params = invalid_params(&interleaved_args, &valid_params);
 
             for wrong_param in &invalid_params {
-                eprintln!("'{wrong_param}' isn't a valid parameter for {encoder}");
+                let mut error_msg =
+                    format!("'{}' isn't a valid parameter for {}", wrong_param, encoder);
                 if let Some(suggestion) = suggest_fix(wrong_param, &valid_params) {
-                    eprintln!("\tDid you mean '{suggestion}'?");
+                    use std::fmt::Write;
+                    write!(error_msg, " (did you mean '{}'?)", suggestion).unwrap();
                 }
-            }
-
-            if !invalid_params.is_empty() {
-                println!("\nTo continue anyway, run av1an with '--force'");
-                exit(1);
+                errors.push(error_msg);
             }
         }
 
@@ -325,22 +406,33 @@ impl Scene {
             video_params.push(arg);
         }
 
-        Ok(Self {
-            start_frame:    start,
-            end_frame:      end,
-            zone_overrides: Some(ZoneOptions {
-                encoder,
-                passes,
-                video_params,
-                photon_noise,
-                photon_noise_height,
-                photon_noise_width,
-                chroma_noise,
-                extra_splits_len,
-                min_scene_len,
-                target_quality: Some(target_quality),
-            }),
-        })
+        if !errors.is_empty() {
+            bail!("{}", errors.join("\n"));
+        }
+
+        Ok((
+            Self {
+                start_frame:    start,
+                end_frame:      end,
+                zone_overrides: Some(ZoneOptions {
+                    encoder,
+                    passes,
+                    video_params,
+                    photon_noise,
+                    photon_noise_height,
+                    photon_noise_width,
+                    chroma_noise,
+                    extra_splits_len,
+                    min_scene_len,
+                    target_quality: Some(target_quality),
+                }),
+            },
+            if warnings.is_empty() {
+                None
+            } else {
+                Some(warnings)
+            },
+        ))
     }
 }
 
