@@ -56,7 +56,7 @@ strsim = "0.11.0"
 strum = { version = "0.27.2", features = ["derive"] }
 sysinfo = "0.36.1"
 textwrap = "0.16.0"
-thiserror = "2.0.11"
+thiserror = "2.0.14"
 tracing = { workspace = true }
 which = "8.0.0"
 y4m = "0.8.0"
