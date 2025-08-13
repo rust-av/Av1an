@@ -166,6 +166,8 @@ impl TargetQuality {
         let mut lower_quantizer_limit = self.min_q as f32;
         let mut upper_quantizer_limit = self.max_q as f32;
 
+        let skip_reason;
+
         loop {
             let next_quantizer = predict_quantizer(
                 lower_quantizer_limit,
@@ -183,26 +185,12 @@ impl TargetQuality {
                 step,
             )?;
 
-            if let Some((quantizer, score)) = quantizer_score_history
+            if quantizer_score_history
                 .iter()
-                .find(|(quantizer, _)| *quantizer == next_quantizer)
+                .any(|(quantizer, _)| *quantizer == next_quantizer)
             {
                 // Predicted quantizer has already been probed
-                log_probes(
-                    &quantizer_score_history,
-                    self.metric,
-                    target,
-                    chunk.frames() as u32,
-                    self.probing_rate as u32,
-                    self.video_params.as_ref(),
-                    &chunk.name(),
-                    *quantizer,
-                    match self.metric {
-                        TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
-                        _ => *score,
-                    },
-                    SkipProbingReason::None,
-                );
+                skip_reason = SkipProbingReason::None;
                 break;
             }
 
@@ -228,25 +216,11 @@ impl TargetQuality {
             quantizer_score_history.push((next_quantizer, score));
 
             if score_within_range || quantizer_score_history.len() >= self.probes as usize {
-                log_probes(
-                    &quantizer_score_history,
-                    self.metric,
-                    target,
-                    chunk.frames() as u32,
-                    self.probing_rate as u32,
-                    self.video_params.as_ref(),
-                    &chunk.name(),
-                    next_quantizer,
-                    match self.metric {
-                        TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
-                        _ => score,
-                    },
-                    if score_within_range {
-                        SkipProbingReason::WithinTolerance
-                    } else {
-                        SkipProbingReason::ProbeLimitReached
-                    },
-                );
+                skip_reason = if score_within_range {
+                    SkipProbingReason::WithinTolerance
+                } else {
+                    SkipProbingReason::ProbeLimitReached
+                };
                 break;
             }
 
@@ -263,29 +237,16 @@ impl TargetQuality {
 
             // Ensure quantizer limits are valid
             if lower_quantizer_limit > upper_quantizer_limit {
-                log_probes(
-                    &quantizer_score_history,
-                    self.metric,
-                    target,
-                    chunk.frames() as u32,
-                    self.probing_rate as u32,
-                    self.video_params.as_ref(),
-                    &chunk.name(),
-                    next_quantizer,
-                    match self.metric {
-                        TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score,
-                        _ => score,
-                    },
-                    if score > target_range.1 {
-                        SkipProbingReason::QuantizerTooHigh
-                    } else {
-                        SkipProbingReason::QuantizerTooLow
-                    },
-                );
+                skip_reason = if score > target_range.1 {
+                    SkipProbingReason::QuantizerTooHigh
+                } else {
+                    SkipProbingReason::QuantizerTooLow
+                };
                 break;
             }
         }
 
+        // Calculate final quantizer and score BEFORE logging
         let final_quantizer_score = quantizer_score_history
             .iter()
             .filter(|(_, score)| {
@@ -326,8 +287,25 @@ impl TargetQuality {
                 |highest_quantizer_score_within_range| highest_quantizer_score_within_range,
             );
 
-        // Note: if the score is to be returned in the future, ensure to invert it back
-        // if metric is inverse (eg. Butteraugli)
+        log_probes(
+            &quantizer_score_history,
+            self.metric,
+            target,
+            chunk.frames() as u32,
+            self.probing_rate as u32,
+            self.video_params.as_ref(),
+            &chunk.name(),
+            final_quantizer_score.0,
+            // Inverse reverse metrics
+            match self.metric {
+                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
+                    -final_quantizer_score.1
+                },
+                _ => final_quantizer_score.1,
+            },
+            skip_reason,
+        );
+
         Ok(final_quantizer_score.0)
     }
 
