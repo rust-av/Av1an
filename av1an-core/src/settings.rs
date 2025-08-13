@@ -174,92 +174,15 @@ impl EncodeArgs {
                 );
             }
         }
-        match self.target_quality.metric {
-            TargetMetric::VMAF => validate_libvmaf()?,
-            TargetMetric::SSIMULACRA2 => {
-                ensure!(
-                    self.vapoursynth_plugins.is_some_and(|p| p.vship)
-                        || self.vapoursynth_plugins.is_some_and(|p| p.vszip != VSZipVersion::None),
-                    "SSIMULACRA2 metric requires either Vapoursynth-HIP or VapourSynth Zig Image \
-                     Process to be installed"
-                );
-                ensure!(
-                    matches!(
-                        self.chunk_method,
-                        ChunkMethod::LSMASH
-                            | ChunkMethod::FFMS2
-                            | ChunkMethod::BESTSOURCE
-                            | ChunkMethod::DGDECNV
-                    ),
-                    "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for SSIMULACRA2"
-                );
-            },
-            TargetMetric::ButteraugliINF => {
-                ensure!(
-                    self.vapoursynth_plugins.is_some_and(|p| p.vship)
-                        || self.vapoursynth_plugins.is_some_and(|p| p.julek),
-                    "Butteraugli metric requires either Vapoursynth-HIP or \
-                     vapoursynth-julek-plugin to be installed"
-                );
-                ensure!(
-                    matches!(
-                        self.chunk_method,
-                        ChunkMethod::LSMASH
-                            | ChunkMethod::FFMS2
-                            | ChunkMethod::BESTSOURCE
-                            | ChunkMethod::DGDECNV
-                    ),
-                    "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for Butteraugli"
-                );
-            },
-            TargetMetric::Butteraugli3 => {
-                ensure!(
-                    self.vapoursynth_plugins.is_some_and(|p| p.vship),
-                    "Butteraugli 3 Norm metric requires Vapoursynth-HIP plugin to be installed"
-                );
-                ensure!(
-                    matches!(
-                        self.chunk_method,
-                        ChunkMethod::LSMASH
-                            | ChunkMethod::FFMS2
-                            | ChunkMethod::BESTSOURCE
-                            | ChunkMethod::DGDECNV
-                    ),
-                    "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for Butteraugli 3 \
-                     Norm"
-                );
-            },
-            TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => {
-                let metric_name = if self.target_quality.metric == TargetMetric::XPSNRWeighted {
-                    "Weighted "
-                } else {
-                    ""
-                };
-                if self.target_quality.probing_rate > 1 {
-                    ensure!(
-                        self.vapoursynth_plugins.is_some_and(|p| p.vszip == VSZipVersion::New),
-                        format!(
-                            "{metric_name}XPSNR metric with probing rate greater than 1 requires \
-                             VapourSynth-Zig Image Process R7 or newer to be installed"
-                        )
-                    );
-                    ensure!(
-                        matches!(
-                            self.chunk_method,
-                            ChunkMethod::LSMASH
-                                | ChunkMethod::FFMS2
-                                | ChunkMethod::BESTSOURCE
-                                | ChunkMethod::DGDECNV
-                        ),
-                        format!(
-                            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for \
-                             {metric_name}XPSNR with probing rate greater than 1"
-                        )
-                    );
-                } else {
-                    validate_libxpsnr()?;
-                }
-            },
+        if self.target_quality.target.is_some() {
+            match self.target_quality.metric {
+                TargetMetric::VMAF => validate_libvmaf()?,
+                TargetMetric::SSIMULACRA2 => self.validate_ssimulacra2()?,
+                TargetMetric::ButteraugliINF => self.validate_butteraugli_inf()?,
+                TargetMetric::Butteraugli3 => self.validate_butteraugli_3()?,
+                TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => self
+                    .validate_xpsnr(self.target_quality.metric, self.target_quality.probing_rate)?,
+            }
         }
 
         if which::which("ffmpeg").is_err() {
@@ -501,6 +424,92 @@ impl EncodeArgs {
                 .iter()
                 .all(|&b| (b as char).is_ascii_digit())
         }
+    }
+
+    #[inline]
+    pub fn validate_ssimulacra2(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                || self.vapoursynth_plugins.is_some_and(|p| p.vszip != VSZipVersion::None),
+            "SSIMULACRA2 metric requires either Vapoursynth-HIP or VapourSynth Zig Image Process \
+             to be installed"
+        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for SSIMULACRA2"
+                .to_string(),
+        )?;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn validate_butteraugli_inf(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                || self.vapoursynth_plugins.is_some_and(|p| p.julek),
+            "Butteraugli metric requires either Vapoursynth-HIP or vapoursynth-julek-plugin to be \
+             installed"
+        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for butteraugli"
+                .to_string(),
+        )?;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn validate_butteraugli_3(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.vapoursynth_plugins.is_some_and(|p| p.vship),
+            "Butteraugli 3 Norm metric requires Vapoursynth-HIP plugin to be installed"
+        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for butteraugli 3-Norm"
+                .to_string(),
+        )?;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn validate_xpsnr(&self, metric: TargetMetric, probing_rate: usize) -> anyhow::Result<()> {
+        let metric_name = if metric == TargetMetric::XPSNRWeighted {
+            "Weighted XPSNR"
+        } else {
+            "XPSNR"
+        };
+        if probing_rate > 1 {
+            ensure!(
+                self.vapoursynth_plugins.is_some_and(|p| p.vszip == VSZipVersion::New),
+                format!(
+                    "{metric_name} metric with probing rate greater than 1 requires \
+                     VapourSynth-Zig Image Process R7 or newer to be installed"
+                )
+            );
+            self.ensure_chunk_method(format!(
+                "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for {metric_name} \
+                 metric with probing rate greater than 1"
+            ))?;
+        } else {
+            validate_libxpsnr()?;
+        }
+
+        Ok(())
+    }
+
+    fn ensure_chunk_method(&self, error_message: String) -> anyhow::Result<()> {
+        ensure!(
+            matches!(
+                self.chunk_method,
+                ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::BESTSOURCE
+                    | ChunkMethod::DGDECNV
+            ),
+            error_message
+        );
+        Ok(())
     }
 }
 

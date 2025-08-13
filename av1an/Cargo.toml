@@ -20,8 +20,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 av1an-core = { path = "../av1an-core", version = "0.4.1" }
-clap = { version = "4.5.41", features = ["derive"] }
-clap_complete = "4.5.55"
+clap = { version = "4.5.44", features = ["derive"] }
+clap_complete = "4.5.57"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 path_abs = { workspace = true }

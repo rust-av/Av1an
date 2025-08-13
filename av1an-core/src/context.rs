@@ -55,7 +55,7 @@ use crate::{
     settings::{EncodeArgs, InputPixelFormat},
     split::segment,
     vapoursynth::create_vs_file,
-    zones::parse_zones,
+    zones::{parse_zones, validate_zones},
     ChunkMethod,
     ChunkOrdering,
     DashMap,
@@ -204,8 +204,7 @@ impl Av1anContext {
                 Input::VapourSynth {
                     path, ..
                 } => {
-                    let mut dec = VapoursynthDecoder::from_file(path)?;
-                    dec.set_variables(variables_map)?;
+                    let dec = VapoursynthDecoder::from_file(path, variables_map)?;
                     av_scenechange::Decoder::from_decoder_impl(
                         av_decoders::DecoderImpl::Vapoursynth(dec),
                     )?
@@ -216,7 +215,7 @@ impl Av1anContext {
                         self.args.sc_pix_format,
                         Some(&self.args.scaler),
                     )?,
-                    Some(variables_map),
+                    variables_map,
                 )?,
             };
             // Getting the details will evaluate the script and produce the VapourSynth
@@ -801,17 +800,22 @@ impl Av1anContext {
                     let vs_script =
                         self.vs_script.as_ref().expect("vs_script should exist").as_path();
                     let vs_proxy_script = self.vs_proxy_script.as_deref();
-                    self.create_video_queue_vs(scenes, vs_script, vs_proxy_script)?
+                    self.create_video_queue_vs(scenes, vs_script, vs_proxy_script, &[])?
                 },
                 ChunkMethod::Hybrid => self.create_video_queue_hybrid(scenes)?,
                 ChunkMethod::Select => self.create_video_queue_select(scenes)?,
                 ChunkMethod::Segment => self.create_video_queue_segment(scenes)?,
             },
             Input::VapourSynth {
-                path, ..
-            } => {
-                self.create_video_queue_vs(scenes, path.as_path(), self.vs_proxy_script.as_deref())?
-            },
+                path,
+                vspipe_args,
+                ..
+            } => self.create_video_queue_vs(
+                scenes,
+                path.as_path(),
+                self.vs_proxy_script.as_deref(),
+                vspipe_args.iter().map(|arg| arg.as_str()).collect::<Vec<_>>().as_slice(),
+            )?,
         };
 
         match self.args.chunk_order {
@@ -843,6 +847,7 @@ impl Av1anContext {
             self.scene_factory = SceneFactory::from_scenes_file(&scene_file)?;
         } else {
             let zones = parse_zones(&self.args, self.frames)?;
+            validate_zones(&self.args, &zones)?;
             self.scene_factory.compute_scenes(&self.args, &zones)?;
             self.scene_factory.write_scenes_to_file(scene_file)?;
         }
@@ -942,6 +947,7 @@ impl Av1anContext {
         index: usize,
         vs_script: &Path,
         vs_proxy_script: Option<&Path>,
+        vspipe_args: &[&str],
         scene: &Scene,
         frame_rate: f64,
     ) -> anyhow::Result<Chunk> {
@@ -949,8 +955,13 @@ impl Av1anContext {
         // next chunk
         let frame_end = scene.end_frame - 1;
 
-        fn gen_vspipe_cmd(vs_script: &Path, scene_start: usize, scene_end: usize) -> Vec<OsString> {
-            into_vec![
+        fn gen_vspipe_cmd(
+            vs_script: &Path,
+            vs_args: &[&str],
+            scene_start: usize,
+            scene_end: usize,
+        ) -> Vec<OsString> {
+            let mut command: Vec<OsString> = into_vec![
                 "vspipe",
                 vs_script,
                 "-c",
@@ -960,12 +971,18 @@ impl Av1anContext {
                 scene_start.to_string(),
                 "-e",
                 scene_end.to_string(),
-            ]
+            ];
+            for arg in vs_args {
+                command.push("-a".into());
+                command.push(arg.into());
+            }
+            command
         }
 
-        let vspipe_cmd_gen = gen_vspipe_cmd(vs_script, scene.start_frame, frame_end);
-        let vspipe_proxy_cmd_gen = vs_proxy_script
-            .map(|vs_proxy_script| gen_vspipe_cmd(vs_proxy_script, scene.start_frame, frame_end));
+        let vspipe_cmd_gen = gen_vspipe_cmd(vs_script, vspipe_args, scene.start_frame, frame_end);
+        let vspipe_proxy_cmd_gen = vs_proxy_script.map(|vs_proxy_script| {
+            gen_vspipe_cmd(vs_proxy_script, vspipe_args, scene.start_frame, frame_end)
+        });
 
         let output_ext = self.args.encoder.output_extension();
 
@@ -1048,6 +1065,7 @@ impl Av1anContext {
         scenes: &[Scene],
         vs_script: &Path,
         vs_proxy_script: Option<&Path>,
+        vspipe_args: &[&str],
     ) -> anyhow::Result<Vec<Chunk>> {
         let frame_rate = self
             .args
@@ -1060,7 +1078,14 @@ impl Av1anContext {
             .iter()
             .enumerate()
             .map(|(index, scene)| {
-                self.create_vs_chunk(index, vs_script, vs_proxy_script, scene, frame_rate)
+                self.create_vs_chunk(
+                    index,
+                    vs_script,
+                    vs_proxy_script,
+                    vspipe_args,
+                    scene,
+                    frame_rate,
+                )
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
