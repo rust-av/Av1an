@@ -40,7 +40,7 @@ jobs:
           Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
           Expand-Archive "$tempFile" "$env:vsynth_path"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: Swatinem/rust-cache@v2
         with:
