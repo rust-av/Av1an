@@ -31,7 +31,7 @@ Can be any of the following:
     * Requires VapourSynth plugin [Vapoursynth-HIP](https://github.com/Line-fr/Vship) for Hardware-accelerated processing (recommended) or [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) for CPU processing
     * Requires [Chunk Method](./encoding.md#chunk-method--m---chunk-method) to be `lsmash`, `ffms2`, `bestsource`, or `dgdecnv`
 * `butteraugli-3` - [butteraugli](https://github.com/google/butteraugli) 3-Norm with a target intensity of 203 nits
-    * Requires VapourSynth plugin [Vapoursynth-HIP](https://github.com/Line-fr/Vship) for Hardware-accelerated processing (recommended) or [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) for CPU processing
+    * Requires VapourSynth plugin [Vapoursynth-HIP](https://github.com/Line-fr/Vship) for Hardware-accelerated processing (recommended) or [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) (does not support 3-Norm)
     * Requires [Chunk Method](./encoding.md#chunk-method--m---chunk-method) to be `lsmash`, `ffms2`, `bestsource`, or `dgdecnv`
 * `xpsnr` - [Extended Perceptually Weighted Peak Signal-to-Noise Ratio](https://github.com/fraunhoferhhi/xpsnr) using the minimum of the `Y`, `U`, and `V` scores
     * Requires FFmpeg with [libxpsnr](https://ffmpeg.org/ffmpeg-filters.html#xpsnr-1) enabled when [Probing Rate](#probing-rate---probing-rate) is unspecified or `1`
