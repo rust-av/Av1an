@@ -83,7 +83,7 @@ More details can be found in the [Target Quality](../Cli/target_quality.md) CLI 
 
 ## Example of usage
 
-`av1an -i file --target-quality 90` - Will run aomenc with default settings of target-quality
+`av1an -i file --target-quality 90` - Will run svt-av1 with default settings of target-quality
 
 `av1an -i file --target-quality 95 --vmaf_path "vmaf_v.0.6.3.pkl" --probes 6` - With specified path to vmaf model and 6 probes per segment
 

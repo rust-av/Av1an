@@ -367,7 +367,7 @@ pub struct CliOpts {
     pub force_keyframes: Option<String>,
 
     /// Video encoder to use
-    #[clap(short, long, default_value_t = Encoder::aom, help_heading = "Encoding")]
+    #[clap(short, long, default_value_t = Encoder::svt_av1, help_heading = "Encoding")]
     pub encoder: Encoder,
 
     /// Parameters for video encoder

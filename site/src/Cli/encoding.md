@@ -2,7 +2,7 @@
 
 Name | Flag | Type | Default
 --- | --- | --- | ---
-[Encoder](#encoder--e---encoder) | `-e`, `--encoder` | `ENCODER` | `aom`
+[Encoder](#encoder--e---encoder) | `-e`, `--encoder` | `ENCODER` | `svt-av1`
 [Video Parameters](#video-parameters--v---video-params) | `-v`, `--video-params` | String List | Based on Encoder
 [Passes](#passes--p---passes) | `-p`, `--passes` | Integer | 1
 [Tile Auto](#tile-auto---tile-auto) | `--tile-auto` || 
@@ -34,7 +34,7 @@ Video encoder to use.
 
 ### Default
 
-If not specified, `aom` will be used.
+If not specified, `svt-av1` will be used.
 
 ## Video Parameters `-v`, `--video-params`
 
