@@ -28,7 +28,8 @@ path_abs = { workspace = true }
 shlex = "1.3.0"
 tracing = { workspace = true }
 tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# FIXME: Locked due to https://github.com/tokio-rs/tracing/issues/3369
+tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
 
 [build-dependencies]
 vergen-git2 = { version = "1.0.0", features = ["build", "rustc", "cargo"] }
