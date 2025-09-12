@@ -69,20 +69,21 @@ if pixel_format is not None:
         case _: pixel_format = None
 
 # Apply Scene Detection Processing
-if perform_scene_detection is not None and downscale_height is not None or pixel_format is not None:
-    # Ensure downscale_height is not greater than video height
-    if downscale_height is not None:
-        try:
-            downscale_height = int(downscale_height)
-        finally:
-            downscale_height = min(downscale_height, video.height)
-    # Maintain aspect ratio and ensure width is divisible by 2
-    video = scaler_function(
-        video,
-        width=int(((video.width / video.height) * int(downscale_height)) // 2 * 2) if downscale_height is not None else video.width,
-        height=int(downscale_height or video.height),
-        format=pixel_format,
-    )
+if perform_scene_detection is not None:
+    if downscale_height is not None or pixel_format is not None:
+        # Ensure downscale_height is not greater than video height
+        if downscale_height is not None:
+            try:
+                downscale_height = int(downscale_height)
+            finally:
+                downscale_height = min(downscale_height, video.height)
+        # Maintain aspect ratio and ensure width is divisible by 2
+        video = scaler_function(
+            video,
+            width=int(((video.width / video.height) * int(downscale_height)) // 2 * 2) if downscale_height is not None else video.width,
+            height=int(downscale_height or video.height),
+            format=pixel_format,
+        )
 else:
     # Limit to one thread when encoding
     core.num_threads = 1
