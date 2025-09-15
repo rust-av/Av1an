@@ -18,7 +18,7 @@ readme = "../README.md"
 [dependencies]
 anyhow = { workspace = true }
 arrayvec = "0.7.2"
-av-decoders = { version = "0.4.0", features = ["vapoursynth"] }
+av-decoders = { version = "0.5.0", features = ["vapoursynth"] }
 av-format = "0.7.0"
 av-ivf = "0.5.0"
 av-scenechange = { version = "0.17.3", default-features = false, features = [
@@ -66,7 +66,7 @@ vapoursynth = { version = "0.4.0", features = [
 ] }
 # TODO: move all of this CLI stuff to av1an-cli
 colored = "3.0.0"
-ctrlc = "3.4.7"
+ctrlc = "3.5.0"
 regex = "1.11.2"
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
