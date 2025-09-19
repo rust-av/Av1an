@@ -117,7 +117,6 @@ ref_option_ref = "warn"
 # Disabled due to https://github.com/rust-lang/rust-clippy/issues/14697
 # self_named_module_files = "warn"
 semicolon_if_nothing_returned = "warn"
-string_to_string = "warn"
 tests_outside_test_module = "warn"
 transmute_ptr_to_ptr = "warn"
 unused_peekable = "warn"

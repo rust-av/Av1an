@@ -922,9 +922,14 @@ impl Av1anContext {
             passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
             encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
             noise_size: self.args.photon_noise_size,
-            target_quality: overrides.as_ref().map_or(self.args.target_quality.clone(), |ovr| {
-                ovr.target_quality.clone().map_or(self.args.target_quality.clone(), |tq| tq)
-            }),
+            target_quality: overrides.as_ref().map_or_else(
+                || self.args.target_quality.clone(),
+                |ovr| {
+                    ovr.target_quality
+                        .clone()
+                        .map_or_else(|| self.args.target_quality.clone(), |tq| tq)
+                },
+            ),
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
@@ -1038,8 +1043,8 @@ impl Av1anContext {
             noise_size: scene.zone_overrides.as_ref().map_or(self.args.photon_noise_size, |ovr| {
                 (ovr.photon_noise_width, ovr.photon_noise_height)
             }),
-            target_quality: scene.zone_overrides.as_ref().map_or(
-                self.args.target_quality.clone(),
+            target_quality: scene.zone_overrides.as_ref().map_or_else(
+                || self.args.target_quality.clone(),
                 |ovr| {
                     ovr.target_quality.clone().unwrap_or_else(|| self.args.target_quality.clone())
                 },
@@ -1275,9 +1280,14 @@ impl Av1anContext {
             passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
             encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
             noise_size: self.args.photon_noise_size,
-            target_quality: overrides.as_ref().map_or(self.args.target_quality.clone(), |ovr| {
-                ovr.target_quality.clone().map_or(self.args.target_quality.clone(), |tq| tq)
-            }),
+            target_quality: overrides.as_ref().map_or_else(
+                || self.args.target_quality.clone(),
+                |ovr| {
+                    ovr.target_quality
+                        .clone()
+                        .map_or_else(|| self.args.target_quality.clone(), |tq| tq)
+                },
+            ),
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
