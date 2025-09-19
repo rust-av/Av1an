@@ -22,6 +22,7 @@ av-decoders = { version = "0.4.0", features = ["vapoursynth"] }
 av-format = "0.7.0"
 av-ivf = "0.5.0"
 av-scenechange = { version = "0.17.3", default-features = false, features = [
+    "asm",
     "vapoursynth",
 ] }
 av1-grain = { version = "0.2.4", default-features = false, features = [
@@ -160,7 +161,6 @@ ref_option_ref = "warn"
 # Disabled due to https://github.com/rust-lang/rust-clippy/issues/14697
 # self_named_module_files = "warn"
 semicolon_if_nothing_returned = "warn"
-string_to_string = "warn"
 tests_outside_test_module = "warn"
 transmute_ptr_to_ptr = "warn"
 unused_peekable = "warn"

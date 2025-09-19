@@ -829,10 +829,6 @@ pub fn generate_loadscript_text(
         .replace(
             "chunk_method = os.environ.get(\"AV1AN_CHUNK_METHOD\", None)",
             &format!("chunk_method = {chunk_method_lower:?}"),
-        )
-        .replace(
-            "cache_file = os.environ.get(\"AV1AN_CACHE_FILE\", None)",
-            &format!("cache_file = {cache_file:?}"),
         );
 
     if let Some(scene_detection_downscale_height) = scene_detection_downscale_height {
