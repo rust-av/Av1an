@@ -3,11 +3,11 @@ members = ["av1an-core", "av1an"]
 resolver = "2"
 
 [workspace.dependencies]
-anyhow = "1.0.99"
+anyhow = "1.0.100"
 num-traits = "0.2.19"
 once_cell = "1.8.0"
 path_abs = "0.5.1"
-tempfile = "3.22.0"
+tempfile = "3.23.0"
 tracing = "0.1"
 
 [profile.dev.package."*"]
