@@ -34,7 +34,7 @@ crossbeam-utils = "0.8.5"
 dashmap = { version = "6.0.0", features = ["serde"] }
 indicatif = "0.18.0"
 itertools = "0.14.0"
-memchr = "2.7.5"
+memchr = "2.7.6"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
@@ -57,7 +57,7 @@ strsim = "0.11.0"
 strum = { version = "0.27.2", features = ["derive"] }
 sysinfo = "0.36.1"
 textwrap = "0.16.0"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 tracing = { workspace = true }
 which = "8.0.0"
 y4m = "0.8.0"
@@ -68,7 +68,7 @@ vapoursynth = { version = "0.4.0", features = [
 # TODO: move all of this CLI stuff to av1an-cli
 colored = "3.0.0"
 ctrlc = "3.5.0"
-regex = "1.11.2"
+regex = "1.11.3"
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented
