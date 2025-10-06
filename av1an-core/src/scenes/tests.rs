@@ -84,6 +84,8 @@ fn get_test_args() -> Av1anContext {
         vmaf_filter:           None,
         probe_res:             None,
         vapoursynth_plugins:   None,
+        dolby_vision_rpu:      None,
+        hdr10plus_json:        None,
     };
     Av1anContext {
         vs_script: None,

@@ -73,6 +73,8 @@ pub struct EncodeArgs {
     pub proxy:       Option<Input>,
     pub temp:        String,
     pub output_file: String,
+    pub dolby_vision_rpu: Option<PathBuf>,
+    pub hdr10plus_json: Option<PathBuf>,
 
     pub chunk_method:          ChunkMethod,
     pub chunk_order:           ChunkOrdering,

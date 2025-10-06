@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
     process::{exit, Command},
     str::FromStr,
     sync::atomic,
@@ -39,11 +39,18 @@ use crate::{
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum HDRDynamicMetadataFile {
+    RPU(PathBuf),
+    HDR10(PathBuf)
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Scene {
     pub start_frame:    usize,
     // Reminding again that end_frame is *exclusive*
     pub end_frame:      usize,
     pub zone_overrides: Option<ZoneOptions>,
+    pub hdr_dynamic_metadata: Option<HDRDynamicMetadataFile>
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -340,6 +347,7 @@ impl Scene {
                 min_scene_len,
                 target_quality: Some(target_quality),
             }),
+            hdr_dynamic_metadata: None,
         })
     }
 }
@@ -416,6 +424,15 @@ impl SceneFactory {
         Ok(self.data.split_scenes.as_deref().expect("split_scenes exist"))
     }
 
+    /// Retrieve the post-extra-split scenes data as mutable
+    pub fn get_split_scenes_mut(&mut self) -> anyhow::Result<&mut [Scene]> {
+        if self.data.split_scenes.is_none() {
+            bail!("compute_scenes must be called first");
+        }
+
+        Ok(self.data.split_scenes.as_deref_mut().expect("split_scenes exist"))
+    }
+
     pub fn get_frame_count(&self) -> usize {
         self.data.frames
     }
@@ -468,6 +485,7 @@ impl SceneFactory {
                             start_frame:    frames_processed,
                             end_frame:      zone.start_frame,
                             zone_overrides: None,
+                            hdr_dynamic_metadata: None
                         });
                     }
 
@@ -481,6 +499,7 @@ impl SceneFactory {
                         start_frame:    frames_processed,
                         end_frame:      frames,
                         zone_overrides: None,
+                        hdr_dynamic_metadata: None
                     });
                 }
                 (scenes, frames, BTreeMap::new())
