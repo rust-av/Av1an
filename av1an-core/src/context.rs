@@ -52,7 +52,7 @@ use crate::{
     },
     read_chunk_queue,
     save_chunk_queue,
-    scenes::{HDRDynamicMetadataFile, Scene, SceneFactory, ZoneOptions},
+    scenes::{Scene, SceneFactory, ZoneOptions},
     settings::{EncodeArgs, InputPixelFormat},
     split::segment,
     vapoursynth::create_vs_file,
@@ -851,125 +851,12 @@ impl Av1anContext {
             validate_zones(&self.args, &zones)?;
             self.scene_factory.compute_scenes(&self.args, &zones)?;
             
-            // HDR10+ Splitting
-            // Todo: move into own function
-            // Todo: sanity check on various inputs
             if let Some(hdr10plus_path) = &self.args.hdr10plus_json {
-                use hdr10plus::metadata::Hdr10PlusMetadata;
-                use hdr10plus::metadata_json::MetadataJsonRoot;
-                use hdr10plus::metadata_json::generate_json;
-                const TOOL_NAME: &str = env!("CARGO_PKG_NAME");
-                const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-                info!("Splitting HDR10+ JSON...");
-                let frames = self.scene_factory.get_frame_count();
-                let split_scenes = self.scene_factory.get_split_scenes_mut()?;
-
-                let hdr10plus_dir = Path::new(&self.args.temp).join("hdr10plus");
-                std::fs::create_dir_all(&hdr10plus_dir)?;
-
-                let metadata_json_root = MetadataJsonRoot::from_file(hdr10plus_path)?;
-                let metadata_list: Vec<Hdr10PlusMetadata> = metadata_json_root
-                    .scene_info
-                    .iter()
-                    .map(Hdr10PlusMetadata::try_from)
-                    .filter_map(Result::ok)
-                    .collect();
-                anyhow::ensure!(metadata_json_root.scene_info.len() == metadata_list.len());
-
-                if metadata_list.len() > frames {
-                    warn!("Frame Mismatch between HDR10+ JSON and input file!");
-                } else if metadata_list.len() < frames {
-                    anyhow::bail!("HDR10+ JSON contains less metadata packets than frames in the input video!")
-                }
-
-                for (scene_idx, scene) in split_scenes.iter_mut().enumerate() {
-                    let start = scene.start_frame;
-                    let end = scene.end_frame.min(frames);
-                    let scene_list: Vec<&Hdr10PlusMetadata> = metadata_list[start..end].iter().collect();
-                    let scene_json = generate_json(&scene_list, TOOL_NAME, TOOL_VERSION);
-                    let output_file = hdr10plus_dir.join(format!("scene_{}.json", scene_idx));
-
-                    let mut writer = std::io::BufWriter::with_capacity(
-                        100_000,
-                        File::create(&output_file)?,
-                    );
-
-                    writeln!(writer, "{}", serde_json::to_string_pretty(&scene_json)?)?;
-
-                    writer.flush()?;
-                    debug!("Wrote HDR10+ JSON for scene-{} -> {}", scene_idx, output_file.display());
-
-                    if let Some(hdr_dmf) = scene.hdr_dynamic_metadata.as_mut() {
-                        hdr_dmf.hdr10plus = Some(output_file);
-                    } else {
-                        scene.hdr_dynamic_metadata = Some(HDRDynamicMetadataFile {
-                            rpu: None,
-                            hdr10plus: Some(output_file) 
-                        });
-                    }
-                }
+                self.scene_factory.handle_hdr10plus_json(&self.args.temp, hdr10plus_path)?;
             }
 
-            // DV RPU Splitting
-            // Todo: move into own function
-            // Todo: sanity check on various inputs
             if let Some(dovi_rpu_path) = &self.args.dolby_vision_rpu {
-                use dolby_vision::rpu::utils::parse_rpu_file;
-                use dolby_vision::rpu::dovi_rpu::DoviRpu;
-                use dolby_vision::rpu::generate::GenerateConfig;
-
-                info!("Splitting Dolby Vision RPU...");
-                let frames = self.scene_factory.get_frame_count();
-                let split_scenes = self.scene_factory.get_split_scenes_mut()?;
-
-                let rpus_dir = Path::new(&self.args.temp).join("rpus");
-                std::fs::create_dir_all(&rpus_dir)?;
-
-                let rpus = parse_rpu_file(dovi_rpu_path)?;
-
-                if rpus.len() > frames {
-                    warn!("Frame Mismatch between Dolby Vision RPU and input file!");
-                } else if rpus.len() < frames {
-                    anyhow::bail!("Dolby Vision RPU contains less RPUs than frames in the input video!")
-                }
-
-                for (scene_idx, scene) in split_scenes.iter_mut().enumerate() {
-                    let start = scene.start_frame;
-                    let end = scene.end_frame.min(frames);
-                    let mut scene_rpus: Vec<DoviRpu> = rpus[start..end].to_vec();
-                    let encoded_rpus = GenerateConfig::encode_rpus(&mut scene_rpus);
-
-                    let output_file = rpus_dir.join(format!("scene_{}.rpu", scene_idx));
-
-                    let mut writer = std::io::BufWriter::with_capacity(
-                        100_000,
-                        File::create(&output_file)?,
-                    );
-
-                    for encoded_rpu in encoded_rpus {
-                        // Remove 0x7C01
-                        hevc_parser::hevc::NALUnit::write_with_preset(
-                            &mut writer,
-                            &encoded_rpu[2..],
-                            hevc_parser::io::StartCodePreset::Four,
-                            hevc_parser::hevc::NAL_UNSPEC62,
-                            true,
-                        )?;
-                    }
-
-                    writer.flush()?;
-                    debug!("Wrote RPU for scene-{} -> {}", scene_idx, output_file.display());
-
-                    if let Some(hdr_dmf) = scene.hdr_dynamic_metadata.as_mut() {
-                        hdr_dmf.rpu = Some(output_file);
-                    } else {
-                        scene.hdr_dynamic_metadata = Some(HDRDynamicMetadataFile {
-                            rpu: Some(output_file),
-                            hdr10plus: None 
-                        });
-                    }
-                }
+                self.scene_factory.handle_dv_rpu(&self.args.temp, dovi_rpu_path)?;
             }
 
             self.scene_factory.write_scenes_to_file(scene_file)?;
