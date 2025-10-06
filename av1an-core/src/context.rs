@@ -850,19 +850,83 @@ impl Av1anContext {
             let zones = parse_zones(&self.args, self.frames)?;
             validate_zones(&self.args, &zones)?;
             self.scene_factory.compute_scenes(&self.args, &zones)?;
+            
+            // HDR10+ Splitting
+            // Todo: move into own function
+            // Todo: sanity check on various inputs
+            if let Some(hdr10plus_path) = &self.args.hdr10plus_json {
+                use hdr10plus::metadata::Hdr10PlusMetadata;
+                use hdr10plus::metadata_json::MetadataJsonRoot;
+                use hdr10plus::metadata_json::generate_json;
+                const TOOL_NAME: &str = env!("CARGO_PKG_NAME");
+                const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-            if let Some(dovi_rpu_path) = &self.args.dolby_vision_rpu {
-                info!("Splitting Dolby Vision RPU...");
+                info!("Splitting HDR10+ JSON...");
                 let frames = self.scene_factory.get_frame_count();
+                let split_scenes = self.scene_factory.get_split_scenes_mut()?;
+
+                let hdr10plus_dir = Path::new(&self.args.temp).join("hdr10plus");
+                std::fs::create_dir_all(&hdr10plus_dir)?;
+
+                let metadata_json_root = MetadataJsonRoot::from_file(hdr10plus_path)?;
+                let metadata_list: Vec<Hdr10PlusMetadata> = metadata_json_root
+                    .scene_info
+                    .iter()
+                    .map(Hdr10PlusMetadata::try_from)
+                    .filter_map(Result::ok)
+                    .collect();
+                anyhow::ensure!(metadata_json_root.scene_info.len() == metadata_list.len());
+
+                if metadata_list.len() > frames {
+                    warn!("Frame Mismatch between HDR10+ JSON and input file!");
+                } else if metadata_list.len() < frames {
+                    anyhow::bail!("HDR10+ JSON contains less metadata packets than frames in the input video!")
+                }
+
+                for (scene_idx, scene) in split_scenes.iter_mut().enumerate() {
+                    let start = scene.start_frame;
+                    let end = scene.end_frame.min(frames);
+                    let scene_list: Vec<&Hdr10PlusMetadata> = metadata_list[start..end].iter().collect();
+                    let scene_json = generate_json(&scene_list, TOOL_NAME, TOOL_VERSION);
+                    let output_file = hdr10plus_dir.join(format!("scene_{}.json", scene_idx));
+
+                    let mut writer = std::io::BufWriter::with_capacity(
+                        100_000,
+                        File::create(&output_file)?,
+                    );
+
+                    writeln!(writer, "{}", serde_json::to_string_pretty(&scene_json)?)?;
+
+                    writer.flush()?;
+                    debug!("Wrote HDR10+ JSON for scene-{} -> {}", scene_idx, output_file.display());
+
+                    if let Some(hdr_dmf) = scene.hdr_dynamic_metadata.as_mut() {
+                        hdr_dmf.hdr10plus = Some(output_file);
+                    } else {
+                        scene.hdr_dynamic_metadata = Some(HDRDynamicMetadataFile {
+                            rpu: None,
+                            hdr10plus: Some(output_file) 
+                        });
+                    }
+                }
+            }
+
+            // DV RPU Splitting
+            // Todo: move into own function
+            // Todo: sanity check on various inputs
+            if let Some(dovi_rpu_path) = &self.args.dolby_vision_rpu {
                 use dolby_vision::rpu::utils::parse_rpu_file;
                 use dolby_vision::rpu::dovi_rpu::DoviRpu;
                 use dolby_vision::rpu::generate::GenerateConfig;
+
+                info!("Splitting Dolby Vision RPU...");
+                let frames = self.scene_factory.get_frame_count();
+                let split_scenes = self.scene_factory.get_split_scenes_mut()?;
 
                 let rpus_dir = Path::new(&self.args.temp).join("rpus");
                 std::fs::create_dir_all(&rpus_dir)?;
 
                 let rpus = parse_rpu_file(dovi_rpu_path)?;
-                let split_scenes = self.scene_factory.get_split_scenes_mut()?;
 
                 if rpus.len() > frames {
                     warn!("Frame Mismatch between Dolby Vision RPU and input file!");
@@ -897,7 +961,14 @@ impl Av1anContext {
                     writer.flush()?;
                     debug!("Wrote RPU for scene-{} -> {}", scene_idx, output_file.display());
 
-                    scene.hdr_dynamic_metadata = Some(HDRDynamicMetadataFile::RPU(output_file));
+                    if let Some(hdr_dmf) = scene.hdr_dynamic_metadata.as_mut() {
+                        hdr_dmf.rpu = Some(output_file);
+                    } else {
+                        scene.hdr_dynamic_metadata = Some(HDRDynamicMetadataFile {
+                            rpu: Some(output_file),
+                            hdr10plus: None 
+                        });
+                    }
                 }
             }
 
@@ -953,14 +1024,18 @@ impl Av1anContext {
         );
 
         if let Some(dmf) = &scene.hdr_dynamic_metadata {
-            match dmf {
-                HDRDynamicMetadataFile::RPU(path_buf) => {
-                    if encoder == crate::Encoder::svt_av1 {
-                        video_params.push("--dolby-vision-rpu".to_owned());
-                        video_params.push(path_buf.to_stfu8());
-                    }
-                },
-                HDRDynamicMetadataFile::HDR10(path_buf) => todo!(),
+            if let Some(p) = &dmf.rpu {
+                if encoder == crate::Encoder::svt_av1 {
+                    video_params.push("--dolby-vision-rpu".to_owned());
+                    video_params.push(p.to_stfu8());
+                }
+            }
+
+            if let Some(p) = &dmf.hdr10plus {
+                if encoder == crate::Encoder::svt_av1 {
+                    video_params.push("--hdr10plus-json".to_owned());
+                    video_params.push(p.to_stfu8());
+                }
             }
         }
 
@@ -1065,14 +1140,18 @@ impl Av1anContext {
         );
 
         if let Some(dmf) = &scene.hdr_dynamic_metadata {
-            match dmf {
-                HDRDynamicMetadataFile::RPU(path_buf) => {
-                    if encoder == crate::Encoder::svt_av1 {
-                        video_params.push("--dolby-vision-rpu".to_owned());
-                        video_params.push(path_buf.to_stfu8());
-                    }
-                },
-                HDRDynamicMetadataFile::HDR10(path_buf) => todo!(),
+            if let Some(p) = &dmf.rpu {
+                if encoder == crate::Encoder::svt_av1 {
+                    video_params.push("--dolby-vision-rpu".to_owned());
+                    video_params.push(p.to_stfu8());
+                }
+            }
+
+            if let Some(p) = &dmf.hdr10plus {
+                if encoder == crate::Encoder::svt_av1 {
+                    video_params.push("--hdr10plus-json".to_owned());
+                    video_params.push(p.to_stfu8());
+                }
             }
         }
 
@@ -1339,14 +1418,18 @@ impl Av1anContext {
         );
 
         if let Some(dmf) = &scene.hdr_dynamic_metadata {
-            match dmf {
-                HDRDynamicMetadataFile::RPU(path_buf) => {
-                    if encoder == crate::Encoder::svt_av1 {
-                        video_params.push("--dolby-vision-rpu".to_owned());
-                        video_params.push(path_buf.to_stfu8());
-                    }
-                },
-                HDRDynamicMetadataFile::HDR10(path_buf) => todo!(),
+            if let Some(p) = &dmf.rpu {
+                if encoder == crate::Encoder::svt_av1 {
+                    video_params.push("--dolby-vision-rpu".to_owned());
+                    video_params.push(p.to_stfu8());
+                }
+            }
+
+            if let Some(p) = &dmf.hdr10plus {
+                if encoder == crate::Encoder::svt_av1 {
+                    video_params.push("--hdr10plus-json".to_owned());
+                    video_params.push(p.to_stfu8());
+                }
             }
         }
 

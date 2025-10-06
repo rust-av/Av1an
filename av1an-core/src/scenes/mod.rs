@@ -39,9 +39,9 @@ use crate::{
 };
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub enum HDRDynamicMetadataFile {
-    RPU(PathBuf),
-    HDR10(PathBuf)
+pub struct HDRDynamicMetadataFile {
+    pub rpu: Option<PathBuf>,
+    pub hdr10plus: Option<PathBuf>
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

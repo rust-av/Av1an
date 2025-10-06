@@ -72,7 +72,7 @@ regex = "1.11.3"
 
 hevc_parser = { version = "0.6.9", features = ["hevc_io"] }
 dolby_vision = "3.3.2"
-hdr10plus = "2.1.4"
+hdr10plus = { version = "2.1.4", features = ["json"] }
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented
