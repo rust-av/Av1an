@@ -198,16 +198,10 @@ pub struct CliOpts {
     pub output_file: Option<PathBuf>,
 
     /// Dolby Vision RPU to use
-    ///
-    ///
-    ///
     #[clap(long)]
     pub dolby_vision_rpu: Option<PathBuf>,
 
     /// HDR10+ JSON to use
-    ///
-    ///
-    ///
     #[clap(long)]
     pub hdr10plus_json: Option<PathBuf>,
 
@@ -1169,7 +1163,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             ignore_frame_mismatch: args.ignore_frame_mismatch,
             vapoursynth_plugins,
             dolby_vision_rpu: args.dolby_vision_rpu.clone(),
-            hdr10plus_json: args.hdr10plus_json.clone()
+            hdr10plus_json: args.hdr10plus_json.clone(),
         };
 
         if !args.overwrite {

@@ -187,7 +187,8 @@ pub fn scene_detect(
                 start_frame:    start + frames_read,
                 end_frame:      end + frames_read,
                 zone_overrides: cur_zone.and_then(|zone| zone.zone_overrides.clone()),
-                hdr_dynamic_metadata: None,
+                dovi_rpu:       None,
+                hdr10plus:      None,
             });
         }
 
@@ -198,7 +199,8 @@ pub fn scene_detect(
                 frames_read
             }),
             zone_overrides: cur_zone.and_then(|zone| zone.zone_overrides.clone()),
-            hdr_dynamic_metadata: None,
+            dovi_rpu:       None,
+            hdr10plus:      None,
         });
         if let Some(next_idx) = next_zone_idx {
             if cur_zone.is_none_or(|zone| zone.end_frame == zones[next_idx].start_frame) {

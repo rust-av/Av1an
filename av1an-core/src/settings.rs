@@ -69,12 +69,12 @@ impl InputPixelFormat {
 #[expect(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct EncodeArgs {
-    pub input:       Input,
-    pub proxy:       Option<Input>,
-    pub temp:        String,
-    pub output_file: String,
+    pub input:            Input,
+    pub proxy:            Option<Input>,
+    pub temp:             String,
+    pub output_file:      String,
     pub dolby_vision_rpu: Option<PathBuf>,
-    pub hdr10plus_json: Option<PathBuf>,
+    pub hdr10plus_json:   Option<PathBuf>,
 
     pub chunk_method:          ChunkMethod,
     pub chunk_order:           ChunkOrdering,
