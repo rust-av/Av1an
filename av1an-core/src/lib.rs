@@ -57,6 +57,7 @@ mod progress_bar;
 mod scene_detect;
 mod scenes;
 mod settings;
+pub mod sleep_guard;
 mod split;
 mod target_quality;
 mod util;
