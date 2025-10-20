@@ -28,7 +28,7 @@ av-scenechange = { version = "0.17.3", default-features = false, features = [
 av1-grain = { version = "0.2.4", default-features = false, features = [
     "create",
 ] }
-cfg-if = "1.0.3"
+cfg-if = "1.0.4"
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.5"
 dashmap = { version = "6.0.0", features = ["serde"] }
@@ -68,7 +68,7 @@ vapoursynth = { version = "0.4.0", features = [
 # TODO: move all of this CLI stuff to av1an-cli
 colored = "3.0.0"
 ctrlc = "3.5.0"
-regex = "1.12.1"
+regex = "1.12.2"
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented
