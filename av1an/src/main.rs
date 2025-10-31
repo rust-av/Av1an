@@ -1088,9 +1088,10 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 Some(0) => None,
                 Some(x) => Some(x),
                 // Make sure it's at least 10 seconds, unless specified by user
-                None => {
-                    Some((clip_info.frame_rate.to_f64().unwrap() * args.extra_split_sec) as usize)
-                },
+                None => Some(
+                    (clip_info.frame_rate.to_f64().unwrap() * args.extra_split_sec).round()
+                        as usize,
+                ),
             },
             photon_noise: args.photon_noise.and_then(|arg| if arg == 0 { None } else { Some(arg) }),
             photon_noise_size: (args.photon_noise_width, args.photon_noise_height),
