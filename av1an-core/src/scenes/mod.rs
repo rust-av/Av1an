@@ -5,13 +5,18 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
     process::{exit, Command},
     str::FromStr,
     sync::atomic,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use dolby_vision::rpu::{generate::GenerateConfig, utils::parse_rpu_file};
+use hdr10plus::{
+    metadata::Hdr10PlusMetadata,
+    metadata_json::{generate_json, MetadataJsonRoot},
+};
 use itertools::Itertools;
 use nom::{
     branch::alt,
@@ -44,6 +49,13 @@ pub struct Scene {
     // Reminding again that end_frame is *exclusive*
     pub end_frame:      usize,
     pub zone_overrides: Option<ZoneOptions>,
+
+    // Dynamic HDR Metadata files. These always get rebuilt when creating the Scenes, so we can
+    // skip them.
+    #[serde(skip)]
+    pub dovi_rpu:  Option<PathBuf>,
+    #[serde(skip)]
+    pub hdr10plus: Option<PathBuf>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -340,6 +352,8 @@ impl Scene {
                 min_scene_len,
                 target_quality: Some(target_quality),
             }),
+            dovi_rpu:       None,
+            hdr10plus:      None,
         })
     }
 }
@@ -416,6 +430,15 @@ impl SceneFactory {
         Ok(self.data.split_scenes.as_deref().expect("split_scenes exist"))
     }
 
+    /// Retrieve the post-extra-split scenes data as mutable
+    pub fn get_split_scenes_mut(&mut self) -> anyhow::Result<&mut [Scene]> {
+        if self.data.split_scenes.is_none() {
+            bail!("compute_scenes must be called first");
+        }
+
+        Ok(self.data.split_scenes.as_deref_mut().expect("split_scenes exist"))
+    }
+
     pub fn get_frame_count(&self) -> usize {
         self.data.frames
     }
@@ -430,6 +453,155 @@ impl SceneFactory {
 
         let mut file = File::create(scene_path)?;
         file.write_all(json.as_bytes())?;
+
+        Ok(())
+    }
+
+    /// Get mutable metadata slices from a `&mut [T]` based on the scenes
+    ///
+    /// This function ensures the length `metadata` is at least the total number
+    /// of frames
+    fn get_metadata_slices<'a, T>(
+        &self,
+        metadata: &'a mut [T],
+    ) -> anyhow::Result<Vec<&'a mut [T]>> {
+        let frames = self.get_frame_count();
+        let scenes = self.get_split_scenes()?;
+        anyhow::ensure!(metadata.len() >= frames);
+
+        let mut slices: Vec<&mut [T]> = Vec::with_capacity(scenes.len());
+        let mut current = metadata;
+
+        for scene in scenes {
+            let len = scene.end_frame.min(frames) - scene.start_frame;
+            let (head, tail) = current.split_at_mut(len);
+
+            slices.push(head);
+
+            current = tail;
+        }
+
+        Ok(slices)
+    }
+
+    /// Splits an HDR10+ JSON file into per-scene JSON files based on detected
+    /// scene boundaries.
+    ///
+    /// Loads the full HDR10+ metadata from the given `hdr10plus_json_path`,
+    /// splits it according to the scenes, writes each scene’s metadata to
+    /// separate JSON files in a dedicated subdirectory inside `temp`,
+    /// and updates the scene entries with the corresponding file paths.
+    fn handle_hdr10plus_json<P: AsRef<Path>>(
+        &mut self,
+        temp: &str,
+        hdr10plus_json_path: P,
+    ) -> anyhow::Result<()> {
+        const TOOL_NAME: &str = env!("CARGO_PKG_NAME");
+        const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+        info!("Splitting HDR10+ JSON...");
+        let hdr10plus_dir = Path::new(temp).join("hdr10plus");
+        std::fs::create_dir_all(&hdr10plus_dir)?;
+
+        let metadata_json_root = MetadataJsonRoot::from_file(hdr10plus_json_path)?;
+        let mut metadata_list: Vec<Hdr10PlusMetadata> = metadata_json_root
+            .scene_info
+            .iter()
+            .map(Hdr10PlusMetadata::try_from)
+            .filter_map(Result::ok)
+            .collect();
+
+        let metadata_slices = self.get_metadata_slices(&mut metadata_list)?;
+        let scenes = self.get_split_scenes_mut()?;
+        anyhow::ensure!(metadata_slices.len() == scenes.len());
+
+        for ((scene_idx, scene), metadata_slice) in
+            scenes.iter_mut().enumerate().zip(metadata_slices)
+        {
+            // `refs` is needed because hdr10plus API is weird
+            let refs: Vec<&Hdr10PlusMetadata> = metadata_slice.iter().collect();
+            let scene_json = generate_json(&refs, TOOL_NAME, TOOL_VERSION);
+            let output_file = hdr10plus_dir.join(format!("{}.json", scene_idx));
+            std::fs::write(&output_file, serde_json::to_string(&scene_json)?)?;
+            tracing::debug!(
+                "Wrote HDR10+ JSON for scene-{} -> {}",
+                scene_idx,
+                output_file.display()
+            );
+            scene.hdr10plus = Some(output_file);
+        }
+
+        Ok(())
+    }
+
+    /// Splits a Dolby Vision RPU file into per-scene RPU files based on
+    /// detected scene boundaries.
+    ///
+    /// Parses the input RPU file from `rpu_path`, splits it according to the
+    /// scenes, encodes and writes each scene’s RPU data to separate files
+    /// in a dedicated subdirectory inside `temp`, and updates the scene
+    /// entries with the corresponding file paths.
+    fn handle_dv_rpu<P: AsRef<Path>>(&mut self, temp: &str, rpu_path: P) -> anyhow::Result<()> {
+        info!("Splitting Dolby Vision RPU...");
+        let rpus_dir = Path::new(&temp).join("rpus");
+        std::fs::create_dir_all(&rpus_dir)?;
+
+        let mut rpus = parse_rpu_file(rpu_path)?;
+        let metadata_slices = self.get_metadata_slices(&mut rpus)?;
+        let scenes = self.get_split_scenes_mut()?;
+        anyhow::ensure!(metadata_slices.len() == scenes.len());
+
+        for ((scene_idx, scene), metadata_slice) in
+            scenes.iter_mut().enumerate().zip(metadata_slices)
+        {
+            let encoded_rpus = GenerateConfig::encode_rpus(metadata_slice);
+            let output_file = rpus_dir.join(format!("{}.rpu", scene_idx));
+
+            let mut writer =
+                std::io::BufWriter::with_capacity(100_000, File::create(&output_file)?);
+
+            for encoded_rpu in encoded_rpus {
+                // Remove 0x7C01
+                hevc_parser::hevc::NALUnit::write_with_preset(
+                    &mut writer,
+                    &encoded_rpu[2..],
+                    hevc_parser::io::StartCodePreset::Four,
+                    hevc_parser::hevc::NAL_UNSPEC62,
+                    true,
+                )?;
+            }
+
+            writer.flush()?;
+            tracing::debug!(
+                "Wrote RPU for scene-{} -> {}",
+                scene_idx,
+                output_file.display()
+            );
+            scene.dovi_rpu = Some(output_file);
+        }
+
+        Ok(())
+    }
+
+    /// Handles dynamic HDR metadata by optionally processing Dolby Vision RPU
+    /// and HDR10+ JSON files.
+    ///
+    /// If provided, processes the Dolby Vision RPU file and/or the HDR10+ JSON
+    /// file by splitting them into per-scene files stored in the specified
+    /// temporary directory, updating scene entries accordingly.
+    pub fn handle_dynamic_hdr_metadata<P: AsRef<Path>>(
+        &mut self,
+        temp: &str,
+        rpu: Option<&P>,
+        hdr10plus_json: Option<&P>,
+    ) -> anyhow::Result<()> {
+        if let Some(rpu_path) = rpu {
+            self.handle_dv_rpu(temp, rpu_path)?;
+        }
+
+        if let Some(hdr10plus_json_path) = hdr10plus_json {
+            self.handle_hdr10plus_json(temp, hdr10plus_json_path)?;
+        }
 
         Ok(())
     }
@@ -468,6 +640,8 @@ impl SceneFactory {
                             start_frame:    frames_processed,
                             end_frame:      zone.start_frame,
                             zone_overrides: None,
+                            dovi_rpu:       None,
+                            hdr10plus:      None,
                         });
                     }
 
@@ -481,6 +655,8 @@ impl SceneFactory {
                         start_frame:    frames_processed,
                         end_frame:      frames,
                         zone_overrides: None,
+                        dovi_rpu:       None,
+                        hdr10plus:      None,
                     });
                 }
                 (scenes, frames, BTreeMap::new())

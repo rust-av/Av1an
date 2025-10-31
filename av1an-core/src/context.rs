@@ -22,6 +22,7 @@ use av_decoders::VapoursynthDecoder;
 use colored::*;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
+use path_abs::ser::ToStfu8;
 use rand::{prelude::SliceRandom, rng};
 use tracing::{debug, error, info, warn};
 
@@ -51,7 +52,7 @@ use crate::{
     },
     read_chunk_queue,
     save_chunk_queue,
-    scenes::{Scene, SceneFactory, ZoneOptions},
+    scenes::{Scene, SceneFactory},
     settings::{EncodeArgs, InputPixelFormat},
     split::segment,
     vapoursynth::create_vs_file,
@@ -851,6 +852,13 @@ impl Av1anContext {
             self.scene_factory.compute_scenes(&self.args, &zones)?;
             self.scene_factory.write_scenes_to_file(scene_file)?;
         }
+
+        if !self.args.sc_only {
+            let rpu = self.args.dolby_vision_rpu.as_ref();
+            let hdr10plus_json = self.args.hdr10plus_json.as_ref();
+            self.scene_factory
+                .handle_dynamic_hdr_metadata(&self.args.temp, rpu, hdr10plus_json)?;
+        }
         self.frames = self.scene_factory.get_frame_count();
         self.scene_factory.get_split_scenes()
     }
@@ -862,7 +870,7 @@ impl Av1anContext {
         start_frame: usize,
         end_frame: usize,
         frame_rate: f64,
-        overrides: Option<ZoneOptions>,
+        scene: &Scene,
     ) -> anyhow::Result<Chunk> {
         assert!(
             start_frame < end_frame,
@@ -894,6 +902,26 @@ impl Av1anContext {
 
         let output_ext = self.args.encoder.output_extension();
 
+        let encoder = scene.zone_overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder);
+        let mut video_params = scene.zone_overrides.as_ref().map_or_else(
+            || self.args.video_params.clone(),
+            |ovr| ovr.video_params.clone(),
+        );
+
+        if let Some(rpu_path) = &scene.dovi_rpu {
+            if encoder == crate::Encoder::svt_av1 {
+                video_params.push("--dolby-vision-rpu".to_owned());
+                video_params.push(rpu_path.to_stfu8());
+            }
+        }
+
+        if let Some(hdr10plus_path) = &scene.hdr10plus {
+            if encoder == crate::Encoder::svt_av1 {
+                video_params.push("--hdr10plus-json".to_owned());
+                video_params.push(hdr10plus_path.to_stfu8());
+            }
+        }
+
         let mut chunk = Chunk {
             temp: self.args.temp.clone(),
             index,
@@ -915,14 +943,11 @@ impl Av1anContext {
             start_frame,
             end_frame,
             frame_rate,
-            video_params: overrides.as_ref().map_or_else(
-                || self.args.video_params.clone(),
-                |ovr| ovr.video_params.clone(),
-            ),
-            passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
-            encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
+            video_params,
+            passes: scene.zone_overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
+            encoder,
             noise_size: self.args.photon_noise_size,
-            target_quality: overrides.as_ref().map_or_else(
+            target_quality: scene.zone_overrides.as_ref().map_or_else(
                 || self.args.target_quality.clone(),
                 |ovr| {
                     ovr.target_quality
@@ -934,7 +959,10 @@ impl Av1anContext {
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
         chunk.apply_photon_noise_args(
-            overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
+            scene
+                .zone_overrides
+                .as_ref()
+                .map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
             self.args.chroma_noise,
         )?;
         if chunk.target_quality.target.is_some() {
@@ -991,6 +1019,26 @@ impl Av1anContext {
 
         let output_ext = self.args.encoder.output_extension();
 
+        let encoder = scene.zone_overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder);
+        let mut video_params = scene.zone_overrides.as_ref().map_or_else(
+            || self.args.video_params.clone(),
+            |ovr| ovr.video_params.clone(),
+        );
+
+        if let Some(rpu_path) = &scene.dovi_rpu {
+            if encoder == crate::Encoder::svt_av1 {
+                video_params.push("--dolby-vision-rpu".to_owned());
+                video_params.push(rpu_path.to_stfu8());
+            }
+        }
+
+        if let Some(hdr10plus_path) = &scene.hdr10plus {
+            if encoder == crate::Encoder::svt_av1 {
+                video_params.push("--hdr10plus-json".to_owned());
+                video_params.push(hdr10plus_path.to_stfu8());
+            }
+        }
+
         let mut chunk = Chunk {
             temp: self.args.temp.clone(),
             index,
@@ -1034,12 +1082,9 @@ impl Av1anContext {
             start_frame: scene.start_frame,
             end_frame: scene.end_frame,
             frame_rate,
-            video_params: scene.zone_overrides.as_ref().map_or_else(
-                || self.args.video_params.clone(),
-                |ovr| ovr.video_params.clone(),
-            ),
+            video_params,
             passes: scene.zone_overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
-            encoder: scene.zone_overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
+            encoder,
             noise_size: scene.zone_overrides.as_ref().map_or(self.args.photon_noise_size, |ovr| {
                 (ovr.photon_noise_width, ovr.photon_noise_height)
             }),
@@ -1117,7 +1162,7 @@ impl Av1anContext {
                     scene.start_frame,
                     scene.end_frame,
                     frame_rate,
-                    scene.zone_overrides.clone(),
+                    scene,
                 )
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1159,7 +1204,7 @@ impl Av1anContext {
                     index,
                     &file.as_path().to_string_lossy(),
                     frame_rate,
-                    scenes[index].zone_overrides.clone(),
+                    &scenes[index],
                 )
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1209,14 +1254,7 @@ impl Av1anContext {
             .iter()
             .enumerate()
             .map(|(index, &(file, (start, end, scene)))| {
-                self.create_select_chunk(
-                    index,
-                    file,
-                    start,
-                    end,
-                    frame_rate,
-                    scene.zone_overrides.clone(),
-                )
+                self.create_select_chunk(index, file, start, end, frame_rate, scene)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
@@ -1229,7 +1267,7 @@ impl Av1anContext {
         index: usize,
         file: &str,
         frame_rate: f64,
-        overrides: Option<ZoneOptions>,
+        scene: &Scene,
     ) -> anyhow::Result<Chunk> {
         let ffmpeg_gen_cmd: Vec<OsString> = into_vec![
             "ffmpeg",
@@ -1249,6 +1287,26 @@ impl Av1anContext {
         ];
 
         let output_ext = self.args.encoder.output_extension();
+
+        let encoder = scene.zone_overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder);
+        let mut video_params = scene.zone_overrides.as_ref().map_or_else(
+            || self.args.video_params.clone(),
+            |ovr| ovr.video_params.clone(),
+        );
+
+        if let Some(rpu_path) = &scene.dovi_rpu {
+            if encoder == crate::Encoder::svt_av1 {
+                video_params.push("--dolby-vision-rpu".to_owned());
+                video_params.push(rpu_path.to_stfu8());
+            }
+        }
+
+        if let Some(hdr10plus_path) = &scene.hdr10plus {
+            if encoder == crate::Encoder::svt_av1 {
+                video_params.push("--hdr10plus-json".to_owned());
+                video_params.push(hdr10plus_path.to_stfu8());
+            }
+        }
 
         let num_frames = get_num_frames(Path::new(file))?;
 
@@ -1273,14 +1331,11 @@ impl Av1anContext {
             start_frame: 0,
             end_frame: num_frames,
             frame_rate,
-            video_params: overrides.as_ref().map_or_else(
-                || self.args.video_params.clone(),
-                |ovr| ovr.video_params.clone(),
-            ),
-            passes: overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
-            encoder: overrides.as_ref().map_or(self.args.encoder, |ovr| ovr.encoder),
+            video_params,
+            passes: scene.zone_overrides.as_ref().map_or(self.args.passes, |ovr| ovr.passes),
+            encoder,
             noise_size: self.args.photon_noise_size,
-            target_quality: overrides.as_ref().map_or_else(
+            target_quality: scene.zone_overrides.as_ref().map_or_else(
                 || self.args.target_quality.clone(),
                 |ovr| {
                     ovr.target_quality
@@ -1292,7 +1347,10 @@ impl Av1anContext {
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
         chunk.apply_photon_noise_args(
-            overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
+            scene
+                .zone_overrides
+                .as_ref()
+                .map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
             self.args.chroma_noise,
         )?;
         Ok(chunk)

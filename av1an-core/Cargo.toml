@@ -70,6 +70,10 @@ colored = "3.0.0"
 ctrlc = "3.5.0"
 regex = "1.12.2"
 
+hevc_parser = { version = "0.6.9", features = ["hevc_io"] }
+dolby_vision = "3.3.2"
+hdr10plus = { version = "2.1.4", features = ["json"] }
+
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented
 [target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
