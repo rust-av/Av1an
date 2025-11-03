@@ -32,7 +32,7 @@ cfg-if = "1.0.4"
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.5"
 dashmap = { version = "6.0.0", features = ["serde"] }
-indicatif = "0.18.1"
+indicatif = "0.18.2"
 itertools = "0.14.0"
 memchr = "2.7.6"
 nom = "8.0.0"
@@ -67,7 +67,7 @@ vapoursynth = { version = "0.4.0", features = [
 ] }
 # TODO: move all of this CLI stuff to av1an-cli
 colored = "3.0.0"
-ctrlc = "3.5.0"
+ctrlc = "3.5.1"
 regex = "1.12.2"
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
