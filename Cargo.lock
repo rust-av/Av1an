@@ -167,6 +167,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "av-decoders"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee127fc3dac649102cc7504972a41e6655f82a7fd5a42124be59a27cff97f7b"
+dependencies = [
+ "num-rational",
+ "thiserror 2.0.17",
+ "v_frame",
+ "vapoursynth",
+ "y4m",
+]
+
+[[package]]
 name = "av-format"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -191,14 +204,14 @@ dependencies = [
 
 [[package]]
 name = "av-scenechange"
-version = "0.17.3"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5da809cb3aee6dac33f909ee9987ce6aafc91d7359386a03a048305fd1a66fcd"
+checksum = "d4ae98105f43ef2e1d0e879fabee3187798228eb203a414b64e30ced102ccab1"
 dependencies = [
  "aligned",
  "anyhow",
  "arrayvec",
- "av-decoders",
+ "av-decoders 0.5.0",
  "cc",
  "cfg-if",
  "cpufeatures",
@@ -252,7 +265,7 @@ dependencies = [
  "affinity",
  "anyhow",
  "arrayvec",
- "av-decoders",
+ "av-decoders 0.4.0",
  "av-format",
  "av-ivf",
  "av-scenechange",
