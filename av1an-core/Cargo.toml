@@ -32,7 +32,7 @@ cfg-if = "1.0.4"
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.5"
 dashmap = { version = "6.0.0", features = ["serde"] }
-indicatif = "0.18.2"
+indicatif = "0.18.3"
 itertools = "0.14.0"
 memchr = "2.7.6"
 nom = "8.0.0"
