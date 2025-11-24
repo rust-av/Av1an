@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install Rust nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           lfs: "true"
       - name: Install Rust stable
@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           lfs: "true"
       - name: Install Rust stable
@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -178,7 +178,7 @@ jobs:
     if: needs.publish-check.outputs.should_publish == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Docker meta
         id: docker_meta
