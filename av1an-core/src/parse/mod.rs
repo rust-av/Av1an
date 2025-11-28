@@ -213,16 +213,32 @@ pub fn parse_rav1e_frames(s: &str) -> Option<u64> {
 }
 
 pub fn parse_svt_av1_frames(s: &str) -> Option<u64> {
-    const SVT_AV1_IGNORED_PREFIX: &str = "Encoding frame";
+    const SVT_AV1_LEGACY_PREFIX: &str = "Encoding frame";
+    const SVT_AV1_NEW_PREFIX: &str = "Encoding:";
 
-    if !s.starts_with(SVT_AV1_IGNORED_PREFIX) {
-        return None;
+    // Handle the new progress format introduced in https://gitlab.com/AOMediaCodec/SVT-AV1/-/merge_requests/2511
+    if s.starts_with(SVT_AV1_NEW_PREFIX) {
+        let line = s.get(SVT_AV1_NEW_PREFIX.len()..)?.trim_start();
+        return if let Some((frames, _)) = line.split_once('/') {
+            // Frame count is known
+            frames.parse().ok()
+        } else {
+            // Frame count unknown
+            line.split_ascii_whitespace().next().and_then(|s| s.parse().ok())
+        };
     }
 
-    s.get(SVT_AV1_IGNORED_PREFIX.len()..)?
-        .split_ascii_whitespace()
-        .next()
-        .and_then(|s| s.parse().ok())
+    // Old progress format
+    if s.starts_with(SVT_AV1_LEGACY_PREFIX) {
+        return s
+            .get(SVT_AV1_LEGACY_PREFIX.len()..)?
+            .split_ascii_whitespace()
+            .next()
+            .and_then(|s| s.parse().ok());
+    }
+
+    // Unrecognized progress format
+    None
 }
 
 pub fn parse_x26x_frames(s: &str) -> Option<u64> {
