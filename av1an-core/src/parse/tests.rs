@@ -100,6 +100,15 @@ fn svt_av1_parsing() {
             "Encoding frame 53298734 1.08 kbps 2.00 fps",
             Some(53_298_734),
         ),
+        (
+            "Encoding:   55 Frames @ 7.05 fps | 681.56 kb/s | Size: 0.60 MB | Time: 0:00:08",
+            Some(55),
+        ),
+        (
+            "Encoding:  145/241 Frames @ 8.54 fps | 975.70 kb/s | Size: 1.23 MB [2.04 MB] | Time: \
+             0:00:17 [-0:00:11]",
+            Some(145),
+        ),
         ("invalid input", None),
         ("", None),
     ];
