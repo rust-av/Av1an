@@ -6,13 +6,11 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-2025
 
     env:
       CARGO_INCREMENTAL: 0
-      ffmpeg_ver: "7.1"
-      ffmpeg_path: "C:/ffmpeg"
-      vsynth_ver: "R70"
+      vsynth_ver: "R72"
       vsynth_path: "C:/Program Files/Vapoursynth"
 
     steps:
@@ -22,17 +20,6 @@ jobs:
           # version: 2.16.03
           from-source: false
 
-      - name: FFmpeg installation
-        run: |
-          $tempFile = New-TemporaryFile
-          $uri = 'https://github.com/GyanD/codexffmpeg/releases/download/VER/ffmpeg-VER-full_build-shared.7z'.Replace('VER', "$env:ffmpeg_ver")
-          Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
-          7z x -y -o"$env:ffmpeg_path" "$tempFile"
-
-      - name: FFmpeg environment variable
-        run: |
-          echo "FFMPEG_DIR=$((Get-ChildItem -Directory "$env:ffmpeg_path").FullName)" | Out-File $env:GITHUB_ENV -Append
-
       - name: VapourSynth installation
         run: |
           $tempFile = New-TemporaryFile
@@ -40,11 +27,9 @@ jobs:
           Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
           Expand-Archive "$tempFile" "$env:vsynth_path"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: "v${{ env.ffmpeg_ver }}-rust"
 
       - name: Get latest commit
         id: get_commit
