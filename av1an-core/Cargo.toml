@@ -38,7 +38,7 @@ memchr = "2.7.6"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
-pastey = "0.1.1"
+pastey = "0.2.0"
 path_abs = { workspace = true }
 plotters = { version = "0.3.1", default-features = false, features = [
     "svg_backend",
