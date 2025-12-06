@@ -907,9 +907,9 @@ pub(crate) fn resolve_file_paths(path: &Path) -> anyhow::Result<Box<dyn Iterator
 
     ensure!(
         path.exists(),
-        "Input path {:?} does not exist. Please ensure you typed it properly and it has not been \
+        "Input path {} does not exist. Please ensure you typed it properly and it has not been \
          moved.",
-        path
+        path.display()
     );
 
     if path.is_dir() {
