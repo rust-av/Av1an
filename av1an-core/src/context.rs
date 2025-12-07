@@ -750,6 +750,20 @@ impl Av1anContext {
         }
 
         if current_pass == chunk.passes {
+            if !fs::exists(chunk.output()).map_err(|e| (anyhow::anyhow!("{e}"), frame))?
+                || fs::metadata(chunk.output()).map_err(|e| (anyhow::anyhow!("{e}"), frame))?.len()
+                    == 0
+            {
+                return Err((
+                    anyhow::anyhow!(
+                        "ERROR: Output chunk file {} could not be created. Possible permissions \
+                         or disk space issue?",
+                        chunk.output()
+                    ),
+                    frame,
+                ));
+            }
+
             let encoded_frames = get_num_frames(chunk.output().as_ref());
 
             let err_str = match encoded_frames {
