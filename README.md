@@ -13,6 +13,10 @@ Av1an is a video encoding framework. It can increase your encoding speed and imp
 
 For help with av1an, please reach out to us on [Discord](https://discord.gg/Ar8MvJh) or file a GitHub issue.
 
+## NOTICE
+
+av1an is currently incompatible with Vapoursynth R73. Please remain on R72 for the time being, until we can update to the new API.
+
 ## Features
 
 - Hyper-scalable video encoding
@@ -78,7 +82,7 @@ Prerequisites:
 Optional:
 
 - [L-SMASH](https://github.com/HomeOfAviSynthPlusEvolution/L-SMASH-Works) VapourSynth plugin for better chunking (recommended)
-- [DGDecNV](https://www.rationalqm.us/dgdecnv/dgdecnv.html) Vapoursynth plugin for very fast and accurate chunking, `dgindexnv` executable needs to be present in system path and an NVIDIA GPU with CUVID 
+- [DGDecNV](https://www.rationalqm.us/dgdecnv/dgdecnv.html) Vapoursynth plugin for very fast and accurate chunking, `dgindexnv` executable needs to be present in system path and an NVIDIA GPU with CUVID
 - [FFMS2](https://github.com/FFMS/ffms2) VapourSynth plugin for better chunking
 - [BestSource](https://github.com/vapoursynth/bestsource) Vapoursynth plugin for slow but accurate chunking
 - [mkvmerge](https://mkvtoolnix.download/) to use mkvmerge instead of FFmpeg for file concatenation

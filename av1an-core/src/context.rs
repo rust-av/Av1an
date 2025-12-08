@@ -75,6 +75,7 @@ pub struct Av1anContext {
 
 impl Av1anContext {
     #[tracing::instrument(level = "debug")]
+    #[inline]
     pub fn new(mut args: EncodeArgs) -> anyhow::Result<Self> {
         args.validate()?;
 

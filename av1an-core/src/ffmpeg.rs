@@ -156,6 +156,7 @@ struct FfProbeKeyframeFrame {
 
 /// Returns vec of all keyframes
 #[tracing::instrument(level = "debug")]
+#[inline]
 pub fn get_keyframes(source: &Path) -> anyhow::Result<Vec<usize>> {
     // This is slow because it has to iterate through the whole video,
     // but it is the best suggestion that reliably worked
