@@ -9,7 +9,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use assert_cmd::Command;
+#[expect(
+    deprecated,
+    reason = "https://github.com/assert-rs/assert_cmd/issues/258"
+)]
+use assert_cmd::{cargo::cargo_bin, Command};
 use serial_test::serial;
 use tempfile::{NamedTempFile, TempDir, TempPath};
 
@@ -37,7 +41,7 @@ clip.set_output(0)"#,
 #[test]
 #[serial]
 fn encode_test_baseline_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -64,7 +68,7 @@ fn encode_test_baseline_aom() {
 #[test]
 #[serial]
 fn encode_test_baseline_rav1e() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -91,7 +95,7 @@ fn encode_test_baseline_rav1e() {
 #[test]
 #[serial]
 fn encode_test_baseline_svt_av1() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -118,7 +122,7 @@ fn encode_test_baseline_svt_av1() {
 #[test]
 #[serial]
 fn encode_test_baseline_vpx() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -145,7 +149,7 @@ fn encode_test_baseline_vpx() {
 #[test]
 #[serial]
 fn encode_test_baseline_x265() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -172,7 +176,7 @@ fn encode_test_baseline_x265() {
 #[test]
 #[serial]
 fn encode_test_baseline_x264() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -205,7 +209,7 @@ const X26X_FAST_PARAMS: &str = " --preset ultrafast";
 #[test]
 #[serial]
 fn encode_test_baseline_select_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -236,7 +240,7 @@ fn encode_test_baseline_select_aom() {
 #[test]
 #[serial]
 fn encode_test_baseline_select_rav1e() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -267,7 +271,7 @@ fn encode_test_baseline_select_rav1e() {
 #[test]
 #[serial]
 fn encode_test_baseline_select_svt_av1() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -298,7 +302,7 @@ fn encode_test_baseline_select_svt_av1() {
 #[test]
 #[serial]
 fn encode_test_baseline_select_vpx() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -329,7 +333,7 @@ fn encode_test_baseline_select_vpx() {
 #[test]
 #[serial]
 fn encode_test_baseline_select_x265() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -360,7 +364,7 @@ fn encode_test_baseline_select_x265() {
 #[test]
 #[serial]
 fn encode_test_baseline_select_x264() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -391,7 +395,7 @@ fn encode_test_baseline_select_x264() {
 #[test]
 #[serial]
 fn encode_test_target_quality() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file_95 = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let output_file_80 = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
@@ -423,7 +427,7 @@ fn encode_test_target_quality() {
     assert!(output_file_95.metadata().unwrap().len() > 0);
 
     let temp_dir2 = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     cmd.arg("-i")
         .arg(&input_file)
         .arg("-e")
@@ -456,7 +460,7 @@ fn encode_test_target_quality() {
 #[test]
 #[serial]
 fn encode_test_target_quality_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -487,7 +491,7 @@ fn encode_test_target_quality_aom() {
 #[test]
 #[serial]
 fn encode_test_target_quality_rav1e() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -518,7 +522,7 @@ fn encode_test_target_quality_rav1e() {
 #[test]
 #[serial]
 fn encode_test_target_quality_svt_av1() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -549,7 +553,7 @@ fn encode_test_target_quality_svt_av1() {
 #[test]
 #[serial]
 fn encode_test_target_quality_vpx() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -580,7 +584,7 @@ fn encode_test_target_quality_vpx() {
 #[test]
 #[serial]
 fn encode_test_target_quality_x265() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -611,7 +615,7 @@ fn encode_test_target_quality_x265() {
 #[test]
 #[serial]
 fn encode_test_target_quality_x264() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -642,7 +646,7 @@ fn encode_test_target_quality_x264() {
 #[test]
 #[serial]
 fn encode_test_target_quality_replace_crf() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -673,7 +677,7 @@ fn encode_test_target_quality_replace_crf() {
 #[test]
 #[serial]
 fn encode_test_probe_slow_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -706,7 +710,7 @@ fn encode_test_probe_slow_aom() {
 #[test]
 #[serial]
 fn encode_test_probe_slow_rav1e() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -739,7 +743,7 @@ fn encode_test_probe_slow_rav1e() {
 #[test]
 #[serial]
 fn encode_test_probe_slow_svt_av1() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -772,7 +776,7 @@ fn encode_test_probe_slow_svt_av1() {
 #[test]
 #[serial]
 fn encode_test_probe_slow_vpx() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -805,7 +809,7 @@ fn encode_test_probe_slow_vpx() {
 #[test]
 #[serial]
 fn encode_test_probe_slow_x265() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -838,7 +842,7 @@ fn encode_test_probe_slow_x265() {
 #[test]
 #[serial]
 fn encode_test_probe_slow_x264() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -871,7 +875,7 @@ fn encode_test_probe_slow_x264() {
 #[test]
 #[serial]
 fn encode_test_chunk_hybrid_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -902,7 +906,7 @@ fn encode_test_chunk_hybrid_aom() {
 #[test]
 #[serial]
 fn encode_test_chunk_select_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -933,7 +937,7 @@ fn encode_test_chunk_select_aom() {
 #[test]
 #[serial]
 fn encode_test_chunk_ffms2_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -964,7 +968,7 @@ fn encode_test_chunk_ffms2_aom() {
 #[test]
 #[serial]
 fn encode_test_chunk_lsmash_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -995,7 +999,7 @@ fn encode_test_chunk_lsmash_aom() {
 #[test]
 #[serial]
 fn encode_test_scenes_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -1031,7 +1035,7 @@ fn encode_test_scenes_aom() {
 #[test]
 #[serial]
 fn encode_test_workers_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -1062,7 +1066,7 @@ fn encode_test_workers_aom() {
 #[test]
 #[serial]
 fn encode_test_vmaf_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -1092,7 +1096,7 @@ fn encode_test_vmaf_aom() {
 #[test]
 #[serial]
 fn encode_test_extra_splits_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -1123,7 +1127,7 @@ fn encode_test_extra_splits_aom() {
 #[test]
 #[serial]
 fn encode_test_concat_ffmpeg_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -1154,7 +1158,7 @@ fn encode_test_concat_ffmpeg_aom() {
 #[test]
 #[serial]
 fn encode_test_slow_scenechange_aom() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
@@ -1181,7 +1185,7 @@ fn encode_test_slow_scenechange_aom() {
 #[test]
 #[serial]
 fn encode_test_sc_only() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let input_file = input_path();
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let scenes_file = NamedTempFile::with_suffix(".json").unwrap().into_temp_path();
@@ -1210,7 +1214,7 @@ fn encode_test_sc_only() {
     assert!(scenes_file.exists());
     assert!(scenes_file.metadata().unwrap().len() > 0);
 
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     cmd.arg("-i")
         .arg(&input_file)
         .arg("-e")
@@ -1237,7 +1241,7 @@ fn encode_test_sc_only() {
 #[test]
 #[serial]
 fn encode_test_vpy_input() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
     let input_file = create_vpy_input();
@@ -1264,7 +1268,7 @@ fn encode_test_vpy_input() {
 #[test]
 #[serial]
 fn encode_test_sc_downscale() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
     let input_file = input_path();
@@ -1293,7 +1297,7 @@ fn encode_test_sc_downscale() {
 #[test]
 #[serial]
 fn encode_test_sc_pix_format() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
     let input_file = input_path();
@@ -1322,7 +1326,7 @@ fn encode_test_sc_pix_format() {
 #[test]
 #[serial]
 fn encode_test_sc_downscale_vpy_input() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
     let input_file = create_vpy_input();
@@ -1351,7 +1355,7 @@ fn encode_test_sc_downscale_vpy_input() {
 #[test]
 #[serial]
 fn encode_test_sc_pix_format_vpy_input() {
-    let mut cmd = Command::cargo_bin("av1an").unwrap();
+    let mut cmd = Command::new(cargo_bin!("av1an"));
     let output_file = NamedTempFile::with_suffix(".mkv").unwrap().into_temp_path();
     let temp_dir = TempDir::new().unwrap();
     let input_file = create_vpy_input();
