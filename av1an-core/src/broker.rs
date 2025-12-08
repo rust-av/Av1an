@@ -113,6 +113,7 @@ impl Broker<'_> {
     /// Main encoding loop. set_thread_affinity may be ignored if the value is
     /// invalid.
     #[tracing::instrument(skip(self))]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn encoding_loop(
         self,
         tx: Sender<()>,
