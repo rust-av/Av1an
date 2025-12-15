@@ -3,7 +3,6 @@ name = "av1an-core"
 version = "0.5.0"
 rust-version = "1.86"
 edition = "2021"
-authors = ["Zen <master_of_zen@protonmail.com>"]
 description = """
 Cross-platform command-line AV1 / VP9 / HEVC / H264 encoding framework with per scene quality encoding [Core library]
 """
@@ -38,7 +37,7 @@ memchr = "2.7.6"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
-pastey = "0.1.1"
+pastey = "0.2.0"
 path_abs = { workspace = true }
 plotters = { version = "0.3.1", default-features = false, features = [
     "svg_backend",
@@ -55,7 +54,7 @@ smallvec = { version = "1.15.1", default-features = false, features = [
 ] }
 strsim = "0.11.0"
 strum = { version = "0.27.2", features = ["derive"] }
-sysinfo = "0.36.1"
+sysinfo = "0.37.2"
 textwrap = "0.16.0"
 thiserror = "2.0.17"
 tracing = { workspace = true }

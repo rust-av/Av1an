@@ -921,7 +921,7 @@ pub(crate) fn resolve_file_paths(path: &Path) -> anyhow::Result<Box<dyn Iterator
 
 /// Returns vector of Encode args ready to be fed to encoder
 #[tracing::instrument(level = "debug")]
-pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
+pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
     let input_paths = &*args.input;
     let proxy_paths = &*args.proxy;
 
@@ -1047,11 +1047,7 @@ pub fn parse_cli(args: CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             temp: temp.clone(),
             force: args.force,
             no_defaults: args.no_defaults,
-            passes: if let Some(passes) = args.passes {
-                passes
-            } else {
-                args.encoder.get_default_pass()
-            },
+            passes: args.passes.map_or_else(|| args.encoder.get_default_pass(), |passes| passes),
             video_params: video_params.clone(),
             output_file: if let Some(path) = args.output_file.as_ref() {
                 let path = PathAbs::new(path)?;
@@ -1225,7 +1221,7 @@ pub fn run() -> anyhow::Result<()> {
         log_level,
     )?;
 
-    let args = parse_cli(cli_options)?;
+    let args = parse_cli(&cli_options)?;
     for arg in args {
         Av1anContext::new(arg)?.encode_file()?;
     }

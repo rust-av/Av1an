@@ -30,7 +30,8 @@ macro_rules! inplace_vec {
     use std::borrow::Cow;
 
     const SIZE: usize = $crate::count!($($x)*);
-    #[expect(unused_assignments)]
+
+    #[allow(unused_assignments)]
     #[expect(clippy::transmute_undefined_repr)]
     #[expect(clippy::macro_metavars_in_unsafe)]
     // SAFETY: the returned value ends up being a valid `Vec`

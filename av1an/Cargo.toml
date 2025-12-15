@@ -3,7 +3,6 @@ name = "av1an"
 version = "0.5.0"
 rust-version = "1.86"
 edition = "2021"
-authors = ["Zen <master_of_zen@protonmail.com>"]
 description = """
 Cross-platform command-line AV1 / VP9 / HEVC / H264 encoding framework with per scene quality encoding [Command line library]
 """
