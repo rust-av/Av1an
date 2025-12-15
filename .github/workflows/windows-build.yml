@@ -4,9 +4,12 @@ on:
     branches:
       - 'master'
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    runs-on: windows-2025
+    runs-on: windows-latest
 
     env:
       CARGO_INCREMENTAL: 0
@@ -41,19 +44,14 @@ jobs:
       - name: Av1an build
         run: cargo build --release
 
-      - name: Delete existing release
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release delete latest --cleanup-tag
-
-      - name: Create prerelease
+      - name: Create or update prerelease
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true
           tag_name: latest
           body: |
+            Latest build from ${{ github.sha }}
+
             Commit:
             ${{ steps.get_commit.outputs.message }}
           files: target/release/av1an.exe
