@@ -15,11 +15,6 @@ __pycache__/
 *.y4m
 *.lwi
 
-# Hidden folders
-!.github
-.*
-!.mergify.yml
-
 # Distribution / packaging
 .Python
 build/

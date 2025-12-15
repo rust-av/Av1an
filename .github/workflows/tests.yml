@@ -1,11 +1,13 @@
-name: tests
 on:
   push:
     branches:
       - master
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - master
+  workflow_dispatch: {}
 
 env:
   DEBIAN_FRONTEND: noninteractive
