@@ -61,7 +61,10 @@ mod split;
 mod target_quality;
 mod util;
 pub mod vapoursynth;
+pub mod vs;
 mod zones;
+
+pub mod condor;
 
 static CLIP_INFO_CACHE: Lazy<Mutex<HashMap<CacheKey, ClipInfo>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
