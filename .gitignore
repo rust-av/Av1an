@@ -153,3 +153,8 @@ Upload.sh
 *.json
 
 logs/
+
+# AI
+/CLAUDE.md
+/.claude
+/.cursor
