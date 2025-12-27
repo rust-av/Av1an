@@ -259,33 +259,26 @@ impl TargetQuality {
                 )
             })
             .max_by(|(q1, _), (q2, _)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or_else(
-                || {
-                    // No quantizers within tolerance, choose the quantizer closest to target
-                    let target_midpoint = f64::midpoint(target.0, target.1);
-                    quantizer_score_history
-                        .iter()
-                        .min_by(|(_, score1), (_, score2)| {
-                            let score_1 = match self.metric {
-                                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                                    -score1
-                                },
-                                _ => *score1,
-                            };
-                            let score_2 = match self.metric {
-                                TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => {
-                                    -score2
-                                },
-                                _ => *score2,
-                            };
-                            let difference1 = (score_1 - target_midpoint).abs();
-                            let difference2 = (score_2 - target_midpoint).abs();
-                            difference1.partial_cmp(&difference2).unwrap_or(Ordering::Equal)
-                        })
-                        .expect("quantizer_score_history is not empty")
-                },
-                |highest_quantizer_score_within_range| highest_quantizer_score_within_range,
-            );
+            .unwrap_or_else(|| {
+                // No quantizers within tolerance, choose the quantizer closest to target
+                let target_midpoint = f64::midpoint(target.0, target.1);
+                quantizer_score_history
+                    .iter()
+                    .min_by(|(_, score1), (_, score2)| {
+                        let score_1 = match self.metric {
+                            TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score1,
+                            _ => *score1,
+                        };
+                        let score_2 = match self.metric {
+                            TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -score2,
+                            _ => *score2,
+                        };
+                        let difference1 = (score_1 - target_midpoint).abs();
+                        let difference2 = (score_2 - target_midpoint).abs();
+                        difference1.partial_cmp(&difference2).unwrap_or(Ordering::Equal)
+                    })
+                    .expect("quantizer_score_history is not empty")
+            });
 
         log_probes(
             &quantizer_score_history,
@@ -555,10 +548,7 @@ impl TargetQuality {
             self.video_params.clone(),
         );
 
-        let source_cmd = chunk
-            .proxy_cmd
-            .clone()
-            .map_or_else(|| chunk.source_cmd.clone(), |proxy_cmd| proxy_cmd);
+        let source_cmd = chunk.proxy_cmd.clone().unwrap_or_else(|| chunk.source_cmd.clone());
         let (ff_cmd, output) = cmd.clone();
 
         thread::scope(move |scope| {

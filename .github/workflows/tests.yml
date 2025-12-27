@@ -7,6 +7,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   DEBIAN_FRONTEND: noninteractive
 
@@ -17,10 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
+        uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
 
       - name: Validate formatting
@@ -35,10 +36,7 @@ jobs:
         with:
           lfs: "true"
       - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       - name: Validate encoders
@@ -85,10 +83,7 @@ jobs:
         with:
           lfs: "true"
       - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       - name: Validate encoders
@@ -161,16 +156,10 @@ jobs:
   publish-check:
     runs-on: ubuntu-latest
     outputs:
-      should_publish: ${{ steps.publish_check.outputs.should_publish }}
+      should_publish: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       - name: Check for DOCKERHUB_USERNAME and DOCKERHUB_TOKEN
-        id: publish_check
-        run: |
-          if [ -z ${{ secrets.DOCKERHUB_USERNAME }} ] || [ -z ${{ secrets.DOCKERHUB_TOKEN }} ]; then
-            echo "should_publish=false" >> $GITHUB_OUTPUT
-          else
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-          fi
+        run: echo "Checking if Docker Hub secrets are configured"
 
   docker-publish:
     needs: [unit-tests, docker, publish-check]

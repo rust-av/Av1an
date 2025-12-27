@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs::{create_dir_all, File},
     io::Write,
     path::{absolute, Path, PathBuf},
@@ -72,27 +71,14 @@ pub fn get_vapoursynth_plugins() -> anyhow::Result<VapoursynthPlugins> {
     let env = Environment::new().expect("Failed to initialize VapourSynth environment");
     let core = env.get_core().expect("Failed to get VapourSynth core");
 
-    let plugins = core.plugins();
-    let plugins = plugins
-        .keys()
-        .filter_map(|plugin| {
-            plugins
-                .get::<&[u8]>(plugin)
-                .ok()
-                .and_then(|slice| simdutf8::basic::from_utf8(slice).ok())
-                .and_then(|s| s.split(';').nth(1))
-                .map(ToOwned::to_owned)
-        })
-        .collect::<HashSet<_>>();
-
     Ok(VapoursynthPlugins {
-        lsmash:     plugins.contains(PluginId::Lsmash.as_str()),
-        ffms2:      plugins.contains(PluginId::Ffms2.as_str()),
-        dgdecnv:    plugins.contains(PluginId::DGDecNV.as_str()),
-        bestsource: plugins.contains(PluginId::BestSource.as_str()),
-        julek:      plugins.contains(PluginId::Julek.as_str()),
-        vszip:      if plugins.contains(PluginId::Vszip.as_str()) {
-            if is_vszip_r7_or_newer(&env) {
+        lsmash:     core.get_plugin_by_id(PluginId::Lsmash.as_str())?.is_some(),
+        ffms2:      core.get_plugin_by_id(PluginId::Ffms2.as_str())?.is_some(),
+        dgdecnv:    core.get_plugin_by_id(PluginId::DGDecNV.as_str())?.is_some(),
+        bestsource: core.get_plugin_by_id(PluginId::BestSource.as_str())?.is_some(),
+        julek:      core.get_plugin_by_id(PluginId::Julek.as_str())?.is_some(),
+        vszip:      if let Some(plugin) = core.get_plugin_by_id(PluginId::Vszip.as_str())? {
+            if is_vszip_r7_or_newer(plugin)? {
                 VSZipVersion::New
             } else {
                 VSZipVersion::Legacy
@@ -100,39 +86,15 @@ pub fn get_vapoursynth_plugins() -> anyhow::Result<VapoursynthPlugins> {
         } else {
             VSZipVersion::None
         },
-        vship:      plugins.contains(PluginId::Vship.as_str()),
+        vship:      core.get_plugin_by_id(PluginId::Vship.as_str())?.is_some(),
     })
 }
 
 // There is no way to get the version of a plugin
 // so check for a function signature instead
-fn is_vszip_r7_or_newer(env: &Environment) -> bool {
-    let core = env.get_core().expect("Failed to get VapourSynth core");
-
-    let vszip = get_plugin(core, PluginId::Vszip).expect("Failed to get vszip plugin");
-    let functions_map = vszip.functions();
-    let functions: Vec<(String, Vec<String>)> = functions_map
-        .keys()
-        .filter_map(|name| {
-            functions_map
-                .get::<&[u8]>(name)
-                .ok()
-                .and_then(|slice| simdutf8::basic::from_utf8(slice).ok())
-                .map(|f| {
-                    let mut split = f.split(';');
-                    (
-                        split.next().expect("Function name is missing").to_string(),
-                        split
-                            .filter(|s| !s.is_empty())
-                            .map(ToOwned::to_owned)
-                            .collect::<Vec<String>>(),
-                    )
-                })
-        })
-        .collect();
-
+fn is_vszip_r7_or_newer(plugin: Plugin) -> anyhow::Result<bool> {
     // R7 adds XPSNR and also introduces breaking changes the API
-    functions.iter().any(|(name, _)| name == "XPSNR")
+    Ok(plugin.get_plugin_function_by_name("XPSNR")?.is_some())
 }
 
 #[inline]
@@ -154,11 +116,7 @@ pub fn get_clip_info(source: &Input, vspipe_args_map: &OwnedMap) -> anyhow::Resu
             .context(CONTEXT_MSG)?;
     }
 
-    #[cfg(feature = "vapoursynth_new_api")]
     let (node, _) = environment.get_output(OUTPUT_INDEX)?;
-    #[cfg(not(feature = "vapoursynth_new_api"))]
-    let node = environment.get_output(OUTPUT_INDEX).unwrap();
-
     let info = node.info();
 
     Ok(ClipInfo {
@@ -179,9 +137,6 @@ pub fn get_clip_info(source: &Input, vspipe_args_map: &OwnedMap) -> anyhow::Resu
 /// evaluated on a script.
 fn get_num_frames(info: &VideoInfo) -> anyhow::Result<usize> {
     let num_frames = {
-        if Property::Variable == info.format {
-            bail!("Cannot output clips with varying format");
-        }
         if Property::Variable == info.resolution {
             bail!("Cannot output clips with varying dimensions");
         }
@@ -189,20 +144,7 @@ fn get_num_frames(info: &VideoInfo) -> anyhow::Result<usize> {
             bail!("Cannot output clips with varying framerate");
         }
 
-        #[cfg(feature = "vapoursynth_new_api")]
-        let num_frames = info.num_frames;
-
-        #[cfg(not(feature = "vapoursynth_new_api"))]
-        let num_frames = {
-            match info.num_frames {
-                Property::Variable => {
-                    bail!("Cannot output clips with unknown length");
-                },
-                Property::Constant(x) => x,
-            }
-        };
-
-        num_frames
+        info.num_frames
     };
 
     assert!(num_frames != 0, "vapoursynth reported 0 frames");
@@ -223,14 +165,7 @@ fn get_frame_rate(info: &VideoInfo) -> anyhow::Result<Rational64> {
 /// Get the bit depth from an environment that has already been
 /// evaluated on a script.
 fn get_bit_depth(info: &VideoInfo) -> anyhow::Result<usize> {
-    let bits_per_sample = {
-        match info.format {
-            Property::Variable => {
-                bail!("Cannot output clips with variable format");
-            },
-            Property::Constant(x) => x.bits_per_sample(),
-        }
-    };
+    let bits_per_sample = info.format.bits_per_sample();
 
     Ok(bits_per_sample as usize)
 }
@@ -256,11 +191,7 @@ fn get_transfer(env: &Environment) -> anyhow::Result<u8> {
     // Get the output node.
     const OUTPUT_INDEX: i32 = 0;
 
-    #[cfg(feature = "vapoursynth_new_api")]
     let (node, _) = env.get_output(OUTPUT_INDEX)?;
-    #[cfg(not(feature = "vapoursynth_new_api"))]
-    let node = env.get_output(OUTPUT_INDEX).unwrap();
-
     let frame = node.get_frame(0).context("get_transfer")?;
     let transfer = frame.props().get::<i64>("_Transfer").map(|val| val as u8).unwrap_or(2);
 
@@ -336,7 +267,7 @@ fn import_lsmash<'core>(
     lsmash
         .invoke("LWLibavSource", &arguments)
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 
@@ -368,7 +299,7 @@ fn import_ffms2<'core>(
     ffms2
         .invoke("Source", &arguments)
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 
@@ -404,7 +335,7 @@ fn import_bestsource<'core>(
     bestsource
         .invoke("VideoSource", &arguments)
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 
@@ -444,7 +375,7 @@ fn trim_node<'core>(
 
     std.invoke("Trim", &arguments)
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 
@@ -483,7 +414,7 @@ pub fn resize_node<'core>(
 
     std.invoke("Bicubic", &arguments)
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 
@@ -504,7 +435,7 @@ fn select_every<'core>(
 
     std.invoke("SelectEvery", &arguments)
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 
@@ -559,7 +490,7 @@ fn compare_ssimulacra2<'core>(
             &arguments,
         )
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?;
 
     Ok((
@@ -646,7 +577,7 @@ fn compare_butteraugli<'core>(
             &arguments,
         )
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?;
 
     Ok((
@@ -707,7 +638,7 @@ fn compare_xpsnr<'core>(
     plugin
         .invoke("XPSNR", &arguments)
         .map_err(|_| anyhow::anyhow!(error_message.clone()))?
-        .get_node("clip")
+        .get_video_node("clip")
         .map_err(|_| anyhow::anyhow!(error_message.clone()))
 }
 

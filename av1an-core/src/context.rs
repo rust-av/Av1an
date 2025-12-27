@@ -940,9 +940,7 @@ impl Av1anContext {
             target_quality: overrides.as_ref().map_or_else(
                 || self.args.target_quality.clone(),
                 |ovr| {
-                    ovr.target_quality
-                        .clone()
-                        .map_or_else(|| self.args.target_quality.clone(), |tq| tq)
+                    ovr.target_quality.clone().unwrap_or_else(|| self.args.target_quality.clone())
                 },
             ),
             tq_cq: None,
@@ -1298,9 +1296,7 @@ impl Av1anContext {
             target_quality: overrides.as_ref().map_or_else(
                 || self.args.target_quality.clone(),
                 |ovr| {
-                    ovr.target_quality
-                        .clone()
-                        .map_or_else(|| self.args.target_quality.clone(), |tq| tq)
+                    ovr.target_quality.clone().unwrap_or_else(|| self.args.target_quality.clone())
                 },
             ),
             tq_cq: None,

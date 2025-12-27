@@ -1,9 +1,8 @@
 [package]
 name = "av1an-core"
 version = "0.5.0"
-rust-version = "1.86"
+rust-version = "1.88"
 edition = "2021"
-authors = ["Zen <master_of_zen@protonmail.com>"]
 description = """
 Cross-platform command-line AV1 / VP9 / HEVC / H264 encoding framework with per scene quality encoding [Core library]
 """
@@ -18,10 +17,10 @@ readme = "../README.md"
 [dependencies]
 anyhow = { workspace = true }
 arrayvec = "0.7.2"
-av-decoders = { version = "0.6.1", features = ["vapoursynth"] }
+av-decoders = { version = "0.7", features = ["vapoursynth"] }
 av-format = "0.7.0"
 av-ivf = "0.5.0"
-av-scenechange = { version = "0.19.2", default-features = false, features = [
+av-scenechange = { version = "0.20", default-features = false, features = [
     "asm",
     "vapoursynth",
 ] }
@@ -38,7 +37,7 @@ memchr = "2.7.6"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
-pastey = "0.1.1"
+pastey = "0.2.0"
 path_abs = { workspace = true }
 plotters = { version = "0.3.1", default-features = false, features = [
     "svg_backend",
@@ -55,16 +54,13 @@ smallvec = { version = "1.15.1", default-features = false, features = [
 ] }
 strsim = "0.11.0"
 strum = { version = "0.27.2", features = ["derive"] }
-sysinfo = "0.36.1"
+sysinfo = "0.37.2"
 textwrap = "0.16.0"
 thiserror = "2.0.17"
 tracing = { workspace = true }
 which = "8.0.0"
 y4m = "0.8.0"
-vapoursynth = { version = "0.4.0", features = [
-    "vsscript-functions",
-    "vapoursynth-functions",
-] }
+vapoursynth = "0.5"
 # TODO: move all of this CLI stuff to av1an-cli
 colored = "3.0.0"
 ctrlc = "3.5.1"
@@ -79,11 +75,7 @@ affinity = "0.1.2"
 tempfile = { workspace = true }
 
 [features]
-default = ["vapoursynth_new_api"]
-vapoursynth_new_api = [
-    "vapoursynth/vapoursynth-api-32",
-    "vapoursynth/vsscript-api-31",
-]
+default = []
 
 [lints.clippy]
 # Performance
