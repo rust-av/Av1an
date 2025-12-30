@@ -13,6 +13,11 @@ use av_scenechange::{detect_scene_changes, DetectionOptions};
 use thiserror::Error;
 
 use crate::condor::{
+    core::{
+        input::Input,
+        processors::{ProcessCompletion, ProcessStatus, Processor, ProcessorDetails, Status},
+        Condor,
+    },
     data::{
         processing::{
             scene_detection::{
@@ -27,11 +32,6 @@ use crate::condor::{
             BaseProcessorConfigTrait,
         },
         scene::Scene,
-    },
-    core::{
-        input::Input,
-        processors::{ProcessCompletion, ProcessStatus, Processor, ProcessorDetails, Status},
-        Condor,
     },
 };
 
@@ -205,12 +205,20 @@ where
                         encoder:     condor.encoder.clone(),
                         processing:  ProcessData::default(),
                     });
+                    progress_tx
+                        .send(ProcessStatus::Whole(Status::Processing {
+                            id:         DETAILS.name.to_owned(),
+                            completion: ProcessCompletion::Custom {
+                                name:      "new-scene".to_owned(),
+                                completed: start as f64,
+                                total:     end as f64,
+                            },
+                        }))
+                        .expect("failed to send progress");
 
-                    if let Some(save_file) = condor.save_file.as_deref() {
-                        let mut data = condor_data.clone();
-                        data.scenes = scenes_lock.clone();
-                        Condor::save_data(save_file, &data).expect("failed to save data");
-                    }
+                    let mut data = condor_data.clone();
+                    data.scenes = scenes_lock.clone();
+                    (condor.save_callback)(data).expect("failed to save data");
 
                     // print!(
                     //     "\r[{}]: {} / {} frames analyzed, {} keyframes
@@ -268,7 +276,15 @@ where
                             sub_scenes:  None,
                             processing:  ProcessData::default(),
                         };
-                        condor.scenes.push(scene);
+                        condor.scenes.push(scene.clone());
+                        progress_tx.send(ProcessStatus::Whole(Status::Processing {
+                            id:         DETAILS.name.to_owned(),
+                            completion: ProcessCompletion::Custom {
+                                name:      "new-scene".to_owned(),
+                                completed: scene.start_frame as f64,
+                                total:     scene.end_frame as f64,
+                            },
+                        }))?;
                         progress_tx.send(ProcessStatus::Whole(Status::Processing {
                             id:         DETAILS.name.to_owned(),
                             completion: ProcessCompletion::Frames {

@@ -29,7 +29,7 @@ impl PluginFunction for SSIMULACRA2 {
     const PLUGIN_ID: &'static str = "com.lumen.vship";
     const FUNCTION_NAME: &'static str = "SSIMULACRA2";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("reference", &ValueType::Node), ("distorted", &ValueType::Node)];
+        &[("reference", &ValueType::VideoNode), ("distorted", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
         &[("numStream", &ValueType::Int), ("gpu_id", &ValueType::Int)];
 }

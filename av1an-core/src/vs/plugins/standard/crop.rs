@@ -27,7 +27,7 @@ impl PluginFunction for Crop {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "Crop";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("clip", &ValueType::Node)];
+        &[("clip", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
         ("top", &ValueType::Int),
         ("bottom", &ValueType::Int),
@@ -106,7 +106,7 @@ impl PluginFunction for CropAbs {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "CropAbs";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
-        ("clip", &ValueType::Node),
+        ("clip", &ValueType::VideoNode),
         ("width", &ValueType::Int),
         ("height", &ValueType::Int),
     ];

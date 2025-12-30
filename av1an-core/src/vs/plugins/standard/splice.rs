@@ -26,7 +26,7 @@ impl PluginFunction for Splice {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "Splice";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("clips", &ValueType::Node)];
+        &[("clips", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[];
 }
 

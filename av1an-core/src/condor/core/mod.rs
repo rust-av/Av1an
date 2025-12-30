@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{atomic::AtomicBool, Arc},
 };
 
@@ -60,6 +60,9 @@ pub trait CondorInstance<
     ) -> Result<Vec<((), ProcessorWarningsTuple)>>;
 }
 
+pub type SaveCallback<ProcessData, ProcessorConfig> =
+    Box<dyn Fn(CondorData<ProcessData, ProcessorConfig>) -> Result<()>>;
+
 pub struct Condor<ProcessData, ProcessorConfig>
 where
     ProcessData: BaseProcessDataTrait,
@@ -70,7 +73,7 @@ where
     pub encoder:          Encoder,
     pub scenes:           Vec<Scene<ProcessData>>,
     pub processor_config: ProcessorConfig,
-    pub save_file:        Option<PathBuf>,
+    pub save_callback:    SaveCallback<ProcessData, ProcessorConfig>,
 }
 
 impl<ProcessData, ProcessorConfig> Condor<ProcessData, ProcessorConfig>
@@ -85,7 +88,7 @@ where
         encoder: Encoder,
         scenes: Vec<Scene<ProcessData>>,
         processor_config: Option<ProcessorConfig>,
-        save_file: Option<PathBuf>,
+        save_callback: SaveCallback<ProcessData, ProcessorConfig>,
     ) -> Self {
         Self {
             input,
@@ -93,7 +96,7 @@ where
             encoder,
             scenes,
             processor_config: processor_config.unwrap_or_default(),
-            save_file,
+            save_callback,
         }
     }
 
@@ -110,10 +113,6 @@ where
 
     #[inline]
     pub fn save(&self) -> Result<Option<CondorData<ProcessData, ProcessorConfig>>> {
-        if self.save_file.is_none() {
-            return Ok(None);
-        }
-        let save_file = self.save_file.as_ref().expect("save_file exists");
         let data = CondorData {
             input:            self.input.as_data(),
             output:           self.output.as_data(),
@@ -121,7 +120,9 @@ where
             scenes:           self.scenes.clone(),
             processor_config: self.processor_config.clone(),
         };
-        Self::save_data(save_file, &data)?;
+
+        (self.save_callback)(data.clone())?;
+        // Self::save_data(save_file, &data)?;
 
         Ok(Some(data))
     }
@@ -350,7 +351,7 @@ mod tests {
                     cli_parameter::CLIParameter,
                     photon_noise::PhotonNoise,
                     Encoder,
-                    EncoderPasses,
+                    EncoderBase,
                 },
                 input::{Input as InputData, VapourSynthImportMethod, VapourSynthScriptSource},
                 output::Output as OutputData,
@@ -446,17 +447,18 @@ mod tests {
             video_tags:           HashMap::new(),
         };
         let output = Output::new(&output_data).expect("Output is correct");
-        let svt_options = CLIParameter::new_numbers("--", " ", &[
+        let mut svt_options = EncoderBase::SVTAV1.default_parameters();
+        svt_options.extend(CLIParameter::new_numbers("--", " ", &[
             ("keyint", 0.0),
             ("preset", 8.0),
             ("crf", 35.0),
             ("lp", 6.0),
             ("tune", 2.0),
             // ("invalid-test", 12.0),
-        ]);
+        ]));
         let encoder = Encoder::SVTAV1 {
             executable:   None,
-            pass:         EncoderPasses::All(1),
+            pass:         EncoderBase::SVTAV1.default_passes(),
             options:      svt_options.clone(),
             photon_noise: None,
         };
@@ -490,26 +492,26 @@ mod tests {
 
         let scenes = {
             let ranges = [
-                // (0, 270),
-                // (270, 578),
-                // (578, 767),
-                // (767, 952),
-                // (952, 1306),
-                // (1306, 1366),
-                // (1366, 1579),
-                // (1579, 1802),
-                // (1802, 1826),
-                // (1826, 1899),
-                // (1899, 1927),
-                // (1927, 2011),
-                // (2011, 2072),
-                // (2072, 2162),
+                (0, 270),
+                (270, 578),
+                (578, 767),
+                (767, 952),
+                (952, 1306),
+                (1306, 1366),
+                (1366, 1579),
+                (1579, 1802),
+                (1802, 1826),
+                (1826, 1899),
+                (1899, 1927),
+                (1927, 2011),
+                (2011, 2072),
+                (2072, 2162),
             ];
             let mut scenes: Vec<Scene<DefaultProcessData>> = vec![];
             for (index, (start, end)) in ranges.iter().enumerate() {
                 let encoder = Encoder::SVTAV1 {
                     executable:   None,
-                    pass:         EncoderPasses::All(1),
+                    pass:         EncoderBase::SVTAV1.default_passes(),
                     options:      svt_options.clone(),
                     photon_noise: Some(PhotonNoise {
                         iso:        (index as u32).saturating_mul(100000),
@@ -537,7 +539,11 @@ mod tests {
             output,
             encoder,
             scenes,
-            save_file: Some(PathBuf::from("C:/Condor/condor.json")),
+            // save_file: Some(PathBuf::from("C:/Condor/condor.json")),
+            save_callback: Box::new(|data| {
+                Condor::save_data(&PathBuf::from("C:/Condor/condor.json"), &data)?;
+                Ok(())
+            }),
             processor_config: DefaultProcessorConfig {
                 scene_detection: SceneDetectorConfig {
                     input:  Some(scd_input_data),
@@ -641,7 +647,7 @@ mod tests {
                                 }
                             };
                         },
-                        _ => (),
+                        // _ => (),
                     }
                 }
                 // Parallel Encoder
@@ -685,8 +691,7 @@ mod tests {
                                     _ => unimplemented!(),
                                 },
                                 ProcessStatus::Subprocess {
-                                    parent,
-                                    child,
+                                    child, ..
                                 } => match child {
                                     Status::Processing {
                                         id,
@@ -751,7 +756,7 @@ mod tests {
                                 },
                             }
                         },
-                        _ => (),
+                        // _ => (),
                     }
                 }
             }
@@ -804,7 +809,7 @@ mod tests {
         let (_import_lines, dg_lines) = DGSource::new(&PathBuf::from("C:/Condor/OP.dgi"))
             .generate_script("clip".to_owned())
             .expect("generated dgdecnv script");
-        let (_import_lines, bilinear_lines) = Bilinear {
+        let (_import_lines, _bilinear_lines) = Bilinear {
             width: Some(960),
             height: Some(540),
             ..Default::default()
@@ -856,7 +861,7 @@ mod tests {
         // let env = vapoursynth::vsscript::Environment::new().expect("got vs
         // environment");
         let env = vs_decoder.get_vapoursynth_env().expect("got vs environment");
-        let core = env.get_core().expect("got vapoursynth core");
+        let _core = env.get_core().expect("got vapoursynth core");
         // DGSource::index_video(&PathBuf::from("C:/Condor/OP.mkv"), None, None)
         //     .expect("indexed video");
         // let node = dg_plugin.invoke(core);

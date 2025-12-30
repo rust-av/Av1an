@@ -14,11 +14,11 @@ pub mod dgdecodenv;
 pub mod ffms2;
 // pub mod julek;
 pub mod lsmash;
+pub mod rescale;
 pub mod resize;
 pub mod standard;
 pub mod vship;
 pub mod vszip;
-pub mod rescale;
 
 pub trait PluginFunction {
     const PLUGIN_NAME: &'static str;
@@ -308,7 +308,7 @@ pub trait PluginFunction {
         }
 
         let node: Node =
-            result.get_node(key).map_err(|_| VapourSynthError::PluginFunctionError {
+            result.get_video_node(key).map_err(|_| VapourSynthError::PluginFunctionError {
                 plugin:   Self::PLUGIN_NAME.to_owned(),
                 function: Self::FUNCTION_NAME.to_owned(),
                 message:  "Failed to get video node".to_owned(),

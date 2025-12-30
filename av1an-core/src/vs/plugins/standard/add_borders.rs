@@ -29,7 +29,7 @@ impl PluginFunction for AddBorders {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "AddBorders";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("clip", &ValueType::Node)];
+        &[("clip", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
         ("top", &ValueType::Int),
         ("bottom", &ValueType::Int),

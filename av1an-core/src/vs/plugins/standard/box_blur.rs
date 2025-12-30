@@ -29,7 +29,7 @@ impl PluginFunction for BoxBlur {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "BoxBlur";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("clip", &ValueType::Node), ("planes", &ValueType::Int)];
+        &[("clip", &ValueType::VideoNode), ("planes", &ValueType::Int)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
         ("hradius", &ValueType::Int),
         ("hpasses", &ValueType::Int),

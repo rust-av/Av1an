@@ -27,7 +27,7 @@ impl PluginFunction for SelectEvery {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "SelectEvery";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
-        ("clip", &ValueType::Node),
+        ("clip", &ValueType::VideoNode),
         ("cycle", &ValueType::Int),
         ("offsets", &ValueType::Int),
     ];

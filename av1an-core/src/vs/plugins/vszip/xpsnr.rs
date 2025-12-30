@@ -29,7 +29,7 @@ impl PluginFunction for XPSNR {
     const PLUGIN_ID: &'static str = "com.julek.vszip";
     const FUNCTION_NAME: &'static str = "XPSNR";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("reference", &ValueType::Node), ("distorted", &ValueType::Node)];
+        &[("reference", &ValueType::VideoNode), ("distorted", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
         &[("temporal", &ValueType::Int), ("verbose", &ValueType::Int)];
 }

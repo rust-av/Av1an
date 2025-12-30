@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use anyhow::{ensure, Result};
+use anyhow::Result;
+use thiserror::Error;
 
 use crate::{condor::data::output::Output as OutputData, ConcatMethod};
 
@@ -23,13 +24,11 @@ impl Output {
     }
 
     #[inline]
-    pub fn validate(data: &OutputData) -> Result<()> {
-        // TODO: Return Result with Warning if parent folder does not exist
-        ensure!(
-            data.path.parent().is_some_and(|parent| parent.exists()),
-            "Output path parent folder {} does not exist or is invalid.",
-            data.path.display()
-        );
+    pub fn validate(data: &OutputData) -> Result<((), Vec<Box<OutputError>>)> {
+        let mut warnings = vec![];
+        if data.path.parent().is_some_and(|parent| !parent.exists()) {
+            warnings.push(Box::new(OutputError::ValidationFailed(data.path.clone())));
+        }
         // TODO: Validate we can write to the parent folder
 
         match data.concatenation_method {
@@ -42,13 +41,11 @@ impl Output {
             ConcatMethod::Ivf => todo!(),
         }
 
-        Ok(())
+        Ok(((), warnings))
     }
 
     #[inline]
     pub fn new(data: &OutputData) -> Result<Self> {
-        Output::validate(data)?;
-
         Ok(Output {
             path:                 data.path.clone(),
             concatenation_method: data.concatenation_method,
@@ -56,4 +53,10 @@ impl Output {
             video_tags:           data.video_tags.clone(),
         })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum OutputError {
+    #[error("Output path parent folder {0} does not exist or is invalid")]
+    ValidationFailed(PathBuf),
 }

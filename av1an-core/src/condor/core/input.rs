@@ -5,7 +5,8 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Result};
-use av_decoders::{Decoder, DecoderError, Ffms2Decoder, ModifyNode, VapoursynthDecoder};
+use av_decoders::{Decoder, Ffms2Decoder, VapoursynthDecoder};
+pub use av_decoders::{DecoderError, ModifyNode};
 
 use crate::{
     condor::data::input::{

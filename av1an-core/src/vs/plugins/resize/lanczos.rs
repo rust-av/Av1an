@@ -42,7 +42,7 @@ impl PluginFunction for Lanczos {
     const PLUGIN_ID: &'static str = "com.vapoursynth.resize";
     const FUNCTION_NAME: &'static str = "Lanczos";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("clip", &ValueType::Node)];
+        &[("clip", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
         ("width", &ValueType::Int),
         ("height", &ValueType::Int),

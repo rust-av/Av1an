@@ -6,6 +6,7 @@ use crate::{ClipInfo, InputPixelFormat};
 
 pub mod plugins;
 pub mod script_builder;
+pub mod vapoursynth_filters;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum VapourSynthError {
@@ -69,9 +70,6 @@ pub fn get_clip_info(node: &Node) -> Result<ClipInfo> {
 /// evaluated on a script.
 fn get_num_frames(info: &VideoInfo) -> anyhow::Result<usize> {
     let num_frames = {
-        if Property::Variable == info.format {
-            bail!("Cannot output clips with varying format");
-        }
         if Property::Variable == info.resolution {
             bail!("Cannot output clips with varying dimensions");
         }
@@ -79,20 +77,7 @@ fn get_num_frames(info: &VideoInfo) -> anyhow::Result<usize> {
             bail!("Cannot output clips with varying framerate");
         }
 
-        #[cfg(feature = "vapoursynth_new_api")]
-        let num_frames = info.num_frames;
-
-        #[cfg(not(feature = "vapoursynth_new_api"))]
-        let num_frames = {
-            match info.num_frames {
-                Property::Variable => {
-                    bail!("Cannot output clips with unknown length");
-                },
-                Property::Constant(x) => x,
-            }
-        };
-
-        num_frames
+        info.num_frames
     };
 
     assert!(num_frames != 0, "vapoursynth reported 0 frames");
@@ -113,14 +98,7 @@ fn get_frame_rate(info: &VideoInfo) -> anyhow::Result<Rational64> {
 /// Get the bit depth from an environment that has already been
 /// evaluated on a script.
 fn get_bit_depth(info: &VideoInfo) -> anyhow::Result<usize> {
-    let bits_per_sample = {
-        match info.format {
-            Property::Variable => {
-                bail!("Cannot output clips with variable format");
-            },
-            Property::Constant(x) => x.bits_per_sample(),
-        }
-    };
+    let bits_per_sample = info.format.bits_per_sample();
 
     Ok(bits_per_sample as usize)
 }

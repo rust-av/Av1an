@@ -19,6 +19,12 @@ use av1_grain::write_grain_table;
 use thiserror::Error;
 
 use crate::condor::{
+    core::{
+        encoder::{EncodeProgress, EncodeResourceUsage, EncoderResult},
+        input::Input,
+        processors::{ProcessCompletion, ProcessStatus, Processor, ProcessorDetails, Status},
+        Condor,
+    },
     data::{
         encoding::Encoder,
         processing::{
@@ -29,12 +35,6 @@ use crate::condor::{
         },
         scene::SubScene,
     },
-    core::{
-        encoder::{EncodeProgress, EncodeResourceUsage, EncoderResult},
-        input::Input,
-        processors::{ProcessCompletion, ProcessStatus, Processor, ProcessorDetails, Status},
-        Condor,
-    },
 };
 
 static DETAILS: ProcessorDetails = ProcessorDetails {
@@ -44,7 +44,7 @@ static DETAILS: ProcessorDetails = ProcessorDetails {
 };
 
 pub struct ParallelEncoder {
-    pub workers:          usize,
+    pub workers:          u8,
     pub input:            Option<Input>,
     pub encoder:          Option<Encoder>,
     pub scenes_directory: PathBuf,
@@ -225,8 +225,8 @@ where
 
         let encoder_thread = thread::scope(|s| -> Result<()> {
             let total_final_pass_frames_encoded = Arc::new(AtomicUsize::new(0));
-            let worker_semaphore = Arc::new(Semaphore::new(self.workers));
-            let decoder_semaphore = Arc::new(Semaphore::new(self.workers * 2));
+            let worker_semaphore = Arc::new(Semaphore::new(self.workers.into()));
+            let decoder_semaphore = Arc::new(Semaphore::new((self.workers * 2).into()));
             let frame_receivers = Arc::new(Mutex::new(frames_receivers));
             let progress_tx = progress_tx.clone();
             let mut encoder_threads = Vec::new();
@@ -420,10 +420,22 @@ where
     }
 }
 
+impl Default for ParallelEncoder {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            workers:          1,
+            input:            None,
+            encoder:          None,
+            scenes_directory: PathBuf::new(),
+        }
+    }
+}
+
 impl ParallelEncoder {
     pub const DETAILS: ProcessorDetails = DETAILS;
     #[inline]
-    pub fn new(workers: usize, scenes_directory: &Path) -> Self {
+    pub fn new(workers: u8, scenes_directory: &Path) -> Self {
         ParallelEncoder {
             workers,
             input: None,

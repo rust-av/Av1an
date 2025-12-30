@@ -25,7 +25,7 @@ impl PluginFunction for AssumeFPS {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "AssumeFPS";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("clip", &ValueType::Node)];
+        &[("clip", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
         ("first", &ValueType::Int),
         ("last", &ValueType::Int),

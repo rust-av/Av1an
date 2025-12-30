@@ -35,36 +35,6 @@ const NULL_OUTPUT: &str = if cfg!(windows) { "nul" } else { "/dev/null" };
 
 impl Encoder {
     #[inline]
-    pub fn base(&self) -> EncoderBase {
-        match self {
-            Encoder::AOM {
-                ..
-            } => EncoderBase::AOM,
-            Encoder::RAV1E {
-                ..
-            } => EncoderBase::RAV1E,
-            Encoder::VPX {
-                ..
-            } => EncoderBase::VPX,
-            Encoder::SVTAV1 {
-                ..
-            } => EncoderBase::SVTAV1,
-            Encoder::X264 {
-                ..
-            } => EncoderBase::X264,
-            Encoder::X265 {
-                ..
-            } => EncoderBase::X265,
-            Encoder::VVenC {
-                ..
-            } => EncoderBase::VVenC,
-            Encoder::FFmpeg {
-                ..
-            } => EncoderBase::FFmpeg,
-        }
-    }
-
-    #[inline]
     pub fn validate(&self) -> Result<()> {
         which::which(self.executable())?;
 
@@ -113,304 +83,22 @@ impl Encoder {
     }
 
     #[inline]
-    pub fn default_parameters(
-        encoder: &EncoderBase,
-        pass: (u8, u8),
-        first_pass_file_name: &str,
-    ) -> HashMap<String, CLIParameter> {
-        match encoder {
-            EncoderBase::AOM => {
-                let mut parameters = CLIParameter::new_numbers("--", "=", &[
-                    ("threads", 8.0),
-                    ("cpu-used", 6.0),
-                    ("cq-level", 30.0),
-                    ("kf-max-dist", 9999.0),
-                ]);
-
-                parameters.insert(
-                    "end-usage".to_owned(),
-                    CLIParameter::new_string("--", "=", "q"),
-                );
-
-                match pass {
-                    (1, 1) => parameters,
-                    (1, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", "=", &[
-                            ("passes", 2.0),
-                            ("pass", 1.0),
-                        ]));
-                        parameters.insert(
-                            "fpf".to_owned(),
-                            CLIParameter::new_string(
-                                "--",
-                                "=",
-                                &format!("{}.log", first_pass_file_name),
-                            ),
-                        );
-
-                        parameters
-                    },
-                    (_, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", "=", &[
-                            ("passes", 2.0),
-                            ("pass", 2.0),
-                        ]));
-                        parameters.insert(
-                            "fpf".to_owned(),
-                            CLIParameter::new_string(
-                                "--",
-                                "=",
-                                &format!("{}.log", first_pass_file_name),
-                            ),
-                        );
-
-                        parameters
-                    },
-                }
-            },
-            EncoderBase::RAV1E => {
-                let mut parameters = CLIParameter::new_numbers("--", " ", &[
-                    ("speed", 8.0),
-                    ("quantizer", 100.0),
-                    ("keyint", 0.0),
-                ]);
-
-                parameters.insert(
-                    "no-scene-detection".to_owned(),
-                    CLIParameter::new_bool("--", true),
-                );
-                parameters.extend(CLIParameter::new_bools("-", &[("y", true)]));
-
-                match pass {
-                    (1, 1) => parameters,
-                    (1, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[
-                            ("passes", 2.0),
-                            ("pass", 1.0),
-                        ]));
-                        parameters.extend(CLIParameter::new_bools("--", &[("quiet", true)]));
-                        parameters.extend(CLIParameter::new_strings("--", " ", &[(
-                            "first-pass",
-                            &format!("{}.stat", first_pass_file_name),
-                        )]));
-
-                        parameters
-                    },
-                    (_, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[
-                            ("passes", 2.0),
-                            ("pass", 2.0),
-                        ]));
-                        parameters.extend(CLIParameter::new_bools("--", &[("quiet", true)]));
-                        parameters.extend(CLIParameter::new_strings("--", " ", &[(
-                            "second-pass",
-                            &format!("{}.stat", first_pass_file_name),
-                        )]));
-
-                        parameters
-                    },
-                }
-            },
-            EncoderBase::VPX => {
-                let mut parameters = CLIParameter::new_numbers("--", "=", &[
-                    ("profile", 2.0),
-                    ("threads", 4.0),
-                    ("cpu-used", 2.0),
-                    ("cq-level", 30.0),
-                    ("row-mt", 1.0),
-                    ("auto-alt-ref", 6.0),
-                    ("kf-max-dist", 9999.0),
-                ]);
-
-                parameters.insert("b".to_owned(), CLIParameter::new_number("-", " ", 10.0));
-
-                let string_defaults =
-                    CLIParameter::new_strings("--", "=", &[("codec", "vp9"), ("end-usage", "q")]);
-
-                parameters.insert("disable-kf".to_owned(), CLIParameter::new_bool("--", true));
-
-                parameters.extend(string_defaults);
-
-                match pass {
-                    (1, 1) => {
-                        parameters.extend(CLIParameter::new_numbers("--", "=", &[("passes", 1.0)]));
-
-                        parameters
-                    },
-                    (1, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", "=", &[
-                            ("passes", 2.0),
-                            ("pass", 1.0),
-                        ]));
-                        parameters.extend(CLIParameter::new_strings("--", "=", &[(
-                            "fpf",
-                            &format!("{}.log", first_pass_file_name),
-                        )]));
-
-                        parameters
-                    },
-                    (_, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", "=", &[
-                            ("passes", 2.0),
-                            ("pass", 2.0),
-                        ]));
-                        parameters.extend(CLIParameter::new_strings("--", "=", &[(
-                            "fpf",
-                            &format!("{}.log", first_pass_file_name),
-                        )]));
-
-                        parameters
-                    },
-                }
-            },
-            EncoderBase::SVTAV1 => {
-                let mut parameters = CLIParameter::new_numbers("--", " ", &[
-                    ("preset", 4.0),
-                    ("keyint", 0.0),
-                    ("scd", 0.0),
-                    ("rc", 0.0),
-                    ("crf", 25.0),
-                    ("progress", 2.0),
-                ]);
-
-                match pass {
-                    (1, 1) => parameters,
-                    (1, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[
-                            ("irefresh-type", 2.0),
-                            ("pass", 1.0),
-                        ]));
-
-                        parameters.insert(
-                            "stats".to_owned(),
-                            CLIParameter::new_string(
-                                "-",
-                                " ",
-                                &format!("{}.stat", first_pass_file_name),
-                            ),
-                        );
-
-                        parameters
-                    },
-                    (_, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[
-                            ("irefresh-type", 2.0),
-                            ("pass", 2.0),
-                        ]));
-
-                        parameters.insert(
-                            "stats".to_owned(),
-                            CLIParameter::new_string(
-                                "-",
-                                " ",
-                                &format!("{}.stat", first_pass_file_name),
-                            ),
-                        );
-
-                        parameters
-                    },
-                }
-            },
-            EncoderBase::X264 => {
-                let mut parameters =
-                    CLIParameter::new_numbers("--", " ", &[("crf", 25.0), ("scenecut", 0.0)]);
-                parameters.extend(CLIParameter::new_strings("--", "=", &[
-                    ("preset", "slow"),
-                    ("keyint", "infinite"),
-                    ("log-level", "error"),
-                    ("demuxer", "y4m"),
-                ]));
-                parameters.extend(CLIParameter::new_bools("--", &[("stitchable", true)]));
-
-                match pass {
-                    (1, 1) => parameters,
-                    (1, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[("pass", 1.0)]));
-                        parameters.extend(CLIParameter::new_strings("--", " ", &[(
-                            "stats",
-                            &format!("{}.log", first_pass_file_name),
-                        )]));
-
-                        parameters
-                    },
-                    (_, _) => {
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[("pass", 2.0)]));
-                        parameters.extend(CLIParameter::new_strings("--", " ", &[(
-                            "stats",
-                            &format!("{}.log", first_pass_file_name),
-                        )]));
-
-                        parameters
-                    },
-                }
-            },
-            EncoderBase::X265 => {
-                let mut parameters = CLIParameter::new_numbers("--", " ", &[
-                    ("crf", 25.0),
-                    ("level-idc", 5.0),
-                    ("keyint", -1.0),
-                    ("scenecut", 0.0),
-                ]);
-                parameters.extend(CLIParameter::new_numbers("-", " ", &[("D", 10.0)]));
-                parameters.extend(CLIParameter::new_bools("--", &[("y4m", true)]));
-                parameters.extend(CLIParameter::new_strings("--", " ", &[("preset", "slow")]));
-
-                match pass {
-                    (1, 1) => parameters,
-                    (1, _) => {
-                        parameters
-                            .extend(CLIParameter::new_bools("--", &[("repeat-headers", true)]));
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[("pass", 1.0)]));
-                        parameters.extend(CLIParameter::new_strings("--", " ", &[
-                            ("log-level", "error"),
-                            ("stats", &format!("{}.log", first_pass_file_name)),
-                            (
-                                "analysis-reuse-file",
-                                &format!("{}_analysis.dat", first_pass_file_name),
-                            ),
-                        ]));
-
-                        parameters
-                    },
-                    (_, _) => {
-                        parameters
-                            .extend(CLIParameter::new_bools("--", &[("repeat-headers", true)]));
-                        parameters.extend(CLIParameter::new_numbers("--", " ", &[("pass", 2.0)]));
-                        parameters.extend(CLIParameter::new_strings("--", " ", &[
-                            ("log-level", "error"),
-                            ("stats", &format!("{}.log", first_pass_file_name)),
-                            (
-                                "analysis-reuse-file",
-                                &format!("{}_analysis.dat", first_pass_file_name),
-                            ),
-                        ]));
-
-                        parameters
-                    },
-                }
-            },
-            EncoderBase::VVenC => todo!(),
-            EncoderBase::FFmpeg => HashMap::new(),
-        }
-    }
-
-    #[inline]
-    pub fn parameters(&self, pass: (u8, u8), output: &PathBuf) -> Vec<String> {
+    pub fn parameters_with_output(&self, pass: (u8, u8), output: &PathBuf) -> Vec<String> {
         let output_path = output.to_str().expect("Output path should exist");
         let first_pass_file_name = output
             .file_stem()
             .expect("Output path is a file with an extension")
             .to_str()
             .expect("Output path is not empty");
+        let pass_parameters = self.base().pass_parameters(pass, first_pass_file_name);
 
         match self {
             Encoder::AOM {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params =
-                    Encoder::default_parameters(&self.base(), pass, first_pass_file_name);
-                params.extend(options.clone());
+                let mut params = options.clone();
+                params.extend(pass_parameters);
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -419,44 +107,16 @@ impl Encoder {
                         NULL_OUTPUT
                     },
                 )]));
-                // // Remove required parameters from options to avoid duplicates
-                // params.remove("o");
                 for (key, value) in params {
-                    match value {
-                        CLIParameter::String {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value);
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                    match value.to_string_pair(&key) {
+                        (Some(prefixed_key), Some(separate_value)) => {
+                            parameters.push(prefixed_key);
+                            parameters.push(separate_value);
                         },
-                        CLIParameter::Number {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value.to_string());
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                        (Some(prefixed_and_delimited), None) => {
+                            parameters.push(prefixed_and_delimited);
                         },
-                        CLIParameter::Bool {
-                            prefix,
-                            value,
-                        } => {
-                            if value {
-                                parameters.push(format!("{}{}", prefix, key));
-                            }
-                        },
+                        _ => (), // Boolean/Flag set to false, nothing to push
                     }
                 }
 
@@ -466,9 +126,8 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params =
-                    Encoder::default_parameters(&self.base(), pass, first_pass_file_name);
-                params.extend(options.clone());
+                let mut params = options.clone();
+                params.extend(pass_parameters);
                 params.extend(CLIParameter::new_strings("--", " ", &[(
                     "output",
                     if pass.0 == pass.1 {
@@ -477,44 +136,16 @@ impl Encoder {
                         NULL_OUTPUT
                     },
                 )]));
-                // // Remove required parameters from options to avoid duplicates
-                // params.remove("output");
                 for (key, value) in params {
-                    match value {
-                        CLIParameter::String {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value);
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                    match value.to_string_pair(&key) {
+                        (Some(prefixed_key), Some(separate_value)) => {
+                            parameters.push(prefixed_key);
+                            parameters.push(separate_value);
                         },
-                        CLIParameter::Number {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value.to_string());
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                        (Some(prefixed_and_delimited), None) => {
+                            parameters.push(prefixed_and_delimited);
                         },
-                        CLIParameter::Bool {
-                            prefix,
-                            value,
-                        } => {
-                            if value {
-                                parameters.push(format!("{}{}", prefix, key));
-                            }
-                        },
+                        _ => (), // Boolean/Flag set to false, nothing to push
                     }
                 }
 
@@ -524,9 +155,8 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params =
-                    Encoder::default_parameters(&self.base(), pass, first_pass_file_name);
-                params.extend(options.clone());
+                let mut params = options.clone();
+                params.extend(pass_parameters);
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -535,44 +165,16 @@ impl Encoder {
                         NULL_OUTPUT
                     },
                 )]));
-                // // Remove required parameters from options to avoid duplicates
-                // params.remove("o");
                 for (key, value) in params {
-                    match value {
-                        CLIParameter::String {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value);
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                    match value.to_string_pair(&key) {
+                        (Some(prefixed_key), Some(separate_value)) => {
+                            parameters.push(prefixed_key);
+                            parameters.push(separate_value);
                         },
-                        CLIParameter::Number {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value.to_string());
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                        (Some(prefixed_and_delimited), None) => {
+                            parameters.push(prefixed_and_delimited);
                         },
-                        CLIParameter::Bool {
-                            prefix,
-                            value,
-                        } => {
-                            if value {
-                                parameters.push(format!("{}{}", prefix, key));
-                            }
-                        },
+                        _ => (), // Boolean/Flag set to false, nothing to push
                     }
                 }
 
@@ -582,9 +184,8 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = Vec::new();
-                let mut params =
-                    Encoder::default_parameters(&self.base(), pass, first_pass_file_name);
-                params.extend(options.clone());
+                let mut params = options.clone();
+                params.extend(pass_parameters);
                 params.extend(CLIParameter::new_strings("-", " ", &[
                     ("i", "stdin"),
                     (
@@ -596,45 +197,16 @@ impl Encoder {
                         },
                     ),
                 ]));
-                // // Remove required parameters from options to avoid duplicates
-                // params.remove("i");
-                // params.remove("b");
                 for (key, value) in params {
-                    match value {
-                        CLIParameter::String {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value);
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                    match value.to_string_pair(&key) {
+                        (Some(prefixed_key), Some(separate_value)) => {
+                            parameters.push(prefixed_key);
+                            parameters.push(separate_value);
                         },
-                        CLIParameter::Number {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value.to_string());
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                        (Some(prefixed_and_delimited), None) => {
+                            parameters.push(prefixed_and_delimited);
                         },
-                        CLIParameter::Bool {
-                            prefix,
-                            value,
-                        } => {
-                            if value {
-                                parameters.push(format!("{}{}", prefix, key));
-                            }
-                        },
+                        _ => (), // Boolean/Flag set to false, nothing to push
                     }
                 }
 
@@ -644,9 +216,8 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params =
-                    Encoder::default_parameters(&self.base(), pass, first_pass_file_name);
-                params.extend(options.clone());
+                let mut params = options.clone();
+                params.extend(pass_parameters);
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -655,44 +226,16 @@ impl Encoder {
                         NULL_OUTPUT
                     },
                 )]));
-                // // Remove required parameters from options to avoid duplicates
-                // params.remove("o");
                 for (key, value) in params {
-                    match value {
-                        CLIParameter::String {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value);
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                    match value.to_string_pair(&key) {
+                        (Some(prefixed_key), Some(separate_value)) => {
+                            parameters.push(prefixed_key);
+                            parameters.push(separate_value);
                         },
-                        CLIParameter::Number {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value.to_string());
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                        (Some(prefixed_and_delimited), None) => {
+                            parameters.push(prefixed_and_delimited);
                         },
-                        CLIParameter::Bool {
-                            prefix,
-                            value,
-                        } => {
-                            if value {
-                                parameters.push(format!("{}{}", prefix, key));
-                            }
-                        },
+                        _ => (), // Boolean/Flag set to false, nothing to push
                     }
                 }
 
@@ -702,9 +245,8 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params =
-                    Encoder::default_parameters(&self.base(), pass, first_pass_file_name);
-                params.extend(options.clone());
+                let mut params = options.clone();
+                params.extend(pass_parameters);
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -713,44 +255,16 @@ impl Encoder {
                         NULL_OUTPUT
                     },
                 )]));
-                // // Remove required parameters from options to avoid duplicates
-                // params.remove("o");
                 for (key, value) in params {
-                    match value {
-                        CLIParameter::String {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value);
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                    match value.to_string_pair(&key) {
+                        (Some(prefixed_key), Some(separate_value)) => {
+                            parameters.push(prefixed_key);
+                            parameters.push(separate_value);
                         },
-                        CLIParameter::Number {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value.to_string());
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                        (Some(prefixed_and_delimited), None) => {
+                            parameters.push(prefixed_and_delimited);
                         },
-                        CLIParameter::Bool {
-                            prefix,
-                            value,
-                        } => {
-                            if value {
-                                parameters.push(format!("{}{}", prefix, key));
-                            }
-                        },
+                        _ => (), // Boolean/Flag set to false, nothing to push
                     }
                 }
 
@@ -763,51 +277,22 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters: Vec<String> = ["-i".to_owned(), "-".to_owned()].to_vec();
-                // Remove required parameters from options to avoid duplicates
-                let mut params =
-                    Encoder::default_parameters(&self.base(), pass, first_pass_file_name);
-                params.extend(options.clone());
-
+                let mut params = options.clone();
+                params.extend(pass_parameters);
                 if let Some(codec) = params.remove("c:v") {
                     parameters.push("-c:v".to_owned());
                     parameters.push(codec.to_string_value());
                 }
                 for (key, value) in params {
-                    match value {
-                        CLIParameter::String {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value);
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                    match value.to_string_pair(&key) {
+                        (Some(prefixed_key), Some(separate_value)) => {
+                            parameters.push(prefixed_key);
+                            parameters.push(separate_value);
                         },
-                        CLIParameter::Number {
-                            prefix,
-                            value,
-                            delimiter,
-                        } => match delimiter.as_str() {
-                            " " => {
-                                parameters.push(format!("{}{}", prefix, key));
-                                parameters.push(value.to_string());
-                            },
-                            _ => {
-                                parameters.push(format!("{}{}{}{}", prefix, key, delimiter, value));
-                            },
+                        (Some(prefixed_and_delimited), None) => {
+                            parameters.push(prefixed_and_delimited);
                         },
-                        CLIParameter::Bool {
-                            prefix,
-                            value,
-                        } => {
-                            if value {
-                                parameters.push(format!("{}{}", prefix, key));
-                            }
-                        },
+                        _ => (), // Boolean/Flag set to false, nothing to push
                     }
                 }
 
@@ -846,7 +331,7 @@ impl Encoder {
             EncoderPasses::All(total) => {
                 let mut result = EncoderResult {
                     encoder:    self.base(),
-                    parameters: self.parameters((1, total), output),
+                    parameters: self.parameters_with_output((1, total), output),
                     status:     std::process::ExitStatus::default(),
                     stdout:     StringOrBytes::from(Vec::new()),
                     stderr:     StringOrBytes::from(Vec::new()),
@@ -888,7 +373,7 @@ impl Encoder {
 
         let mut system = sysinfo::System::new();
         let mut encoder = Command::new(self.executable())
-            .args(self.parameters(pass, output))
+            .args(self.parameters_with_output(pass, output))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1008,7 +493,7 @@ impl Encoder {
 
         let encoder_result = EncoderResult {
             encoder:    self.base(),
-            parameters: self.parameters(pass, output),
+            parameters: self.parameters_with_output(pass, output),
             status:     encoder_output.status,
             stdout:     StringOrBytes::from(encoder_output.stdout),
             stderr:     stderr_output.lock().expect("mutex should acquire lock").clone().into(),
@@ -1078,7 +563,7 @@ impl Encoder {
                 }
                 let mut result = EncoderResult {
                     encoder:    self.base(),
-                    parameters: self.parameters((1, total), output),
+                    parameters: self.parameters_with_output((1, total), output),
                     status:     std::process::ExitStatus::default(),
                     stdout:     StringOrBytes::from(Vec::new()),
                     stderr:     StringOrBytes::from(Vec::new()),
@@ -1130,7 +615,7 @@ impl Encoder {
         // println!("Encoding with params: {:?}", self.parameters(pass, output));
         // let mut system = sysinfo::System::new();
         let mut encoder = Command::new(self.executable())
-            .args(self.parameters(pass, output))
+            .args(self.parameters_with_output(pass, output))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1243,7 +728,7 @@ impl Encoder {
 
         let encoder_result = EncoderResult {
             encoder:    self.base(),
-            parameters: self.parameters(pass, output),
+            parameters: self.parameters_with_output(pass, output),
             status:     encoder_output.status,
             stdout:     StringOrBytes::from(encoder_output.stdout),
             stderr:     stderr_output.lock().expect("mutex should acquire lock").clone().into(),
@@ -1253,44 +738,6 @@ impl Encoder {
         // }
 
         Ok(encoder_result)
-    }
-
-    #[inline]
-    pub fn passes(&self) -> EncoderPasses {
-        match self {
-            Encoder::AOM {
-                pass, ..
-            } => *pass,
-            Encoder::RAV1E {
-                pass, ..
-            } => *pass,
-            Encoder::VPX {
-                pass, ..
-            } => *pass,
-            Encoder::SVTAV1 {
-                pass, ..
-            } => *pass,
-            Encoder::X264 {
-                pass, ..
-            } => *pass,
-            Encoder::X265 {
-                pass, ..
-            } => *pass,
-            Encoder::VVenC {
-                pass, ..
-            } => *pass,
-            Encoder::FFmpeg {
-                ..
-            } => EncoderPasses::All(1),
-        }
-    }
-
-    #[inline]
-    pub fn total_passes(&self) -> u8 {
-        match self.passes() {
-            EncoderPasses::All(passes) => passes,
-            EncoderPasses::Specific(_, _) => 1,
-        }
     }
 
     #[inline]
@@ -1421,22 +868,6 @@ impl Encoder {
     #[inline]
     pub fn parse_encoded_frames(&self, line: &str) -> Option<u64> {
         Self::parse_encoded_frames_base(&self.base(), line)
-    }
-
-    #[inline]
-    pub fn output_extension_base(encoder: &EncoderBase) -> &'static str {
-        match encoder {
-            EncoderBase::AOM | EncoderBase::RAV1E | EncoderBase::VPX | EncoderBase::SVTAV1 => "ivf",
-            EncoderBase::X264 => "264",
-            EncoderBase::X265 => "hevc",
-            EncoderBase::VVenC => todo!(),
-            EncoderBase::FFmpeg => ".mkv",
-        }
-    }
-
-    #[inline]
-    pub fn output_extension(&self) -> &'static str {
-        Self::output_extension_base(&self.base())
     }
 }
 

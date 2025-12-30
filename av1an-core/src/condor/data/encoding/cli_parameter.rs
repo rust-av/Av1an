@@ -128,26 +128,38 @@ impl CLIParameter {
     }
 
     #[inline]
-    pub fn to_key_value_string(&self, name: &str) -> (String, String) {
+    pub fn to_string_pair(&self, name: &str) -> (Option<String>, Option<String>) {
         match self {
             CLIParameter::String {
                 prefix,
                 value,
-                ..
-            } => (format!("{}{}", prefix, name), value.to_owned()),
+                delimiter,
+            } => match delimiter.as_str() {
+                " " => (Some(format!("{}{}", prefix, name)), Some(value.to_owned())),
+                _ => (
+                    Some(format!("{}{}{}{}", prefix, name, delimiter, value)),
+                    None,
+                ),
+            },
             CLIParameter::Number {
                 prefix,
                 value,
-                ..
-            } => (format!("{}{}", prefix, name), format!("{}", value)),
+                delimiter,
+            } => match delimiter.as_str() {
+                " " => (Some(format!("{}{}", prefix, name)), Some(value.to_string())),
+                _ => (
+                    Some(format!("{}{}{}{}", prefix, name, delimiter, value)),
+                    None,
+                ),
+            },
             CLIParameter::Bool {
                 prefix,
                 value,
             } => {
                 if *value {
-                    (format!("{}{}", prefix, name), String::new())
+                    (Some(format!("{}{}", prefix, name)), None)
                 } else {
-                    (String::new(), String::new())
+                    (None, None)
                 }
             },
         }

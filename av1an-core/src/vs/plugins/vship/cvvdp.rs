@@ -33,7 +33,7 @@ impl PluginFunction for CVVDP {
     const PLUGIN_ID: &'static str = "com.lumen.vship";
     const FUNCTION_NAME: &'static str = "CVVDP";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("reference", &ValueType::Node), ("distorted", &ValueType::Node)];
+        &[("reference", &ValueType::VideoNode), ("distorted", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
         ("gpu_id", &ValueType::Int),
         ("distmap", &ValueType::Int),

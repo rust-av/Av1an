@@ -26,6 +26,7 @@ use crate::condor::{
 pub mod quality_check;
 pub mod scene_detection;
 pub mod target_quality;
+pub mod parallel_encoder;
 
 pub trait BaseProcessingTrait: Default {}
 

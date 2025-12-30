@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, time::SystemTime};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use av_scenechange::ScenecutResult;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     condor::{
-        data::{input::Input as InputData, processing::BaseProcessorConfigTrait},
         core::{input::Input, processors::scene_detector::SceneDetector},
+        data::{input::Input as InputData, processing::BaseProcessorConfigTrait},
     },
     ScenecutMethod,
 };
@@ -92,6 +92,105 @@ impl Default for SceneDetectionMethod {
             maximum_length: (DEFAULT_MIN_SCENE_LENGTH_FRAMES as usize
                 * DEFAULT_MAX_SCENE_LENGTH_SECONDS as usize),
             method:         ScenecutMethod::Standard,
+        }
+    }
+}
+
+impl SceneDetectionMethod {
+    #[inline]
+    pub fn minimum_length(&self) -> usize {
+        match self {
+            SceneDetectionMethod::AVSceneChange {
+                minimum_length,
+                maximum_length: _,
+                method: _,
+            }
+            | SceneDetectionMethod::None {
+                minimum_length,
+                maximum_length: _,
+            } => *minimum_length,
+        }
+    }
+
+    #[inline]
+    pub fn set_minimum_length(&mut self, length: usize) -> Result<()> {
+        match self {
+            SceneDetectionMethod::AVSceneChange {
+                minimum_length,
+                maximum_length: _,
+                method: _,
+            }
+            | SceneDetectionMethod::None {
+                minimum_length,
+                maximum_length: _,
+            } => {
+                *minimum_length = length;
+                Ok(())
+            },
+        }
+    }
+
+    #[inline]
+    pub fn maximum_length(&self) -> usize {
+        match self {
+            SceneDetectionMethod::AVSceneChange {
+                minimum_length: _,
+                maximum_length,
+                method: _,
+            }
+            | SceneDetectionMethod::None {
+                minimum_length: _,
+                maximum_length,
+            } => *maximum_length,
+        }
+    }
+
+    #[inline]
+    pub fn set_maximum_length(&mut self, length: usize) -> Result<()> {
+        match self {
+            SceneDetectionMethod::AVSceneChange {
+                minimum_length: _,
+                maximum_length,
+                method: _,
+            }
+            | SceneDetectionMethod::None {
+                minimum_length: _,
+                maximum_length,
+            } => {
+                *maximum_length = length;
+                Ok(())
+            },
+        }
+    }
+
+    #[inline]
+    pub fn method(&self) -> Result<ScenecutMethod> {
+        match self {
+            SceneDetectionMethod::AVSceneChange {
+                minimum_length: _,
+                maximum_length: _,
+                method,
+            } => Ok(*method),
+            _ => {
+                bail!("Cannot get method for None method");
+            },
+        }
+    }
+
+    #[inline]
+    pub fn set_method(&mut self, scenecut_method: ScenecutMethod) -> Result<()> {
+        match self {
+            SceneDetectionMethod::AVSceneChange {
+                minimum_length: _,
+                maximum_length: _,
+                method,
+            } => {
+                *method = scenecut_method;
+                Ok(())
+            },
+            _ => {
+                bail!("Cannot set method for None method");
+            },
         }
     }
 }

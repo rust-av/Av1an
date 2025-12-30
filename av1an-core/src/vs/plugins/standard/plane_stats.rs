@@ -26,9 +26,9 @@ impl PluginFunction for PlaneStats {
     const PLUGIN_ID: &'static str = "com.vapoursynth.std";
     const FUNCTION_NAME: &'static str = "PlaneStats";
     const REQUIRED_ARGUMENTS: &'static [(&'static str, &'static ValueType)] =
-        &[("clipa", &ValueType::Node)];
+        &[("clipa", &ValueType::VideoNode)];
     const OPTIONAL_ARGUMENTS: &'static [(&'static str, &'static ValueType)] = &[
-        ("clipb", &ValueType::Node),
+        ("clipb", &ValueType::VideoNode),
         ("plane", &ValueType::Int),
         ("prop", &ValueType::Data),
     ];

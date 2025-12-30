@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString, IntoStaticStr};
 
 pub mod bicubic;
@@ -8,6 +9,26 @@ pub mod point;
 pub mod spline16;
 pub mod spline36;
 pub mod spline64;
+
+#[derive(Debug, Copy, Clone, Display, Serialize, Deserialize, EnumString, IntoStaticStr)]
+pub enum Scaler {
+    #[strum(serialize = "bicubic")]
+    Bicubic,
+    #[strum(serialize = "bilinear")]
+    Bilinear,
+    #[strum(serialize = "bob")]
+    Bob,
+    #[strum(serialize = "lanczos")]
+    Lanczos,
+    #[strum(serialize = "point")]
+    Point,
+    #[strum(serialize = "spline16")]
+    Spline16,
+    #[strum(serialize = "spline36")]
+    Spline36,
+    #[strum(serialize = "spline64")]
+    Spline64,
+}
 
 /// Based on ITU-T H.273 (7/24)
 #[derive(Debug, Copy, Clone)]
