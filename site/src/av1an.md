@@ -71,6 +71,7 @@ Name | Flag | Type | Default
 [Concatenation Method](./Cli/encoding.md#concatenation-method--c---concat) | `-c`, `--concat` | `CONCAT` | `ffmpeg`
 [Pixel Format](./Cli/encoding.md#pixel-format---pix-format) | `--pix-format` | `PIX_FORMAT` | `yuv420p10le`
 [Zones](./Cli/encoding.md#zones---zones) | `-z`, `--zones` | Path | 
+[Cache Index Mode](./Cli/encoding.md#Cache---Index---Mode) | `--cache-mode` | `CacheMode` | `source`
 
 ### [VMAF](./Cli/vmaf.md)
 
