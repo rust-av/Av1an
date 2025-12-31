@@ -1,13 +1,11 @@
 use std::{
-    fs::{create_dir_all, File},
-    io::Write,
-    path::{absolute, Path, PathBuf},
-    process::Command,
+    fmt::Display, fs::{File, create_dir_all}, io::Write, path::{Path, PathBuf, absolute}, process::Command
 };
 
 use anyhow::{anyhow, bail, Context};
 use av_format::rational::Rational64;
 use path_abs::{PathAbs, PathInfo};
+use serde::{Deserialize, Serialize};
 use tracing::info;
 use vapoursynth::{
     core::CoreRef,
@@ -26,6 +24,23 @@ use crate::{
     Input,
     InputPixelFormat,
 };
+
+use strum::{EnumString, IntoStaticStr};
+
+#[derive(Serialize, PartialEq, Debug, Clone, Copy, EnumString, IntoStaticStr, Hash, Eq, Deserialize)]
+pub enum CacheSource {
+    #[strum(serialize = "source")]
+    SOURCE,
+    #[strum(serialize = "temp")]
+    TEMP,
+}
+
+impl Display for CacheSource {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(<&'static str>::from(self))
+    }
+}
 
 /// Contains a list of installed Vapoursynth plugins which may be used by av1an
 #[derive(Debug, Clone, Copy)]
@@ -651,6 +666,7 @@ pub fn create_vs_file(
     scene_detection_pixel_format: Option<FFPixelFormat>,
     scene_detection_scaler: &str,
     is_proxy: bool,
+    cache_mode: CacheSource
 ) -> anyhow::Result<(PathBuf, bool)> {
     let (load_script_text, cache_file_already_exists) = generate_loadscript_text(
         temp,
@@ -660,6 +676,7 @@ pub fn create_vs_file(
         scene_detection_pixel_format,
         scene_detection_scaler,
         is_proxy,
+        cache_mode
     )?;
     // Ensure the temp folder exists
     let temp: &Path = temp.as_ref();
@@ -709,6 +726,7 @@ pub fn generate_loadscript_text(
     scene_detection_pixel_format: Option<FFPixelFormat>,
     scene_detection_scaler: &str,
     is_proxy: bool,
+    cache_mode: CacheSource,
 ) -> anyhow::Result<(String, bool)> {
     let temp: &Path = temp.as_ref();
     let source = absolute(source)?;
@@ -780,6 +798,21 @@ pub fn generate_loadscript_text(
             ),
         );
     }
+    if cache_mode == CacheSource::TEMP {
+        load_script_text = load_script_text.replace(
+            "cache_file = os.environ.get(\"AV1AN_CACHE_FILE\", None)", 
+            &format!(
+                "cache_file = r\"{}\"", 
+                dunce::simplified(cache_file.as_path()).display(),
+            ),)
+    }
+
+    load_script_text = load_script_text.replace(
+            "cache_mode = os.environ.get(\"AV1AN_CACHE_MODE\", None)", 
+            &format!(
+                "cache_mode = \"{}\"", cache_mode
+            ),);
+    
     load_script_text = load_script_text.replace(
         "scaler = os.environ.get(\"AV1AN_SCALER\", None)",
         &format!("scaler = os.environ.get(\"AV1AN_SCALER\", {scene_detection_scaler:?})"),

@@ -36,7 +36,7 @@ pub use crate::{
 use crate::{
     ffmpeg::FFPixelFormat,
     progress_bar::finish_progress_bar,
-    vapoursynth::{create_vs_file, generate_loadscript_text},
+    vapoursynth::{CacheSource, create_vs_file, generate_loadscript_text},
 };
 
 mod broker;
@@ -92,6 +92,7 @@ pub enum Input {
         // Store as a string of ChunkMethod to enable hashing
         chunk_method: ChunkMethod,
         is_proxy:     bool,
+        cache_mode: CacheSource,
     },
 }
 
@@ -107,6 +108,7 @@ impl Input {
         scene_detection_pixel_format: Option<FFPixelFormat>,
         scene_detection_scaler: Option<&str>,
         is_proxy: bool,
+        cache_mode: CacheSource ,
     ) -> anyhow::Result<Self> {
         let input = if let Some(ext) = path.as_ref().extension() {
             if ext == "py" || ext == "vpy" {
@@ -125,6 +127,7 @@ impl Input {
                     temp: temporary_directory.to_owned(),
                     chunk_method,
                     is_proxy,
+                    cache_mode,
                 })
             }
         } else {
@@ -134,6 +137,7 @@ impl Input {
                 temp: temporary_directory.to_owned(),
                 chunk_method,
                 is_proxy,
+                cache_mode,
             })
         }?;
 
@@ -149,6 +153,7 @@ impl Input {
                 scene_detection_pixel_format,
                 scene_detection_scaler.unwrap_or_default(),
                 is_proxy,
+                cache_mode
             )?;
             if !cache_file_already_exists {
                 // Getting the clip info will cause VapourSynth to generate the
@@ -164,6 +169,7 @@ impl Input {
                 scene_detection_pixel_format,
                 scene_detection_scaler.unwrap_or_default(),
                 is_proxy,
+                cache_mode
             )?;
 
             input.clip_info()?;
@@ -240,6 +246,7 @@ impl Input {
                 temp,
                 chunk_method,
                 is_proxy,
+                cache_mode
             } => match chunk_method {
                 ChunkMethod::LSMASH
                 | ChunkMethod::FFMS2
@@ -253,6 +260,7 @@ impl Input {
                         scene_detection_pixel_format,
                         scene_detection_scaler.unwrap_or_default(),
                         *is_proxy,
+                        *cache_mode,
                     )?;
                     Ok(script_text)
                 },

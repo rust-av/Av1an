@@ -195,6 +195,7 @@ impl Av1anContext {
                         self.args.sc_pix_format,
                         &self.args.scaler,
                         *is_proxy,
+                        self.args.cache_mode
                     )?;
                     script_path
                 },
@@ -917,12 +918,14 @@ impl Av1anContext {
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Select,
                 is_proxy:     false,
+                cache_mode:   self.args.cache_mode.clone(),
             },
             proxy: self.args.proxy.as_ref().map(|proxy| Input::Video {
                 path:         proxy.as_path().to_path_buf(),
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Select,
                 is_proxy:     true,
+                cache_mode: self.args.cache_mode.clone(),
             }),
             source_cmd: ffmpeg_gen_cmd,
             proxy_cmd: None,
@@ -1272,12 +1275,14 @@ impl Av1anContext {
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Segment,
                 is_proxy:     false,
+                cache_mode: self.args.cache_mode.clone()
             },
             proxy: self.args.proxy.as_ref().map(|proxy| Input::Video {
                 path:         proxy.as_path().to_path_buf(),
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Segment,
                 is_proxy:     true,
+                cache_mode: self.args.cache_mode.clone()
             }),
             source_cmd: ffmpeg_gen_cmd,
             proxy_cmd: None,

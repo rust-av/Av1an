@@ -65,6 +65,7 @@ vapoursynth = "0.5"
 colored = "3.0.0"
 ctrlc = "3.5.1"
 regex = "1.12.2"
+dunce = "1.0.5"
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented
