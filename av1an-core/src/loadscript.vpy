@@ -38,7 +38,7 @@ match (chunk_method):  # type: ignore
         video = core.dgdecodenv.DGSource(source)
     case "bestsource":
         if cache_mode == "temp":
-            video = core.bs.VideoSource(source, cachepath=cache_file)
+            video = core.bs.VideoSource(source, cachepath=cache_file, cachemode=4)
         else:
             # bestsource has the default behavior to store its index files in a user-specific directory
             # but for consistency, this setting makes it store the index file next to the video
