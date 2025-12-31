@@ -54,7 +54,7 @@ use crate::{
     scenes::{Scene, SceneFactory, ZoneOptions},
     settings::{EncodeArgs, InputPixelFormat},
     split::segment,
-    vapoursynth::create_vs_file,
+    vapoursynth::{create_vs_file, LoadscriptArgs},
     zones::{parse_zones, validate_zones},
     ChunkMethod,
     ChunkOrdering,
@@ -187,16 +187,16 @@ impl Av1anContext {
                     is_proxy,
                     ..
                 } => {
-                    let (script_path, _) = create_vs_file(
-                        &self.args.temp,
-                        path,
-                        self.args.chunk_method,
-                        self.args.sc_downscale_height,
-                        self.args.sc_pix_format,
-                        &self.args.scaler,
-                        *is_proxy,
-                        self.args.cache_mode
-                    )?;
+                    let (script_path, _) = create_vs_file(&LoadscriptArgs {
+                        temp:                             &self.args.temp,
+                        source:                           path,
+                        chunk_method:                     self.args.chunk_method,
+                        scene_detection_downscale_height: self.args.sc_downscale_height,
+                        scene_detection_pixel_format:     self.args.sc_pix_format,
+                        scene_detection_scaler:           &self.args.scaler,
+                        is_proxy:                         *is_proxy,
+                        cache_mode:                       self.args.cache_mode,
+                    })?;
                     script_path
                 },
             };
@@ -918,14 +918,14 @@ impl Av1anContext {
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Select,
                 is_proxy:     false,
-                cache_mode:   self.args.cache_mode.clone(),
+                cache_mode:   self.args.cache_mode,
             },
             proxy: self.args.proxy.as_ref().map(|proxy| Input::Video {
                 path:         proxy.as_path().to_path_buf(),
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Select,
                 is_proxy:     true,
-                cache_mode: self.args.cache_mode.clone(),
+                cache_mode:   self.args.cache_mode,
             }),
             source_cmd: ffmpeg_gen_cmd,
             proxy_cmd: None,
@@ -1275,14 +1275,14 @@ impl Av1anContext {
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Segment,
                 is_proxy:     false,
-                cache_mode: self.args.cache_mode.clone()
+                cache_mode:   self.args.cache_mode,
             },
             proxy: self.args.proxy.as_ref().map(|proxy| Input::Video {
                 path:         proxy.as_path().to_path_buf(),
                 temp:         self.args.temp.clone(),
                 chunk_method: ChunkMethod::Segment,
                 is_proxy:     true,
-                cache_mode: self.args.cache_mode.clone()
+                cache_mode:   self.args.cache_mode,
             }),
             source_cmd: ffmpeg_gen_cmd,
             proxy_cmd: None,

@@ -18,7 +18,7 @@ use crate::{
     metrics::{vmaf::validate_libvmaf, xpsnr::validate_libxpsnr},
     parse::valid_params,
     target_quality::TargetQuality,
-    vapoursynth::{VSZipVersion, VapoursynthPlugins},
+    vapoursynth::{CacheSource, VSZipVersion, VapoursynthPlugins},
     ChunkMethod,
     ChunkOrdering,
     Input,
@@ -26,7 +26,6 @@ use crate::{
     SplitMethod,
     TargetMetric,
     Verbosity,
-    vapoursynth::CacheSource,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -102,7 +101,7 @@ pub struct EncodeArgs {
     pub photon_noise_size:   (Option<u32>, Option<u32>), // Width and Height
     pub chroma_noise:        bool,
     pub zones:               Option<PathBuf>,
-    pub cache_mode: CacheSource,
+    pub cache_mode:          CacheSource,
 
     // FFmpeg params
     pub ffmpeg_filter_args: Vec<String>,

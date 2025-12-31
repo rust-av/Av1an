@@ -18,13 +18,13 @@ fn get_test_args() -> Av1anContext {
         ffmpeg::FFPixelFormat,
         into_vec,
         settings::{EncodeArgs, InputPixelFormat, PixelFormat},
+        vapoursynth::CacheSource,
         ChunkMethod,
         ChunkOrdering,
         Input,
         ScenecutMethod,
         SplitMethod,
         Verbosity,
-        vapoursynth::CacheSource
     };
 
     let args = EncodeArgs {
@@ -56,7 +56,7 @@ fn get_test_args() -> Av1anContext {
             temp:         String::new(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
-            cache_mode: CacheSource::SOURCE
+            cache_mode:   CacheSource::SOURCE,
         },
         proxy:                 None,
         output_pix_format:     PixelFormat {
@@ -86,7 +86,7 @@ fn get_test_args() -> Av1anContext {
         vmaf_filter:           None,
         probe_res:             None,
         vapoursynth_plugins:   None,
-        cache_mode: CacheSource::SOURCE, 
+        cache_mode:            CacheSource::SOURCE,
     };
     Av1anContext {
         vs_script: None,

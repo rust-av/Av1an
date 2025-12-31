@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::*;
-use crate::{ChunkMethod, vapoursynth};
+use crate::{vapoursynth, ChunkMethod};
 
 #[test]
 fn chunk_name_1() {
@@ -13,7 +13,7 @@ fn chunk_name_1() {
             temp:         "none".to_owned(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
-            cache_mode: vapoursynth::CacheSource::SOURCE
+            cache_mode:   vapoursynth::CacheSource::SOURCE,
         },
         proxy:                 None,
         source_cmd:            vec!["".into()],
@@ -42,7 +42,7 @@ fn chunk_name_10000() {
             temp:         "none".to_owned(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
-            cache_mode: vapoursynth::CacheSource::SOURCE
+            cache_mode:   vapoursynth::CacheSource::SOURCE,
         },
         proxy:                 None,
         source_cmd:            vec!["".into()],
@@ -72,7 +72,7 @@ fn chunk_output() {
             temp:         "d".to_owned(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
-            cache_mode: vapoursynth::CacheSource::SOURCE
+            cache_mode:   vapoursynth::CacheSource::SOURCE,
         },
         proxy:                 None,
         source_cmd:            vec!["".into()],
@@ -106,7 +106,7 @@ fn chunk_frames() {
             temp:         "none".to_owned(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
-            cache_mode: vapoursynth::CacheSource::SOURCE
+            cache_mode:   vapoursynth::CacheSource::SOURCE,
         },
         proxy:                 None,
         source_cmd:            vec!["".into()],
@@ -141,7 +141,7 @@ fn apply_photon_noise_args_with_noise() -> anyhow::Result<()> {
             None,
             None,
             false,
-            vapoursynth::CacheSource::SOURCE
+            vapoursynth::CacheSource::SOURCE,
         )?,
         proxy:                 None,
         source_cmd:            vec!["".into()],
@@ -179,7 +179,7 @@ fn apply_photon_noise_args_no_noise() -> anyhow::Result<()> {
             temp:         temp_dir.path().to_string_lossy().to_string(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
-            cache_mode: vapoursynth::CacheSource::SOURCE
+            cache_mode:   vapoursynth::CacheSource::SOURCE,
         },
         proxy:                 None,
         source_cmd:            vec!["".into()],
@@ -217,7 +217,7 @@ fn apply_photon_noise_args_unsupported_encoder() -> anyhow::Result<()> {
             temp:         temp_dir.path().to_string_lossy().to_string(),
             chunk_method: ChunkMethod::LSMASH,
             is_proxy:     false,
-            cache_mode: vapoursynth::CacheSource::SOURCE
+            cache_mode:   vapoursynth::CacheSource::SOURCE,
         },
         proxy:                 None,
         source_cmd:            vec!["".into()],

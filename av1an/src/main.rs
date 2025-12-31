@@ -9,7 +9,27 @@ use std::{
 
 use anyhow::{anyhow, bail, ensure, Context};
 use av1an_core::{
-    Av1anContext, ChunkMethod, ChunkOrdering, ConcatMethod, EncodeArgs, Encoder, Input, InputPixelFormat, InterpolationMethod, PixelFormat, ScenecutMethod, SplitMethod, TargetMetric, TargetQuality, Verbosity, VmafFeature, ffmpeg::FFPixelFormat, hash_path, into_vec, read_in_dir, vapoursynth::{CacheSource, VSZipVersion, get_vapoursynth_plugins}
+    ffmpeg::FFPixelFormat,
+    hash_path,
+    into_vec,
+    read_in_dir,
+    vapoursynth::{get_vapoursynth_plugins, CacheSource, VSZipVersion},
+    Av1anContext,
+    ChunkMethod,
+    ChunkOrdering,
+    ConcatMethod,
+    EncodeArgs,
+    Encoder,
+    Input,
+    InputPixelFormat,
+    InterpolationMethod,
+    PixelFormat,
+    ScenecutMethod,
+    SplitMethod,
+    TargetMetric,
+    TargetQuality,
+    Verbosity,
+    VmafFeature,
 };
 use clap::{value_parser, CommandFactory, Parser};
 use clap_complete::generate;
@@ -587,11 +607,10 @@ pub struct CliOpts {
     #[clap(long, help_heading = "Encoding", verbatim_doc_comment)]
     pub zones: Option<PathBuf>,
 
-
     /// Set chunk cache index mode
-    /// 
+    ///
     /// source - Place source cache next to video.
-    /// 
+    ///
     /// temp - Place source cache in temp directory.
     #[clap(long, default_value_t = CacheSource::SOURCE, help_heading = "Encoding" ,)]
     pub cache_mode: CacheSource,
@@ -980,7 +999,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 args.sc_pix_format,
                 Some(&scaler),
                 true,
-                args.cache_mode
+                args.cache_mode,
             )?)
         } else {
             None
