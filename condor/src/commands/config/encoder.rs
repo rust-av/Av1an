@@ -4,7 +4,7 @@ use clap::Subcommand;
 pub enum ConfigEncoderSubcommand {
     Set {
         encoder: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         params:  Option<String>,
     },
 }

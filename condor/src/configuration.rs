@@ -14,7 +14,7 @@ use av1an_core::{
             SaveCallback,
         },
         data::{
-            encoding::Encoder,
+            encoding::{Encoder, EncoderBase},
             input::{Input as InputData, VapourSynthImportMethod},
             output::Output as OutputData,
             processing::{
@@ -75,7 +75,7 @@ impl Configuration {
         let clip_info = input_instance.clip_info()?;
         let fps = *clip_info.frame_rate.numer() as f64 / *clip_info.frame_rate.denom() as f64;
 
-        let configuration = Self {
+        let mut  configuration = Self {
             condor: CondorData {
                 input: input_data,
                 output: OutputData {
@@ -104,6 +104,8 @@ impl Configuration {
             input_filters: Vec::from(&[VapourSynthFilter::Resize { scaler: Some(Scaler::Bicubic), width: None, height: None, format: Some(av1an_core::ffmpeg::FFPixelFormat::YUV420P10LE) }]),
             scd_input_filters: Vec::new(),
         };
+
+        *configuration.condor.encoder.parameters_mut() = EncoderBase::SVTAV1.default_parameters();
 
         Ok(configuration)
     }

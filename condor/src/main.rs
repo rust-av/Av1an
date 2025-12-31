@@ -19,7 +19,7 @@ use crate::{
         CondorCli,
     },
     configuration::Configuration,
-    tui::{run_parallel_encoder_tui, run_scene_detection_tui},
+    tui::{run_parallel_encoder_tui, run_scene_concatenator_tui, run_scene_detection_tui},
 };
 
 mod commands;
@@ -138,34 +138,42 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
     let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let scenes_directory = &configuration.temp.join("scenes");
 
-    let ctrlc_cancelled = std::sync::Arc::clone(&cancelled);
-    ctrlc::set_handler(move || {
-        let already_cancelled = ctrlc_cancelled.swap(true, std::sync::atomic::Ordering::SeqCst);
-        if already_cancelled {
-            println!("Condor force quit");
-            process::exit(0);
-        }
-    })
-    .expect("Error setting Ctrl-C handler");
+    // let ctrlc_cancelled = std::sync::Arc::clone(&cancelled);
+    // ctrlc::set_handler(move || {
+    //     println!("Ctrl-C Crate: pressed");
+    //     let already_cancelled = ctrlc_cancelled.swap(true,
+    // std::sync::atomic::Ordering::SeqCst);     if already_cancelled {
+    //         println!("Force quit Condor");
+    //         process::exit(0);
+    //     }
+    // })
+    // .expect("Error setting Ctrl-C handler");
 
     run_scene_detection_tui(
         &mut condor,
         &configuration.scd_input_filters,
         std::sync::Arc::clone(&cancelled),
     )?;
-
+    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
     run_parallel_encoder_tui(
         &mut condor,
         &configuration.input_filters,
         scenes_directory,
         std::sync::Arc::clone(&cancelled),
     )?;
-
-    // run_scene_concatenator_tui(
-    //     &mut condor,
-    //     scenes_directory,
-    //     std::sync::Arc::clone(&cancelled),
-    // )?;
+    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+    run_scene_concatenator_tui(
+        &mut condor,
+        scenes_directory,
+        std::sync::Arc::clone(&cancelled),
+    )?;
+    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
 
     Ok(())
 }

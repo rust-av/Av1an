@@ -19,7 +19,6 @@ use av1_grain::{generate_photon_noise_params, GrainTableSegment, NoiseGenArgs, T
 use cfg_if::cfg_if;
 use nom::AsBytes;
 use path_abs::PathInfo;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -186,6 +185,8 @@ impl Encoder {
                 let mut parameters = Vec::new();
                 let mut params = options.clone();
                 params.extend(pass_parameters);
+                // Force progress 2. Progress 0-1 is unsupported
+                params.extend(CLIParameter::new_numbers("--", " ", &[("progress", 2.0)]));
                 params.extend(CLIParameter::new_strings("-", " ", &[
                     ("i", "stdin"),
                     (

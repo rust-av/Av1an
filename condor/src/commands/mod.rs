@@ -98,7 +98,7 @@ pub enum Commands {
         encoder:        Option<EncoderBase>,
         #[arg(long)]
         passes:         Option<u8>,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         params:         Option<String>,
         #[arg(long)]
         photon_noise:   Option<u32>,
