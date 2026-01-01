@@ -69,8 +69,13 @@ pub fn start_handler(
                 bail!(err);
             }
             debug!("Creating new configuration");
-            let input = input_path.clone().expect("Input should be Some");
-            let output = output_path.clone().expect("Output should be Some");
+            let input = path_abs::PathAbs::new(input_path.clone().expect("Input should be Some"))?
+                .as_path()
+                .to_path_buf();
+            let output =
+                path_abs::PathAbs::new(output_path.clone().expect("Output should be Some"))?
+                    .as_path()
+                    .to_path_buf();
             let cwd = std::env::current_dir()?;
             let temp = path_abs::PathAbs::new(
                 temp_path.clone().unwrap_or_else(|| cwd.join(DEFAULT_TEMP_PATH)),
@@ -82,6 +87,7 @@ pub fn start_handler(
     };
 
     if let Some(temp) = temp_path {
+        let temp = path_abs::PathAbs::new(temp)?.as_path().to_path_buf();
         configuration.temp = temp;
     }
     if let Some(decoder) = &decoder {
@@ -102,6 +108,8 @@ pub fn start_handler(
             bail!(err);
         }
         let existing_input_path = existing_input_path.expect("Input path should be Some");
+        let existing_input_path =
+            path_abs::PathAbs::new(existing_input_path)?.as_path().to_path_buf();
         match decoder {
             DecoderMethod::FFMS2 => {
                 configuration.condor.input = InputData::Video {
@@ -133,6 +141,7 @@ pub fn start_handler(
         };
     }
     if let Some(input) = input_path {
+        let input = path_abs::PathAbs::new(input)?.as_path().to_path_buf();
         if let Some(decoder_method) = &decoder {
             configuration.condor.input = match decoder_method {
                 DecoderMethod::FFMS2 => InputData::Video {
@@ -173,6 +182,7 @@ pub fn start_handler(
         configuration.input_filters = filters;
     }
     if let Some(output) = output_path {
+        let output = path_abs::PathAbs::new(output)?.as_path().to_path_buf();
         configuration.condor.output.path = output;
     }
     if let Some(concat) = concat {
