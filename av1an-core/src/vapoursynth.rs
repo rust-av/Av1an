@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     fs::{create_dir_all, File},
     io::Write,
     path::{absolute, Path, PathBuf},
@@ -8,6 +9,8 @@ use std::{
 use anyhow::{anyhow, bail, Context};
 use av_format::rational::Rational64;
 use path_abs::{PathAbs, PathInfo};
+use serde::{Deserialize, Serialize};
+use strum::{EnumString, IntoStaticStr};
 use tracing::info;
 use vapoursynth::{
     core::CoreRef,
@@ -26,6 +29,23 @@ use crate::{
     Input,
     InputPixelFormat,
 };
+
+#[derive(
+    Serialize, PartialEq, Debug, Clone, Copy, EnumString, IntoStaticStr, Hash, Eq, Deserialize,
+)]
+pub enum CacheSource {
+    #[strum(serialize = "source")]
+    SOURCE,
+    #[strum(serialize = "temp")]
+    TEMP,
+}
+
+impl Display for CacheSource {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(<&'static str>::from(self))
+    }
+}
 
 /// Contains a list of installed Vapoursynth plugins which may be used by av1an
 #[derive(Debug, Clone, Copy)]
@@ -643,32 +663,26 @@ fn compare_xpsnr<'core>(
 }
 
 #[inline]
-pub fn create_vs_file(
-    temp: &str,
-    source: &Path,
-    chunk_method: ChunkMethod,
-    scene_detection_downscale_height: Option<usize>,
-    scene_detection_pixel_format: Option<FFPixelFormat>,
-    scene_detection_scaler: &str,
-    is_proxy: bool,
-) -> anyhow::Result<(PathBuf, bool)> {
-    let (load_script_text, cache_file_already_exists) = generate_loadscript_text(
-        temp,
-        source,
-        chunk_method,
-        scene_detection_downscale_height,
-        scene_detection_pixel_format,
-        scene_detection_scaler,
-        is_proxy,
-    )?;
+pub fn create_vs_file(loadscript_args: &LoadscriptArgs) -> anyhow::Result<(PathBuf, bool)> {
+    let (load_script_text, cache_file_already_exists) =
+        generate_loadscript_text(&LoadscriptArgs {
+            temp:                             loadscript_args.temp,
+            source:                           loadscript_args.source,
+            chunk_method:                     loadscript_args.chunk_method,
+            scene_detection_downscale_height: loadscript_args.scene_detection_downscale_height,
+            scene_detection_pixel_format:     loadscript_args.scene_detection_pixel_format,
+            scene_detection_scaler:           loadscript_args.scene_detection_scaler,
+            is_proxy:                         loadscript_args.is_proxy,
+            cache_mode:                       loadscript_args.cache_mode,
+        })?;
     // Ensure the temp folder exists
-    let temp: &Path = temp.as_ref();
+    let temp: &Path = loadscript_args.temp.as_ref();
     let split_folder = temp.join("split");
     create_dir_all(&split_folder)?;
 
-    if chunk_method == ChunkMethod::DGDECNV {
-        let absolute_source = absolute(source)?;
-        let dgindexnv_output = split_folder.join(if is_proxy {
+    if loadscript_args.chunk_method == ChunkMethod::DGDECNV {
+        let absolute_source = absolute(loadscript_args.source)?;
+        let dgindexnv_output = split_folder.join(if loadscript_args.is_proxy {
             "index_proxy.dgi"
         } else {
             "index.dgi"
@@ -688,7 +702,7 @@ pub fn create_vs_file(
         }
     }
 
-    let load_script_path = split_folder.join(if is_proxy {
+    let load_script_path = split_folder.join(if loadscript_args.is_proxy {
         "loadscript_proxy.vpy"
     } else {
         "loadscript.vpy"
@@ -700,23 +714,32 @@ pub fn create_vs_file(
     Ok((load_script_path, cache_file_already_exists))
 }
 
+pub struct LoadscriptArgs<'a> {
+    pub temp:                             &'a str,
+    pub source:                           &'a Path,
+    pub chunk_method:                     ChunkMethod,
+    pub scene_detection_downscale_height: Option<usize>,
+    pub scene_detection_pixel_format:     Option<FFPixelFormat>,
+    pub scene_detection_scaler:           &'a str,
+    pub is_proxy:                         bool,
+    pub cache_mode:                       CacheSource,
+}
+
 #[inline]
 pub fn generate_loadscript_text(
-    temp: &str,
-    source: &Path,
-    chunk_method: ChunkMethod,
-    scene_detection_downscale_height: Option<usize>,
-    scene_detection_pixel_format: Option<FFPixelFormat>,
-    scene_detection_scaler: &str,
-    is_proxy: bool,
+    loadscript_args: &LoadscriptArgs,
 ) -> anyhow::Result<(String, bool)> {
-    let temp: &Path = temp.as_ref();
-    let source = absolute(source)?;
+    let temp: &Path = loadscript_args.temp.as_ref();
+    let source = absolute(loadscript_args.source)?;
 
     let cache_file = PathAbs::new(temp.join("split").join(format!(
         "{}cache.{}",
-        if is_proxy { "proxy_" } else { "" },
-        match chunk_method {
+        if loadscript_args.is_proxy {
+            "proxy_"
+        } else {
+            ""
+        },
+        match loadscript_args.chunk_method {
             ChunkMethod::FFMS2 => "ffindex",
             ChunkMethod::LSMASH => "lwi",
             ChunkMethod::DGDECNV => "dgi",
@@ -724,7 +747,7 @@ pub fn generate_loadscript_text(
             _ => return Err(anyhow!("invalid chunk method")),
         }
     )))?;
-    let chunk_method_lower = match chunk_method {
+    let chunk_method_lower = match loadscript_args.chunk_method {
         ChunkMethod::FFMS2 => "ffms2",
         ChunkMethod::LSMASH => "lsmash",
         ChunkMethod::DGDECNV => "dgdecnv",
@@ -733,9 +756,9 @@ pub fn generate_loadscript_text(
     };
 
     // Only used for DGDECNV
-    let dgindex_path = match chunk_method {
+    let dgindex_path = match loadscript_args.chunk_method {
         ChunkMethod::DGDECNV => {
-            let dgindexnv_output = temp.join("split").join(if is_proxy {
+            let dgindexnv_output = temp.join("split").join(if loadscript_args.is_proxy {
                 "index_proxy.dgi"
             } else {
                 "index.dgi"
@@ -752,7 +775,7 @@ pub fn generate_loadscript_text(
     let mut load_script_text = include_str!("loadscript.vpy")
         .replace(
             "source = os.environ.get(\"AV1AN_SOURCE\", None)",
-            &format!("source = r\"{}\"", match chunk_method {
+            &format!("source = r\"{}\"", match loadscript_args.chunk_method {
                 ChunkMethod::DGDECNV => dgindex_path.display(),
                 _ => source.display(),
             }),
@@ -762,7 +785,8 @@ pub fn generate_loadscript_text(
             &format!("chunk_method = {chunk_method_lower:?}"),
         );
 
-    if let Some(scene_detection_downscale_height) = scene_detection_downscale_height {
+    if let Some(scene_detection_downscale_height) = loadscript_args.scene_detection_downscale_height
+    {
         load_script_text = load_script_text.replace(
             "downscale_height = os.environ.get(\"AV1AN_DOWNSCALE_HEIGHT\", None)",
             &format!(
@@ -771,7 +795,7 @@ pub fn generate_loadscript_text(
             ),
         );
     }
-    if let Some(scene_detection_pixel_format) = scene_detection_pixel_format {
+    if let Some(scene_detection_pixel_format) = loadscript_args.scene_detection_pixel_format {
         load_script_text = load_script_text.replace(
             "sc_pix_format = os.environ.get(\"AV1AN_PIXEL_FORMAT\", None)",
             &format!(
@@ -780,12 +804,28 @@ pub fn generate_loadscript_text(
             ),
         );
     }
+    if loadscript_args.cache_mode == CacheSource::TEMP {
+        load_script_text = load_script_text.replace(
+            "cache_file = os.environ.get(\"AV1AN_CACHE_FILE\", None)",
+            &format!(
+                "cache_file = r\"{}\"",
+                dunce::simplified(cache_file.as_path()).display(),
+            ),
+        );
+    }
+
+    load_script_text = load_script_text.replace(
+        "cache_mode = os.environ.get(\"AV1AN_CACHE_MODE\", None)",
+        &format!("cache_mode = \"{}\"", loadscript_args.cache_mode),
+    );
+
+    let scene_detection_scaler = loadscript_args.scene_detection_scaler;
     load_script_text = load_script_text.replace(
         "scaler = os.environ.get(\"AV1AN_SCALER\", None)",
         &format!("scaler = os.environ.get(\"AV1AN_SCALER\", {scene_detection_scaler:?})"),
     );
 
-    let cache_file_already_exists = match chunk_method {
+    let cache_file_already_exists = match loadscript_args.chunk_method {
         ChunkMethod::DGDECNV => dgindex_path.exists(),
         _ => cache_file.exists(),
     };
