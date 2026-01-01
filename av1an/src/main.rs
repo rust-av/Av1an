@@ -13,7 +13,7 @@ use av1an_core::{
     hash_path,
     into_vec,
     read_in_dir,
-    vapoursynth::{get_vapoursynth_plugins, VSZipVersion},
+    vapoursynth::{get_vapoursynth_plugins, CacheSource, VSZipVersion},
     Av1anContext,
     ChunkMethod,
     ChunkOrdering,
@@ -607,6 +607,14 @@ pub struct CliOpts {
     #[clap(long, help_heading = "Encoding", verbatim_doc_comment)]
     pub zones: Option<PathBuf>,
 
+    /// Set chunk cache index mode
+    ///
+    /// source - Place source cache next to video.
+    ///
+    /// temp - Place source cache in temp directory.
+    #[clap(long, default_value_t = CacheSource::SOURCE, help_heading = "Encoding" ,)]
+    pub cache_mode: CacheSource,
+
     /// Plot an SVG of the VMAF for the encode
     ///
     /// This option is independent of --target-quality, i.e. it can be used with
@@ -975,6 +983,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.sc_pix_format,
             Some(&scaler),
             false,
+            args.cache_mode,
         )?;
 
         // Assumes proxies supplied are the same number as inputs. Otherwise gets the
@@ -990,6 +999,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 args.sc_pix_format,
                 Some(&scaler),
                 true,
+                args.cache_mode,
             )?)
         } else {
             None
@@ -1096,6 +1106,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             keep: args.keep,
             max_tries: args.max_tries as usize,
             min_scene_len: args.min_scene_len,
+            cache_mode: args.cache_mode,
             input_pix_format: {
                 match &input {
                     Input::Video {

@@ -281,6 +281,7 @@ dependencies = [
  "crossbeam-utils",
  "ctrlc",
  "dashmap",
+ "dunce",
  "indicatif",
  "itertools 0.14.0",
  "memchr",
@@ -893,6 +894,12 @@ checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
 ]
+
+[[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "either"

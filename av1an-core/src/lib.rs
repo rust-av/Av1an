@@ -36,7 +36,7 @@ pub use crate::{
 use crate::{
     ffmpeg::FFPixelFormat,
     progress_bar::finish_progress_bar,
-    vapoursynth::{create_vs_file, generate_loadscript_text},
+    vapoursynth::{create_vs_file, generate_loadscript_text, CacheSource, LoadscriptArgs},
 };
 
 mod broker;
@@ -95,6 +95,7 @@ pub enum Input {
         // Store as a string of ChunkMethod to enable hashing
         chunk_method: ChunkMethod,
         is_proxy:     bool,
+        cache_mode:   CacheSource,
     },
 }
 
@@ -110,6 +111,7 @@ impl Input {
         scene_detection_pixel_format: Option<FFPixelFormat>,
         scene_detection_scaler: Option<&str>,
         is_proxy: bool,
+        cache_mode: CacheSource,
     ) -> anyhow::Result<Self> {
         let input = if let Some(ext) = path.as_ref().extension() {
             if ext == "py" || ext == "vpy" {
@@ -128,6 +130,7 @@ impl Input {
                     temp: temporary_directory.to_owned(),
                     chunk_method,
                     is_proxy,
+                    cache_mode,
                 })
             }
         } else {
@@ -137,6 +140,7 @@ impl Input {
                 temp: temporary_directory.to_owned(),
                 chunk_method,
                 is_proxy,
+                cache_mode,
             })
         }?;
 
@@ -144,30 +148,32 @@ impl Input {
             // Clip info is cached and reused so the values need to be correct
             // the first time. The loadscript needs to be generated along with
             // prerequisite cache/index files and their directories.
-            let (_, cache_file_already_exists) = generate_loadscript_text(
-                temporary_directory,
-                input.as_path(),
+            let (_, cache_file_already_exists) = generate_loadscript_text(&LoadscriptArgs {
+                temp: temporary_directory,
+                source: input.as_path(),
                 chunk_method,
                 scene_detection_downscale_height,
                 scene_detection_pixel_format,
-                scene_detection_scaler.unwrap_or_default(),
+                scene_detection_scaler: scene_detection_scaler.unwrap_or_default(),
                 is_proxy,
-            )?;
+                cache_mode,
+            })?;
             if !cache_file_already_exists {
                 // Getting the clip info will cause VapourSynth to generate the
                 // cache file which may take a long time.
                 info!("Generating VapourSynth cache file");
             }
 
-            create_vs_file(
-                temporary_directory,
-                input.as_path(),
+            create_vs_file(&LoadscriptArgs {
+                temp: temporary_directory,
+                source: input.as_path(),
                 chunk_method,
                 scene_detection_downscale_height,
                 scene_detection_pixel_format,
-                scene_detection_scaler.unwrap_or_default(),
+                scene_detection_scaler: scene_detection_scaler.unwrap_or_default(),
                 is_proxy,
-            )?;
+                cache_mode,
+            })?;
 
             input.clip_info()?;
         }
@@ -243,20 +249,22 @@ impl Input {
                 temp,
                 chunk_method,
                 is_proxy,
+                cache_mode,
             } => match chunk_method {
                 ChunkMethod::LSMASH
                 | ChunkMethod::FFMS2
                 | ChunkMethod::DGDECNV
                 | ChunkMethod::BESTSOURCE => {
-                    let (script_text, _) = generate_loadscript_text(
+                    let (script_text, _) = generate_loadscript_text(&LoadscriptArgs {
                         temp,
-                        path,
-                        *chunk_method,
+                        source: path,
+                        chunk_method: *chunk_method,
                         scene_detection_downscale_height,
                         scene_detection_pixel_format,
-                        scene_detection_scaler.unwrap_or_default(),
-                        *is_proxy,
-                    )?;
+                        scene_detection_scaler: scene_detection_scaler.unwrap_or_default(),
+                        is_proxy: *is_proxy,
+                        cache_mode: *cache_mode,
+                    })?;
                     Ok(script_text)
                 },
                 _ => Err(anyhow::anyhow!(
