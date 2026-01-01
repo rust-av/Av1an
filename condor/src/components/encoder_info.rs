@@ -1,7 +1,7 @@
 use av1an_core::condor::data::encoding::Encoder;
 use ratatui::{
     text::Line,
-    widgets::{Block, Paragraph},
+    widgets::{Block, Paragraph, Wrap},
 };
 
 pub struct EncoderInfo {
@@ -40,7 +40,9 @@ impl EncoderInfo {
             .collect::<Vec<_>>()
             .join(" ");
 
-        let encoder_paragraph = Paragraph::new(Line::from(parameters_text));
+        let encoder_paragraph = Paragraph::new(Line::from(parameters_text)).wrap(Wrap {
+            trim: true,
+        });
         let encoder_paragraph = if bordered {
             let encoder_name = self.encoder.base().friendly_name();
             encoder_paragraph.block(Block::bordered().title(Line::from(encoder_name).centered()))
