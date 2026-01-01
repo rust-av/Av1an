@@ -22,7 +22,6 @@ anyhow = { workspace = true }
 av1an-core = { path = "../av1an-core", version = "0.5.0" }
 clap = { version = "4.5.53", features = ["derive"] }
 clap_complete = "4.5.61"
-ctrlc = "3.5.1"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }

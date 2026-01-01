@@ -5,6 +5,7 @@ use av1an_core::{
     condor::data::input::{ImportMethod, Input as InputData, VapourSynthImportMethod},
     ConcatMethod,
 };
+use tracing::{error, info};
 
 use crate::{
     commands::DecoderMethod,
@@ -35,7 +36,9 @@ pub fn init_handler(
         .to_path_buf();
 
     if config_path.exists() {
-        bail!(CondorCliError::ConfigFileAlreadyExists(config_path));
+        let err = CondorCliError::ConfigFileAlreadyExists(config_path);
+        error!("{}", err);
+        bail!(err);
     }
 
     let mut configuration = Configuration::new(&input, &output, &temp)?;
@@ -72,13 +75,13 @@ pub fn init_handler(
 
     configuration.save(&config_path)?;
 
-    println!(
+    info!(
         "Initialized Condor configuration at: {}",
         config_path.display()
     );
-    println!(
-        "Run 'condor config' to further modify the configuration. Run 'condor start' to start \
-         encoding."
+    info!(
+        "Run \"condor start\" to start encoding or \"condor config\" to further modify the \
+         configuration."
     );
 
     Ok(())

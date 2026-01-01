@@ -9,10 +9,11 @@ use av1an_core::{
     vs::vapoursynth_filters::VapourSynthFilter,
     ConcatMethod,
 };
+use tracing::{debug, error, trace};
 
 use crate::{
     commands::DecoderMethod,
-    configuration::Configuration,
+    configuration::{ConfigError, Configuration},
     utils::parameter_parser::EncoderParamsParser,
     CondorCliError,
     DEFAULT_CONFIG_PATH,
@@ -44,16 +45,30 @@ pub fn start_handler(
         path_abs::PathAbs::new(config_path.unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH)))?
             .as_path()
             .to_path_buf();
+    let config_already_existed = config_path.exists();
 
     let mut configuration = {
-        if config_path.exists() {
-            Configuration::load(&config_path)
-                .map_err(|_| CondorCliError::ConfigLoadError(config_path.clone()))?
-                .expect("Config should exist")
-        } else {
-            if input_path.is_none() || output_path.is_none() {
-                bail!(CondorCliError::NoConfigOrInputOrOutput);
+        if config_already_existed {
+            debug!("Loading existing configuration");
+            match Configuration::load(&config_path) {
+                Ok(config) => config.expect("Config should exist"),
+                Err(err) => match err {
+                    ConfigError::Load(path) => {
+                        let err = CondorCliError::ConfigLoadError(path);
+                        error!("{}", err);
+                        bail!(err);
+                    },
+                    _ => unreachable!("ConfigError should be LoadError"),
+                },
             }
+        } else {
+            trace!("No existing configuration found");
+            if input_path.is_none() || output_path.is_none() {
+                let err = CondorCliError::NoConfigOrInputOrOutput;
+                error!("{}", err);
+                bail!(err);
+            }
+            debug!("Creating new configuration");
             let input = input_path.clone().expect("Input should be Some");
             let output = output_path.clone().expect("Output should be Some");
             let cwd = std::env::current_dir()?;
@@ -82,7 +97,9 @@ pub fn start_handler(
             } => input_path.clone(),
         };
         if existing_input_path.is_none() {
-            bail!(CondorCliError::DecoderWithoutInput);
+            let err = CondorCliError::DecoderWithoutInput;
+            error!("{}", err);
+            bail!(err);
         }
         let existing_input_path = existing_input_path.expect("Input path should be Some");
         match decoder {
@@ -231,7 +248,10 @@ pub fn start_handler(
         configuration.condor.encoder.parameters_mut().extend(parameters);
     }
 
-    configuration.save(&config_path)?;
+    if !config_already_existed {
+        debug!("Saving new Configuration to {}", config_path.display());
+        configuration.save(&config_path)?;
+    }
 
     Ok((configuration, config_path))
 }

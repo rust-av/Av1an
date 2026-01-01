@@ -48,6 +48,7 @@ use av1an_core::{
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration {
@@ -70,12 +71,12 @@ impl Configuration {
             },
             cache_path:    None,
         };
-        println!("Indexing input...");
+        info!("Indexing input...");
         let mut input_instance = Input::from_data(&input_data)?;
         let clip_info = input_instance.clip_info()?;
         let fps = *clip_info.frame_rate.numer() as f64 / *clip_info.frame_rate.denom() as f64;
 
-        let mut  configuration = Self {
+        let mut configuration = Self {
             condor: CondorData {
                 input: input_data,
                 output: OutputData {
@@ -111,34 +112,30 @@ impl Configuration {
     }
 
     #[inline]
-    pub fn save(&self, path: &Path) -> Result<()> {
-        let mut buffer = vec![];
-        let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
-        let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
-        self.serialize(&mut serializer)?;
-        std::fs::write(path, buffer)?;
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        Self::save_data(self, path)?;
         Ok(())
     }
 
     #[inline]
-    pub fn save_data(data: &Configuration, path: &Path) -> Result<()> {
+    pub fn save_data(data: &Configuration, path: &Path) -> Result<(), ConfigError> {
         let mut buffer = vec![];
         let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
         let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
-        data.serialize(&mut serializer)?;
-        std::fs::write(path, buffer)?;
+        data.serialize(&mut serializer).map_err(ConfigError::Serialize)?;
+        std::fs::write(path, buffer).map_err(ConfigError::Save)?;
         Ok(())
     }
 
     #[inline]
-    pub fn load(config_path: &Path) -> Result<Option<Configuration>> {
+    pub fn load(config_path: &Path) -> Result<Option<Configuration>, ConfigError> {
         if !config_path.exists() {
             return Ok(None);
         }
         let data = std::fs::read_to_string(config_path)
-            .map_err(|_| ConfigError::ConfigLoadError(config_path.to_path_buf()))?;
+            .map_err(|_| ConfigError::Load(config_path.to_path_buf()))?;
         let data = serde_json::from_str(&data)
-            .map_err(|_| ConfigError::ConfigLoadError(config_path.to_path_buf()))?;
+            .map_err(|_| ConfigError::Load(config_path.to_path_buf()))?;
 
         Ok(Some(data))
     }
@@ -438,5 +435,9 @@ impl SceneDetectionDataHandler for CliProcessData {
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("Failed to load config file: {0}")]
-    ConfigLoadError(PathBuf),
+    Load(PathBuf),
+    #[error("Failed to serialize config file: {0}")]
+    Serialize(#[from] serde_json::Error),
+    #[error("Failed to save config file: {0}")]
+    Save(#[from] std::io::Error),
 }

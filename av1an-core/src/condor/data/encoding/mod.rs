@@ -10,13 +10,21 @@ pub mod photon_noise;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumString, IntoStaticStr, Display)]
 pub enum EncoderBase {
+    #[strum(serialize = "aom")]
     AOM,
+    #[strum(serialize = "rav1e")]
     RAV1E,
+    #[strum(serialize = "vpx")]
     VPX,
+    #[strum(serialize = "svt-av1")]
     SVTAV1,
+    #[strum(serialize = "x264")]
     X264,
+    #[strum(serialize = "x265")]
     X265,
+    #[strum(serialize = "vvenc")]
     VVenC,
+    #[strum(serialize = "ffmpeg")]
     FFmpeg,
 }
 
@@ -341,6 +349,20 @@ impl EncoderBase {
             EncoderBase::X265 => "hevc",
             EncoderBase::VVenC => todo!(),
             EncoderBase::FFmpeg => ".mkv",
+        }
+    }
+
+    #[inline]
+    pub fn friendly_name(&self) -> &'static str {
+        match self {
+            EncoderBase::AOM => "Alliance for Open Media AV1",
+            EncoderBase::RAV1E => "rav1e",
+            EncoderBase::VPX => "WebM VP8/VP9",
+            EncoderBase::SVTAV1 => "Scalable Video Technology for AV1",
+            EncoderBase::X264 => "x264",
+            EncoderBase::X265 => "x265",
+            EncoderBase::VVenC => "Fraunhofer Versatile Video Encoder",
+            EncoderBase::FFmpeg => "FFmpeg",
         }
     }
 }

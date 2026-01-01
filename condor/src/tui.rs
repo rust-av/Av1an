@@ -18,12 +18,14 @@ use av1an_core::{
     },
     vs::vapoursynth_filters::VapourSynthFilter,
 };
+use tracing::{debug, warn};
 
 use crate::{
     apps::{parallel_encoder::ParallelEncoderApp, scene_detection::SceneDetectionApp, TuiApp},
     configuration::{CliProcessData, CliProcessing, CliProcessorConfig, Configuration},
 };
 
+#[tracing::instrument(skip_all)]
 pub fn run_scene_detection_tui(
     condor: &mut Condor<CliProcessData, CliProcessorConfig>,
     scd_input_filters: &[VapourSynthFilter],
@@ -33,6 +35,7 @@ pub fn run_scene_detection_tui(
         acc + (scene.end_frame - scene.start_frame) as u64
     });
 
+    debug!("Instantiating Scene Detector Input");
     let (input, clip_info) = if let Some(input) = &condor.processor_config.scene_detection.input {
         let mut scd_input =
             Configuration::instantiate_input_with_filters(input, scd_input_filters)?;
@@ -59,17 +62,22 @@ pub fn run_scene_detection_tui(
     let mut scene_detector =
         Box::new(scd) as Box<dyn Processor<CliProcessing, CliProcessData, CliProcessorConfig>>;
 
-    // Validate - Input should be already validated
-    let (_, _validation_warnings) = scene_detector.validate(condor)?;
+    debug!("Validating Scene Detector"); // Input should alrady be validated but just in case
+    let (_, validation_warnings) = scene_detector.validate(condor)?;
 
-    // Initialize - Input should be already indexed
+    for warning in validation_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Initializing Scene Detector"); // Input should already be indexed but just in case
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) = scene_detector.initialize(condor, init_progress_tx)?;
 
     for warning in initialization_warnings.iter() {
-        println!("{}", warning);
+        warn!("{}", warning);
     }
 
+    debug!("Running Scene Detector");
     let ctrlc_cancelled = Arc::clone(&cancelled);
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
     thread::spawn(move || -> Result<()> {
@@ -86,7 +94,7 @@ pub fn run_scene_detection_tui(
     let (_, processing_warnings) = scene_detector.process(condor, progress_tx, cancelled)?;
 
     for warning in processing_warnings.iter() {
-        println!("{}", warning);
+        warn!("{}", warning);
     }
 
     Ok(())

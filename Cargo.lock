@@ -587,7 +587,6 @@ dependencies = [
  "av1an-core",
  "clap",
  "clap_complete",
- "ctrlc",
  "nom 8.0.0",
  "num-traits",
  "once_cell",

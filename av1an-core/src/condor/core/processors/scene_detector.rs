@@ -11,6 +11,7 @@ use std::{
 use anyhow::{Ok, Result};
 use av_scenechange::{detect_scene_changes, DetectionOptions};
 use thiserror::Error;
+use tracing::{debug, trace};
 
 use crate::condor::{
     core::{
@@ -120,6 +121,7 @@ where
         // Skip if already completed
         if let Some(last_scene) = condor.scenes.last() {
             if last_scene.end_frame == frames {
+                debug!("All scenes already detected");
                 progress_tx.send(ProcessStatus::Whole(Status::Completed {
                     id: DETAILS.name.to_owned(),
                 }))?;
@@ -127,7 +129,10 @@ where
             }
 
             if matches!(self.method, SceneDetectionMethod::AVSceneChange { .. }) {
-                // Advance the decoder to the last frame
+                trace!(
+                    "Skipping {} frames by decoding with av_decoders",
+                    last_scene.end_frame
+                );
                 let bit_depth = input.clip_info()?.format_info.as_bit_depth()?;
                 let start_time = std::time::Instant::now();
                 for index in 0..last_scene.end_frame {
@@ -146,11 +151,11 @@ where
                         }))?;
                     }
                 }
-                // println!(
-                //     "Skipping {} frames took {} ms",
-                //     last_scene.end_frame,
-                //     start_time.elapsed().as_millis()
-                // );
+                trace!(
+                    "Skipping {} frames took {} ms",
+                    last_scene.end_frame,
+                    start_time.elapsed().as_millis()
+                );
                 if cancelled.load(Ordering::Relaxed) {
                     return Ok(((), warnings));
                 }
@@ -175,6 +180,13 @@ where
                     ..Default::default()
                 };
 
+                debug!(
+                    "Detecting scenes with AVSceneChange {} with lengths {} - {}",
+                    method,
+                    minimum_length,
+                    maximum_length
+                );
+
                 let last_frame =
                     condor.scenes.last().map(|scene| scene.end_frame).unwrap_or_default();
                 let previous_end = AtomicUsize::new(last_frame);
@@ -198,6 +210,7 @@ where
                     let start = previous_end.load(Ordering::Relaxed);
                     let end = last_frame + (frames_analyzed - 1);
                     previous_end.store(end, Ordering::Relaxed);
+                    trace!("New Scene detected: {} - {}", start, end);
                     scenes_lock.push(Scene {
                         start_frame: start,
                         end_frame:   end,
@@ -219,14 +232,6 @@ where
                     let mut data = condor_data.clone();
                     data.scenes = scenes_lock.clone();
                     (condor.save_callback)(data).expect("failed to save data");
-
-                    // print!(
-                    //     "\r[{}]: {} / {} frames analyzed, {} keyframes
-                    // found",     DETAILS.name,
-                    //     last_frame + frames_analyzed,
-                    //     frames,
-                    //     keyframes
-                    // );
                 };
 
                 let results = if input.clip_info()?.format_info.as_bit_depth()? > 8 {
@@ -300,6 +305,10 @@ where
             SceneDetectionMethod::None {
                 maximum_length, ..
             } => {
+                debug!(
+                    "Scene Detection Disabled. Splitting into {} frame chunks",
+                    maximum_length
+                );
                 let mut scenes_vec = Vec::new();
                 let mut prev_end = condor.scenes.last().map_or(0, |scene| scene.end_frame);
                 while prev_end < frames {

@@ -8,6 +8,7 @@ use anyhow::Result;
 use av1an_core::condor::core::Condor;
 use clap::Parser;
 use thiserror::Error;
+use tracing::{debug, info, level_filters::LevelFilter};
 
 use crate::{
     commands::{
@@ -19,15 +20,17 @@ use crate::{
         CondorCli,
     },
     configuration::Configuration,
+    logging::init_logging,
     tui::{run_parallel_encoder_tui, run_scene_concatenator_tui, run_scene_detection_tui},
 };
 
+mod apps;
 mod commands;
 mod components;
 mod configuration;
+mod logging;
 mod tui;
 mod utils;
-mod apps;
 
 pub const DEFAULT_CONFIG_PATH: &str = "./condor.json";
 pub const DEFAULT_TEMP_PATH: &str = "./temp";
@@ -48,7 +51,8 @@ fn run() -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let config_path = cli.config_file;
     let logs = cli.logs.unwrap_or_else(|| cwd.join(DEFAULT_LOG_PATH));
-    // TODO: Set up tracing
+    init_logging(LevelFilter::INFO, &logs, LevelFilter::DEBUG)?;
+    // TODO: hash input file name and use it as the temp folder path
 
     match cli.command {
         Commands::Init {
@@ -125,9 +129,16 @@ fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result<()> {
     let config_copy = configuration.clone();
     let save_file_copy = save_file.to_path_buf();
+    debug!("Instantiating Condor with {:?}", {
+        // Remove scenes to reduce log spam
+        let mut config = configuration.clone();
+        config.condor.scenes = Vec::new();
+        config
+    });
     let mut condor: Condor<configuration::CliProcessData, configuration::CliProcessorConfig> =
         configuration.instantiate_condor(Box::new(move |data| {
             let mut config = config_copy.clone();
@@ -136,45 +147,92 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
             Ok(())
         }))?;
 
-    let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancellation_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let scenes_directory = &configuration.temp.join("scenes");
 
-    // let ctrlc_cancelled = std::sync::Arc::clone(&cancelled);
-    // ctrlc::set_handler(move || {
-    //     println!("Ctrl-C Crate: pressed");
-    //     let already_cancelled = ctrlc_cancelled.swap(true,
-    // std::sync::atomic::Ordering::SeqCst);     if already_cancelled {
-    //         println!("Force quit Condor");
-    //         process::exit(0);
-    //     }
-    // })
-    // .expect("Error setting Ctrl-C handler");
+    let cancelled = || {
+        if cancellation_token.load(std::sync::atomic::Ordering::Relaxed) {
+            info!("Condor cancelled. Exiting...");
+            return true;
+        }
+        false
+    };
 
     run_scene_detection_tui(
         &mut condor,
         &configuration.scd_input_filters,
-        std::sync::Arc::clone(&cancelled),
+        std::sync::Arc::clone(&cancellation_token),
     )?;
-    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+    if cancelled() {
         return Ok(());
     }
+
+    // run_benchmarker_tui(
+    //     &mut condor,
+    //     std::sync::Arc::clone(&cancelled),
+    // )?;
+    // if cancelled() {
+    //     return Ok(());
+    // }
+
+    // run_grain_analyzer_tui(
+    //     &mut condor,
+    //     std::sync::Arc::clone(&cancelled),
+    // )?;
+    // if cancelled() {
+    //     return Ok(());
+    // }
+
+    // run_target_quality_tui(
+    //     &mut condor,
+    //     std::sync::Arc::clone(&cancelled),
+    // )?;
+    // if cancelled() {
+    //     return Ok(());
+    // }
+
     run_parallel_encoder_tui(
         &mut condor,
         &configuration.input_filters,
         scenes_directory,
-        std::sync::Arc::clone(&cancelled),
+        std::sync::Arc::clone(&cancellation_token),
     )?;
-    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+    if cancelled() {
         return Ok(());
     }
+
+    // run_quality_normalizer_tui(
+    //     &mut condor,
+    //     scenes_directory,
+    //     std::sync::Arc::clone(&cancelled),
+    // )?;
+    // if cancelled() {
+    //     return Ok(());
+    // }
+
     run_scene_concatenator_tui(
         &mut condor,
         scenes_directory,
-        std::sync::Arc::clone(&cancelled),
+        std::sync::Arc::clone(&cancellation_token),
     )?;
-    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+    if cancelled() {
         return Ok(());
     }
+
+    // run_quality_analyzer_tui(
+    //     &mut condor,
+    //     scenes_directory,
+    //     std::sync::Arc::clone(&cancellation_token),
+    // )?;
+    // if cancelled() {
+    //     return Ok(());
+    // }
+
+    info!(
+        "Condor has landed. Output: {}",
+        condor.output.path.display()
+    );
+    info!("Have a nice day!");
 
     Ok(())
 }
