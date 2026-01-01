@@ -228,7 +228,7 @@ pub fn start_handler(
     }
     if let Some(params) = params {
         let parameters = EncoderParamsParser::parse_string(&params);
-        *configuration.condor.encoder.parameters_mut() = parameters;
+        configuration.condor.encoder.parameters_mut().extend(parameters);
     }
 
     configuration.save(&config_path)?;

@@ -16,7 +16,7 @@ use std::{
 
 use ::vapoursynth::{api::API, map::OwnedMap};
 use anyhow::{bail, Context};
-use av1_grain::TransferFunction;
+pub use av1_grain::TransferFunction;
 use av_format::rational::Rational64;
 use chunk::Chunk;
 use dashmap::DashMap;

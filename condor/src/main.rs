@@ -27,6 +27,7 @@ mod components;
 mod configuration;
 mod tui;
 mod utils;
+mod apps;
 
 pub const DEFAULT_CONFIG_PATH: &str = "./condor.json";
 pub const DEFAULT_TEMP_PATH: &str = "./temp";

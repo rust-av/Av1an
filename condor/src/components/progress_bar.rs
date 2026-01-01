@@ -7,13 +7,14 @@ use ratatui::{
 use crate::utils::time_display::seconds_to_hms;
 
 pub struct ProgressBar {
-    pub color:            Color,
-    pub processing_title: String,
-    pub completed_title:  String,
-    pub unit:             String,
-    pub unit_per_second:  String,
-    pub completed:        u64,
-    pub total:            u64,
+    pub color:             Color,
+    pub processing_title:  String,
+    pub completed_title:   String,
+    pub unit:              String,
+    pub unit_per_second:   String,
+    pub initial_completed: u64,
+    pub completed:         u64,
+    pub total:             u64,
 }
 
 impl ProgressBar {
@@ -32,8 +33,12 @@ impl ProgressBar {
             },
             |started| {
                 let elapsed = started.elapsed();
-                let ups = self.completed as f64 / elapsed.as_secs_f64();
-                let elapsed_per_unit = elapsed.as_secs_f64() / self.completed as f64;
+                let ups = (self.completed - self.initial_completed) as f64 / elapsed.as_secs_f64();
+                let elapsed_per_unit = if (self.completed - self.initial_completed) == 0 {
+                    0.0
+                } else {
+                    elapsed.as_secs_f64() / (self.completed - self.initial_completed) as f64
+                };
                 let remaining_time = (self.total - self.completed) as f64 * elapsed_per_unit;
                 let eta = elapsed.as_secs_f64() + remaining_time;
                 let elapsed_hms = seconds_to_hms(elapsed.as_secs(), false);
