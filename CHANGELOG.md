@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.5.2
+
+- fix: fix compilation of Vapoursynth extensions on AArch64
+
 ## Version 0.5.1
 
 - fix: support Vapoursynth R73
