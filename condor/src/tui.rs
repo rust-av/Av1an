@@ -100,12 +100,14 @@ pub fn run_scene_detection_tui(
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub fn run_parallel_encoder_tui(
     condor: &mut Condor<CliProcessData, CliProcessorConfig>,
     input_filters: &[VapourSynthFilter],
     scenes_directory: &Path,
     cancelled: Arc<AtomicBool>,
 ) -> Result<()> {
+    debug!("Instantiating Parallel Encoder Input");
     let (parallel_encoder_input, clip_info) = if let Some(input) =
         &condor.processor_config.parallel_encoder.input
     {
@@ -129,18 +131,22 @@ pub fn run_parallel_encoder_tui(
     let mut parallel_encoder = Box::new(parallel_encoder)
         as Box<dyn Processor<CliProcessing, CliProcessData, CliProcessorConfig>>;
 
-    // Validate - Input should be already validated
-    let (_, _validation_warnings) = parallel_encoder.validate(condor)?;
+    debug!("Validating Parallel Encoder"); // Input should alrady be validated but just in case
+    let (_, validation_warnings) = parallel_encoder.validate(condor)?;
 
-    // Initialize - Input should be already indexed
+    for warning in validation_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Initializing Parallel Encoder"); // Input should already be indexed but just in case
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) = parallel_encoder.initialize(condor, init_progress_tx)?;
 
     for warning in initialization_warnings.iter() {
-        println!("{}", warning);
+        warn!("{}", warning);
     }
 
-    // Encode Scenes
+    debug!("Running Parallel Encoder");
     let encoder = condor.encoder.clone();
     let initial_scenes = condor
         .scenes
@@ -180,7 +186,7 @@ pub fn run_parallel_encoder_tui(
     let (_, processing_warnings) = parallel_encoder.process(condor, progress_tx, cancelled)?;
 
     for warning in processing_warnings.iter() {
-        println!("{}", warning);
+        warn!("{}", warning);
     }
 
     Ok(())

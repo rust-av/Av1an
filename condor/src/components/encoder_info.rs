@@ -30,25 +30,30 @@ impl EncoderInfo {
                 }
             }
         }
-        if scene_parameters.is_empty() {
-            scene_parameters = self.encoder.parameters().to_owned();
-        }
 
-        let parameters_text = scene_parameters
-            .iter()
-            .map(|(key, value)| value.to_parameter_string(key))
-            .collect::<Vec<_>>()
-            .join(" ");
+        let encoder_paragraph = if !scene_parameters.is_empty() {
+            let parameters_text = scene_parameters
+                .iter()
+                .map(|(key, value)| value.to_parameter_string(key))
+                .collect::<Vec<_>>()
+                .join(" ");
 
-        let encoder_paragraph = Paragraph::new(Line::from(parameters_text)).wrap(Wrap {
-            trim: true,
-        });
-        let encoder_paragraph = if bordered {
+            Paragraph::new(Line::from(parameters_text)).wrap(Wrap {
+                trim: true
+            })
+        } else {
+            Paragraph::new(Line::from("---"))
+                .wrap(Wrap {
+                    trim: true
+                })
+                .centered()
+        };
+
+        if bordered {
             let encoder_name = self.encoder.base().friendly_name();
             encoder_paragraph.block(Block::bordered().title(Line::from(encoder_name).centered()))
         } else {
             encoder_paragraph
-        };
-        encoder_paragraph.centered()
+        }
     }
 }

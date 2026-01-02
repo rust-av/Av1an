@@ -17,6 +17,7 @@ use std::{
 use anyhow::{bail, Result};
 use av1_grain::write_grain_table;
 use thiserror::Error;
+use tracing::{debug, error, trace};
 
 use crate::condor::{
     core::{
@@ -147,6 +148,7 @@ where
                     if !output_directory.exists() {
                         std::fs::create_dir_all(&output_directory)?;
                     }
+                    debug!("Writing a new photon noise table to {}", output.display());
                     write_grain_table(output, &[params])?;
                 }
                 scene.encoder.apply_photon_noise_parameters(&output_clone)?;
@@ -226,7 +228,7 @@ where
         let encoder_thread = thread::scope(|s| -> Result<()> {
             let total_final_pass_frames_encoded = Arc::new(AtomicUsize::new(0));
             let worker_semaphore = Arc::new(Semaphore::new(self.workers.into()));
-            let decoder_semaphore = Arc::new(Semaphore::new((self.workers * 2).into()));
+            let decoder_semaphore = Arc::new(Semaphore::new((self.workers + 1).into()));
             let frame_receivers = Arc::new(Mutex::new(frames_receivers));
             let progress_tx = progress_tx.clone();
             let mut encoder_threads = Vec::new();
@@ -259,6 +261,10 @@ where
                     // Wait for encoder semaphore (unblocked when decoder starts)
                     // Prevents all encoders from starting at creation
                     encoder_semaphore_clone.acquire();
+                    trace!(
+                        "Scene {} Encoder waiting for a free Worker",
+                        task.original_index
+                    );
                     // Wait for worker semaphore (unblocked when worker finishes)
                     // Prevents active encoders exceeding worker limit
                     let worker_id = worker_semaphore.acquire();
@@ -269,6 +275,10 @@ where
                         decoder_semaphore_clone.release();
                         return Ok(None);
                     }
+                    debug!(
+                        "Encoding Scene {} with Worker {}",
+                        task.original_index, worker_id
+                    );
                     // Handle progress from Encoder
                     s.spawn(move || -> Result<()> {
                         for progress in encode_progress_rx {
@@ -347,6 +357,11 @@ where
                     let temp_output = task
                         .output
                         .with_extension(format!("temp.{}", task.encoder.output_extension()));
+                    trace!(
+                        "Encoding Scene {} to {}",
+                        task.original_index,
+                        temp_output.display()
+                    );
                     let result = task.encoder.encode_with_stream(
                         frames_rx,
                         &temp_output,
@@ -358,6 +373,7 @@ where
                     } else {
                         encoder_errored.store(true, Ordering::Relaxed);
                     }
+                    debug!("Encoded Scene {}", task.original_index);
                     worker_semaphore.release(); // Release for next worker
                     decoder_semaphore_clone.release(); // Release for next decoder
                     Ok(Some(ParallelEncoderResult {
@@ -374,6 +390,7 @@ where
                 // Prevents decoder from filling up memory for upcoming tasks
                 decoder_semaphore.acquire();
                 if !cancelled.load(Ordering::Relaxed) && !encoder_errored.load(Ordering::Relaxed) {
+                    debug!("Decoding Scene {}", task.original_index);
                     let frames_tx =
                         frames_senders.remove(&task.index).expect("should have frames_tx");
                     let y4m_header = input.y4m_header(Some(task.end_frame - task.start_frame))?;
@@ -401,11 +418,12 @@ where
                 maybe_result.as_ref().is_some_and(|result| !result.result.status.success())
             });
             if let Some(Some(first_error)) = first_error {
-                // let err = ParallelEncoderError::EncoderFailed { scene: , result: () }
-                bail!(ParallelEncoderError::EncoderFailed {
+                let err = ParallelEncoderError::EncoderFailed {
                     scene:  first_error.scene,
                     result: first_error.result.clone(),
-                });
+                };
+                error!("{}", err);
+                bail!(err);
             }
 
             Ok(())

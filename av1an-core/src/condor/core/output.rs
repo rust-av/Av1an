@@ -29,7 +29,6 @@ impl Output {
         if data.path.parent().is_some_and(|parent| !parent.exists()) {
             warnings.push(Box::new(OutputError::ValidationFailed(data.path.clone())));
         }
-        // TODO: Validate we can write to the parent folder
 
         match data.concatenation_method {
             ConcatMethod::FFmpeg => {

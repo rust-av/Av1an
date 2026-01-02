@@ -20,6 +20,7 @@ use cfg_if::cfg_if;
 use nom::AsBytes;
 use path_abs::PathInfo;
 use thiserror::Error;
+use tracing::info;
 
 use crate::{
     broker::StringOrBytes,
@@ -504,7 +505,7 @@ impl Encoder {
             return Err(encoder_result.into());
         }
 
-        println!(
+        info!(
             "{}/{} frames decoded/encoded within {}/{} seconds",
             frames_decoded,
             // frames_encoded.lock().expect("mutex should acquire lock"),
@@ -512,13 +513,6 @@ impl Encoder {
             decode_duration.as_secs_f64(),
             encode_duration.as_secs_f64()
         );
-
-        // println!(
-        //     "STDOUT: {:?}",
-        //     crate::broker::StringOrBytes::from(encoder_output.stdout)
-        // );
-
-        // println!("STDERR: {}", stderr_output);
 
         Ok(encoder_result)
     }

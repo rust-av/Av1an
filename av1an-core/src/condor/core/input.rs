@@ -7,6 +7,7 @@ use std::{
 use anyhow::{ensure, Context, Result};
 use av_decoders::{Decoder, Ffms2Decoder, VapoursynthDecoder};
 pub use av_decoders::{DecoderError, ModifyNode};
+use thiserror::Error as ThisError;
 
 use crate::{
     condor::data::input::{
@@ -93,14 +94,11 @@ impl Input {
             InputData::Video {
                 path, ..
             } => {
-                ensure!(
-                    path.exists(),
-                    format!("Could not find video file: {}", path.display())
-                );
+                ensure!(path.exists(), InputError::VideoFileNotFound(path.clone()));
                 if let Some(ext) = path.extension() {
                     ensure!(
                         ext != "vpy" && ext != "py",
-                        "path must be a video file, not a VapourSynth script"
+                        InputError::NotAVideoFile(path.clone())
                     );
                 }
                 Ok(())
@@ -109,14 +107,11 @@ impl Input {
                 path, ..
             } => {
                 // TODO: Check if VapourSynth + plugin is installed and static cache it
-                ensure!(
-                    path.exists(),
-                    format!("Could not find video file: {}", path.display())
-                );
+                ensure!(path.exists(), InputError::VideoFileNotFound(path.clone()));
                 if let Some(ext) = path.extension() {
                     ensure!(
                         ext != "vpy" && ext != "py",
-                        "path must be a video file, not a VapourSynth script"
+                        InputError::NotAVideoFile(path.clone())
                     );
                 }
 
@@ -130,12 +125,12 @@ impl Input {
                     VapourSynthScriptSource::Path(path) => {
                         ensure!(
                             path.exists(),
-                            format!("Could not find VapourSynth script file: {}", path.display())
+                            InputError::VapourSynthScriptNotFound(path.clone())
                         );
                         if let Some(ext) = path.extension() {
                             ensure!(
                                 ext == "vpy" || ext == "py",
-                                "path must be a VapourSynth script file"
+                                InputError::NotAVapourSynthScript(path.clone())
                             );
                         }
                     },
@@ -174,7 +169,7 @@ impl Input {
                     },
                 }
             },
-            _ => panic!("expected `InputData::Video`"),
+            _ => panic!("expected `Input::Video`"),
         }
     }
 
@@ -369,7 +364,7 @@ impl Input {
                     clip_info: None,
                 })
             },
-            _ => panic!("expected `InputData::VapourSynth` or `InputData::VapourSynthScript`"),
+            _ => panic!("expected `Input::VapourSynth` or `Input::VapourSynthScript`"),
         }
     }
 
@@ -440,8 +435,6 @@ impl Input {
                 clip_info.as_ref()
             },
         };
-
-        // TODO: Cache clip info to Input
 
         Ok(*clip_info.expect("ClipInfo is Some"))
     }
@@ -664,4 +657,16 @@ impl Input {
     // mpsc::Sender<Cursor<Vec<u8>>>, start: usize, end: usize) -> Result<()> {
 
     // }
+}
+
+#[derive(Debug, ThisError)]
+pub enum InputError {
+    #[error("No video file found at {0}")]
+    VideoFileNotFound(PathBuf),
+    #[error("No VapourSynth script file found at {0}")]
+    VapourSynthScriptNotFound(PathBuf),
+    #[error("File {0} is not a video file")]
+    NotAVideoFile(PathBuf),
+    #[error("File {0} is not a VapourSynth script")]
+    NotAVapourSynthScript(PathBuf),
 }
