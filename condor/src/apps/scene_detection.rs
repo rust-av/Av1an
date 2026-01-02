@@ -1,4 +1,5 @@
 use std::{
+    io::IsTerminal,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver},
@@ -20,6 +21,8 @@ use ratatui::{
     widgets::Block,
     Frame,
 };
+use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::{
     apps::TuiApp,
@@ -63,7 +66,6 @@ impl TuiApp for SceneDetectionApp {
             }
             thread::sleep(std::time::Duration::from_millis(16)); // ~60 FPS
         });
-        // let progress_tx = event_tx.clone();
         thread::spawn(move || {
             for progress in progress_rx {
                 if let ProcessStatus::Whole(Status::Processing {
@@ -94,16 +96,37 @@ impl TuiApp for SceneDetectionApp {
         });
 
         let mut terminal = self.init()?;
+        let stdout_is_terminal = std::io::stdout().is_terminal();
         loop {
             match event_rx.recv()? {
                 SceneDetectionAppEvent::Tick => {
                     terminal.draw(|f| self.render(f))?;
                 },
-                SceneDetectionAppEvent::Progress(completed) => self.frames_processed = completed,
+                SceneDetectionAppEvent::Progress(completed) => {
+                    self.frames_processed = completed;
+                    if !stdout_is_terminal {
+                        let event = SceneDetectionConsoleEvent::ProcessedFrame {
+                            completed,
+                            total: self.total_frames,
+                        };
+                        let event = serde_json::to_string(&event)?;
+                        println!("[Scene Detector][Progress]: {}", event);
+                    }
+                },
                 SceneDetectionAppEvent::NewScene {
                     start,
                     end,
-                } => self.scenes.push((start, end)),
+                } => {
+                    self.scenes.push((start, end));
+                    if !stdout_is_terminal {
+                        let event = SceneDetectionConsoleEvent::NewScene {
+                            start,
+                            end,
+                        };
+                        let event = serde_json::to_string(&event)?;
+                        println!("[Scene Detector][New Scene]: {}", event);
+                    }
+                },
                 SceneDetectionAppEvent::Quit => {
                     self.restore(terminal)?;
                     break;
@@ -118,7 +141,13 @@ impl TuiApp for SceneDetectionApp {
                         let already_cancelled = cancelled.swap(true, Ordering::SeqCst);
                         if already_cancelled {
                             self.restore(terminal)?;
+                            debug!("Force quit Condor");
                             std::process::exit(0);
+                        } else if !stdout_is_terminal {
+                            println!(
+                                "Scene Detection does not support cancelling. Press Ctrl+C again \
+                                 to exit."
+                            );
                         }
                     }
                 },
@@ -200,4 +229,10 @@ enum SceneDetectionAppEvent {
     Input(event::KeyEvent),            // Keyboard events
     Progress(u64),                     // New frames processed
     NewScene { start: u64, end: u64 }, // New scene found
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum SceneDetectionConsoleEvent {
+    ProcessedFrame { completed: u64, total: u64 },
+    NewScene { start: u64, end: u64 },
 }
