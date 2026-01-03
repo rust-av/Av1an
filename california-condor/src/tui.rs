@@ -1,0 +1,224 @@
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    sync::{atomic::AtomicBool, Arc},
+    thread,
+};
+
+use andean_condor::{
+    core::{
+        sequence::{
+            parallel_encoder::ParallelEncoder,
+            scene_concatenator::SceneConcatenator,
+            scene_detect::SceneDetector,
+            Sequence,
+        },
+        Condor,
+    },
+    vapoursynth::vapoursynth_filters::VapourSynthFilter,
+};
+use anyhow::Result;
+use tracing::{debug, warn};
+
+use crate::{
+    apps::{parallel_encoder::ParallelEncoderApp, scene_detection::SceneDetectionApp, TuiApp},
+    configuration::{CliSequenceConfig, CliSequenceData, Configuration},
+};
+
+#[tracing::instrument(skip_all)]
+pub fn run_scene_detection_tui(
+    condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
+    scd_input_filters: &[VapourSynthFilter],
+    cancelled: Arc<AtomicBool>,
+) -> Result<()> {
+    let initial_frames = condor.scenes.iter().fold(0, |acc, scene| {
+        acc + (scene.end_frame - scene.start_frame) as u64
+    });
+
+    debug!("Instantiating Scene Detector Input");
+    let (input, clip_info) = if let Some(input) = &condor.processor_config.scene_detection.input {
+        let mut scd_input =
+            Configuration::instantiate_input_with_filters(input, scd_input_filters)?;
+        let clip_info = scd_input.clip_info()?;
+        (Some(scd_input), clip_info)
+    } else {
+        let mut scd_input = Configuration::instantiate_input_with_filters(
+            &condor.input.as_data(),
+            scd_input_filters,
+        )?;
+        let clip_info = scd_input.clip_info()?;
+        (Some(scd_input), clip_info)
+    };
+
+    if initial_frames as usize == clip_info.num_frames {
+        return Ok(());
+    }
+
+    let scd = SceneDetector {
+        input,
+        method: condor.processor_config.scene_detection.method,
+    };
+
+    let mut scene_detector = Box::new(scd) as Box<dyn Sequence<CliSequenceData, CliSequenceConfig>>;
+
+    debug!("Validating Scene Detector"); // Input should alrady be validated but just in case
+    let (_, validation_warnings) = scene_detector.validate(condor)?;
+
+    for warning in validation_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Initializing Scene Detector"); // Input should already be indexed but just in case
+    let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
+    let (_, initialization_warnings) = scene_detector.initialize(condor, init_progress_tx)?;
+
+    for warning in initialization_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Running Scene Detector");
+    let ctrlc_cancelled = Arc::clone(&cancelled);
+    let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+    thread::spawn(move || -> Result<()> {
+        let mut scd_app = SceneDetectionApp::new(
+            // initial_frames, // SCD always starts from the beginning
+            0,
+            clip_info.num_frames as u64,
+            Vec::new(),
+            clip_info,
+        );
+        scd_app.run(progress_rx, ctrlc_cancelled)?;
+        Ok(())
+    });
+    let (_, processing_warnings) = scene_detector.execute(condor, progress_tx, cancelled)?;
+
+    for warning in processing_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+pub fn run_parallel_encoder_tui(
+    condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
+    input_filters: &[VapourSynthFilter],
+    scenes_directory: &Path,
+    cancelled: Arc<AtomicBool>,
+) -> Result<()> {
+    debug!("Instantiating Parallel Encoder Input");
+    let (parallel_encoder_input, clip_info) = if let Some(input) =
+        &condor.processor_config.parallel_encoder.input
+    {
+        let mut pe_input = Configuration::instantiate_input_with_filters(input, input_filters)?;
+        let clip_info = pe_input.clip_info()?;
+        (Some(pe_input), clip_info)
+    } else {
+        let mut pe_input =
+            Configuration::instantiate_input_with_filters(&condor.input.as_data(), input_filters)?;
+        let clip_info = pe_input.clip_info()?;
+        (Some(pe_input), clip_info)
+    };
+
+    let workers = condor.processor_config.parallel_encoder.workers;
+    let parallel_encoder = ParallelEncoder {
+        input: parallel_encoder_input,
+        encoder: condor.processor_config.parallel_encoder.encoder.clone(),
+        scenes_directory: scenes_directory.to_path_buf(),
+        workers,
+    };
+    let mut parallel_encoder =
+        Box::new(parallel_encoder) as Box<dyn Sequence<CliSequenceData, CliSequenceConfig>>;
+
+    debug!("Validating Parallel Encoder"); // Input should alrady be validated but just in case
+    let (_, validation_warnings) = parallel_encoder.validate(condor)?;
+
+    for warning in validation_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Initializing Parallel Encoder"); // Input should already be indexed but just in case
+    let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
+    let (_, initialization_warnings) = parallel_encoder.initialize(condor, init_progress_tx)?;
+
+    for warning in initialization_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Running Parallel Encoder");
+    let encoder = condor.encoder.clone();
+    let initial_scenes = condor
+        .scenes
+        .iter()
+        .enumerate()
+        .map(|(index, scene)| {
+            (
+                index,
+                scene,
+                scenes_directory
+                    .join(format!(
+                        "{}.{}",
+                        ParallelEncoder::scene_id(index),
+                        scene.encoder.output_extension()
+                    ))
+                    .exists(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut scenes_map = BTreeMap::new();
+    for (index, scene, already_encoded) in initial_scenes {
+        let scene_frames_encoded = if already_encoded {
+            (scene.end_frame - scene.start_frame) as u64
+        } else {
+            0
+        };
+        scenes_map.insert(index as u64, (scene_frames_encoded, scene.clone()));
+    }
+
+    let ctrlc_cancelled = Arc::clone(&cancelled);
+    let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+    thread::spawn(move || -> Result<()> {
+        let mut pe_app = ParallelEncoderApp::new(workers, encoder, scenes_map, clip_info);
+        pe_app.run(progress_rx, ctrlc_cancelled)?;
+        Ok(())
+    });
+    let (_, processing_warnings) = parallel_encoder.execute(condor, progress_tx, cancelled)?;
+
+    for warning in processing_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    Ok(())
+}
+
+pub fn run_scene_concatenator_tui(
+    condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
+    scenes_directory: &Path,
+    cancelled: Arc<AtomicBool>,
+) -> Result<()> {
+    let concatenator = SceneConcatenator::new(
+        scenes_directory,
+        condor.processor_config.scene_concatenation.method,
+    );
+
+    let mut scene_concatenator =
+        Box::new(concatenator) as Box<dyn Sequence<CliSequenceData, CliSequenceConfig>>;
+
+    // Validate - Input should be already validated
+    let (_, _validation_warnings) = scene_concatenator.validate(condor)?;
+
+    // Initialize - Input should be already indexed
+    let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
+    let (_, initialization_warnings) = scene_concatenator.initialize(condor, init_progress_tx)?;
+    for warning in initialization_warnings.iter() {
+        println!("{}", warning);
+    }
+
+    let (progress_tx, _progress_rx) = std::sync::mpsc::channel();
+    let (_, processing_warnings) = scene_concatenator.execute(condor, progress_tx, cancelled)?;
+    for warning in processing_warnings.iter() {
+        println!("{}", warning);
+    }
+
+    Ok(())
+}
