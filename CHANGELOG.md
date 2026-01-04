@@ -2,7 +2,9 @@
 
 ## Version 0.5.2
 
+- feat: implement cache mode toggle
 - fix: fix compilation of Vapoursynth extensions on AArch64
+- fix: improved frame count parsing
 
 ## Version 0.5.1
 
