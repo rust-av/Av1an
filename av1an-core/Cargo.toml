@@ -1,6 +1,6 @@
 [package]
 name = "av1an-core"
-version = "0.5.1"
+version = "0.5.2"
 rust-version = "1.88"
 edition = "2021"
 description = """
@@ -60,7 +60,7 @@ thiserror = "2.0.17"
 tracing = { workspace = true }
 which = "8.0.0"
 y4m = "0.8.0"
-vapoursynth = "0.5"
+vapoursynth = "0.5.1"
 # TODO: move all of this CLI stuff to av1an-cli
 colored = "3.0.0"
 ctrlc = "3.5.1"
