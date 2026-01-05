@@ -38,7 +38,7 @@ default = []
 
 [dev-dependencies]
 assert_cmd = "2.1.1"
-serial_test = "3.0"
+serial_test = "3.3"
 tempfile = { workspace = true }
 
 [lints.clippy]
