@@ -39,12 +39,12 @@ where
     Data: SequenceDataHandler,
     Config: SequenceConfigHandler,
 {
-    pub input:            Input,
-    pub output:           Output,
-    pub encoder:          Encoder,
-    pub scenes:           Vec<Scene<Data>>,
-    pub processor_config: Config,
-    pub save_callback:    SaveCallback<Data, Config>,
+    pub input:           Input,
+    pub output:          Output,
+    pub encoder:         Encoder,
+    pub scenes:          Vec<Scene<Data>>,
+    pub sequence_config: Config,
+    pub save_callback:   SaveCallback<Data, Config>,
 }
 
 impl<Data, Config> Condor<Data, Config>
@@ -66,7 +66,7 @@ where
             output,
             encoder,
             scenes,
-            processor_config: processor_config.unwrap_or_default(),
+            sequence_config: processor_config.unwrap_or_default(),
             save_callback,
         }
     }
@@ -78,7 +78,7 @@ where
             output:          self.output.as_data(),
             encoder:         self.encoder.clone(),
             scenes:          self.scenes.clone(),
-            sequence_config: self.processor_config.clone(),
+            sequence_config: self.sequence_config.clone(),
         }
     }
 
@@ -89,7 +89,7 @@ where
             output:          self.output.as_data(),
             encoder:         self.encoder.clone(),
             scenes:          self.scenes.clone(),
-            sequence_config: self.processor_config.clone(),
+            sequence_config: self.sequence_config.clone(),
         };
 
         (self.save_callback)(data.clone())?;
@@ -318,7 +318,7 @@ mod tests {
                 parallel_encoder::ParallelEncoder,
                 quality_check::QualityCheck,
                 scene_concatenator::SceneConcatenator,
-                scene_detect::SceneDetector,
+                scene_detector::SceneDetector,
                 target_quality::TargetQuality,
                 Sequence,
                 SequenceCompletion,
@@ -515,7 +515,7 @@ mod tests {
                 Condor::save_data(&PathBuf::from("C:/Condor/condor.json"), &data)?;
                 Ok(())
             }),
-            processor_config: DefaultSequenceConfig {
+            sequence_config: DefaultSequenceConfig {
                 scene_detection: SceneDetectConfig {
                     input:  Some(scd_input_data),
                     method: scd_method,
@@ -580,15 +580,10 @@ mod tests {
                                             completed,
                                             total,
                                         } = completion
+                                            && last_print_time.elapsed().as_millis() > 1000
                                         {
-                                            if last_print_time.elapsed().as_millis() > 1000 {
-                                                print!(
-                                                    "\rScene Detector: {}/{}",
-                                                    completed + 1,
-                                                    total
-                                                );
-                                                last_print_time = std::time::Instant::now();
-                                            }
+                                            print!("\rScene Detector: {}/{}", completed + 1, total);
+                                            last_print_time = std::time::Instant::now();
                                         }
                                     },
                                     Status::Completed {
@@ -608,30 +603,30 @@ mod tests {
                     match event.sequence_type {
                         SequenceType::Validation => (),
                         SequenceType::Initialization => (),
-                        SequenceType::Processing => match event.progress {
-                            SequenceStatus::Whole(status) => match status {
-                                Status::Processing {
-                                    id,
-                                    completion,
-                                } => {
-                                    if id == encoder_details.name {
-                                        if let SequenceCompletion::Frames {
-                                            completed,
-                                            total,
-                                        } = completion
+                        SequenceType::Processing => {
+                            if let SequenceStatus::Whole(status) = event.progress {
+                                match status {
+                                    Status::Processing {
+                                        id,
+                                        completion,
+                                    } => {
+                                        if id == encoder_details.name
+                                            && let SequenceCompletion::Frames {
+                                                completed,
+                                                total,
+                                            } = completion
                                         {
                                             print!("\rParallel Encoder: {}/{}", completed, total);
                                         }
-                                    }
-                                },
-                                Status::Completed {
-                                    ..
-                                } => {
-                                    println!("\nParallel Encoder Done");
-                                },
-                                _ => unimplemented!(),
-                            },
-                            _ => (),
+                                    },
+                                    Status::Completed {
+                                        ..
+                                    } => {
+                                        println!("\nParallel Encoder Done");
+                                    },
+                                    _ => unimplemented!(),
+                                }
+                            }
                         },
                     }
                 }

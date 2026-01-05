@@ -20,7 +20,6 @@ use andean_condor::{
                 ParallelEncodeConfig,
                 ParallelEncodeData,
                 ParallelEncodeDataHandler,
-                DEFAULT_MAX_SCENE_LENGTH_SECONDS,
             },
             scene_concatenate::SceneConcatenateConfig,
             scene_detect::{
@@ -29,6 +28,7 @@ use andean_condor::{
                 SceneDetectDataHandler,
                 SceneDetectionMethod,
                 ScenecutMethod,
+                DEFAULT_MAX_SCENE_LENGTH_SECONDS,
             },
             SequenceConfigHandler,
             SequenceDataHandler,
@@ -52,6 +52,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 
+use crate::commands::DecoderMethod;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration {
     pub condor:            CondorModel<CliSequenceData, CliSequenceConfig>,
@@ -65,14 +67,13 @@ pub struct Configuration {
 
 impl Configuration {
     #[inline]
-    pub fn new(input: &Path, output: &Path, temp: &Path) -> Result<Self> {
-        let input_data = InputModel::VapourSynth {
-            path:          input.to_path_buf(),
-            import_method: VapourSynthImportMethod::BestSource {
-                index: None
-            },
-            cache_path:    None,
-        };
+    pub fn new(
+        input: &Path,
+        output: &Path,
+        temp: &Path,
+        vs_args: Option<&[String]>,
+    ) -> Result<Self> {
+        let input_data = Self::new_input_model(input, Some(&DecoderMethod::BestSource), vs_args)?;
         info!("Indexing input...");
         let mut input_instance = Input::from_data(&input_data)?;
         let clip_info = input_instance.clip_info()?;
@@ -80,14 +81,14 @@ impl Configuration {
 
         let mut configuration = Self {
             condor:            CondorModel {
-                input:            input_data,
-                output:           OutputModel {
+                input:           input_data,
+                output:          OutputModel {
                     path:       output.to_path_buf(),
                     tags:       HashMap::new(),
                     video_tags: HashMap::new(),
                 },
-                encoder:          Encoder::default(),
-                scenes:           Vec::new(),
+                encoder:         Encoder::default(),
+                scenes:          Vec::new(),
                 sequence_config: CliSequenceConfig {
                     scene_detection:     SceneDetectConfig {
                         input:  None,
@@ -192,7 +193,7 @@ impl Configuration {
             output,
             encoder: self.condor.encoder.clone(),
             scenes: self.condor.scenes.clone(),
-            processor_config: self.condor.sequence_config.clone(),
+            sequence_config: self.condor.sequence_config.clone(),
             save_callback,
         };
 
@@ -270,6 +271,108 @@ impl Configuration {
         };
 
         Ok(input)
+    }
+
+    #[inline]
+    pub fn new_input_model(
+        input: &Path,
+        decoder: Option<&DecoderMethod>,
+        vs_args: Option<&[String]>,
+    ) -> Result<InputModel> {
+        let input_is_script = input
+            .extension()
+            .map(|s| s.to_str())
+            .is_some_and(|s| s.is_some_and(|extension| matches!(extension, "vpy" | "py")));
+
+        let input_model = match decoder {
+            Some(DecoderMethod::FFMS2) => InputModel::Video {
+                path:          input.to_path_buf(),
+                import_method: andean_condor::models::input::ImportMethod::FFMS2 {},
+            },
+            Some(method) => match method {
+                DecoderMethod::FFMS2 => unreachable!(),
+                DecoderMethod::BestSource => Self::new_vs_input_model(
+                    input,
+                    Some(VapourSynthImportMethod::BestSource {
+                        index: None
+                    }),
+                    vs_args,
+                )?,
+                DecoderMethod::DGDecodeNV => Self::new_vs_input_model(
+                    input,
+                    Some(VapourSynthImportMethod::DGDecNV {
+                        dgindexnv_executable: None,
+                    }),
+                    vs_args,
+                )?,
+                DecoderMethod::LSMASHWorks => Self::new_vs_input_model(
+                    input,
+                    Some(VapourSynthImportMethod::LSMASHWorks {
+                        index: None
+                    }),
+                    vs_args,
+                )?,
+                DecoderMethod::VSFFMS2 => Self::new_vs_input_model(
+                    input,
+                    Some(VapourSynthImportMethod::FFMS2 {
+                        index: None
+                    }),
+                    vs_args,
+                )?,
+            },
+            None => Self::new_vs_input_model(
+                input,
+                Some(VapourSynthImportMethod::BestSource {
+                    index: None
+                }),
+                vs_args,
+            )?,
+        };
+
+        Ok(input_model)
+    }
+
+    #[inline]
+    pub fn new_vs_input_model(
+        input: &Path,
+        decoder: Option<VapourSynthImportMethod>,
+        vs_args: Option<&[String]>,
+    ) -> Result<InputModel> {
+        let input_is_script = input
+            .extension()
+            .map(|s| s.to_str())
+            .is_some_and(|s| s.is_some_and(|extension| matches!(extension, "vpy" | "py")));
+        let input_data = if input_is_script {
+            let variables = if let Some(vs_args) = vs_args {
+                vs_args
+                    .iter()
+                    .map(|arg| {
+                        let (key, value) = arg.split_once('=').unwrap_or((arg, ""));
+                        (key.to_string(), value.to_string())
+                    })
+                    .collect()
+            } else {
+                HashMap::new()
+            };
+            InputModel::VapourSynthScript {
+                source: VapourSynthScriptSource::Path(input.to_path_buf()),
+                variables,
+                index: 0,
+            }
+        } else {
+            InputModel::VapourSynth {
+                path:          input.to_path_buf(),
+                import_method: match decoder {
+                    Some(decoder) => decoder,
+                    None => VapourSynthImportMethod::BestSource {
+                        index: None
+                    },
+                },
+                cache_path:    None,
+            }
+        };
+
+        Ok(input_data)
     }
 }
 

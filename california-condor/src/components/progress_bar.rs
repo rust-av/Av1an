@@ -7,14 +7,16 @@ use ratatui::{
 use crate::utils::time_display::seconds_to_hms;
 
 pub struct ProgressBar {
-    pub color:             Color,
-    pub processing_title:  String,
-    pub completed_title:   String,
-    pub unit:              String,
-    pub unit_per_second:   String,
-    pub initial_completed: u64,
-    pub completed:         u64,
-    pub total:             u64,
+    pub color:               Color,
+    pub processing_title:    String,
+    pub completed_title:     String,
+    pub top_right_title:     String,
+    pub bottom_center_title: String,
+    pub unit:                String,
+    pub unit_per_second:     String,
+    pub initial_completed:   u64,
+    pub completed:           u64,
+    pub total:               u64,
 }
 
 impl ProgressBar {
@@ -65,7 +67,9 @@ impl ProgressBar {
                     .border_type(BorderType::Rounded)
                     .title(Line::from(title).left_aligned())
                     .title(Line::from(format!("{:.2}%", progress_percent)).centered())
+                    .title(Line::from(self.top_right_title.clone()).right_aligned())
                     .title_bottom(Line::from(elapsed_hms.unwrap_or_default()).left_aligned())
+                    .title_bottom(Line::from(self.bottom_center_title.clone()).centered())
                     .title_bottom(Line::from(remaining_hms.unwrap_or_default()).right_aligned()),
             )
             .ratio(self.completed as f64 / self.total as f64)

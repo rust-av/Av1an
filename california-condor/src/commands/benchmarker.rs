@@ -1,12 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use andean_condor::{
-    core::input::Input,
-    models::input::{
-        ImportMethod,
-        Input as InputModel,
-        VapourSynthImportMethod,
-        VapourSynthScriptSource,
+    models::{
+        encoder::{Encoder, EncoderBase, EncoderPasses},
+        input::{
+            ImportMethod,
+            Input as InputModel,
+            VapourSynthImportMethod,
+            VapourSynthScriptSource,
+        },
     },
     vapoursynth::vapoursynth_filters::VapourSynthFilter,
 };
@@ -14,26 +16,32 @@ use anyhow::{bail, Result};
 use tracing::{debug, error, trace};
 
 use crate::{
-    commands::{DecoderMethod, SceneDetectionMethod},
+    commands::DecoderMethod,
     configuration::{ConfigError, Configuration},
+    utils::parameter_parser::EncoderParamsParser,
     CondorCliError,
     DEFAULT_CONFIG_PATH,
     DEFAULT_TEMP_PATH,
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn detect_scenes_handler(
+pub fn benchmarker_handler(
     config_path: Option<&Path>,
+    temp_path: Option<&Path>,
     input_path: Option<&Path>,
     decoder: Option<&DecoderMethod>,
     filters: Option<&[VapourSynthFilter]>,
     vs_args: Option<&[String]>,
-    method: Option<&SceneDetectionMethod>,
-    min_scene_seconds: Option<usize>,
-    max_scene_seconds: Option<usize>,
+    encoder: Option<&EncoderBase>,
+    passes: Option<u8>,
+    params: Option<String>,
+    threshold: Option<u8>,
+    max_memory: Option<u32>,
 ) -> Result<(Configuration, PathBuf)> {
     if config_path.is_some_and(|p| !p.exists()) && input_path.is_none() {
-        bail!(CondorCliError::NoConfigOrInput);
+        let err = CondorCliError::NoConfigOrInput;
+        error!("{}", err);
+        bail!(err);
     }
     let config_path =
         path_abs::PathAbs::new(config_path.unwrap_or_else(|| Path::new(DEFAULT_CONFIG_PATH)))?
@@ -57,26 +65,32 @@ pub fn detect_scenes_handler(
             }
         } else {
             trace!("No existing configuration found");
-            let input_path = input_path.ok_or_else(|| {
+            let path_err = || {
                 let err = CondorCliError::NoConfigOrInput;
                 error!("{}", err);
                 err
-            })?;
-            debug!("Creating new temporary configuration");
+            };
+            let input_path = input_path.ok_or_else(path_err)?;
+            debug!("Creating new configuration");
             let input = path_abs::PathAbs::new(input_path)?.as_path().to_path_buf();
             // Won't be used
             let output = input.with_file_name(format!(
                 "{}.mkv",
                 input.file_stem().expect("input is a file").display()
             ));
-            let output = path_abs::PathAbs::new(output)?.as_path().to_path_buf();
             let cwd = std::env::current_dir()?;
-            let temp_path = cwd.join(DEFAULT_TEMP_PATH);
-            let temp = path_abs::PathAbs::new(temp_path)?.as_path().to_path_buf();
+            let temp_path = temp_path.map(|p| p.to_path_buf());
+            let temp =
+                path_abs::PathAbs::new(temp_path.unwrap_or_else(|| cwd.join(DEFAULT_TEMP_PATH)))?
+                    .as_path()
+                    .to_path_buf();
             Configuration::new(&input, &output, &temp, vs_args)?
         }
     };
 
+    if let Some(temp) = temp_path {
+        configuration.temp = path_abs::PathAbs::new(temp)?.as_path().to_path_buf();
+    }
     if let Some(decoder) = &decoder {
         let existing_input_path = match configuration.condor.input {
             InputModel::Video {
@@ -139,39 +153,65 @@ pub fn detect_scenes_handler(
     if let Some(filters) = filters {
         configuration.input_filters = filters.to_vec();
     }
-
-    let mut input = Input::from_data(&configuration.condor.input)?;
-    let clip_info = input.clip_info()?;
-    let fps = *clip_info.frame_rate.numer() as f64 / *clip_info.frame_rate.denom() as f64;
-
-    let previous_method = configuration.condor.sequence_config.scene_detection.method;
-    let min_scene_frames = min_scene_seconds.map_or_else(
-        || previous_method.minimum_length(),
-        |seconds| (fps * seconds as f64).round() as usize,
-    );
-    let max_scene_frames = max_scene_seconds.map_or_else(
-        || previous_method.maximum_length(),
-        |seconds| (fps * seconds as f64).round() as usize,
-    );
-    let new_method =
-        method.map(|method| method.as_core_method(Some(min_scene_frames), Some(max_scene_frames)));
-    if let Some(new_method) = new_method {
-        configuration.condor.sequence_config.scene_detection.method = new_method;
+    if let Some(encoder) = encoder {
+        let options = encoder.default_parameters();
+        let pass = encoder.default_passes();
+        configuration.condor.encoder = match encoder {
+            EncoderBase::AOM => Encoder::AOM {
+                executable: None,
+                pass,
+                options,
+                photon_noise: None,
+            },
+            EncoderBase::RAV1E => Encoder::RAV1E {
+                executable: None,
+                pass,
+                options,
+                photon_noise: None,
+            },
+            EncoderBase::VPX => Encoder::VPX {
+                executable: None,
+                pass,
+                options,
+            },
+            EncoderBase::SVTAV1 => Encoder::SVTAV1 {
+                executable: None,
+                pass,
+                options,
+                photon_noise: None,
+            },
+            EncoderBase::X264 => Encoder::X264 {
+                executable: None,
+                pass,
+                options,
+            },
+            EncoderBase::X265 => Encoder::X265 {
+                executable: None,
+                pass,
+                options,
+            },
+            EncoderBase::VVenC => Encoder::VVenC {
+                executable: None,
+                pass,
+                options,
+            },
+            EncoderBase::FFmpeg => Encoder::FFmpeg {
+                executable: None,
+                options,
+            },
+        }
     }
-    configuration
-        .condor
-        .sequence_config
-        .scene_detection
-        .method
-        .set_minimum_length(min_scene_frames)?;
-    configuration
-        .condor
-        .sequence_config
-        .scene_detection
-        .method
-        .set_maximum_length(max_scene_frames)?;
-
-    configuration.save(&config_path)?;
+    if let Some(passes) = passes
+        && let Some(encoder_passes) = configuration.condor.encoder.passes_mut()
+    {
+        *encoder_passes = EncoderPasses::All(passes);
+    }
+    if let Some(params) = params {
+        let parameters = EncoderParamsParser::parse_string(&params);
+        configuration.condor.encoder.parameters_mut().extend(parameters);
+    }
+    // configuration.condor.sequence_config.benchmarker.threshold = threshold;
+    // configuration.condor.sequence_config.benchmarker.max_memory = max_memory;
 
     if !config_already_existed {
         debug!("Saving new Configuration to {}", config_path.display());

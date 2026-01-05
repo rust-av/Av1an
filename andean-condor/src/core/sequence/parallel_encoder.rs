@@ -30,6 +30,7 @@ use crate::{
         encoder::Encoder,
         scene::SubScene,
         sequence::{
+            parallel_encode::ParallelEncodeDataHandler,
             scene_detect::SceneDetectDataHandler,
             SequenceConfigHandler,
             SequenceDataHandler,
@@ -52,7 +53,7 @@ pub struct ParallelEncoder {
 
 impl<DataHandler, ConfigHandler> Sequence<DataHandler, ConfigHandler> for ParallelEncoder
 where
-    DataHandler: SequenceDataHandler + SceneDetectDataHandler,
+    DataHandler: SequenceDataHandler + SceneDetectDataHandler + ParallelEncodeDataHandler,
     ConfigHandler: SequenceConfigHandler,
 {
     #[inline]
@@ -204,6 +205,78 @@ where
             })
             .collect::<VecDeque<Task>>();
 
+        let encoder_thread = Self::encode_tasks(input, self.workers, tasks, progress_tx, cancelled);
+
+        match encoder_thread {
+            Ok(encoder_results) => {
+                for encoder_result in encoder_results.into_iter().flatten() {
+                    if let Some(scene) = condor.scenes.get_mut(encoder_result.scene)
+                        && encoder_result.bytes != 0
+                    {
+                        let parallel_encode_data = scene.processing.get_parallel_encode_mut()?;
+                        parallel_encode_data.bytes = Some(encoder_result.bytes);
+                        parallel_encode_data.started_on = Some(
+                            encoder_result
+                                .started
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .expect("Time is valid")
+                                .as_millis(),
+                        );
+                        scene.processing.get_parallel_encode_mut()?.started_on = Some(
+                            encoder_result
+                                .ended
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .expect("Time is valid")
+                                .as_millis(),
+                        );
+                    }
+                }
+                condor.save()?;
+            },
+            Err(err) => bail!(err),
+        }
+
+        Ok(((), warnings))
+    }
+}
+
+impl Default for ParallelEncoder {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            workers:          1,
+            input:            None,
+            encoder:          None,
+            scenes_directory: PathBuf::new(),
+        }
+    }
+}
+
+impl ParallelEncoder {
+    pub const DETAILS: SequenceDetails = DETAILS;
+    #[inline]
+    pub fn new(workers: u8, scenes_directory: &Path) -> Self {
+        ParallelEncoder {
+            workers,
+            input: None,
+            encoder: None,
+            scenes_directory: scenes_directory.to_path_buf(),
+        }
+    }
+
+    #[inline]
+    pub fn scene_id(index: usize) -> String {
+        format!("{:>05}", index)
+    }
+
+    #[inline]
+    pub fn encode_tasks(
+        input: &mut Input,
+        workers: u8,
+        tasks: VecDeque<Task>,
+        progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
         let (task_tx, task_rx) = crossbeam_channel::unbounded();
         let mut frames_senders = BTreeMap::new();
         let mut frames_receivers = BTreeMap::new();
@@ -222,12 +295,12 @@ where
         drop(task_tx);
         let encoder_errored = Arc::new(AtomicBool::new(false));
 
-        let encoder_thread = thread::scope(|s| -> Result<()> {
+        thread::scope(|s| -> Result<_> {
             let total_final_pass_frames_encoded = Arc::new(AtomicUsize::new(0));
-            let worker_semaphore = Arc::new(Semaphore::new(self.workers.into()));
-            let decoder_semaphore = Arc::new(Semaphore::new((self.workers + 1).into()));
+            let worker_semaphore = Arc::new(Semaphore::new(workers.into()));
+            let decoder_semaphore = Arc::new(Semaphore::new((workers + 1).into()));
             let frame_receivers = Arc::new(Mutex::new(frames_receivers));
-            let progress_tx = progress_tx.clone();
+            // let progress_tx = progress_tx.clone();
             let mut encoder_threads = Vec::new();
             let cancelled = Arc::new(cancelled);
 
@@ -236,7 +309,8 @@ where
                 let cancelled = Arc::clone(&cancelled);
                 let task_rx = task_rx.clone();
                 let frame_receivers = Arc::clone(&frame_receivers);
-                let progress_tx = progress_tx.clone();
+                let task_progress_tx = progress_tx.clone();
+                let size_tx = progress_tx.clone();
                 let task = task_rx.recv()?;
                 let total_passes = task.encoder.total_passes();
                 let total_scene_frames = task.end_frame - task.start_frame;
@@ -276,7 +350,7 @@ where
                         "Encoding Scene {} with Worker {}",
                         task.original_index, worker_id
                     );
-                    let start_time = std::time::Instant::now();
+                    let started = std::time::SystemTime::now();
                     // Handle progress from Encoder
                     s.spawn(move || -> Result<()> {
                         for progress in encode_progress_rx {
@@ -284,7 +358,7 @@ where
                                 let total_final_encoded =
                                     total_final_pass_frames_encoded.fetch_add(1, Ordering::Relaxed);
                                 // Scene's final-pass frame completed
-                                progress_tx.send(SequenceStatus::Subprocess {
+                                task_progress_tx.send(SequenceStatus::Subprocess {
                                     parent: Status::Processing {
                                         id:         DETAILS.name.to_string(),
                                         completion: SequenceCompletion::Frames {
@@ -300,16 +374,18 @@ where
                                         },
                                     },
                                 })?;
-                                progress_tx.send(SequenceStatus::Whole(Status::Processing {
-                                    id:         DETAILS.name.to_string(),
-                                    completion: SequenceCompletion::Frames {
-                                        completed: total_final_encoded as u64,
-                                        total:     total_process_frames as u64,
+                                task_progress_tx.send(SequenceStatus::Whole(
+                                    Status::Processing {
+                                        id:         DETAILS.name.to_string(),
+                                        completion: SequenceCompletion::Frames {
+                                            completed: total_final_encoded as u64,
+                                            total:     total_process_frames as u64,
+                                        },
                                     },
-                                }))?;
+                                ))?;
                                 // Scene completed
                                 if progress.frame == total_scene_frames {
-                                    progress_tx.send(SequenceStatus::Subprocess {
+                                    task_progress_tx.send(SequenceStatus::Subprocess {
                                         parent: Status::Processing {
                                             id:         DETAILS.name.to_string(),
                                             completion: SequenceCompletion::Frames {
@@ -324,13 +400,15 @@ where
                                 }
                                 // Process completed
                                 if total_final_encoded == total_process_frames {
-                                    progress_tx.send(SequenceStatus::Whole(Status::Completed {
-                                        id: DETAILS.name.to_string(),
-                                    }))?;
+                                    task_progress_tx.send(SequenceStatus::Whole(
+                                        Status::Completed {
+                                            id: DETAILS.name.to_string(),
+                                        },
+                                    ))?;
                                 }
                             }
                             // Scene's pass/frame completed
-                            progress_tx.send(SequenceStatus::Subprocess {
+                            task_progress_tx.send(SequenceStatus::Subprocess {
                                 parent: Status::Processing {
                                     id:         DETAILS.name.to_string(),
                                     completion: SequenceCompletion::Frames {
@@ -365,23 +443,37 @@ where
                         &temp_output,
                         encode_progress_tx,
                     )?;
+                    let ended = std::time::SystemTime::now();
+                    let bytes = temp_output.metadata().ok().map_or(0, |meta| meta.len());
                     if result.status.success() {
-                        // TODO: Get size in bytes
+                        size_tx.send(SequenceStatus::Whole(Status::Processing {
+                            id:         task.original_index.to_string(),
+                            completion: SequenceCompletion::Custom {
+                                name:      "size".to_owned(),
+                                completed: bytes as f64,
+                                total:     bytes as f64,
+                            },
+                        }))?;
                         // Rename to final output
                         fs::rename(temp_output, &task.output)?;
                     } else {
                         encoder_errored.store(true, Ordering::Relaxed);
                     }
-                    debug!("Encoded Scene {}", task.original_index);
+                    debug!(
+                        "Encoded Scene {} in {} seconds yielding {} bytes",
+                        task.original_index,
+                        ended.duration_since(started)?.as_secs(),
+                        bytes
+                    );
                     worker_semaphore.release(); // Release for next worker
                     decoder_semaphore_clone.release(); // Release for next decoder
                     let result = ParallelEncoderResult {
                         scene: task.original_index,
-                        started: start_time,
-                        finished: std::time::Instant::now(),
+                        started,
+                        ended,
+                        bytes,
                         result,
                     };
-                    // TODO: Signal task completion for size feedback
                     Ok(Some(result))
                 });
 
@@ -416,6 +508,7 @@ where
                         .expect("should join encoder_thread")
                 })
                 .collect::<Vec<_>>();
+            drop(progress_tx);
 
             let first_error = encoder_results.iter().find(|maybe_result| {
                 maybe_result.as_ref().is_some_and(|result| !result.result.status.success())
@@ -429,50 +522,13 @@ where
                 bail!(err);
             }
 
-            Ok(())
-        });
-
-        match encoder_thread {
-            Ok(()) => (),
-            Err(err) => bail!(err),
-        }
-
-        Ok(((), warnings))
-    }
-}
-
-impl Default for ParallelEncoder {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            workers:          1,
-            input:            None,
-            encoder:          None,
-            scenes_directory: PathBuf::new(),
-        }
-    }
-}
-
-impl ParallelEncoder {
-    pub const DETAILS: SequenceDetails = DETAILS;
-    #[inline]
-    pub fn new(workers: u8, scenes_directory: &Path) -> Self {
-        ParallelEncoder {
-            workers,
-            input: None,
-            encoder: None,
-            scenes_directory: scenes_directory.to_path_buf(),
-        }
-    }
-
-    #[inline]
-    pub fn scene_id(index: usize) -> String {
-        format!("{:>05}", index)
+            Ok(encoder_results)
+        })
     }
 }
 
 #[derive(Debug, Clone)]
-struct Task {
+pub struct Task {
     original_index: usize,
     index:          usize,
     start_frame:    usize,
@@ -538,10 +594,11 @@ impl Semaphore {
 }
 
 pub struct ParallelEncoderResult {
-    pub scene:    usize,
-    pub started:  std::time::Instant,
-    pub finished: std::time::Instant,
-    pub result:   EncoderResult,
+    pub scene:   usize,
+    pub started: std::time::SystemTime,
+    pub ended:   std::time::SystemTime,
+    pub bytes:   u64,
+    pub result:  EncoderResult,
 }
 
 #[derive(Debug, Clone, Error)]

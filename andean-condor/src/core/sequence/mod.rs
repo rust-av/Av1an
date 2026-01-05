@@ -14,7 +14,7 @@ use crate::{
 pub mod parallel_encoder;
 pub mod quality_check;
 pub mod scene_concatenator;
-pub mod scene_detect;
+pub mod scene_detector;
 pub mod serial_encoder;
 pub mod target_quality;
 

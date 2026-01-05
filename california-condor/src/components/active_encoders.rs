@@ -51,14 +51,16 @@ impl Widget for ActiveEncoders {
             encoder_info.generate(false).render(active_worker_areas[0], buf);
 
             let progress_bar = ProgressBar {
-                color:             self.color,
-                processing_title:  String::new(),
-                completed_title:   String::new(),
-                initial_completed: 0,
-                unit_per_second:   "FPS".to_owned(),
-                unit:              "Frame".to_owned(),
-                completed:         scene_encoder.frames_processed,
-                total:             scene_encoder.total_frames,
+                color:               self.color,
+                processing_title:    String::new(),
+                completed_title:     String::new(),
+                top_right_title:     String::new(),
+                bottom_center_title: String::new(),
+                initial_completed:   0,
+                unit_per_second:     "FPS".to_owned(),
+                unit:                "Frame".to_owned(),
+                completed:           scene_encoder.frames_processed,
+                total:               scene_encoder.total_frames,
             };
 
             progress_bar

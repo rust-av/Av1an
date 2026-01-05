@@ -9,9 +9,6 @@ use crate::models::{
     sequence::{SequenceConfigHandler, SequenceDataHandler},
 };
 
-pub static DEFAULT_MAX_SCENE_LENGTH_SECONDS: u8 = 10;
-pub static DEFAULT_MIN_SCENE_LENGTH_FRAMES: u8 = 24;
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ParallelEncodeData {
     /// Must be milliseconds since UNIX Epoch

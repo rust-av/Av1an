@@ -12,6 +12,7 @@ use tracing::{debug, info, level_filters::LevelFilter};
 
 use crate::{
     commands::{
+        benchmarker::benchmarker_handler,
         config::config_sub_handler,
         detect_scenes::detect_scenes_handler,
         init::init_handler,
@@ -21,7 +22,7 @@ use crate::{
     },
     configuration::Configuration,
     logging::init_logging,
-    tui::{run_parallel_encoder_tui, run_scene_concatenator_tui, run_scene_detection_tui},
+    tui::{run_parallel_encoder_tui, run_scene_concatenator_tui, run_scene_detector_tui},
 };
 
 mod apps;
@@ -59,11 +60,15 @@ fn run() -> anyhow::Result<()> {
             input,
             output,
             temp,
-            decoder,
-            concat,
-            workers,
+            vs_args,
         } => {
-            init_handler(config_path, input, output, temp, decoder, concat, workers)?;
+            init_handler(
+                config_path.as_deref(),
+                input.as_path(),
+                output.as_path(),
+                temp.as_deref(),
+                vs_args.as_deref(),
+            )?;
         },
         Commands::Config {
             subcommand,
@@ -71,26 +76,64 @@ fn run() -> anyhow::Result<()> {
             config_sub_handler(config_path, subcommand)?;
         },
         Commands::DetectScenes {
+            input,
+            decoder,
+            filters,
+            vs_args,
             method,
             min_scene_seconds,
             max_scene_seconds,
         } => {
-            detect_scenes_handler(config_path, method, min_scene_seconds, max_scene_seconds)?;
+            let (configuration, save_file) = detect_scenes_handler(
+                config_path.as_deref(),
+                input.as_deref(),
+                decoder.as_ref(),
+                filters.as_deref(),
+                vs_args.as_deref(),
+                method.as_ref(),
+                min_scene_seconds,
+                max_scene_seconds,
+            )?;
 
-            // run_condor_tui("Scene Detection")?
+            run_scene_detection_tui(&configuration, &save_file)?;
         },
         Commands::Benchmark {
-            threshold,
-            max_memory,
-        } => {
-            todo!();
-            // run_condor_tui("Benchmarking")?;
-        },
-        Commands::Start {
             temp,
             input,
             decoder,
             filters,
+            vs_args,
+            encoder,
+            passes,
+            params,
+            threshold,
+            max_memory,
+        } => {
+            let (configuration, save_file) = benchmarker_handler(
+                config_path.as_deref(),
+                temp.as_deref(),
+                input.as_deref(),
+                decoder.as_ref(),
+                filters.as_deref(),
+                vs_args.as_deref(),
+                encoder.as_ref(),
+                passes,
+                params,
+                threshold,
+                max_memory,
+            )?;
+
+            // run_benchmarker_tui(&configuration, &save_file)?;
+        },
+        Commands::Start {
+            temp,
+            input,
+            scd_input,
+            decoder,
+            filters,
+            scd_filters,
+            vs_args,
+            scd_vs_args,
             output,
             concat,
             workers,
@@ -98,22 +141,24 @@ fn run() -> anyhow::Result<()> {
             passes,
             params,
             photon_noise,
-            skip_benchmark,
         } => {
             let (configuration, save_file) = start_handler(
-                config_path,
-                temp,
-                input,
-                output,
+                config_path.as_deref(),
+                temp.as_deref(),
+                input.as_deref(),
+                scd_input.as_deref(),
+                output.as_deref(),
                 decoder.as_ref(),
-                filters,
-                concat,
+                filters.as_deref(),
+                scd_filters.as_deref(),
+                vs_args.as_deref(),
+                scd_vs_args.as_deref(),
+                concat.as_ref(),
                 workers,
-                encoder,
+                encoder.as_ref(),
                 passes,
                 params,
                 photon_noise,
-                skip_benchmark,
             )?;
 
             // let config_copy = configuration.clone();
@@ -158,8 +203,9 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
         false
     };
 
-    run_scene_detection_tui(
+    run_scene_detector_tui(
         &mut condor,
+        &configuration.input_filters,
         &configuration.scd_input_filters,
         std::sync::Arc::clone(&cancellation_token),
     )?;
@@ -237,6 +283,34 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
+pub fn run_scene_detection_tui(configuration: &Configuration, save_file: &Path) -> Result<()> {
+    let config_copy = configuration.clone();
+    let save_file_copy = save_file.to_path_buf();
+    debug!("Instantiating Condor with {:?}", {
+        // Remove scenes to reduce log spam
+        let mut config = configuration.clone();
+        config.condor.scenes = Vec::new();
+        config
+    });
+    let mut condor: Condor<configuration::CliSequenceData, configuration::CliSequenceConfig> =
+        configuration.instantiate_condor(Box::new(move |data| {
+            let mut config = config_copy.clone();
+            config.condor = data;
+            Configuration::save(&config, &save_file_copy)?;
+            Ok(())
+        }))?;
+
+    run_scene_detector_tui(
+        &mut condor,
+        &configuration.input_filters,
+        &configuration.scd_input_filters,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )?;
+
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 pub enum CondorCliError {
     #[error("Cannot initialize over an existing config file: {0}")]
@@ -245,6 +319,8 @@ pub enum CondorCliError {
     ConfigFileNotFound(PathBuf),
     #[error("Failed to load config file: {0}")]
     ConfigLoadError(PathBuf),
+    #[error("Cannot start without a config file or without input path")]
+    NoConfigOrInput,
     #[error("Cannot start without a config file or without input and output paths")]
     NoConfigOrInputOrOutput,
     #[error("Cannot set Decoder without a valid Input path")]

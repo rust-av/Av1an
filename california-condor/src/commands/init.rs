@@ -1,39 +1,34 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use andean_condor::models::{
-    input::{ImportMethod, Input as InputModel, VapourSynthImportMethod},
+    input::{Input as InputModel, VapourSynthImportMethod},
     sequence::scene_concatenate::ConcatMethod,
 };
 use anyhow::{bail, Result};
 use tracing::{error, info};
 
-use crate::{
-    commands::DecoderMethod,
-    configuration::Configuration,
-    CondorCliError,
-    DEFAULT_CONFIG_PATH,
-    DEFAULT_TEMP_PATH,
-};
+use crate::{configuration::Configuration, CondorCliError, DEFAULT_CONFIG_PATH, DEFAULT_TEMP_PATH};
 
 pub fn init_handler(
-    config_path: Option<PathBuf>,
-    input_path: PathBuf,
-    output_path: PathBuf,
-    temp_path: Option<PathBuf>,
-    decoder: DecoderMethod,
-    concat: ConcatMethod,
-    workers: Option<u8>,
+    config_path: Option<&Path>,
+    input_path: &Path,
+    output_path: &Path,
+    temp_path: Option<&Path>,
+    vs_args: Option<&[String]>,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let input = path_abs::PathAbs::new(input_path)?.as_path().to_path_buf();
     let output = path_abs::PathAbs::new(output_path)?.as_path().to_path_buf();
-    let config_path =
-        path_abs::PathAbs::new(config_path.unwrap_or_else(|| cwd.join(DEFAULT_CONFIG_PATH)))?
-            .as_path()
-            .to_path_buf();
-    let temp = path_abs::PathAbs::new(temp_path.unwrap_or_else(|| cwd.join(DEFAULT_TEMP_PATH)))?
-        .as_path()
-        .to_path_buf();
+    let config_path = path_abs::PathAbs::new(
+        config_path.map_or_else(|| cwd.join(DEFAULT_CONFIG_PATH), |p| p.to_path_buf()),
+    )?
+    .as_path()
+    .to_path_buf();
+    let temp = path_abs::PathAbs::new(
+        temp_path.map_or_else(|| cwd.join(DEFAULT_TEMP_PATH), |p| p.to_path_buf()),
+    )?
+    .as_path()
+    .to_path_buf();
 
     if config_path.exists() {
         let err = CondorCliError::ConfigFileAlreadyExists(config_path);
@@ -41,37 +36,16 @@ pub fn init_handler(
         bail!(err);
     }
 
-    let mut configuration = Configuration::new(&input, &output, &temp)?;
+    let mut configuration = Configuration::new(&input, &output, &temp, vs_args)?;
 
-    configuration.condor.input = match decoder {
-        DecoderMethod::FFMS2 => InputModel::Video {
-            path:          input,
-            import_method: ImportMethod::FFMS2 {},
+    configuration.condor.input = InputModel::VapourSynth {
+        path:          input,
+        import_method: VapourSynthImportMethod::BestSource {
+            index: None
         },
-        vs_decoders => InputModel::VapourSynth {
-            path:          input,
-            import_method: match vs_decoders {
-                DecoderMethod::BestSource => VapourSynthImportMethod::BestSource {
-                    index: None
-                },
-                DecoderMethod::VSFFMS2 => VapourSynthImportMethod::FFMS2 {
-                    index: None
-                },
-                DecoderMethod::LSMASHWorks => VapourSynthImportMethod::LSMASHWorks {
-                    index: None
-                },
-                DecoderMethod::DGDecodeNV => VapourSynthImportMethod::DGDecNV {
-                    dgindexnv_executable: None,
-                },
-                DecoderMethod::FFMS2 => unreachable!(),
-            },
-            cache_path:    None,
-        },
+        cache_path:    None,
     };
-    configuration.condor.sequence_config.scene_concatenation.method = concat;
-    if let Some(workers) = workers {
-        configuration.condor.sequence_config.parallel_encoder.workers = workers;
-    }
+    configuration.condor.sequence_config.scene_concatenation.method = ConcatMethod::MKVMerge;
 
     configuration.save(&config_path)?;
 

@@ -1,9 +1,14 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use andean_condor::{
     models::{
         encoder::{photon_noise::PhotonNoise, Encoder, EncoderBase, EncoderPasses},
-        input::{ImportMethod, Input as InputModel, VapourSynthImportMethod},
+        input::{
+            ImportMethod,
+            Input as InputModel,
+            VapourSynthImportMethod,
+            VapourSynthScriptSource,
+        },
         sequence::scene_concatenate::ConcatMethod,
     },
     vapoursynth::vapoursynth_filters::VapourSynthFilter,
@@ -22,27 +27,30 @@ use crate::{
 
 #[allow(clippy::too_many_arguments)]
 pub fn start_handler(
-    config_path: Option<PathBuf>,
-    temp_path: Option<PathBuf>,
-    input_path: Option<PathBuf>,
-    output_path: Option<PathBuf>,
+    config_path: Option<&Path>,
+    temp_path: Option<&Path>,
+    input_path: Option<&Path>,
+    scd_input_path: Option<&Path>,
+    output_path: Option<&Path>,
     decoder: Option<&DecoderMethod>,
-    filters: Option<Vec<VapourSynthFilter>>,
-    concat: Option<ConcatMethod>,
+    filters: Option<&[VapourSynthFilter]>,
+    scd_filters: Option<&[VapourSynthFilter]>,
+    vs_args: Option<&[String]>,
+    scd_vs_args: Option<&[String]>,
+    concat: Option<&ConcatMethod>,
     workers: Option<u8>,
-    encoder: Option<EncoderBase>,
+    encoder: Option<&EncoderBase>,
     passes: Option<u8>,
     params: Option<String>,
     photon_noise: Option<u32>,
-    skip_benchmark: bool,
 ) -> Result<(Configuration, PathBuf)> {
-    if config_path.as_ref().is_some_and(|p| !p.exists())
-        && (input_path.is_none() || output_path.is_none())
-    {
-        bail!(CondorCliError::NoConfigOrInputOrOutput);
+    if config_path.is_some_and(|p| !p.exists()) && input_path.is_none() && output_path.is_none() {
+        let err = CondorCliError::NoConfigOrInputOrOutput;
+        error!("{}", err);
+        bail!(err);
     }
     let config_path =
-        path_abs::PathAbs::new(config_path.unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH)))?
+        path_abs::PathAbs::new(config_path.unwrap_or_else(|| Path::new(DEFAULT_CONFIG_PATH)))?
             .as_path()
             .to_path_buf();
     let config_already_existed = config_path.exists();
@@ -63,32 +71,28 @@ pub fn start_handler(
             }
         } else {
             trace!("No existing configuration found");
-            if input_path.is_none() || output_path.is_none() {
+            let path_err = || {
                 let err = CondorCliError::NoConfigOrInputOrOutput;
                 error!("{}", err);
-                bail!(err);
-            }
+                err
+            };
+            let input_path = input_path.ok_or_else(path_err)?;
+            let output_path = output_path.ok_or_else(path_err)?;
             debug!("Creating new configuration");
-            let input = path_abs::PathAbs::new(input_path.clone().expect("Input should be Some"))?
-                .as_path()
-                .to_path_buf();
-            let output =
-                path_abs::PathAbs::new(output_path.clone().expect("Output should be Some"))?
+            let input = path_abs::PathAbs::new(input_path)?.as_path().to_path_buf();
+            let output = path_abs::PathAbs::new(output_path)?.as_path().to_path_buf();
+            let cwd = std::env::current_dir()?;
+            let temp_path = temp_path.map(|p| p.to_path_buf());
+            let temp =
+                path_abs::PathAbs::new(temp_path.unwrap_or_else(|| cwd.join(DEFAULT_TEMP_PATH)))?
                     .as_path()
                     .to_path_buf();
-            let cwd = std::env::current_dir()?;
-            let temp = path_abs::PathAbs::new(
-                temp_path.clone().unwrap_or_else(|| cwd.join(DEFAULT_TEMP_PATH)),
-            )?
-            .as_path()
-            .to_path_buf();
-            Configuration::new(&input, &output, &temp)?
+            Configuration::new(&input, &output, &temp, vs_args)?
         }
     };
 
     if let Some(temp) = temp_path {
-        let temp = path_abs::PathAbs::new(temp)?.as_path().to_path_buf();
-        configuration.temp = temp;
+        configuration.temp = path_abs::PathAbs::new(temp)?.as_path().to_path_buf();
     }
     if let Some(decoder) = &decoder {
         let existing_input_path = match configuration.condor.input {
@@ -99,15 +103,17 @@ pub fn start_handler(
                 path, ..
             } => Some(path),
             InputModel::VapourSynthScript {
-                ..
-            } => input_path.clone(),
+                source, ..
+            } => match source {
+                VapourSynthScriptSource::Path(source_path) => Some(source_path),
+                _ => input_path.map(|p| p.to_path_buf()), // Default to provided input path
+            },
         };
-        if existing_input_path.is_none() {
+        let existing_input_path = existing_input_path.ok_or_else(|| {
             let err = CondorCliError::DecoderWithoutInput;
             error!("{}", err);
-            bail!(err);
-        }
-        let existing_input_path = existing_input_path.expect("Input path should be Some");
+            err
+        })?;
         let existing_input_path =
             path_abs::PathAbs::new(existing_input_path)?.as_path().to_path_buf();
         match decoder {
@@ -141,52 +147,32 @@ pub fn start_handler(
         };
     }
     if let Some(input) = input_path {
-        let input = path_abs::PathAbs::new(input)?.as_path().to_path_buf();
-        if let Some(decoder_method) = &decoder {
-            configuration.condor.input = match decoder_method {
-                DecoderMethod::FFMS2 => InputModel::Video {
-                    path:          input,
-                    import_method: ImportMethod::FFMS2 {},
-                },
-                vs_decoders => InputModel::VapourSynth {
-                    path:          input,
-                    import_method: match vs_decoders {
-                        DecoderMethod::BestSource => VapourSynthImportMethod::BestSource {
-                            index: None,
-                        },
-                        DecoderMethod::VSFFMS2 => VapourSynthImportMethod::FFMS2 {
-                            index: None
-                        },
-                        DecoderMethod::LSMASHWorks => VapourSynthImportMethod::LSMASHWorks {
-                            index: None,
-                        },
-                        DecoderMethod::DGDecodeNV => VapourSynthImportMethod::DGDecNV {
-                            dgindexnv_executable: None,
-                        },
-                        DecoderMethod::FFMS2 => unreachable!(),
-                    },
-                    cache_path:    None,
-                },
-            }
-        } else {
-            configuration.condor.input = InputModel::VapourSynth {
-                path:          input,
-                import_method: VapourSynthImportMethod::BestSource {
-                    index: None
-                },
-                cache_path:    None,
-            };
-        }
+        configuration.condor.input = Configuration::new_input_model(
+            path_abs::PathAbs::new(input)?.as_path(),
+            decoder,
+            vs_args,
+        )?;
+    }
+    if let Some(input) = scd_input_path {
+        configuration.condor.sequence_config.scene_detection.input =
+            Some(Configuration::new_input_model(
+                path_abs::PathAbs::new(input)?.as_path(),
+                decoder,
+                scd_vs_args,
+            )?);
     }
     if let Some(filters) = filters {
-        configuration.input_filters = filters;
+        configuration.input_filters = filters.to_vec();
+    }
+    if let Some(filters) = scd_filters {
+        configuration.scd_input_filters = filters.to_vec();
     }
     if let Some(output) = output_path {
         let output = path_abs::PathAbs::new(output)?.as_path().to_path_buf();
         configuration.condor.output.path = output;
     }
     if let Some(concat) = concat {
-        configuration.condor.sequence_config.scene_concatenation.method = concat;
+        configuration.condor.sequence_config.scene_concatenation.method = *concat;
     }
     if let Some(workers) = workers {
         configuration.condor.sequence_config.parallel_encoder.workers = workers;

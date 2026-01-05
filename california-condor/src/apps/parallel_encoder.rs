@@ -79,12 +79,32 @@ impl TuiApp for ParallelEncoderApp {
         });
         thread::spawn(move || {
             for progress in progress_rx {
-                if let SequenceStatus::Subprocess {
-                    parent: _,
-                    child,
-                } = progress
-                {
-                    match child {
+                match progress {
+                    SequenceStatus::Whole(status) => {
+                        if let Status::Processing {
+                            id,
+                            completion,
+                        } = status
+                            && let SequenceCompletion::Custom {
+                                name,
+                                completed,
+                                ..
+                            } = completion
+                            && name == "size"
+                        {
+                            let scene_original_index =
+                                id.parse::<u64>().expect("Scene index is a number");
+                            let bytes = completed as u64;
+                            let _ = event_tx.send(ParallelEncoderAppEvent::SceneBytes(
+                                scene_original_index,
+                                bytes,
+                            ));
+                        }
+                    },
+                    SequenceStatus::Subprocess {
+                        parent: _,
+                        child,
+                    } => match child {
                         Status::Processing {
                             id,
                             completion:
@@ -115,7 +135,7 @@ impl TuiApp for ParallelEncoderApp {
                             ));
                         },
                         _ => (),
-                    }
+                    },
                 }
             }
             let _ = event_tx.send(ParallelEncoderAppEvent::Quit);
@@ -203,6 +223,21 @@ impl TuiApp for ParallelEncoderApp {
                     });
                     self.active_scenes.remove(&scene);
                 },
+                ParallelEncoderAppEvent::SceneBytes(scene, bytes) => {
+                    self.scenes.entry(scene).and_modify(|(_, scene)| {
+                        scene.processing.parallel_encoder.bytes = Some(bytes);
+                    });
+                    if !stdout_is_terminal {
+                        let event = ParallelEncoderConsoleEvent::SceneSize {
+                            scene_index: scene,
+                            bytes,
+                        };
+                        println!(
+                            "[Parallel Encoder][Scene Size] {}",
+                            serde_json::to_string(&event)?
+                        );
+                    }
+                },
                 ParallelEncoderAppEvent::Quit => {
                     self.restore(terminal)?;
                     break;
@@ -272,23 +307,41 @@ impl TuiApp for ParallelEncoderApp {
         );
         frame.render_widget(active_encoders, layout[1]);
 
+        let completed_scenes = self.scenes.iter().filter(|(_, (_, scene))| {
+            scene.processing.parallel_encoder.bytes.is_some_and(|bytes| bytes > 0)
+        });
+        let (bitrate, estimated_bytes) = self.estimate_size();
         let progress_bar = ProgressBar {
-            color:             MAIN_COLOR,
-            processing_title:  if self.attempted_cancel {
+            color:               MAIN_COLOR,
+            processing_title:    if self.attempted_cancel {
                 "Shutting down after Encoders complete...".to_owned()
             } else {
                 "Encoding Scenes...".to_owned()
             },
-            completed_title:   if self.attempted_cancel {
+            completed_title:     if self.attempted_cancel {
                 "Encoding Aborted".to_owned()
             } else {
                 "Encoding Completed".to_owned()
             },
-            unit_per_second:   "FPS".to_owned(),
-            unit:              "Frame".to_owned(),
-            initial_completed: self.initial_frames,
-            completed:         total_frames_completed,
-            total:             total_frames,
+            top_right_title:     if estimated_bytes > 0 {
+                format!(
+                    "{:.1}kbps est. {:.1} MB",
+                    bitrate / 1e3,
+                    estimated_bytes as f64 / 1e6
+                )
+            } else {
+                String::new()
+            },
+            bottom_center_title: format!(
+                "{}/{} Scenes",
+                completed_scenes.count(),
+                self.scenes.len()
+            ),
+            unit_per_second:     "FPS".to_owned(),
+            unit:                "Frame".to_owned(),
+            initial_completed:   self.initial_frames,
+            completed:           total_frames_completed,
+            total:               total_frames,
         };
         let progress_bar = progress_bar.generate(Some(self.started));
         frame.render_widget(progress_bar, layout[2]);
@@ -314,6 +367,30 @@ impl ParallelEncoderApp {
             attempted_cancel: false,
         }
     }
+
+    pub fn estimate_size(&self) -> (f64, u64) {
+        let total_frames = self.clip_info.num_frames;
+        let (frames_completed, bytes_completed) = self
+            .scenes
+            .iter()
+            .filter(|(_, (_, scene))| scene.processing.parallel_encoder.bytes.is_some())
+            .fold(
+                (0, 0),
+                |(frames_completed, bytes_completed), (_, (_, scene))| {
+                    (
+                        frames_completed + (scene.end_frame - scene.start_frame) as u64,
+                        bytes_completed + scene.processing.parallel_encoder.bytes.unwrap_or(0),
+                    )
+                },
+            );
+        let framerate =
+            *self.clip_info.frame_rate.numer() as f64 / *self.clip_info.frame_rate.denom() as f64;
+        let seconds = frames_completed as f64 / framerate;
+        let total_seconds = total_frames as f64 / framerate;
+        let bitrate = (bytes_completed * 8) as f64 / seconds;
+        let estimated_bytes = ((bitrate * total_seconds) / 8.0) as u64;
+        (bitrate, estimated_bytes)
+    }
 }
 
 enum ParallelEncoderAppEvent {
@@ -328,6 +405,7 @@ enum ParallelEncoderAppEvent {
         total_frames:  u64,
     },
     SceneCompleted(u64),
+    SceneBytes(u64, u64),
 }
 
 #[derive(Debug, Clone)]
@@ -351,6 +429,10 @@ pub enum ParallelEncoderConsoleEvent {
         scene_index: u64,
         /// Must be milliseconds since UNIX Epoch
         time:        u128,
+    },
+    SceneSize {
+        scene_index: u64,
+        bytes:       u64,
     },
 }
 

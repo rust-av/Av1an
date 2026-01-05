@@ -426,4 +426,9 @@ impl VapourSynthFilter {
 
         Ok((import_lines, filter_lines))
     }
+
+    #[inline]
+    pub fn can_alter_time(&self) -> bool {
+        matches!(self, VapourSynthFilter::Trim { .. })
+    }
 }

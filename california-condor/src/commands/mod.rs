@@ -4,9 +4,13 @@ use andean_condor::{
     models::{
         encoder::EncoderBase,
         sequence::{
-            parallel_encode::{DEFAULT_MAX_SCENE_LENGTH_SECONDS, DEFAULT_MIN_SCENE_LENGTH_FRAMES},
             scene_concatenate::ConcatMethod,
-            scene_detect::{SceneDetectionMethod as CoreSCDMethod, ScenecutMethod},
+            scene_detect::{
+                SceneDetectionMethod as CoreSCDMethod,
+                ScenecutMethod,
+                DEFAULT_MAX_SCENE_LENGTH_SECONDS,
+                DEFAULT_MIN_SCENE_LENGTH_FRAMES,
+            },
         },
     },
     vapoursynth::vapoursynth_filters::VapourSynthFilter,
@@ -17,6 +21,7 @@ use strum::{Display as DisplayMacro, EnumString, IntoStaticStr};
 
 use crate::commands::config::ConfigSubcommand;
 
+pub mod benchmarker;
 pub mod config;
 pub mod detect_scenes;
 pub mod init;
@@ -46,12 +51,8 @@ pub enum Commands {
         output:  PathBuf,
         #[arg(long)]
         temp:    Option<PathBuf>,
-        #[arg(long, default_value_t = DecoderMethod::BestSource)]
-        decoder: DecoderMethod,
-        #[arg(long, default_value_t = ConcatMethod::MKVMerge)]
-        concat:  ConcatMethod,
-        #[arg(long, short('w'))]
-        workers: Option<u8>,
+        #[arg(long)]
+        vs_args: Option<Vec<String>>,
     },
     /// Configuration management
     Config {
@@ -60,6 +61,14 @@ pub enum Commands {
     },
     /// Detect scenes (Triggers TUI)
     DetectScenes {
+        #[arg(long, short('i'))]
+        input:             Option<PathBuf>,
+        #[arg(long)]
+        decoder:           Option<DecoderMethod>,
+        #[arg(long)]
+        filters:           Option<Vec<VapourSynthFilter>>,
+        #[arg(long)]
+        vs_args:           Option<Vec<String>>,
         #[arg(long)]
         method:            Option<SceneDetectionMethod>,
         #[arg(long)]
@@ -67,11 +76,26 @@ pub enum Commands {
         #[arg(long)]
         max_scene_seconds: Option<usize>,
     },
-    /// Benchmark the optimum amount of workers
+    /// Benchmark the optimum amount of workers (Triggers TUI)
     Benchmark {
-        /// The minimum speed increase (in percent) required to add a worker.
-        /// Defaults to 5%.
         #[arg(long)]
+        temp:       Option<PathBuf>,
+        #[arg(long, short('i'))]
+        input:      Option<PathBuf>,
+        #[arg(long)]
+        decoder:    Option<DecoderMethod>,
+        #[arg(long)]
+        filters:    Option<Vec<VapourSynthFilter>>,
+        #[arg(long)]
+        vs_args:    Option<Vec<String>>,
+        encoder:    Option<EncoderBase>,
+        #[arg(long)]
+        passes:     Option<u8>,
+        #[arg(long, allow_hyphen_values = true)]
+        params:     Option<String>,
+        /// The minimum speed increase (in percent) required to add an
+        /// additional worker. Defaults to 5%.
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
         threshold:  Option<u8>,
         /// The maximum amount of RAM (in megabytes) allowed across all workers
         #[arg(long)]
@@ -80,29 +104,36 @@ pub enum Commands {
     /// Start encoding (Triggers TUI)
     Start {
         #[arg(long)]
-        temp:           Option<PathBuf>,
-        #[arg(long)]
-        input:          Option<PathBuf>,
+        temp:         Option<PathBuf>,
         #[arg(long, short('i'))]
-        decoder:        Option<DecoderMethod>,
+        input:        Option<PathBuf>,
         #[arg(long)]
-        filters:        Option<Vec<VapourSynthFilter>>,
+        scd_input:    Option<PathBuf>,
+        #[arg(long)]
+        decoder:      Option<DecoderMethod>,
+        #[arg(long)]
+        filters:      Option<Vec<VapourSynthFilter>>,
+        #[arg(long)]
+        scd_filters:  Option<Vec<VapourSynthFilter>>,
+        #[arg(long)]
+        vs_args:      Option<Vec<String>>,
+        #[arg(long)]
+        scd_vs_args:  Option<Vec<String>>,
         #[arg(long, short('o'))]
-        output:         Option<PathBuf>,
+        output:       Option<PathBuf>,
         #[arg(long)]
-        concat:         Option<ConcatMethod>,
+        concat:       Option<ConcatMethod>,
+        /// The amount of encoder processes to use at once
         #[arg(long, short('w'))]
-        workers:        Option<u8>,
+        workers:      Option<u8>,
         #[arg(long, short('e'))]
-        encoder:        Option<EncoderBase>,
+        encoder:      Option<EncoderBase>,
         #[arg(long)]
-        passes:         Option<u8>,
+        passes:       Option<u8>,
         #[arg(long, allow_hyphen_values = true)]
-        params:         Option<String>,
+        params:       Option<String>,
         #[arg(long)]
-        photon_noise:   Option<u32>,
-        #[arg(long)]
-        skip_benchmark: bool,
+        photon_noise: Option<u32>,
     },
     /// Clean temporary files
     Clean {

@@ -185,18 +185,20 @@ impl TuiApp for SceneDetectionApp {
         frame.render_widget(input_info, layout[0]);
 
         let progress_bar = ProgressBar {
-            color:             MAIN_COLOR,
-            processing_title:  if self.attempted_cancel {
+            color:               MAIN_COLOR,
+            processing_title:    if self.attempted_cancel {
                 "Waiting for Scene Detection to Finish...".to_owned()
             } else {
                 "Detecting Scenes...".to_owned()
             },
-            completed_title:   "Scene Detection Completed".to_owned(),
-            unit_per_second:   "FPS".to_owned(),
-            unit:              "Frame".to_owned(),
-            initial_completed: self.initial_frames,
-            completed:         self.frames_processed,
-            total:             self.total_frames,
+            completed_title:     "Scene Detection Completed".to_owned(),
+            top_right_title:     format!("{} found", self.scenes.len()),
+            bottom_center_title: String::new(),
+            unit_per_second:     "FPS".to_owned(),
+            unit:                "Frame".to_owned(),
+            initial_completed:   self.initial_frames,
+            completed:           self.frames_processed,
+            total:               self.total_frames,
         };
         let progress_bar = progress_bar.generate(Some(self.started));
         frame.render_widget(progress_bar, layout[2]);
