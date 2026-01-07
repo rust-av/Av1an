@@ -222,7 +222,7 @@ impl Av1anContext {
             };
             // Getting the details will evaluate the script and produce the VapourSynth
             // cache file
-            decoder.get_video_details();
+            let _ = decoder.get_video_details();
 
             Ok::<PathBuf, anyhow::Error>(script_path)
         };

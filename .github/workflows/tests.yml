@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - tq-tests
   pull_request:
     branches:
       - master

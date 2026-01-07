@@ -1,6 +1,6 @@
 [package]
 name = "av1an"
-version = "0.5.1"
+version = "0.5.2"
 rust-version = "1.88"
 edition = "2021"
 description = """
@@ -38,7 +38,7 @@ default = []
 
 [dev-dependencies]
 assert_cmd = "2.1.1"
-serial_test = "3.0"
+serial_test = "3.3"
 tempfile = { workspace = true }
 
 [lints.clippy]

@@ -1,0 +1,67 @@
+name: Build Av1an (Windows x64)
+on:
+  push:
+    branches:
+      - 'condor'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    env:
+      CARGO_INCREMENTAL: 0
+      vsynth_ver: "R73"
+      vsynth_path: "C:/Program Files/Vapoursynth"
+      FFMS_LIB_DIR: ${{github.workspace}}\ffms2-5.0-msvc\x64
+      FFMS_INCLUDE_DIR: ${{github.workspace}}\ffms2-5.0-msvc\include
+
+    steps:
+      - name: NASM setup
+        uses: ilammy/setup-nasm@v1
+        with:
+          # version: 2.16.03
+          from-source: false
+
+      - name: VapourSynth installation
+        run: |
+          $tempFile = New-TemporaryFile
+          $uri = 'https://github.com/vapoursynth/vapoursynth/releases/download/VER/VapourSynth64-Portable-VER.zip'.Replace('VER', "$env:vsynth_ver")
+          Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
+          Expand-Archive "$tempFile" "$env:vsynth_path"
+
+      - name: Download and extract deps
+        run: |
+          curl -L -o ffms2.7z "https://github.com/FFMS/ffms2/releases/download/5.0/ffms2-5.0-msvc.7z"
+          7z x ffms2.7z
+
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Get latest commit
+        id: get_commit
+        shell: pwsh
+        run: |
+          $commit = git log -1 --pretty=format:"%h: %s (%an)"
+          echo "message=$commit" >> $env:GITHUB_OUTPUT
+
+      - name: Condor build
+        if: github.ref == 'refs/heads/condor'
+        run: cargo build --release --bin condor
+
+      - name: Create or update prerelease for Condor
+        if: github.ref == 'refs/heads/condor'
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          tag_name: latest-condor
+          body: |
+            Latest build from ${{ github.sha }}
+
+            Commit:
+            ${{ steps.get_commit.outputs.message }}
+          files: target/release/condor.exe
+          fail_on_unmatched_files: true
