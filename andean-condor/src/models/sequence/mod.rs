@@ -2,17 +2,23 @@ use anyhow::{Ok, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::models::sequence::{
-    parallel_encode::{ParallelEncodeData, ParallelEncodeDataHandler},
+    parallel_encoder::{
+        ParallelEncoderConfig,
+        ParallelEncoderConfigHandler,
+        ParallelEncoderData,
+        ParallelEncoderDataHandler,
+    },
     quality_check::{QualityCheckData, QualityCheckDataHandler},
-    scene_concatenate::SceneConcatenateConfig,
-    scene_detect::{SceneDetectConfig, SceneDetectData, SceneDetectDataHandler},
+    scene_concatenator::{SceneConcatenatorConfig, SceneConcatenatorConfigHandler},
+    scene_detector::{SceneDetectorConfig, SceneDetectorData, SceneDetectorDataHandler},
     target_quality::{TargetQualityConfig, TargetQualityData, TargetQualityDataHandler},
 };
 
-pub mod parallel_encode;
+pub mod benchmarker;
+pub mod parallel_encoder;
 pub mod quality_check;
-pub mod scene_concatenate;
-pub mod scene_detect;
+pub mod scene_concatenator;
+pub mod scene_detector;
 pub mod target_quality;
 
 pub trait Sequence: Default {}
@@ -24,20 +30,22 @@ pub trait SequenceConfigHandler: Default + Clone + Serialize {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultSequenceConfig
 where
-    Self: SequenceConfigHandler,
+    Self: SequenceConfigHandler + ParallelEncoderConfigHandler + SceneConcatenatorConfigHandler,
 {
-    pub scene_detection:     SceneDetectConfig,
-    pub target_quality:      Option<TargetQualityConfig>,
-    pub scene_concatenation: SceneConcatenateConfig,
+    pub scene_detector:     SceneDetectorConfig,
+    pub target_quality:     Option<TargetQualityConfig>,
+    pub parallel_encoder:   ParallelEncoderConfig,
+    pub scene_concatenator: SceneConcatenatorConfig,
 }
 
 impl Default for DefaultSequenceConfig {
     #[inline]
     fn default() -> Self {
         Self {
-            scene_detection:     SceneDetectConfig::default(),
-            target_quality:      None,
-            scene_concatenation: SceneConcatenateConfig::default(),
+            scene_detector:     SceneDetectorConfig::default(),
+            target_quality:     None,
+            parallel_encoder:   ParallelEncoderConfig::default(),
+            scene_concatenator: SceneConcatenatorConfig::default(),
         }
     }
 }
@@ -45,33 +53,57 @@ impl Default for DefaultSequenceConfig {
 impl SequenceConfigHandler for DefaultSequenceConfig {
 }
 
+impl ParallelEncoderConfigHandler for DefaultSequenceConfig {
+    #[inline]
+    fn parallel_encoder(&self) -> Result<&ParallelEncoderConfig> {
+        Ok(&self.parallel_encoder)
+    }
+
+    #[inline]
+    fn parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderConfig> {
+        Ok(&mut self.parallel_encoder)
+    }
+}
+
+impl SceneConcatenatorConfigHandler for DefaultSequenceConfig {
+    #[inline]
+    fn scene_concatenator(&self) -> Result<&SceneConcatenatorConfig> {
+        Ok(&self.scene_concatenator)
+    }
+
+    #[inline]
+    fn scene_concatenator_mut(&mut self) -> Result<&mut SceneConcatenatorConfig> {
+        Ok(&mut self.scene_concatenator)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultSequenceData
 where
     Self: SequenceDataHandler
-        + SceneDetectDataHandler
+        + SceneDetectorDataHandler
         + TargetQualityDataHandler
-        + ParallelEncodeDataHandler
+        + ParallelEncoderDataHandler
         // + SceneConcatenateDataHandler
         + QualityCheckDataHandler,
 {
-    pub scene_detection:  SceneDetectData,
+    pub scene_detection:  SceneDetectorData,
     pub target_quality:   TargetQualityData,
-    pub parallel_encoder: ParallelEncodeData,
+    pub parallel_encoder: ParallelEncoderData,
     pub quality_check:    QualityCheckData,
 }
 
 impl SequenceDataHandler for DefaultSequenceData {
 }
 
-impl SceneDetectDataHandler for DefaultSequenceData {
+impl SceneDetectorDataHandler for DefaultSequenceData {
     #[inline]
-    fn get_scene_detection(&self) -> Result<&SceneDetectData> {
+    fn get_scene_detection(&self) -> Result<&SceneDetectorData> {
         Ok(&self.scene_detection)
     }
 
     #[inline]
-    fn get_scene_detection_mut(&mut self) -> Result<&mut SceneDetectData> {
+    fn get_scene_detection_mut(&mut self) -> Result<&mut SceneDetectorData> {
         Ok(&mut self.scene_detection)
     }
 }
@@ -88,14 +120,14 @@ impl TargetQualityDataHandler for DefaultSequenceData {
     }
 }
 
-impl ParallelEncodeDataHandler for DefaultSequenceData {
+impl ParallelEncoderDataHandler for DefaultSequenceData {
     #[inline]
-    fn get_parallel_encode(&self) -> Result<&ParallelEncodeData> {
+    fn get_parallel_encoder(&self) -> Result<&ParallelEncoderData> {
         Ok(&self.parallel_encoder)
     }
 
     #[inline]
-    fn get_parallel_encode_mut(&mut self) -> Result<&mut ParallelEncodeData> {
+    fn get_parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderData> {
         Ok(&mut self.parallel_encoder)
     }
 }
@@ -116,9 +148,9 @@ impl Default for DefaultSequenceData {
     #[inline]
     fn default() -> Self {
         Self {
-            scene_detection:  SceneDetectData::default(),
+            scene_detection:  SceneDetectorData::default(),
             target_quality:   TargetQualityData::default(),
-            parallel_encoder: ParallelEncodeData::default(),
+            parallel_encoder: ParallelEncoderData::default(),
             quality_check:    QualityCheckData::default(),
         }
     }

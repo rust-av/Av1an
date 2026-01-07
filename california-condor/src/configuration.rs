@@ -16,17 +16,19 @@ use andean_condor::{
         input::{Input as InputModel, VapourSynthImportMethod, VapourSynthScriptSource},
         output::Output as OutputModel,
         sequence::{
-            parallel_encode::{
-                ParallelEncodeConfig,
-                ParallelEncodeData,
-                ParallelEncodeDataHandler,
+            benchmarker::{BenchmarkerConfig, BenchmarkerConfigHandler},
+            parallel_encoder::{
+                ParallelEncoderConfig,
+                ParallelEncoderConfigHandler,
+                ParallelEncoderData,
+                ParallelEncoderDataHandler,
             },
-            scene_concatenate::SceneConcatenateConfig,
-            scene_detect::{
-                SceneDetectConfig,
-                SceneDetectData,
-                SceneDetectDataHandler,
+            scene_concatenator::{SceneConcatenatorConfig, SceneConcatenatorConfigHandler},
+            scene_detector::{
                 SceneDetectionMethod,
+                SceneDetectorConfig,
+                SceneDetectorData,
+                SceneDetectorDataHandler,
                 ScenecutMethod,
                 DEFAULT_MAX_SCENE_LENGTH_SECONDS,
             },
@@ -90,7 +92,7 @@ impl Configuration {
                 encoder:         Encoder::default(),
                 scenes:          Vec::new(),
                 sequence_config: CliSequenceConfig {
-                    scene_detection:     SceneDetectConfig {
+                    scene_detection:     SceneDetectorConfig {
                         input:  None,
                         method: SceneDetectionMethod::AVSceneChange {
                             minimum_length: fps.round() as usize,
@@ -99,13 +101,13 @@ impl Configuration {
                             method:         ScenecutMethod::Standard,
                         },
                     },
-                    parallel_encoder:    ParallelEncodeConfig {
-                        workers:          1,
+                    benchmarker:         BenchmarkerConfig::default(),
+                    parallel_encoder:    ParallelEncoderConfig {
+                        workers:          None,
                         scenes_directory: temp.join("scenes"),
                         input:            None,
-                        encoder:          None,
                     },
-                    scene_concatenation: SceneConcatenateConfig::default(),
+                    scene_concatenation: SceneConcatenatorConfig::default(),
                 },
             },
             input:             input.to_path_buf(),
@@ -279,11 +281,6 @@ impl Configuration {
         decoder: Option<&DecoderMethod>,
         vs_args: Option<&[String]>,
     ) -> Result<InputModel> {
-        let input_is_script = input
-            .extension()
-            .map(|s| s.to_str())
-            .is_some_and(|s| s.is_some_and(|extension| matches!(extension, "vpy" | "py")));
-
         let input_model = match decoder {
             Some(DecoderMethod::FFMS2) => InputModel::Video {
                 path:          input.to_path_buf(),
@@ -343,7 +340,7 @@ impl Configuration {
             .map(|s| s.to_str())
             .is_some_and(|s| s.is_some_and(|extension| matches!(extension, "vpy" | "py")));
         let input_data = if input_is_script {
-            let variables = if let Some(vs_args) = vs_args {
+            let variables = vs_args.map_or_else(HashMap::new, |vs_args| {
                 vs_args
                     .iter()
                     .map(|arg| {
@@ -351,9 +348,7 @@ impl Configuration {
                         (key.to_string(), value.to_string())
                     })
                     .collect()
-            } else {
-                HashMap::new()
-            };
+            });
             InputModel::VapourSynthScript {
                 source: VapourSynthScriptSource::Path(input.to_path_buf()),
                 variables,
@@ -362,12 +357,12 @@ impl Configuration {
         } else {
             InputModel::VapourSynth {
                 path:          input.to_path_buf(),
-                import_method: match decoder {
-                    Some(decoder) => decoder,
-                    None => VapourSynthImportMethod::BestSource {
+                import_method: decoder.map_or(
+                    VapourSynthImportMethod::BestSource {
                         index: None
                     },
-                },
+                    |decoder| decoder,
+                ),
                 cache_path:    None,
             }
         };
@@ -379,11 +374,15 @@ impl Configuration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliSequenceConfig
 where
-    Self: SequenceConfigHandler,
+    Self: SequenceConfigHandler
+        + BenchmarkerConfigHandler
+        + ParallelEncoderConfigHandler
+        + SceneConcatenatorConfigHandler,
 {
-    pub scene_detection:     SceneDetectConfig,
-    pub parallel_encoder:    ParallelEncodeConfig,
-    pub scene_concatenation: SceneConcatenateConfig,
+    pub scene_detection:     SceneDetectorConfig,
+    pub benchmarker:         BenchmarkerConfig,
+    pub parallel_encoder:    ParallelEncoderConfig,
+    pub scene_concatenation: SceneConcatenatorConfig,
     // pub target_quality:  Option<TargetQualityConfig>,
 }
 
@@ -391,9 +390,10 @@ impl Default for CliSequenceConfig {
     #[inline]
     fn default() -> Self {
         Self {
-            scene_detection:     SceneDetectConfig::default(),
-            parallel_encoder:    ParallelEncodeConfig::default(),
-            scene_concatenation: SceneConcatenateConfig::default(),
+            scene_detection:     SceneDetectorConfig::default(),
+            benchmarker:         BenchmarkerConfig::default(),
+            parallel_encoder:    ParallelEncoderConfig::default(),
+            scene_concatenation: SceneConcatenatorConfig::default(),
             // target_quality:  None,
         }
     }
@@ -402,16 +402,46 @@ impl Default for CliSequenceConfig {
 impl SequenceConfigHandler for CliSequenceConfig {
 }
 
+impl BenchmarkerConfigHandler for CliSequenceConfig {
+    fn benchmarker(&self) -> Result<&BenchmarkerConfig> {
+        Ok(&self.benchmarker)
+    }
+
+    fn benchmarker_mut(&mut self) -> Result<&mut BenchmarkerConfig> {
+        Ok(&mut self.benchmarker)
+    }
+}
+
+impl ParallelEncoderConfigHandler for CliSequenceConfig {
+    fn parallel_encoder(&self) -> Result<&ParallelEncoderConfig> {
+        Ok(&self.parallel_encoder)
+    }
+
+    fn parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderConfig> {
+        Ok(&mut self.parallel_encoder)
+    }
+}
+
+impl SceneConcatenatorConfigHandler for CliSequenceConfig {
+    fn scene_concatenator(&self) -> Result<&SceneConcatenatorConfig> {
+        Ok(&self.scene_concatenation)
+    }
+
+    fn scene_concatenator_mut(&mut self) -> Result<&mut SceneConcatenatorConfig> {
+        Ok(&mut self.scene_concatenation)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliSequenceData
 where
-    Self: SequenceDataHandler + SceneDetectDataHandler + ParallelEncodeDataHandler, /* 
-                                                                                     * + TargetQualityDataHandler
-                                                                                     * + QualityCheckDataHandler, */
+    Self: SequenceDataHandler + SceneDetectorDataHandler + ParallelEncoderDataHandler, /* 
+                                                                                        * + TargetQualityDataHandler
+                                                                                        * + QualityCheckDataHandler, */
 {
-    pub scene_detection:  SceneDetectData,
-    pub parallel_encoder: ParallelEncodeData, /* pub target_quality:  TargetQualityData,
-                                               * pub quality_check:   QualityCheckData, */
+    pub scene_detection:  SceneDetectorData,
+    pub parallel_encoder: ParallelEncoderData, /* pub target_quality:  TargetQualityData,
+                                                * pub quality_check:   QualityCheckData, */
 }
 
 impl SequenceDataHandler for CliSequenceData {
@@ -421,32 +451,32 @@ impl Default for CliSequenceData {
     #[inline]
     fn default() -> Self {
         Self {
-            scene_detection:  SceneDetectData::default(),
-            parallel_encoder: ParallelEncodeData::default(),
+            scene_detection:  SceneDetectorData::default(),
+            parallel_encoder: ParallelEncoderData::default(),
             // target_quality:  TargetQualityData::default(),
             // quality_check:   QualityCheckData::default(),
         }
     }
 }
 
-impl SceneDetectDataHandler for CliSequenceData {
+impl SceneDetectorDataHandler for CliSequenceData {
     #[inline]
-    fn get_scene_detection(&self) -> Result<&SceneDetectData> {
+    fn get_scene_detection(&self) -> Result<&SceneDetectorData> {
         Ok(&self.scene_detection)
     }
 
     #[inline]
-    fn get_scene_detection_mut(&mut self) -> Result<&mut SceneDetectData> {
+    fn get_scene_detection_mut(&mut self) -> Result<&mut SceneDetectorData> {
         Ok(&mut self.scene_detection)
     }
 }
 
-impl ParallelEncodeDataHandler for CliSequenceData {
-    fn get_parallel_encode(&self) -> Result<&ParallelEncodeData> {
+impl ParallelEncoderDataHandler for CliSequenceData {
+    fn get_parallel_encoder(&self) -> Result<&ParallelEncoderData> {
         Ok(&self.parallel_encoder)
     }
 
-    fn get_parallel_encode_mut(&mut self) -> Result<&mut ParallelEncodeData> {
+    fn get_parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderData> {
         Ok(&mut self.parallel_encoder)
     }
 }

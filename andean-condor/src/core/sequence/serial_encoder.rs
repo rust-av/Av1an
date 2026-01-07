@@ -20,7 +20,7 @@ use crate::{
     models::{
         encoder::Encoder,
         sequence::{
-            scene_detect::SceneDetectDataHandler,
+            scene_detector::SceneDetectorDataHandler,
             SequenceConfigHandler,
             SequenceDataHandler,
         },
@@ -41,7 +41,7 @@ pub struct SerialEncoder {
 
 impl<DataHandler, ConfigHandler> Sequence<DataHandler, ConfigHandler> for SerialEncoder
 where
-    DataHandler: SequenceDataHandler + SceneDetectDataHandler,
+    DataHandler: SequenceDataHandler + SceneDetectorDataHandler,
     ConfigHandler: SequenceConfigHandler,
 {
     #[inline]
@@ -219,6 +219,8 @@ where
 }
 
 impl SerialEncoder {
+    pub const DETAILS: SequenceDetails = DETAILS;
+
     #[inline]
     pub fn new(scenes_directory: &Path) -> Self {
         SerialEncoder {

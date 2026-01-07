@@ -11,7 +11,7 @@ pub static DEFAULT_MAX_SCENE_LENGTH_SECONDS: u8 = 10;
 pub static DEFAULT_MIN_SCENE_LENGTH_FRAMES: u8 = 24;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SceneDetectData
+pub struct SceneDetectorData
 where
     Self: Default,
 {
@@ -19,7 +19,7 @@ where
     pub created_on:      SystemTime,
 }
 
-impl Default for SceneDetectData {
+impl Default for SceneDetectorData {
     #[inline]
     fn default() -> Self {
         Self {
@@ -29,13 +29,13 @@ impl Default for SceneDetectData {
     }
 }
 
-pub trait SceneDetectDataHandler {
-    fn get_scene_detection(&self) -> Result<&SceneDetectData>;
-    fn get_scene_detection_mut(&mut self) -> Result<&mut SceneDetectData>;
+pub trait SceneDetectorDataHandler {
+    fn get_scene_detection(&self) -> Result<&SceneDetectorData>;
+    fn get_scene_detection_mut(&mut self) -> Result<&mut SceneDetectorData>;
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SceneDetectConfig
+pub struct SceneDetectorConfig
 where
     Self: SequenceConfigHandler,
 {
@@ -43,7 +43,7 @@ where
     pub input:  Option<InputModel>,
 }
 
-impl SequenceConfigHandler for SceneDetectConfig {
+impl SequenceConfigHandler for SceneDetectorConfig {
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]

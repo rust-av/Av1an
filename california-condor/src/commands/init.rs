@@ -2,7 +2,7 @@ use std::path::Path;
 
 use andean_condor::models::{
     input::{Input as InputModel, VapourSynthImportMethod},
-    sequence::scene_concatenate::ConcatMethod,
+    sequence::scene_concatenator::ConcatMethod,
 };
 use anyhow::{bail, Result};
 use tracing::{error, info};

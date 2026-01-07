@@ -22,7 +22,12 @@ use crate::{
     },
     configuration::Configuration,
     logging::init_logging,
-    tui::{run_parallel_encoder_tui, run_scene_concatenator_tui, run_scene_detector_tui},
+    tui::{
+        run_benchmarker_tui,
+        run_parallel_encoder_tui,
+        run_scene_concatenator_tui,
+        run_scene_detector_tui,
+    },
 };
 
 mod apps;
@@ -123,7 +128,7 @@ fn run() -> anyhow::Result<()> {
                 max_memory,
             )?;
 
-            // run_benchmarker_tui(&configuration, &save_file)?;
+            run_benchmark_tui(&configuration, &save_file)?;
         },
         Commands::Start {
             temp,
@@ -193,7 +198,6 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
         }))?;
 
     let cancellation_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let scenes_directory = &configuration.temp.join("scenes");
 
     let cancelled = || {
         if cancellation_token.load(std::sync::atomic::Ordering::Relaxed) {
@@ -213,17 +217,14 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
         return Ok(());
     }
 
-    // run_benchmarker_tui(
-    //     &mut condor,
-    //     std::sync::Arc::clone(&cancelled),
-    // )?;
-    // if cancelled() {
-    //     return Ok(());
-    // }
+    run_benchmarker_tui(&mut condor, std::sync::Arc::clone(&cancellation_token))?;
+    if cancelled() {
+        return Ok(());
+    }
 
     // run_grain_analyzer_tui(
     //     &mut condor,
-    //     std::sync::Arc::clone(&cancelled),
+    //     std::sync::Arc::clone(&cancellation_token),
     // )?;
     // if cancelled() {
     //     return Ok(());
@@ -231,7 +232,7 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
 
     // run_target_quality_tui(
     //     &mut condor,
-    //     std::sync::Arc::clone(&cancelled),
+    //     std::sync::Arc::clone(&cancellation_token),
     // )?;
     // if cancelled() {
     //     return Ok(());
@@ -240,7 +241,7 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
     run_parallel_encoder_tui(
         &mut condor,
         &configuration.input_filters,
-        scenes_directory,
+        // scenes_directory,
         std::sync::Arc::clone(&cancellation_token),
     )?;
     if cancelled() {
@@ -250,17 +251,13 @@ pub fn run_condor_tui(configuration: &Configuration, save_file: &Path) -> Result
     // run_quality_normalizer_tui(
     //     &mut condor,
     //     scenes_directory,
-    //     std::sync::Arc::clone(&cancelled),
+    //     std::sync::Arc::clone(&cancellation_token),
     // )?;
     // if cancelled() {
     //     return Ok(());
     // }
 
-    run_scene_concatenator_tui(
-        &mut condor,
-        scenes_directory,
-        std::sync::Arc::clone(&cancellation_token),
-    )?;
+    run_scene_concatenator_tui(&mut condor, std::sync::Arc::clone(&cancellation_token))?;
     if cancelled() {
         return Ok(());
     }
@@ -305,6 +302,32 @@ pub fn run_scene_detection_tui(configuration: &Configuration, save_file: &Path) 
         &mut condor,
         &configuration.input_filters,
         &configuration.scd_input_filters,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )?;
+
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+pub fn run_benchmark_tui(configuration: &Configuration, save_file: &Path) -> Result<()> {
+    let config_copy = configuration.clone();
+    let save_file_copy = save_file.to_path_buf();
+    debug!("Instantiating Condor with {:?}", {
+        // Remove scenes to reduce log spam
+        let mut config = configuration.clone();
+        config.condor.scenes = Vec::new();
+        config
+    });
+    let mut condor: Condor<configuration::CliSequenceData, configuration::CliSequenceConfig> =
+        configuration.instantiate_condor(Box::new(move |data| {
+            let mut config = config_copy.clone();
+            config.condor = data;
+            Configuration::save(&config, &save_file_copy)?;
+            Ok(())
+        }))?;
+
+    run_benchmarker_tui(
+        &mut condor,
         std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )?;
 

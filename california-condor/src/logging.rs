@@ -56,15 +56,7 @@ pub fn init_logging(
     });
 
     // Configure core module
-    module_configs.insert("av1an_core", ModuleConfig {
-        console_level,
-        file_level,
-        console_enabled: true,
-        file_enabled: true,
-    });
-
-    // Configure scene detection module
-    module_configs.insert("av1an_core::scene_detect", ModuleConfig {
+    module_configs.insert("andean_condor", ModuleConfig {
         console_level,
         file_level,
         console_enabled: true,

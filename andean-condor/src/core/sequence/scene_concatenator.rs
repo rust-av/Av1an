@@ -21,7 +21,7 @@ use crate::{
         Condor,
     },
     models::sequence::{
-        scene_concatenate::ConcatMethod,
+        scene_concatenator::{ConcatMethod, SceneConcatenatorConfigHandler},
         SequenceConfigHandler,
         SequenceDataHandler,
     },
@@ -33,15 +33,13 @@ static DETAILS: SequenceDetails = SequenceDetails {
     version:     "0.0.1",
 };
 
-pub struct SceneConcatenator {
-    pub method:           ConcatMethod,
-    pub scenes_directory: PathBuf,
-}
+#[derive(Default)]
+pub struct SceneConcatenator {}
 
 impl<DataHandler, ConfigHandler> Sequence<DataHandler, ConfigHandler> for SceneConcatenator
 where
     DataHandler: SequenceDataHandler,
-    ConfigHandler: SequenceConfigHandler,
+    ConfigHandler: SequenceConfigHandler + SceneConcatenatorConfigHandler,
 {
     #[inline]
     fn details(&self) -> SequenceDetails {
@@ -53,7 +51,8 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
     ) -> Result<((), Vec<Box<dyn Error>>)> {
-        match self.method {
+        let method = condor.sequence_config.scene_concatenator()?.method;
+        match method {
             ConcatMethod::MKVMerge => {
                 if which::which("mkvmerge").is_err() {
                     bail!(SceneConcatenatorError::MKVMergeNotInstalled);
@@ -78,19 +77,20 @@ where
     ) -> Result<((), Vec<Box<dyn Error>>)> {
         let mut warnings: Vec<Box<dyn Error>> = vec![];
 
-        if !self.scenes_directory.exists() {
+        let scenes_directory = &condor.sequence_config.scene_concatenator()?.scenes_directory;
+        if !scenes_directory.exists() {
             bail!(SceneConcatenatorError::ScenesDirectoryMissing {
-                path: self.scenes_directory.clone(),
+                path: scenes_directory.clone(),
             });
         }
-        if !self.scenes_directory.is_dir() {
+        if !scenes_directory.is_dir() {
             bail!(SceneConcatenatorError::ScenesDirectoryInvalid {
-                path: self.scenes_directory.clone(),
+                path: scenes_directory.clone(),
             });
         }
-
-        if !self.scratch_directory().exists() {
-            std::fs::create_dir_all(self.scratch_directory())?;
+        let scratch_directory = Self::scratch_directory(scenes_directory.as_path());
+        if !scratch_directory.exists() {
+            std::fs::create_dir_all(scratch_directory)?;
         }
 
         let scene_files = condor
@@ -98,7 +98,7 @@ where
             .iter()
             .enumerate()
             .map(|(index, scene)| {
-                let path = self.scenes_directory.join(format!(
+                let path = scenes_directory.join(format!(
                     "{}.{}",
                     ParallelEncoder::scene_id(index),
                     scene.encoder.output_extension()
@@ -142,12 +142,13 @@ where
                 } => None, // May be invalid/Optional in the future
             }
         };
+        let config = condor.sequence_config.scene_concatenator()?;
         let scenes = condor
             .scenes
             .iter()
             .enumerate()
             .map(|(index, scene)| {
-                let path = self.scenes_directory.join(format!(
+                let path = config.scenes_directory.join(format!(
                     "{}.{}",
                     ParallelEncoder::scene_id(index),
                     scene.encoder.output_extension()
@@ -161,11 +162,19 @@ where
 
         let scene_paths = scenes.iter().map(|(_, path, _)| path.clone()).collect::<Vec<_>>();
 
-        match self.method {
+        match config.method {
             ConcatMethod::MKVMerge => {
-                self.mkvmerge(&condor.output.path, &scene_paths, input_path, framerate)?;
+                Self::mkvmerge(
+                    &config.scenes_directory,
+                    &condor.output.path,
+                    &scene_paths,
+                    input_path,
+                    framerate,
+                )?;
             },
-            ConcatMethod::FFmpeg => self.ffmpeg(&condor.output.path, &scene_paths)?,
+            ConcatMethod::FFmpeg => {
+                Self::ffmpeg(&config.scenes_directory, &condor.output.path, &scene_paths)?;
+            },
             ConcatMethod::Ivf => todo!(),
         };
 
@@ -175,17 +184,10 @@ where
 
 impl SceneConcatenator {
     pub const DETAILS: SequenceDetails = DETAILS;
-    #[inline]
-    pub fn new(scenes_directory: &Path, method: ConcatMethod) -> Self {
-        Self {
-            scenes_directory: scenes_directory.to_path_buf(),
-            method,
-        }
-    }
 
     #[inline]
     pub fn mkvmerge(
-        &self,
+        scenes_directory: &Path,
         output: &Path,
         scene_paths: &[PathBuf],
         input: Option<&Path>,
@@ -212,7 +214,7 @@ impl SceneConcatenator {
             p.as_ref().display().to_string()
         }
 
-        let scratch_directory = self.scratch_directory();
+        let scratch_directory = Self::scratch_directory(scenes_directory);
         let fixed_output = fix_path(output);
         let fixed_input = input.map(fix_path);
 
@@ -235,7 +237,7 @@ impl SceneConcatenator {
             group_options.write_to_disk(&group_options_path)?;
 
             let mut group_cmd = Command::new("mkvmerge");
-            group_cmd.current_dir(&self.scenes_directory);
+            group_cmd.current_dir(scenes_directory);
             group_cmd.arg(format!("@./Scene Concatenator/{group_index:05}.json"));
 
             let group_out =
@@ -277,8 +279,8 @@ impl SceneConcatenator {
     }
 
     #[inline]
-    pub fn ffmpeg(&self, output: &Path, scene_paths: &[PathBuf]) -> Result<()> {
-        let scratch_directory = self.scenes_directory.join("Scene Concatenator");
+    pub fn ffmpeg(scenes_directory: &Path, output: &Path, scene_paths: &[PathBuf]) -> Result<()> {
+        let scratch_directory = scenes_directory.join("Scene Concatenator");
         let concat_file_path = scratch_directory.join("concat.txt");
         let concat_file = {
             let mut contents = String::with_capacity(24 * scene_paths.len());
@@ -324,8 +326,8 @@ impl SceneConcatenator {
         Ok(())
     }
 
-    pub(crate) fn scratch_directory(&self) -> PathBuf {
-        self.scenes_directory.join("Scene Concatenator")
+    pub(crate) fn scratch_directory(scenes_directory: &Path) -> PathBuf {
+        scenes_directory.join("Scene Concatenator")
     }
 }
 

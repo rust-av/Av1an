@@ -4,8 +4,8 @@ use andean_condor::{
     models::{
         encoder::EncoderBase,
         sequence::{
-            scene_concatenate::ConcatMethod,
-            scene_detect::{
+            scene_concatenator::ConcatMethod,
+            scene_detector::{
                 SceneDetectionMethod as CoreSCDMethod,
                 ScenecutMethod,
                 DEFAULT_MAX_SCENE_LENGTH_SECONDS,

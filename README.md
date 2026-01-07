@@ -206,16 +206,17 @@ Some of the unplanned features may no longer be necessary or desired in Condor, 
 Below are all the features Condor currently has over Av1an:
 
 * VapourSynth Plugins - Several core plugins and features of VapourSynth are available in Andean Condor.
-* Modify VapoourSynth Inputs with VapourSynth Plugins like Trim, Crop, Bicubic, etc.
+* Modify VapourSynth Inputs with VapourSynth Plugins like Trim, Crop, Bicubic, etc.
 * VapourSynth Script Builder - Programmatically build a VapourSynth script text. Also adds support for Plugins and libraries written exclusively for Python such as RescaleBuilder and vs-jetpack.
 * Decoding VapourSynth and FFMS2 without external binaries. Input can decode and stream a YUV4MPEG2 video. This makes the decoding simpler, robust, and less resource-intensive.
 * Adds FFmpeg and VVenC as Encoder alternatives.
 * Specify custom encoder executables by providing a path.
 * Encoder parameters are stored as a HashMap of CLIParameters. A generic parser is also provided.
-* Encode a specific pass if desired.
+* Ability to encode a specific pass.
 * Photon Noise: Besides ISO, chroma, width, and height, users can also specify a chroma ISO, and AR coefficients for luma, Cb, and Cr. This allows users to apply a custom noise table.
 * Sequence, a core component of Andean Condor that provides an extensible module for working with Condor.
-* No requiremennt to use any of the built-in Sequences. Make and use custom Sequences for unique workflows.
+* No requirement to use any of the built-in Sequences. Make and use custom Sequences for unique workflows.
+* Benchmarker Sequence to determine the optimal amount of workers for the Parallel Encoder Sequence.
 * Better process cancellation for graceful shutdown.
 * Progress feedback delivered via multi-producer-single-consumer channels.
 * TUI - California Condor provides a TUI during scene detection and encoding.

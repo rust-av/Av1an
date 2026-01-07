@@ -11,6 +11,7 @@ use crate::{
     models::sequence::{SequenceConfigHandler, SequenceDataHandler},
 };
 
+pub mod benchmarker;
 pub mod parallel_encoder;
 pub mod quality_check;
 pub mod scene_concatenator;

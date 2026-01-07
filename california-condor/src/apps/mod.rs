@@ -16,6 +16,7 @@ use ratatui::{
     Terminal,
 };
 
+pub mod benchmarker;
 pub mod parallel_encoder;
 pub mod scene_detection;
 
@@ -50,8 +51,9 @@ pub trait TuiApp: Send + Sync + 'static {
             };
             let _ = execute!(writer, LeaveAlternateScreen);
             let _ = execute!(writer, crossterm::cursor::Show);
-            let handler = std::panic::take_hook();
-            handler(panic_info);
+            println!("{:?}", panic_info);
+            // let handler = std::panic::take_hook();
+            // handler(panic_info);
         }));
 
         let backend = CrosstermBackend::new(writer);

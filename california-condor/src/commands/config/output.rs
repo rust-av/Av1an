@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use andean_condor::models::sequence::scene_concatenate::ConcatMethod;
+use andean_condor::models::sequence::scene_concatenator::ConcatMethod;
 use clap::Subcommand;
 
 #[derive(Subcommand)]

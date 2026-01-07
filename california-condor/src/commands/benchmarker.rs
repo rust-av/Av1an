@@ -210,8 +210,10 @@ pub fn benchmarker_handler(
         let parameters = EncoderParamsParser::parse_string(&params);
         configuration.condor.encoder.parameters_mut().extend(parameters);
     }
-    // configuration.condor.sequence_config.benchmarker.threshold = threshold;
-    // configuration.condor.sequence_config.benchmarker.max_memory = max_memory;
+    if let Some(threshold) = threshold {
+        configuration.condor.sequence_config.benchmarker.threshold = threshold;
+    }
+    configuration.condor.sequence_config.benchmarker.max_memory = max_memory;
 
     if !config_already_existed {
         debug!("Saving new Configuration to {}", config_path.display());

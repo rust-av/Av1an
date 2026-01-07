@@ -9,7 +9,7 @@ use andean_condor::{
             VapourSynthImportMethod,
             VapourSynthScriptSource,
         },
-        sequence::scene_concatenate::ConcatMethod,
+        sequence::scene_concatenator::ConcatMethod,
     },
     vapoursynth::vapoursynth_filters::VapourSynthFilter,
 };
@@ -175,7 +175,7 @@ pub fn start_handler(
         configuration.condor.sequence_config.scene_concatenation.method = *concat;
     }
     if let Some(workers) = workers {
-        configuration.condor.sequence_config.parallel_encoder.workers = workers;
+        configuration.condor.sequence_config.parallel_encoder.workers = Some(workers);
     }
     if let Some(encoder) = encoder {
         let options = encoder.default_parameters();

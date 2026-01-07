@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
     io::{IsTerminal, Write},
-    path::Path,
     sync::{atomic::AtomicBool, Arc},
     thread,
     time::{Duration, Instant},
@@ -10,6 +9,7 @@ use std::{
 use andean_condor::{
     core::{
         sequence::{
+            benchmarker::Benchmarker,
             parallel_encoder::ParallelEncoder,
             scene_concatenator::SceneConcatenator,
             scene_detector::SceneDetector,
@@ -24,7 +24,12 @@ use thiserror::Error as ThisError;
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    apps::{parallel_encoder::ParallelEncoderApp, scene_detection::SceneDetectionApp, TuiApp},
+    apps::{
+        benchmarker::BenchmarkerApp,
+        parallel_encoder::ParallelEncoderApp,
+        scene_detection::SceneDetectionApp,
+        TuiApp,
+    },
     configuration::{CliSequenceConfig, CliSequenceData, Configuration},
 };
 
@@ -175,10 +180,51 @@ pub fn run_scene_detector_tui(
 }
 
 #[tracing::instrument(skip_all)]
+pub fn run_benchmarker_tui(
+    condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
+    cancelled: Arc<AtomicBool>,
+) -> Result<()> {
+    let mut benchmarker = Benchmarker::default();
+
+    debug!("Validating Benchmarker"); // Input should alrady be validated but just in case
+    let (_, validation_warnings) = benchmarker.validate(condor)?;
+
+    for warning in validation_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Initializing Benchmarker"); // Input should already be indexed but just in case
+    let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
+    let (_, initialization_warnings) = benchmarker.initialize(condor, init_progress_tx)?;
+
+    for warning in initialization_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    debug!("Running Benchmarker");
+    let encoder = condor.encoder.clone();
+    let clip_info = condor.input.clip_info()?;
+
+    let ctrlc_cancelled = Arc::clone(&cancelled);
+    let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+    thread::spawn(move || -> Result<()> {
+        let mut benchmarker_app = BenchmarkerApp::new(encoder, clip_info);
+        benchmarker_app.run(progress_rx, ctrlc_cancelled)?;
+        Ok(())
+    });
+    let (_, processing_warnings) = benchmarker.execute(condor, progress_tx, cancelled)?;
+
+    for warning in processing_warnings.iter() {
+        warn!("{}", warning);
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
 pub fn run_parallel_encoder_tui(
     condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
     input_filters: &[VapourSynthFilter],
-    scenes_directory: &Path,
     cancelled: Arc<AtomicBool>,
 ) -> Result<()> {
     debug!("Instantiating Parallel Encoder Input");
@@ -195,13 +241,8 @@ pub fn run_parallel_encoder_tui(
         (Some(pe_input), clip_info)
     };
 
-    let workers = condor.sequence_config.parallel_encoder.workers;
-    let mut parallel_encoder = ParallelEncoder {
-        input: parallel_encoder_input,
-        encoder: condor.sequence_config.parallel_encoder.encoder.clone(),
-        scenes_directory: scenes_directory.to_path_buf(),
-        workers,
-    };
+    let workers = condor.sequence_config.parallel_encoder.workers.unwrap_or(1);
+    let mut parallel_encoder = ParallelEncoder::new(parallel_encoder_input);
 
     debug!("Validating Parallel Encoder"); // Input should alrady be validated but just in case
     let (_, validation_warnings) = parallel_encoder.validate(condor)?;
@@ -228,7 +269,10 @@ pub fn run_parallel_encoder_tui(
             (
                 index,
                 scene,
-                scenes_directory
+                condor
+                    .sequence_config
+                    .parallel_encoder
+                    .scenes_directory
                     .join(format!(
                         "{}.{}",
                         ParallelEncoder::scene_id(index),
@@ -266,13 +310,9 @@ pub fn run_parallel_encoder_tui(
 
 pub fn run_scene_concatenator_tui(
     condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
-    scenes_directory: &Path,
     cancelled: Arc<AtomicBool>,
 ) -> Result<()> {
-    let mut scene_concatenator = SceneConcatenator::new(
-        scenes_directory,
-        condor.sequence_config.scene_concatenation.method,
-    );
+    let mut scene_concatenator = SceneConcatenator::default();
 
     // Validate - Input should be already validated
     let (_, _validation_warnings) = scene_concatenator.validate(condor)?;

@@ -69,3 +69,7 @@ where
         Ok(((), warnings))
     }
 }
+
+impl QualityCheck {
+    pub const DETAILS: SequenceDetails = DETAILS;
+}

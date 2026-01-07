@@ -699,3 +699,22 @@ pub enum Waifu2xModel {
     #[strum(serialize = "SwimUnetArtScan")]
     SwinUnetArtScan,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_rescale() {
+        let kernel = VSJETKernel::Bilinear {
+            linear:          false,
+            border_handling: BorderHandling::Mirror,
+        };
+
+        println!(
+            "{}(border_handling = BorderHandling.{})",
+            kernel,
+            BorderHandling::Mirror
+        );
+    }
+}

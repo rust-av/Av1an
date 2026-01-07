@@ -79,6 +79,8 @@ where
 }
 
 impl TargetQuality {
+    pub const DETAILS: SequenceDetails = DETAILS;
+
     #[inline]
     pub fn new(encoder: Encoder, input: Option<Input>) -> Self {
         Self {

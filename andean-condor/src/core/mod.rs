@@ -342,8 +342,9 @@ mod tests {
             output::Output as OutputModel,
             scene::Scene,
             sequence::{
-                scene_concatenate::ConcatMethod,
-                scene_detect::SceneDetectConfig,
+                parallel_encoder::ParallelEncoderConfig,
+                scene_concatenator::{ConcatMethod, SceneConcatenatorConfig},
+                scene_detector::SceneDetectorConfig,
                 DefaultSequenceConfig,
                 DefaultSequenceData,
             },
@@ -452,12 +453,10 @@ mod tests {
             Box::new(scd) as Box<dyn Sequence<DefaultSequenceData, DefaultSequenceConfig>>,
             Box::new(TargetQuality::default())
                 as Box<dyn Sequence<DefaultSequenceData, DefaultSequenceConfig>>,
-            Box::new(ParallelEncoder::new(2, &scenes_directory))
+            Box::new(ParallelEncoder::default())
                 as Box<dyn Sequence<DefaultSequenceData, DefaultSequenceConfig>>,
-            Box::new(SceneConcatenator::new(
-                &scenes_directory,
-                ConcatMethod::MKVMerge,
-            )) as Box<dyn Sequence<DefaultSequenceData, DefaultSequenceConfig>>,
+            Box::new(SceneConcatenator::default())
+                as Box<dyn Sequence<DefaultSequenceData, DefaultSequenceConfig>>,
             Box::new(QualityCheck::default())
                 as Box<dyn Sequence<DefaultSequenceData, DefaultSequenceConfig>>,
         ];
@@ -516,9 +515,19 @@ mod tests {
                 Ok(())
             }),
             sequence_config: DefaultSequenceConfig {
-                scene_detection: SceneDetectConfig {
+                scene_detector: SceneDetectorConfig {
                     input:  Some(scd_input_data),
                     method: scd_method,
+                },
+                parallel_encoder: ParallelEncoderConfig {
+                    workers: Some(2),
+                    scenes_directory: scenes_directory.clone(),
+                    ..Default::default()
+                },
+                scene_concatenator: SceneConcatenatorConfig {
+                    method: ConcatMethod::MKVMerge,
+                    scenes_directory,
+                    output: None,
                 },
                 ..Default::default()
             },

@@ -22,9 +22,9 @@ use crate::{
     models::{
         scene::Scene,
         sequence::{
-            scene_detect::{
-                SceneDetectDataHandler,
+            scene_detector::{
                 SceneDetectionMethod,
+                SceneDetectorDataHandler,
                 ScenecutMethod,
                 ScenecutScore,
                 DEFAULT_MAX_SCENE_LENGTH_SECONDS,
@@ -48,7 +48,7 @@ pub struct SceneDetector {
 
 impl<DataHandler, ConfigHandler> Sequence<DataHandler, ConfigHandler> for SceneDetector
 where
-    DataHandler: SequenceDataHandler + SceneDetectDataHandler,
+    DataHandler: SequenceDataHandler + SceneDetectorDataHandler,
     ConfigHandler: SequenceConfigHandler,
 {
     #[inline]
@@ -331,13 +331,12 @@ where
 
 impl SceneDetector {
     pub const DETAILS: SequenceDetails = DETAILS;
+
     #[inline]
     pub fn new(method: SceneDetectionMethod) -> Self {
         Self {
             method,
             input: None,
-            // started_on: None,
-            // completed_on: None,
         }
     }
 
@@ -346,8 +345,6 @@ impl SceneDetector {
         let mut sd = Self {
             method: method.unwrap_or_default(),
             input:  Some(input),
-            // started_on:   None,
-            // completed_on: None,
         };
 
         // Set maximum scene length in frames based on input framerate

@@ -3,7 +3,7 @@ use std::{
     error::Error,
     fs,
     io::Cursor,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         self,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -30,8 +30,8 @@ use crate::{
         encoder::Encoder,
         scene::SubScene,
         sequence::{
-            parallel_encode::ParallelEncodeDataHandler,
-            scene_detect::SceneDetectDataHandler,
+            parallel_encoder::{ParallelEncoderConfigHandler, ParallelEncoderDataHandler},
+            scene_detector::SceneDetectorDataHandler,
             SequenceConfigHandler,
             SequenceDataHandler,
         },
@@ -45,16 +45,13 @@ static DETAILS: SequenceDetails = SequenceDetails {
 };
 
 pub struct ParallelEncoder {
-    pub workers:          u8,
-    pub input:            Option<Input>,
-    pub encoder:          Option<Encoder>,
-    pub scenes_directory: PathBuf,
+    pub input: Option<Input>,
 }
 
 impl<DataHandler, ConfigHandler> Sequence<DataHandler, ConfigHandler> for ParallelEncoder
 where
-    DataHandler: SequenceDataHandler + SceneDetectDataHandler + ParallelEncodeDataHandler,
-    ConfigHandler: SequenceConfigHandler,
+    DataHandler: SequenceDataHandler + SceneDetectorDataHandler + ParallelEncoderDataHandler,
+    ConfigHandler: SequenceConfigHandler + ParallelEncoderConfigHandler,
 {
     #[inline]
     fn details(&self) -> SequenceDetails {
@@ -68,16 +65,13 @@ where
     ) -> Result<((), Vec<Box<dyn Error>>)> {
         let warnings: Vec<Box<dyn Error>> = vec![];
 
-        if self.workers == 0 {
+        if condor.sequence_config.parallel_encoder()?.workers.is_some_and(|w| w == 0) {
             bail!(ParallelEncoderError::NoWorkers);
         }
 
         if let Some(input) = &self.input {
             Input::validate(&input.as_data())?;
         }
-        let encoder = self.encoder.as_ref().map_or(&condor.encoder, |e| e);
-
-        encoder.validate()?;
 
         // Ensure all the scene encoders are validated
         for scene in &condor.scenes {
@@ -120,8 +114,9 @@ where
             }))?;
         }
 
-        if !self.scenes_directory.exists() {
-            std::fs::create_dir_all(&self.scenes_directory)?;
+        let scenes_directory = &condor.sequence_config.parallel_encoder()?.scenes_directory;
+        if scenes_directory.exists() {
+            std::fs::create_dir_all(scenes_directory)?;
         }
 
         // Generate Photon Noise tables
@@ -139,7 +134,7 @@ where
             )?;
 
             if let Some((hashed_name, params)) = params {
-                let output_directory = self.scenes_directory.join(DETAILS.name);
+                let output_directory = scenes_directory.join(DETAILS.name);
                 let output = output_directory.join(format!("{}.tbl", hashed_name));
                 let output_clone = output.clone();
                 if !output.exists() {
@@ -172,6 +167,9 @@ where
         } else {
             &mut condor.input
         };
+        let config = condor.sequence_config.parallel_encoder()?;
+        let workers = config.workers.unwrap_or(1);
+        let scenes_directory = &config.scenes_directory;
         if condor.scenes.is_empty() {
             warnings.push(Box::new(ParallelEncoderError::ScenesEmpty));
             return Ok(((), warnings));
@@ -182,7 +180,7 @@ where
             .iter()
             .enumerate()
             .filter(|(index, scene)| {
-                let output = self.scenes_directory.join(format!(
+                let output = scenes_directory.join(format!(
                     "{}.{}",
                     Self::scene_id(*index),
                     scene.encoder.output_extension()
@@ -197,7 +195,7 @@ where
                 end_frame: scene.end_frame,
                 sub_scenes: scene.sub_scenes.clone(),
                 encoder: scene.encoder.clone(),
-                output: self.scenes_directory.join(format!(
+                output: scenes_directory.join(format!(
                     "{}.{}",
                     Self::scene_id(original_index),
                     scene.encoder.output_extension()
@@ -205,7 +203,7 @@ where
             })
             .collect::<VecDeque<Task>>();
 
-        let encoder_thread = Self::encode_tasks(input, self.workers, tasks, progress_tx, cancelled);
+        let encoder_thread = Self::encode_tasks(input, workers, tasks, progress_tx, cancelled);
 
         match encoder_thread {
             Ok(encoder_results) => {
@@ -213,7 +211,7 @@ where
                     if let Some(scene) = condor.scenes.get_mut(encoder_result.scene)
                         && encoder_result.bytes != 0
                     {
-                        let parallel_encode_data = scene.processing.get_parallel_encode_mut()?;
+                        let parallel_encode_data = scene.processing.get_parallel_encoder_mut()?;
                         parallel_encode_data.bytes = Some(encoder_result.bytes);
                         parallel_encode_data.started_on = Some(
                             encoder_result
@@ -222,7 +220,7 @@ where
                                 .expect("Time is valid")
                                 .as_millis(),
                         );
-                        scene.processing.get_parallel_encode_mut()?.started_on = Some(
+                        scene.processing.get_parallel_encoder_mut()?.started_on = Some(
                             encoder_result
                                 .ended
                                 .duration_since(std::time::UNIX_EPOCH)
@@ -244,23 +242,18 @@ impl Default for ParallelEncoder {
     #[inline]
     fn default() -> Self {
         Self {
-            workers:          1,
-            input:            None,
-            encoder:          None,
-            scenes_directory: PathBuf::new(),
+            input: None
         }
     }
 }
 
 impl ParallelEncoder {
     pub const DETAILS: SequenceDetails = DETAILS;
+
     #[inline]
-    pub fn new(workers: u8, scenes_directory: &Path) -> Self {
+    pub fn new(input: Option<Input>) -> Self {
         ParallelEncoder {
-            workers,
-            input: None,
-            encoder: None,
-            scenes_directory: scenes_directory.to_path_buf(),
+            input,
         }
     }
 
@@ -529,13 +522,13 @@ impl ParallelEncoder {
 
 #[derive(Debug, Clone)]
 pub struct Task {
-    original_index: usize,
-    index:          usize,
-    start_frame:    usize,
-    end_frame:      usize,
-    sub_scenes:     Option<Vec<SubScene>>,
-    encoder:        Encoder,
-    output:         PathBuf,
+    pub original_index: usize,
+    pub index:          usize,
+    pub start_frame:    usize,
+    pub end_frame:      usize,
+    pub sub_scenes:     Option<Vec<SubScene>>,
+    pub encoder:        Encoder,
+    pub output:         PathBuf,
 }
 
 pub struct Semaphore {
