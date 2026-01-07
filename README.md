@@ -1,6 +1,6 @@
 # Condor
 
-![Demonstration of the California Condor TUI](./media/demo.avif)
+![Demonstration of the California Condor TUI](./california-condor/media/demo.avif)
 
 Condor is a video encoding library and command-line tool designed to be as fast as possible, easy to use, and extremely extensible. Both are written in Rust and can be used on multiple platforms.
 
@@ -185,6 +185,7 @@ See [Developing and Contributing](https://rust-av.github.io/Av1an/contributing) 
 
 Besides being library and a TUI, Condor offers several features not found in Av1an. Before discussing those, let's look at what Av1an currently has to offer over Condor:
 
+* Decoding with FFmpeg
 * Filtering with FFmpeg - *Planned.*
 * Encoding audio with FFmpeg - *Planned.*
 * Thread affinity
