@@ -14,6 +14,7 @@ where
     Self: SequenceConfigHandler,
 {
     pub workers:          Option<u8>,
+    pub buffer_strategy:  BufferStrategy,
     pub scenes_directory: PathBuf,
     pub input:            Option<InputModel>,
 }
@@ -23,6 +24,7 @@ impl Default for ParallelEncoderConfig {
     fn default() -> Self {
         Self {
             workers:          None,
+            buffer_strategy:  BufferStrategy::Workers(1),
             scenes_directory: PathBuf::new(),
             input:            None,
         }
@@ -65,4 +67,22 @@ where
 {
     fn get_parallel_encoder(&self) -> Result<&ParallelEncoderData>;
     fn get_parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderData>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BufferStrategy {
+    None,
+    Workers(u8),
+    Maximum,
+}
+
+impl BufferStrategy {
+    #[inline]
+    pub fn workers(&self, workers: u8) -> u8 {
+        match self {
+            BufferStrategy::None => workers,
+            BufferStrategy::Workers(buffer) => workers + *buffer,
+            BufferStrategy::Maximum => workers * 2,
+        }
+    }
 }

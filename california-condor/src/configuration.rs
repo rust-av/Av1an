@@ -104,11 +104,7 @@ impl Configuration {
                         },
                     },
                     benchmarker:         BenchmarkerConfig::default(),
-                    parallel_encoder:    ParallelEncoderConfig {
-                        workers:          None,
-                        scenes_directory: scenes_directory.clone(),
-                        input:            None,
-                    },
+                    parallel_encoder:    ParallelEncoderConfig::new(&scenes_directory),
                     scene_concatenation: SceneConcatenatorConfig::new(&scenes_directory),
                 },
             },

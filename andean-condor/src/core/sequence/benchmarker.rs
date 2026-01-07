@@ -29,7 +29,7 @@ use crate::{
     },
     models::sequence::{
         benchmarker::BenchmarkerConfigHandler,
-        parallel_encoder::ParallelEncoderConfigHandler,
+        parallel_encoder::{BufferStrategy, ParallelEncoderConfigHandler},
         scene_detector::SceneDetectorDataHandler,
         SequenceConfigHandler,
         SequenceDataHandler,
@@ -139,6 +139,7 @@ where
             &mut condor.input
         };
         let benchmarker_directory = &parallel_encoder_config.scenes_directory.join(DETAILS.name);
+        let buffer_strategy = &parallel_encoder_config.buffer_strategy;
 
         if condor.scenes.is_empty() {
             warnings.push(Box::new(BenchmarkerError::ScenesEmpty));
@@ -216,8 +217,14 @@ where
                 .collect()
         };
 
-        let mut previous_result =
-            Self::benchmark_workers(input, 1, tasks.as_slice(), &progress_tx, &cancelled)?;
+        let mut previous_result = Self::benchmark_workers(
+            input,
+            1,
+            buffer_strategy,
+            tasks.as_slice(),
+            &progress_tx,
+            &cancelled,
+        )?;
 
         loop {
             if cancelled.load(Ordering::Relaxed) {
@@ -226,6 +233,7 @@ where
             let current_result = Self::benchmark_workers(
                 input,
                 previous_result.workers + 1,
+                buffer_strategy,
                 tasks.as_slice(),
                 &progress_tx,
                 &cancelled,
@@ -282,6 +290,7 @@ impl Benchmarker {
     pub fn benchmark_workers(
         input: &mut Input,
         workers: u8,
+        buffer_strategy: &BufferStrategy,
         tasks: &[ParallelEncodeTask],
         progress_tx: &sync::mpsc::Sender<SequenceStatus>,
         cancelled: &Arc<AtomicBool>,
@@ -350,6 +359,7 @@ impl Benchmarker {
         ParallelEncoder::encode_tasks(
             input,
             workers,
+            buffer_strategy,
             tasks.iter().cloned().collect::<VecDeque<_>>(),
             encode_progress_tx,
             Arc::clone(cancelled),

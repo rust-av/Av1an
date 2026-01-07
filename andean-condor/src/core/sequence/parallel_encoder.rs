@@ -30,7 +30,11 @@ use crate::{
         encoder::Encoder,
         scene::SubScene,
         sequence::{
-            parallel_encoder::{ParallelEncoderConfigHandler, ParallelEncoderDataHandler},
+            parallel_encoder::{
+                BufferStrategy,
+                ParallelEncoderConfigHandler,
+                ParallelEncoderDataHandler,
+            },
             scene_detector::SceneDetectorDataHandler,
             SequenceConfigHandler,
             SequenceDataHandler,
@@ -203,7 +207,14 @@ where
             })
             .collect::<VecDeque<Task>>();
 
-        let encoder_thread = Self::encode_tasks(input, workers, tasks, progress_tx, cancelled);
+        let encoder_thread = Self::encode_tasks(
+            input,
+            workers,
+            &config.buffer_strategy,
+            tasks,
+            progress_tx,
+            cancelled,
+        );
 
         match encoder_thread {
             Ok(encoder_results) => {
@@ -266,6 +277,7 @@ impl ParallelEncoder {
     pub fn encode_tasks(
         input: &mut Input,
         workers: u8,
+        buffer_strategy: &BufferStrategy,
         tasks: VecDeque<Task>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
         cancelled: Arc<AtomicBool>,
@@ -291,7 +303,8 @@ impl ParallelEncoder {
         thread::scope(|s| -> Result<_> {
             let total_final_pass_frames_encoded = Arc::new(AtomicUsize::new(0));
             let worker_semaphore = Arc::new(Semaphore::new(workers.into()));
-            let decoder_semaphore = Arc::new(Semaphore::new((workers + 1).into()));
+            let decoder_semaphore =
+                Arc::new(Semaphore::new((buffer_strategy.workers(workers)).into()));
             let frame_receivers = Arc::new(Mutex::new(frames_receivers));
             // let progress_tx = progress_tx.clone();
             let mut encoder_threads = Vec::new();

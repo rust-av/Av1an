@@ -653,6 +653,7 @@ impl Input {
 
                     let (_index, frame) = map.pop_first().expect("Map should have frame");
                     next_frame_index += 1;
+                    drop(map);
                     let framedata = {
                         let mut data = Vec::new();
                         data.extend_from_slice(FRAME_HEADER.as_bytes());
