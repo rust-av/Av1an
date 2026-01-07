@@ -203,9 +203,9 @@ dependencies = [
 
 [[package]]
 name = "av-decoders"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3badbe2fd30055bc2b83197c289990cab6b713835bf7e4d15a38fb091140a960"
+checksum = "79f063f8386782048e127ce2a55a6768ead91d934c71a6e50118fa1293e0588b"
 dependencies = [
  "ffms2-sys",
  "num-rational",
@@ -240,9 +240,9 @@ dependencies = [
 
 [[package]]
 name = "av-scenechange"
-version = "0.21.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5b63be4bfcb1eafe6fe791aa391576893fdd8d29de27695ca26610191e3c74f"
+checksum = "5434fb668e4c01096c5b89158ae8207bebbc62acc8a01875ef9c49766c5cb120"
 dependencies = [
  "aligned",
  "anyhow",
@@ -1523,9 +1523,9 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "lru"
-version = "0.16.2"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96051b46fc183dc9cd4a223960ef37b9af631b55191852a8274bfef064cda20f"
+checksum = "a1dc47f592c06f33f8e3aea9591776ec7c9f9e4124778ff8a3c3b87159f7e593"
 dependencies = [
  "hashbrown 0.16.1",
 ]
@@ -2969,9 +2969,9 @@ dependencies = [
 
 [[package]]
 name = "v_frame"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cd74c6f7074002d7ae565e85ad8173081a680ab87d01839e9c7980faab30984"
+checksum = "327127c37e0b0d9d93dc053beb60ce876174aaa469d282d46d3212c634958add"
 dependencies = [
  "aligned-vec",
  "num-traits",
