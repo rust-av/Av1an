@@ -15,6 +15,7 @@ For more details, see documentation for each parameter or run `av1an --help`.
 Name | Flag | Type | Default
 --- | --- | --- | ---
 [Input](./Cli/general.md#input--i) | `-i` | Path
+[Proxy](./Cli/general.md#proxy---proxy) | `--proxy` | Path
 [Output](./Cli/general.md#output--o) | `-o` | Path
 [Temporary](./Cli/general.md#temporary---temp) | `--temp` | Path | Input file name hash
 [Quiet](./Cli/general.md#quiet--q---quiet) | `-q` | 
@@ -54,7 +55,7 @@ Name | Flag | Type | Default
 
 Name | Flag | Type | Default
 --- | --- | --- | ---
-[Encoder](./Cli/encoding.md#encoder--e---encoder) | `-e`, `--encoder` | `ENCODER` | `aom`
+[Encoder](./Cli/encoding.md#encoder--e---encoder) | `-e`, `--encoder` | `ENCODER` | `svt-av1`
 [Video Parameters](./Cli/encoding.md#video-parameters--v---video-params) | `-v`, `--video-params` | String List | Based on Encoder
 [Passes](./Cli/encoding.md#passes--p---passes) | `-p`, `--passes` | Integer | 1
 [Tile Auto](./Cli/encoding.md#tile-auto---tile-auto) | `--tile-auto` || 
@@ -70,6 +71,7 @@ Name | Flag | Type | Default
 [Concatenation Method](./Cli/encoding.md#concatenation-method--c---concat) | `-c`, `--concat` | `CONCAT` | `ffmpeg`
 [Pixel Format](./Cli/encoding.md#pixel-format---pix-format) | `--pix-format` | `PIX_FORMAT` | `yuv420p10le`
 [Zones](./Cli/encoding.md#zones---zones) | `-z`, `--zones` | Path | 
+[Cache Index Mode](./Cli/encoding.md#Cache---Index---Mode) | `--cache-mode` | `CacheMode` | `source`
 
 ### [VMAF](./Cli/vmaf.md)
 
@@ -85,9 +87,13 @@ Name | Flag | Type | Default
 
 Name | Flag | Type | Default
 --- | --- | --- | ---
+[Target Metric](./Cli/target_quality.md#target-metric---target-metric) | `--target-metric` | `TARGET_METRIC` | `VMAF`
 [Target Quality](./Cli/target_quality.md#target-quality---target-quality) | `--target-quality` | Float | 
 [Probes](./Cli/target_quality.md#probes---probes) | `--probes` | Integer | `4`
+[Probe Resolution](./Cli/target_quality.md#probe-resolution---probe-res) | `--probe-res` | String |
 [Probing Rate](./Cli/target_quality.md#probing-rate---probing-rate) | `--probing-rate` | Integer | `1`
+[Probing Speed](./Cli/target_quality.md#probing-speed---probing-speed) | `--probing-speed` | `PROBING_SPEED` |
+[Probing Statistic](./Cli/target_quality.md#probing-statistic---probing-stat) | `--probing-stat` | String | `percentile=1`
 [Probe Slow](./Cli/target_quality.md#probe-slow---probe-slow) | `--probe-slow` || 
 [Minimum Quantizer](./Cli/target_quality.md#minimum-quantizer---min-q) | `--min-q` | Integer | Based on Encoder
 [Maximum Quantizer](./Cli/target_quality.md#maximum-quantizer---max-q) | `--max-q` | Integer | Based on Encoder

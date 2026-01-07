@@ -4,15 +4,16 @@ on:
     branches:
       - 'master'
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     env:
       CARGO_INCREMENTAL: 0
-      ffmpeg_ver: "7.1"
-      ffmpeg_path: "C:/ffmpeg"
-      vsynth_ver: "R70"
+      vsynth_ver: "R72"
       vsynth_path: "C:/Program Files/Vapoursynth"
 
     steps:
@@ -22,17 +23,6 @@ jobs:
           # version: 2.16.03
           from-source: false
 
-      - name: FFmpeg installation
-        run: |
-          $tempFile = New-TemporaryFile
-          $uri = 'https://github.com/GyanD/codexffmpeg/releases/download/VER/ffmpeg-VER-full_build-shared.7z'.Replace('VER', "$env:ffmpeg_ver")
-          Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
-          7z x -y -o"$env:ffmpeg_path" "$tempFile"
-
-      - name: FFmpeg environment variable
-        run: |
-          echo "FFMPEG_DIR=$((Get-ChildItem -Directory "$env:ffmpeg_path").FullName)" | Out-File $env:GITHUB_ENV -Append
-
       - name: VapourSynth installation
         run: |
           $tempFile = New-TemporaryFile
@@ -40,11 +30,9 @@ jobs:
           Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
           Expand-Archive "$tempFile" "$env:vsynth_path"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: "v${{ env.ffmpeg_ver }}-rust"
 
       - name: Get latest commit
         id: get_commit
@@ -56,19 +44,14 @@ jobs:
       - name: Av1an build
         run: cargo build --release
 
-      - name: Delete existing release
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release delete latest --cleanup-tag
-
-      - name: Create prerelease
+      - name: Create or update prerelease
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true
           tag_name: latest
           body: |
+            Latest build from ${{ github.sha }}
+
             Commit:
             ${{ steps.get_commit.outputs.message }}
           files: target/release/av1an.exe

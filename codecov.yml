@@ -1,0 +1,8 @@
+﻿coverage:
+  status:
+    project:
+      default:
+        informational: true # Makes status checks informational only
+    patch:
+      default:
+        informational: true # Makes patch coverage informational too

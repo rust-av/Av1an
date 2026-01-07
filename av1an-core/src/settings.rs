@@ -2,52 +2,75 @@ use std::{
     borrow::{Borrow, Cow},
     cmp::Ordering,
     collections::HashSet,
-    path::{Path, PathBuf},
+    path::{absolute, Path, PathBuf},
     process::{exit, Command},
 };
 
 use anyhow::{bail, ensure};
-use ffmpeg::format::Pixel;
 use itertools::{chain, Itertools};
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::filter::LevelFilter;
+use tracing::warn;
 
 use crate::{
     concat::ConcatMethod,
     encoder::Encoder,
+    ffmpeg::FFPixelFormat,
+    metrics::{vmaf::validate_libvmaf, xpsnr::validate_libxpsnr},
     parse::valid_params,
     target_quality::TargetQuality,
-    vapoursynth::{
-        is_bestsource_installed,
-        is_dgdecnv_installed,
-        is_ffms2_installed,
-        is_lsmash_installed,
-    },
-    vmaf::validate_libvmaf,
+    vapoursynth::{CacheSource, VSZipVersion, VapoursynthPlugins},
     ChunkMethod,
     ChunkOrdering,
     Input,
     ScenecutMethod,
     SplitMethod,
+    TargetMetric,
     Verbosity,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PixelFormat {
-    pub format:    Pixel,
+    pub format:    FFPixelFormat,
     pub bit_depth: usize,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum InputPixelFormat {
     VapourSynth { bit_depth: usize },
-    FFmpeg { format: Pixel },
+    FFmpeg { format: FFPixelFormat },
 }
 
-#[allow(clippy::struct_excessive_bools)]
+impl InputPixelFormat {
+    #[inline]
+    pub fn as_bit_depth(&self) -> anyhow::Result<usize> {
+        match self {
+            InputPixelFormat::VapourSynth {
+                bit_depth,
+            } => Ok(*bit_depth),
+            InputPixelFormat::FFmpeg {
+                ..
+            } => Err(anyhow::anyhow!("failed to get bit depth; wrong input type")),
+        }
+    }
+
+    #[inline]
+    pub fn as_pixel_format(&self) -> anyhow::Result<FFPixelFormat> {
+        match self {
+            InputPixelFormat::VapourSynth {
+                ..
+            } => Err(anyhow::anyhow!("failed to get bit depth; wrong input type")),
+            InputPixelFormat::FFmpeg {
+                format,
+            } => Ok(*format),
+        }
+    }
+}
+
+#[expect(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct EncodeArgs {
     pub input:       Input,
+    pub proxy:       Option<Input>,
     pub temp:        String,
     pub output_file: String,
 
@@ -56,7 +79,7 @@ pub struct EncodeArgs {
     pub scaler:                String,
     pub scenes:                Option<PathBuf>,
     pub split_method:          SplitMethod,
-    pub sc_pix_format:         Option<Pixel>,
+    pub sc_pix_format:         Option<FFPixelFormat>,
     pub sc_method:             ScenecutMethod,
     pub sc_only:               bool,
     pub sc_downscale_height:   Option<usize>,
@@ -78,6 +101,7 @@ pub struct EncodeArgs {
     pub photon_noise_size:   (Option<u32>, Option<u32>), // Width and Height
     pub chroma_noise:        bool,
     pub zones:               Option<PathBuf>,
+    pub cache_mode:          CacheSource,
 
     // FFmpeg params
     pub ffmpeg_filter_args: Vec<String>,
@@ -86,8 +110,6 @@ pub struct EncodeArgs {
     pub output_pix_format:  PixelFormat,
 
     pub verbosity:   Verbosity,
-    pub log_file:    PathBuf,
-    pub log_level:   LevelFilter,
     pub resume:      bool,
     pub keep:        bool,
     pub force:       bool,
@@ -95,12 +117,15 @@ pub struct EncodeArgs {
     pub tile_auto:   bool,
 
     pub concat:         ConcatMethod,
-    pub target_quality: Option<TargetQuality>,
+    pub target_quality: TargetQuality,
     pub vmaf:           bool,
     pub vmaf_path:      Option<PathBuf>,
     pub vmaf_res:       String,
+    pub probe_res:      Option<String>,
     pub vmaf_threads:   Option<usize>,
     pub vmaf_filter:    Option<String>,
+
+    pub vapoursynth_plugins: Option<VapoursynthPlugins>,
 }
 
 impl EncodeArgs {
@@ -123,8 +148,42 @@ impl EncodeArgs {
             self.input
         );
 
-        if self.target_quality.is_some() {
-            validate_libvmaf()?;
+        if let Some(proxy) = &self.proxy {
+            ensure!(
+                proxy.as_path().exists(),
+                "Proxy file {:?} does not exist!",
+                proxy
+            );
+
+            // Frame count must match
+            let input_frame_count = self.input.clip_info()?.num_frames;
+            let proxy_frame_count = proxy.clip_info()?.num_frames;
+
+            ensure!(
+                input_frame_count == proxy_frame_count,
+                "Input and Proxy do not have the same number of frames! ({input_frame_count} != \
+                 {proxy_frame_count})",
+            );
+        }
+
+        if self.target_quality.target.is_some() && self.input.is_vapoursynth() {
+            let input_absolute_path = absolute(self.input.as_path())?;
+            if !input_absolute_path.starts_with(std::env::current_dir()?) {
+                warn!(
+                    "Target Quality with VapourSynth script file input not in current working \
+                     directory. It is recommended to run in the same directory."
+                );
+            }
+        }
+        if self.target_quality.target.is_some() {
+            match self.target_quality.metric {
+                TargetMetric::VMAF => validate_libvmaf()?,
+                TargetMetric::SSIMULACRA2 => self.validate_ssimulacra2()?,
+                TargetMetric::ButteraugliINF => self.validate_butteraugli_inf()?,
+                TargetMetric::Butteraugli3 => self.validate_butteraugli_3()?,
+                TargetMetric::XPSNR | TargetMetric::XPSNRWeighted => self
+                    .validate_xpsnr(self.target_quality.metric, self.target_quality.probing_rate)?,
+            }
         }
 
         if which::which("ffmpeg").is_err() {
@@ -132,10 +191,18 @@ impl EncodeArgs {
         }
 
         if self.concat == ConcatMethod::MKVMerge && which::which("mkvmerge").is_err() {
-            bail!(
-                "mkvmerge not found, but `--concat mkvmerge` was specified. Is it installed in \
-                 system path?"
-            );
+            if self.sc_only {
+                warn!(
+                    "mkvmerge not found, but `--concat mkvmerge` was specified. Make sure to \
+                     install mkvmerge or specify a different concatenation method (e.g. `--concat \
+                     ffmpeg`) before encoding."
+                );
+            } else {
+                bail!(
+                    "mkvmerge not found, but `--concat mkvmerge` was specified. Is it installed \
+                     in system path?"
+                );
+            }
         }
 
         if self.encoder == Encoder::x265 && self.concat != ConcatMethod::MKVMerge {
@@ -157,26 +224,26 @@ impl EncodeArgs {
 
         if self.chunk_method == ChunkMethod::LSMASH {
             ensure!(
-                is_lsmash_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.lsmash),
                 "LSMASH is not installed, but it was specified as the chunk method"
             );
         }
         if self.chunk_method == ChunkMethod::FFMS2 {
             ensure!(
-                is_ffms2_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.ffms2),
                 "FFMS2 is not installed, but it was specified as the chunk method"
             );
         }
         if self.chunk_method == ChunkMethod::DGDECNV && which::which("dgindexnv").is_err() {
             ensure!(
-                is_dgdecnv_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.dgdecnv),
                 "Either DGDecNV is not installed or DGIndexNV is not in system path, but it was \
                  specified as the chunk method"
             );
         }
         if self.chunk_method == ChunkMethod::BESTSOURCE {
             ensure!(
-                is_bestsource_installed(),
+                self.vapoursynth_plugins.is_some_and(|p| p.bestsource),
                 "BestSource is not installed, but it was specified as the chunk method"
             );
         }
@@ -186,22 +253,17 @@ impl EncodeArgs {
 
         if self.ignore_frame_mismatch {
             warn!(
-                "The output video's frame count may differ, and VMAF calculations may be incorrect"
+                "The output video's frame count may differ, and target metric calculations may be \
+                 incorrect"
             );
         }
 
-        if let Some(vmaf_path) = &self.target_quality.as_ref().and_then(|tq| tq.model.as_ref()) {
+        if let Some(vmaf_path) = self.target_quality.model.as_ref() {
             ensure!(vmaf_path.exists());
         }
 
-        if let Some(target_quality) = &self.target_quality {
-            if target_quality.probes < 4 {
-                eprintln!(
-                    "Target quality with less than 4 probes is experimental and not recommended"
-                );
-            }
-
-            ensure!(target_quality.min_q >= 1);
+        if self.target_quality.probes < 4 {
+            warn!("Target quality with fewer than 4 probes is experimental and not recommended");
         }
 
         let encoder_bin = self.encoder.bin();
@@ -230,17 +292,17 @@ impl EncodeArgs {
                     if skip && !(param.starts_with("-") && param != "-1") {
                         skip = false;
                         continue;
-                    } else {
-                        skip = false;
                     }
+
+                    skip = false;
                     if (param.starts_with("-") && param != "-1")
                         && self.video_params.contains(&param)
                     {
                         skip = true;
                         continue;
-                    } else {
-                        _default_params.push(param);
                     }
+
+                    _default_params.push(param);
                 }
                 self.video_params = chain!(_default_params, self.video_params.clone()).collect();
             }
@@ -274,14 +336,14 @@ impl EncodeArgs {
         }
 
         if !self.force {
-            self.validate_encoder_params();
+            self.validate_encoder_params()?;
             self.check_rate_control();
         }
 
         Ok(())
     }
 
-    fn validate_encoder_params(&self) {
+    fn validate_encoder_params(&self) -> anyhow::Result<()> {
         let video_params: Vec<&str> = self
             .video_params
             .iter()
@@ -300,7 +362,7 @@ impl EncodeArgs {
 
         let help_text = {
             let [cmd, arg] = self.encoder.help_command();
-            String::from_utf8(Command::new(cmd).arg(arg).output().unwrap().stdout).unwrap()
+            String::from_utf8_lossy(&Command::new(cmd).arg(arg).output()?.stdout).to_string()
         };
         let valid_params = valid_params(&help_text, self.encoder);
         let invalid_params = invalid_params(&video_params, &valid_params);
@@ -319,6 +381,8 @@ impl EncodeArgs {
             println!("\nTo continue anyway, run av1an with '--force'");
             exit(1);
         }
+
+        Ok(())
     }
 
     /// Warns if rate control was not specified in encoder arguments
@@ -362,6 +426,92 @@ impl EncodeArgs {
                 .all(|&b| (b as char).is_ascii_digit())
         }
     }
+
+    #[inline]
+    pub fn validate_ssimulacra2(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                || self.vapoursynth_plugins.is_some_and(|p| p.vszip != VSZipVersion::None),
+            "SSIMULACRA2 metric requires either Vapoursynth-HIP or VapourSynth Zig Image Process \
+             to be installed"
+        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for SSIMULACRA2"
+                .to_string(),
+        )?;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn validate_butteraugli_inf(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.vapoursynth_plugins.is_some_and(|p| p.vship)
+                || self.vapoursynth_plugins.is_some_and(|p| p.julek),
+            "Butteraugli metric requires either Vapoursynth-HIP or vapoursynth-julek-plugin to be \
+             installed"
+        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for butteraugli"
+                .to_string(),
+        )?;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn validate_butteraugli_3(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.vapoursynth_plugins.is_some_and(|p| p.vship),
+            "Butteraugli 3 Norm metric requires Vapoursynth-HIP plugin to be installed"
+        );
+        self.ensure_chunk_method(
+            "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for butteraugli 3-Norm"
+                .to_string(),
+        )?;
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn validate_xpsnr(&self, metric: TargetMetric, probing_rate: usize) -> anyhow::Result<()> {
+        let metric_name = if metric == TargetMetric::XPSNRWeighted {
+            "Weighted XPSNR"
+        } else {
+            "XPSNR"
+        };
+        if probing_rate > 1 {
+            ensure!(
+                self.vapoursynth_plugins.is_some_and(|p| p.vszip == VSZipVersion::New),
+                format!(
+                    "{metric_name} metric with probing rate greater than 1 requires \
+                     VapourSynth-Zig Image Process R7 or newer to be installed"
+                )
+            );
+            self.ensure_chunk_method(format!(
+                "Chunk method must be lsmash, ffms2, bestsource, or dgdecnv for {metric_name} \
+                 metric with probing rate greater than 1"
+            ))?;
+        } else {
+            validate_libxpsnr()?;
+        }
+
+        Ok(())
+    }
+
+    fn ensure_chunk_method(&self, error_message: String) -> anyhow::Result<()> {
+        ensure!(
+            matches!(
+                self.chunk_method,
+                ChunkMethod::LSMASH
+                    | ChunkMethod::FFMS2
+                    | ChunkMethod::BESTSOURCE
+                    | ChunkMethod::DGDECNV
+            ),
+            error_message
+        );
+        Ok(())
+    }
 }
 
 #[must_use]
@@ -389,13 +539,7 @@ pub(crate) fn suggest_fix<'a>(
         .iter()
         .map(|arg| (arg, strsim::jaro_winkler(arg, wrong_arg)))
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Less))
-        .and_then(|(suggestion, score)| {
-            if score > MIN_THRESHOLD {
-                Some(suggestion.borrow())
-            } else {
-                None
-            }
-        })
+        .and_then(|(suggestion, score)| (score > MIN_THRESHOLD).then(|| suggestion.borrow()))
 }
 
 pub(crate) fn insert_noise_table_params(
@@ -406,7 +550,7 @@ pub(crate) fn insert_noise_table_params(
     match encoder {
         Encoder::aom => {
             video_params.retain(|param| !param.starts_with("--denoise-noise-level="));
-            video_params.push(format!("--film-grain-table={}", table.to_str().unwrap()));
+            video_params.push(format!("--film-grain-table={}", table.to_string_lossy()));
         },
         Encoder::svt_av1 => {
             let film_grain_idx =
@@ -416,7 +560,7 @@ pub(crate) fn insert_noise_table_params(
                 video_params.remove(idx);
             }
             video_params.push("--fgs-table".to_string());
-            video_params.push(table.to_str().unwrap().to_string());
+            video_params.push(table.to_string_lossy().to_string());
         },
         Encoder::rav1e => {
             let photon_noise_idx =
@@ -426,7 +570,7 @@ pub(crate) fn insert_noise_table_params(
                 video_params.remove(idx);
             }
             video_params.push("--photon-noise-table".to_string());
-            video_params.push(table.to_str().unwrap().to_string());
+            video_params.push(table.to_string_lossy().to_string());
         },
         _ => bail!("This encoder does not support grain synth through av1an"),
     }

@@ -13,10 +13,14 @@ Av1an is a video encoding framework. It can increase your encoding speed and imp
 
 For help with av1an, please reach out to us on [Discord](https://discord.gg/Ar8MvJh) or file a GitHub issue.
 
+## NOTICE
+
+av1an is currently incompatible with Vapoursynth R73. Please remain on R72 for the time being, until we can update to the new API.
+
 ## Features
 
 - Hyper-scalable video encoding
-- [Target Quality mode](https://rust-av.github.io/Av1an/Cli/target_quality), using VMAF control encoders rate control to achieve the desired video quality
+- [Target Quality mode](https://rust-av.github.io/Av1an/Cli/target_quality), using metrics to control the encoder's rate control to achieve the desired video quality
 - [VapourSynth](http://www.vapoursynth.com) script support
 - Cancel and resume encoding without loss of progress
 - Minimal and clean CLI
@@ -78,11 +82,15 @@ Prerequisites:
 Optional:
 
 - [L-SMASH](https://github.com/HomeOfAviSynthPlusEvolution/L-SMASH-Works) VapourSynth plugin for better chunking (recommended)
-- [DGDecNV](https://www.rationalqm.us/dgdecnv/dgdecnv.html) Vapoursynth plugin for very fast and accurate chunking, `dgindexnv` executable needs to be present in system path and an NVIDIA GPU with CUVID 
+- [DGDecNV](https://www.rationalqm.us/dgdecnv/dgdecnv.html) Vapoursynth plugin for very fast and accurate chunking, `dgindexnv` executable needs to be present in system path and an NVIDIA GPU with CUVID
 - [FFMS2](https://github.com/FFMS/ffms2) VapourSynth plugin for better chunking
 - [BestSource](https://github.com/vapoursynth/bestsource) Vapoursynth plugin for slow but accurate chunking
 - [mkvmerge](https://mkvtoolnix.download/) to use mkvmerge instead of FFmpeg for file concatenation
-- [VMAF](https://github.com/Netflix/vmaf) to calculate VMAF scores and to use [target quality mode](site/src/Features/TargetQuality.md)
+- [VMAF](https://github.com/Netflix/vmaf) to calculate VMAF scores and to use [Target Quality mode](site/src/Features/TargetQuality.md)
+- [XPSNR](https://github.com/fraunhoferhhi/xpsnr) to calculate XPSNR scores and to use [Target Quality mode](site/src/Features/TargetQuality.md)
+- [Vapoursynth-HIP](https://github.com/Line-fr/Vship) to calculate SSIMULACRA2 or Butteraugli scores with hardware acceleration on supported GPUs for [Target Quality mode](site/src/Features/TargetQuality.md)
+- [Vapoursynth-Zig Image Process](https://github.com/dnjulek/vapoursynth-zip) to calculate SSIMULACRA2 or XPSNR scores for [Target Quality mode](site/src/Features/TargetQuality.md)
+- [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) to calculate Butteraugli scores for [Target Quality mode](site/src/Features/TargetQuality.md)
 
 ### VapourSynth plugins on Windows
 
@@ -90,4 +98,8 @@ If you want to install the L-SMASH, FFMS2, or BestSource plugins and are on Wind
 
 1. Open your VapourSynth installation directory
 2. Open a command prompt or PowerShell window via Shift + Right click
-3. Run `python3 vsrepo.py install lsmas ffms2 bs`
+3. Run `python3 vsrepo.py install lsmas ffms2 bs vszip julek`
+
+## Developing
+
+See [Developing and Contributing](https://rust-av.github.io/Av1an/contributing) for a guide on developing Av1an and prepare for a Pull Request.

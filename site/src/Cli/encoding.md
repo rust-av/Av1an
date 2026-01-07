@@ -1,23 +1,23 @@
 # Encoding
 
-Name | Flag | Type | Default
---- | --- | --- | ---
-[Encoder](#encoder--e---encoder) | `-e`, `--encoder` | `ENCODER` | `aom`
-[Video Parameters](#video-parameters--v---video-params) | `-v`, `--video-params` | String List | Based on Encoder
-[Passes](#passes--p---passes) | `-p`, `--passes` | Integer | 1
-[Tile Auto](#tile-auto---tile-auto) | `--tile-auto` || 
-[FFmpeg Parameters](#ffmpeg-filter-arguments--f---ffmpeg) | `-f`, `--ffmpeg` | String |
-[Audio Parameters](#audio-parameters--a---audio-params) | `-a`, `--audio-params` | String |
-[Ignore Frame Mismatch](#ignore-frame-mismatch---ignore-frame-mismatch) | `--ignore-frame-mismatch` | 
-[Chunk Method](#chunk-method--m---chunk-method) | `-m`, `--chunk-method` | `CHUNK_METHOD` | `lsmash`
-[Chunk Order](#chunk-order---chunk-order) | `--chunk-order` | `CHUNK_ORDER` | `long-to-short`
-[Photon Noise](#photon-noise---photon-noise) | `--photon-noise` | Integer |
-[Chroma Noise](#chroma-noise---chroma-noise) | `--chroma-noise` || 
-[Photon Noise Width](#photon-noise-width---photon-noise-width) |`--photon-noise-width` | Integer |
-[Photon Noise Height](#photon-noise-height---photon-noise-height) | `--photon-noise-height` | Integer |
-[Concatenation Method](#concatenation-method--c---concat) | `-c`, `--concat` | `CONCAT` | `ffmpeg`
-[Pixel Format](#pixel-format---pix-format) | `--pix-format` | `PIX_FORMAT` | `yuv420p10le`
-[Zones](#zones---zones) | `-z`, `--zones` | Path | 
+| Name                                                                    | Flag                      | Type           | Default          |
+| ----------------------------------------------------------------------- | ------------------------- | -------------- | ---------------- |
+| [Encoder](#encoder--e---encoder)                                        | `-e`, `--encoder`         | `ENCODER`      | `svt-av1`        |
+| [Video Parameters](#video-parameters--v---video-params)                 | `-v`, `--video-params`    | String List    | Based on Encoder |
+| [Passes](#passes--p---passes)                                           | `-p`, `--passes`          | Integer        | 1                |
+| [Tile Auto](#tile-auto---tile-auto)                                     | `--tile-auto`             |                |
+| [FFmpeg Parameters](#ffmpeg-filter-arguments--f---ffmpeg)               | `-f`, `--ffmpeg`          | String         |
+| [Audio Parameters](#audio-parameters--a---audio-params)                 | `-a`, `--audio-params`    | String         |
+| [Ignore Frame Mismatch](#ignore-frame-mismatch---ignore-frame-mismatch) | `--ignore-frame-mismatch` |
+| [Chunk Method](#chunk-method--m---chunk-method)                         | `-m`, `--chunk-method`    | `CHUNK_METHOD` | `lsmash`         |
+| [Chunk Order](#chunk-order---chunk-order)                               | `--chunk-order`           | `CHUNK_ORDER`  | `long-to-short`  |
+| [Photon Noise](#photon-noise---photon-noise)                            | `--photon-noise`          | Integer        |
+| [Chroma Noise](#chroma-noise---chroma-noise)                            | `--chroma-noise`          |                |
+| [Photon Noise Width](#photon-noise-width---photon-noise-width)          | `--photon-noise-width`    | Integer        |
+| [Photon Noise Height](#photon-noise-height---photon-noise-height)       | `--photon-noise-height`   | Integer        |
+| [Concatenation Method](#concatenation-method--c---concat)               | `-c`, `--concat`          | `CONCAT`       | `mkvmerge`       |
+| [Pixel Format](#pixel-format---pix-format)                              | `--pix-format`            | `PIX_FORMAT`   | `yuv420p10le`    |
+| [Zones](#zones---zones)                                                 | `-z`, `--zones`           | Path           |
 
 ## Encoder `-e`, `--encoder`
 
@@ -25,16 +25,16 @@ Video encoder to use.
 
 ### Possible Values
 
-* `aom` - [aomenc](https://aomedia.googlesource.com/aom/)
-* `rav1e` - [rav1e](https://github.com/xiph/rav1e)
-* `vpx` - [vpxenc](https://chromium.googlesource.com/webm/libvpx/)
-* `svt-av1` - [SvtAv1EncApp](https://gitlab.com/AOMediaCodec/SVT-AV1)
-* `x264` - [x264](https://www.videolan.org/developers/x264.html)
-* `x265` - [x265](https://www.videolan.org/developers/x265.html)
+- `aom` - [aomenc](https://aomedia.googlesource.com/aom/)
+- `rav1e` - [rav1e](https://github.com/xiph/rav1e)
+- `vpx` - [vpxenc](https://chromium.googlesource.com/webm/libvpx/)
+- `svt-av1` - [SvtAv1EncApp](https://gitlab.com/AOMediaCodec/SVT-AV1)
+- `x264` - [x264](https://www.videolan.org/developers/x264.html)
+- `x265` - [x265](https://www.videolan.org/developers/x265.html)
 
 ### Default
 
-If not specified, `aom` will be used.
+If not specified, `svt-av1` will be used.
 
 ## Video Parameters `-v`, `--video-params`
 
@@ -72,9 +72,8 @@ Any of the valid FFmpeg [Video Filter Options](https://ffmpeg.org/ffmpeg.html#Vi
 
 ### Examples
 
-* `> av1an -i input.mkv -o output.mkv -f "-vf crop=100:100:100:100"` - Crops the video by 100 pixels from the top, left, bottom, and right
-* `> av1an -i input.mkv -o output.mkv -f "-vf scale=1920:1080"` - Scales the video to 1920x1080
-
+- `> av1an -i input.mkv -o output.mkv -f "-vf crop=100:100:100:100"` - Crops the video by 100 pixels from the top, left, bottom, and right
+- `> av1an -i input.mkv -o output.mkv -f "-vf scale=1920:1080"` - Scales the video to 1920x1080
 
 ## Audio Parameters `-a`, `--audio-params`
 
@@ -94,8 +93,8 @@ If not specified, `-c:a copy` is used.
 
 ### Examples
 
-* `> av1an -i input.mkv -o output.mkv -a "-c:a libopus -b:a 128k"` - Encodes all audio tracks with [libopus][ffmpeg-libopus] at 128k
-* `> av1an -i input.mkv -o output.mkv --audio-params "-c:a:0 libopus -b:a:0 128k -c:a:1 aac -ac:a:1 1 -b:a:1 24k"` - Encodes the first audio track with [libopus][ffmpeg-libopus] at 128k and the second audio track with [aac][ffmpeg-aac] at 24k and downmixed to a single channel
+- `> av1an -i input.mkv -o output.mkv -a "-c:a libopus -b:a 128k"` - Encodes all audio tracks with [libopus][ffmpeg-libopus] at 128k
+- `> av1an -i input.mkv -o output.mkv --audio-params "-c:a:0 libopus -b:a:0 128k -c:a:1 aac -ac:a:1 1 -b:a:1 24k"` - Encodes the first audio track with [libopus][ffmpeg-libopus] at 128k and the second audio track with [aac][ffmpeg-aac] at 24k and downmixed to a single channel
 
 ## Ignore Frame Mismatch `--ignore-frame-mismatch`
 
@@ -109,57 +108,57 @@ Some methods require external VapourSynth plugins to be installed. The rest only
 
 ### Possible Values
 
-* `lsmash` - [L-SMASH-Works](https://github.com/HomeOfAviSynthPlusEvolution/L-SMASH-Works)
-  * Requires VapourSynth plugin
-  * Generally the best and most accurate method
-  * Does not require intermediate files
-  * Errors generally only occur if the input file itself is broken (for example, if the video bitstream is invalid in some way, video players usually try to recover from the errors as much as possible even if it results in visible artifacts, while lsmash will instead throw an error)
-* `ffms2` - [FFmpegSource](https://github.com/FFMS/ffms2)
-  * Requires VapourSynth plugin
-  * Accurate
-  * Slightly faster than lsmash for y4m input
-  * Does not require intermediate files
-  * Can sometimes have bizarre bugs that are not present in lsmash (that can cause artifacts in the piped output)
-* `dgdecnv` - [DGDecNV](https://www.rationalqm.us/dgdecnv/dgdecnv.html)
-  * Requires VapourSynth plugin
-  * Requires `dgindexnv` to be present in system path
-  * Requires an NVIDIA GPU that supports CUDA video decoding
-  * Very fast but only decodes AVC, HEVC, MPEG-2, and VC1
-* `bestsource` - [BestSource](https://github.com/vapoursynth/bestsource)
-  * Requires VapourSynth plugin
-  * Slow but most accurate
-  * Linearly decodes input files
-  * Does not require intermediate files
-* `hybrid` - Hybrid (Segment + Select)
-  * Requires FFmpeg
-  * Usually accurate but requires intermediate files (which can be large)
-  * Avoids decoding irrelevant frames by seeking to the first keyframe before the requested frame and decoding only a (usually very small) number of irrelevant frames until relevant frames are decoded and piped to the encoder
-* `select` - Select
-  * Requires FFmpeg
-  * Extremely slow, but accurate
-  * Does not require intermediate files
-  * Decodes from the first frame to the requested frame, without skipping irrelevant frames (causing quadratic decoding complexity)
-* `segment` - Segment
-  * Requires FFmpeg
-  * Create chunks based on keyframes in the source
-  * Not frame exact, as it can only split on keyframes in the source
-  * Requires intermediate files (which can be large)
+- `lsmash` - [L-SMASH-Works](https://github.com/HomeOfAviSynthPlusEvolution/L-SMASH-Works)
+  - Requires VapourSynth plugin
+  - Generally the best and most accurate method
+  - Does not require intermediate files
+  - Errors generally only occur if the input file itself is broken (for example, if the video bitstream is invalid in some way, video players usually try to recover from the errors as much as possible even if it results in visible artifacts, while lsmash will instead throw an error)
+- `ffms2` - [FFmpegSource](https://github.com/FFMS/ffms2)
+  - Requires VapourSynth plugin
+  - Accurate
+  - Slightly faster than lsmash for y4m input
+  - Does not require intermediate files
+  - Can sometimes have bizarre bugs that are not present in lsmash (that can cause artifacts in the piped output)
+- `dgdecnv` - [DGDecNV](https://www.rationalqm.us/dgdecnv/dgdecnv.html)
+  - Requires VapourSynth plugin
+  - Requires `dgindexnv` to be present in system path
+  - Requires an NVIDIA GPU that supports CUDA video decoding
+  - Very fast but only decodes AVC, HEVC, MPEG-2, and VC1
+- `bestsource` - [BestSource](https://github.com/vapoursynth/bestsource)
+  - Requires VapourSynth plugin
+  - Slow but most accurate
+  - Linearly decodes input files
+  - Does not require intermediate files
+- `hybrid` - Hybrid (Segment + Select)
+  - Requires FFmpeg
+  - Usually accurate but requires intermediate files (which can be large)
+  - Avoids decoding irrelevant frames by seeking to the first keyframe before the requested frame and decoding only a (usually very small) number of irrelevant frames until relevant frames are decoded and piped to the encoder
+- `select` - Select
+  - Requires FFmpeg
+  - Extremely slow, but accurate
+  - Does not require intermediate files
+  - Decodes from the first frame to the requested frame, without skipping irrelevant frames (causing quadratic decoding complexity)
+- `segment` - Segment
+  - Requires FFmpeg
+  - Create chunks based on keyframes in the source
+  - Not frame exact, as it can only split on keyframes in the source
+  - Requires intermediate files (which can be large)
 
 ### Default
 
 If not specified, the first available method is used in this order:
 
-* `lsmash`
-* `ffms2`
-* `dgdecnv`
-* `bestsource`
-* `hybrid`
+- `lsmash`
+- `ffms2`
+- `dgdecnv`
+- `bestsource`
+- `hybrid`
 
 ### Examples
 
-* `> av1an -i input.mkv -o output.mkv -m lsmash` - Use L-SMASH-Works for chunking
-* `> av1an -i input.mkv -o output.mkv -m ffms2` - Use FFmpegSource for chunking
-* `> av1an -i input.mkv -o output.mkv -m hybrid` - Use hybrid for chunking
+- `> av1an -i input.mkv -o output.mkv -m lsmash` - Use L-SMASH-Works for chunking
+- `> av1an -i input.mkv -o output.mkv -m ffms2` - Use FFmpegSource for chunking
+- `> av1an -i input.mkv -o output.mkv -m hybrid` - Use hybrid for chunking
 
 ## Chunk Order `--chunk-order`
 
@@ -167,10 +166,10 @@ The order in which Av1an will encode chunks.
 
 ### Possible Values
 
-* `long-to-short` - The longest chunks will be encoded first. This method results in the smallest amount of time with idle cores, as the encode will not be waiting on a very long chunk to finish at the end of the encode after all other chunks have finished.
-* `short-to-long` - The shortest chunks will be encoded first.
-* `sequential` - The chunks will be encoded in the order they appear in the video.
-* `random` - The chunks will be encoded in a random order. This will provide a more accurate estimated filesize sooner in the encode.
+- `long-to-short` - The longest chunks will be encoded first. This method results in the smallest amount of time with idle cores, as the encode will not be waiting on a very long chunk to finish at the end of the encode after all other chunks have finished.
+- `short-to-long` - The shortest chunks will be encoded first.
+- `sequential` - The chunks will be encoded in the order they appear in the video.
+- `random` - The chunks will be encoded in a random order. This will provide a more accurate estimated filesize sooner in the encode.
 
 ### Default
 
@@ -178,8 +177,8 @@ If not specified, `long-to-short` is used.
 
 ### Examples
 
-* `> av1an -i input.mkv -o output.mkv --chunk-order short-to-long` - Encodes the shortest chunks first
-* `> av1an -i input.mkv -o output.mkv --chunk-order random` - Encodes the chunks in a random order
+- `> av1an -i input.mkv -o output.mkv --chunk-order short-to-long` - Encodes the shortest chunks first
+- `> av1an -i input.mkv -o output.mkv --chunk-order random` - Encodes the chunks in a random order
 
 ## Photon Noise `--photon-noise`
 
@@ -199,8 +198,8 @@ If not specified, `0` is used.
 
 ### Examples
 
-* `> av1an -i input.mkv -o output.mkv --photon-noise 1` - Applies a ISO 100 photon noise table
-* `> av1an -i input.mkv -o output.mkv --photon-noise 12` - Applies a ISO 1200 photon noise table
+- `> av1an -i input.mkv -o output.mkv --photon-noise 1` - Applies a ISO 100 photon noise table
+- `> av1an -i input.mkv -o output.mkv --photon-noise 12` - Applies a ISO 1200 photon noise table
 
 ## Chroma Noise `--chroma-noise`
 
@@ -228,16 +227,16 @@ Determines method used for concatenating encoded chunks and audio into output fi
 
 ### Possible Values
 
-* `ffmpeg` - FFmpeg
-  * Unfortunately, ffmpeg sometimes produces file with partially broken audio seeking, so `mkvmerge` should generally be preferred if available. FFmpeg concatenation also produces broken files with the `--enable-keyframe filtering=2` option in aomenc, so it is disabled if that option is used. However, FFmpeg can mux into formats other than Matroska (`.mkv`), such as WebM. To output WebM, use a `.webm` extension in the output file.
-* `mkvmerge` - Matroska
-  * Generally the best concatenation method (as it does not have either of the aforementioned issues that ffmpeg has), but can only produce matroska (.mkv) files. Requires mkvmerge to be installed.
-* `ivf` - IVF
-  * Experimental concatenation method implemented in Av1an itself to concatenate to an IVF file (which only supports VP8, VP9, and AV1, and does not support audio).
+- `ffmpeg` - FFmpeg
+  - Unfortunately, ffmpeg sometimes produces file with partially broken audio seeking, so `mkvmerge` should generally be preferred if available. FFmpeg concatenation also produces broken files with the `--enable-keyframe filtering=2` option in aomenc, so it is disabled if that option is used. However, FFmpeg can mux into formats other than Matroska (`.mkv`), such as WebM. To output WebM, use a `.webm` extension in the output file.
+- `mkvmerge` - Matroska
+  - Generally the best concatenation method (as it does not have either of the aforementioned issues that ffmpeg has), but can only produce matroska (.mkv) files. Requires mkvmerge to be installed.
+- `ivf` - IVF
+  - Experimental concatenation method implemented in Av1an itself to concatenate to an IVF file (which only supports VP8, VP9, and AV1, and does not support audio).
 
 ### Default
 
-If not specified, `ffmpeg` is used.
+If not specified, `mkvmerge` is used.
 
 ## Pixel Format `--pix-format`
 
@@ -249,9 +248,9 @@ Any valid pixel format name. See [FFmpeg](https://www.ffmpeg.org/doxygen/0.11/pi
 
 ### Examples
 
-* `> av1an -i input.mkv -o output.mkv` - Use YUV420P10LE by default
-* `> av1an -i input.mkv -o output.mkv --pix-format yuv420p` - Use YUV420P
-* `> av1an -i input.mkv -o output.mkv --pix-format yuv444p` - Use YUV444P
+- `> av1an -i input.mkv -o output.mkv` - Use YUV420P10LE by default
+- `> av1an -i input.mkv -o output.mkv --pix-format yuv420p` - Use YUV420P
+- `> av1an -i input.mkv -o output.mkv --pix-format yuv444p` - Use YUV444P
 
 ### Default
 
@@ -277,23 +276,23 @@ The `reset` keyword instructs Av1an to ignore any settings which affect the enco
 
 The video parameters which may be specified include any parameters that are allowed by the encoder, as well as the following Av1an options:
 
-* [Extra Split Frames](./scene_detection.md#extra-split-frames--x---extra-split) `-x`, `--extra-split`
-* [Minimum Scene Length](./scene_detection.md#minimum-scene-length---min-scene-len) `--min-scene-len`
-* [Passes](#passes--p---passes) `-p`, `--passes`
-* [Photon Noise](#photon-noise---photon-noise) `--photon-noise` (aomenc/rav1e/SvtAv1EncApp only)
-* [Photon Noise Width](#photon-noise-width---photon-noise-width) `--photon-noise-width` (aomenc/rav1e/SvtAv1EncApp only)
-* [Photon Noise Height](#photon-noise-height---photon-noise-height) `--photon-noise-height` (aomenc/rav1e/SvtAv1EncApp only)
-* [Chroma Noise](#chroma-noise---chroma-noise) `--chroma-noise` (aomenc/rav1e/SvtAv1EncApp only)
+- [Extra Split Frames](./scene_detection.md#extra-split-frames--x---extra-split) `-x`, `--extra-split`
+- [Minimum Scene Length](./scene_detection.md#minimum-scene-length---min-scene-len) `--min-scene-len`
+- [Passes](#passes--p---passes) `-p`, `--passes`
+- [Photon Noise](#photon-noise---photon-noise) `--photon-noise` (aomenc/rav1e/SvtAv1EncApp only)
+- [Photon Noise Width](#photon-noise-width---photon-noise-width) `--photon-noise-width` (aomenc/rav1e/SvtAv1EncApp only)
+- [Photon Noise Height](#photon-noise-height---photon-noise-height) `--photon-noise-height` (aomenc/rav1e/SvtAv1EncApp only)
+- [Chroma Noise](#chroma-noise---chroma-noise) `--chroma-noise` (aomenc/rav1e/SvtAv1EncApp only)
 
 For segments where no zone is specified, the settings passed to av1an itself will be used.
 
-
 ### Examples
 
-* `> av1an -i input.mkv -o output.mkv --zones zones.txt` - Use the zones file `./zones.txt`
-* `> av1an -i input.mkv -o output.mkv --zones C:\custom\configuration\zones.txt` - Use the zones file `C:\custom\configuration\zones.txt`
+- `> av1an -i input.mkv -o output.mkv --zones zones.txt` - Use the zones file `./zones.txt`
+- `> av1an -i input.mkv -o output.mkv --zones C:\custom\configuration\zones.txt` - Use the zones file `C:\custom\configuration\zones.txt`
 
 #### `./zones.txt`:
+
 ```
 136 169 aom --photon-noise 4 --cq-level=32
 169 1330 rav1e reset -s 3 -q 42
@@ -308,3 +307,21 @@ Line 2 will encode frames 169-1329 using rav1e with only the arguments `-s 3 -q 
 
 [ffmpeg-libopus]: https://ffmpeg.org/ffmpeg-codecs.html#libopus-1
 [ffmpeg-aac]: https://ffmpeg.org/ffmpeg-codecs.html#aac
+
+
+## Cache Index Mode
+
+Set Cache index mode for source method.
+
+### Possible Values
+
+- `source` Place index file next to the source.
+- `temp` Place index file in temporary directory.
+
+### Default
+
+If not specified, `source` is used.
+
+### Examples
+
+- `> av1an -i input.mkv -o output.mkv --cache-mode temp` Place index file in temporary directory

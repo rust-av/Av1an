@@ -1,27 +1,29 @@
 use std::{
+    collections::BTreeMap,
     io::{IsTerminal, Read},
     process::{Command, Stdio},
     thread,
 };
 
-use ansi_term::Style;
 use anyhow::bail;
+use av_decoders::{DecoderError, DecoderImpl, VapoursynthDecoder, Y4mDecoder};
 use av_scenechange::{
-    decoder::Decoder,
     detect_scene_changes,
-    ffmpeg::FfmpegDecoder,
-    vapoursynth::VapoursynthDecoder,
+    Decoder,
     DetectionOptions,
     SceneDetectionSpeed,
+    ScenecutResult,
 };
-use ffmpeg::format::Pixel;
+use colored::*;
 use itertools::Itertools;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    ffmpeg::FFPixelFormat,
     into_smallvec,
     progress_bar,
     scenes::Scene,
+    vapoursynth::resize_node,
     Encoder,
     Input,
     ScenecutMethod,
@@ -29,7 +31,7 @@ use crate::{
 };
 
 #[tracing::instrument(level = "debug")]
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn av_scenechange_detect(
     input: &Input,
     encoder: Encoder,
@@ -37,14 +39,14 @@ pub fn av_scenechange_detect(
     min_scene_len: usize,
     verbosity: Verbosity,
     sc_scaler: &str,
-    sc_pix_format: Option<Pixel>,
+    sc_pix_format: Option<FFPixelFormat>,
     sc_method: ScenecutMethod,
     sc_downscale_height: Option<usize>,
     zones: &[Scene],
-) -> anyhow::Result<(Vec<Scene>, usize)> {
+) -> anyhow::Result<(Vec<Scene>, usize, BTreeMap<usize, ScenecutResult>)> {
     if verbosity != Verbosity::Quiet {
         if std::io::stderr().is_terminal() {
-            eprintln!("{}", Style::default().bold().paint("Scene detection"));
+            eprintln!("{}", "Scene detection".bold());
         } else {
             eprintln!("Scene detection");
         }
@@ -52,17 +54,16 @@ pub fn av_scenechange_detect(
     }
 
     let input2 = input.clone();
-    let frame_thread = thread::spawn(move || {
-        let frames = input2.frames(None).unwrap();
+    let frame_thread = thread::spawn(move || -> anyhow::Result<usize> {
+        let frames = input2.clip_info()?.num_frames;
         if verbosity != Verbosity::Quiet {
             progress_bar::convert_to_progress(0);
             progress_bar::set_len(frames as u64);
         }
-        frames
+        Ok(frames)
     });
 
-    let frames = frame_thread.join().unwrap();
-    let scenes = scene_detect(
+    let (scenes, scores) = scene_detect(
         input,
         encoder,
         total_frames,
@@ -80,14 +81,15 @@ pub fn av_scenechange_detect(
         sc_downscale_height,
         zones,
     )?;
+    let frames = frame_thread.join().expect("should join frame_thread successfully")?;
 
     progress_bar::finish_progress_bar();
 
-    Ok((scenes, frames))
+    Ok((scenes, frames, scores))
 }
 
 /// Detect scene changes using rav1e scene detector.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn scene_detect(
     input: &Input,
     encoder: Encoder,
@@ -95,11 +97,11 @@ pub fn scene_detect(
     callback: Option<&dyn Fn(usize)>,
     min_scene_len: usize,
     sc_scaler: &str,
-    sc_pix_format: Option<Pixel>,
+    sc_pix_format: Option<FFPixelFormat>,
     sc_method: ScenecutMethod,
     sc_downscale_height: Option<usize>,
     zones: &[Scene],
-) -> anyhow::Result<Vec<Scene>> {
+) -> anyhow::Result<(Vec<Scene>, BTreeMap<usize, ScenecutResult>)> {
     let (mut decoder, bit_depth) = build_decoder(
         input,
         encoder,
@@ -109,6 +111,7 @@ pub fn scene_detect(
     )?;
 
     let mut scenes = Vec::new();
+    let mut scores: BTreeMap<usize, ScenecutResult> = BTreeMap::new();
     let mut cur_zone = zones.first().filter(|frame| frame.start_frame == 0);
     let mut next_zone_idx = if zones.is_empty() {
         None
@@ -137,28 +140,29 @@ pub fn scene_detect(
             },
             ..DetectionOptions::default()
         };
-        let frame_limit = if let Some(zone) = cur_zone {
-            Some(zone.end_frame - zone.start_frame)
-        } else if let Some(next_idx) = next_zone_idx {
-            let zone = &zones[next_idx];
-            Some(zone.start_frame - frames_read)
-        } else {
-            None
-        };
+        let frame_limit = cur_zone.map_or_else(
+            || {
+                next_zone_idx.map(|next_idx| {
+                    let zone = &zones[next_idx];
+                    zone.start_frame - frames_read
+                })
+            },
+            |zone| Some(zone.end_frame - zone.start_frame),
+        );
         let callback = callback.map(|cb| {
             |frames, _keyframes| {
                 cb(frames + frames_read);
             }
         });
         let sc_result = if bit_depth > 8 {
-            detect_scene_changes::<_, u16>(
+            detect_scene_changes::<u16>(
                 &mut decoder,
                 options,
                 frame_limit,
                 callback.as_ref().map(|cb| cb as &dyn Fn(usize, usize)),
             )
         } else {
-            detect_scene_changes::<_, u8>(
+            detect_scene_changes::<u8>(
                 &mut decoder,
                 options,
                 frame_limit,
@@ -175,6 +179,8 @@ pub fn scene_detect(
                 );
             }
         }
+        scores.extend(sc_result.scores.iter().map(|(k, v)| (k + frames_read, *v)));
+
         let scene_changes = sc_result.scene_changes;
         for (start, end) in scene_changes.iter().copied().tuple_windows() {
             scenes.push(Scene {
@@ -186,16 +192,14 @@ pub fn scene_detect(
 
         scenes.push(Scene {
             start_frame:    scenes.last().map(|scene| scene.end_frame).unwrap_or_default(),
-            end_frame:      if let Some(limit) = frame_limit {
+            end_frame:      frame_limit.map_or(total_frames, |limit| {
                 frames_read += limit;
                 frames_read
-            } else {
-                total_frames
-            },
+            }),
             zone_overrides: cur_zone.and_then(|zone| zone.zone_overrides.clone()),
         });
         if let Some(next_idx) = next_zone_idx {
-            if cur_zone.map_or(true, |zone| zone.end_frame == zones[next_idx].start_frame) {
+            if cur_zone.is_none_or(|zone| zone.end_frame == zones[next_idx].start_frame) {
                 cur_zone = Some(&zones[next_idx]);
                 next_zone_idx = if next_idx + 1 == zones.len() {
                     None
@@ -205,14 +209,14 @@ pub fn scene_detect(
             } else {
                 cur_zone = None;
             }
-        } else if cur_zone.map_or(true, |zone| zone.end_frame == total_frames) {
+        } else if cur_zone.is_none_or(|zone| zone.end_frame == total_frames) {
             // End of video
             break;
         } else {
             cur_zone = None;
         }
     }
-    Ok(scenes)
+    Ok((scenes, scores))
 }
 
 #[tracing::instrument(level = "debug")]
@@ -220,81 +224,102 @@ fn build_decoder(
     input: &Input,
     encoder: Encoder,
     sc_scaler: &str,
-    sc_pix_format: Option<Pixel>,
+    sc_pix_format: Option<FFPixelFormat>,
     sc_downscale_height: Option<usize>,
-) -> anyhow::Result<(Decoder<impl Read>, usize)> {
-    let bit_depth;
-    let filters: SmallVec<[String; 4]> = match (sc_downscale_height, sc_pix_format) {
-        (Some(sdh), Some(spf)) => into_smallvec![
-            "-vf",
-            format!(
-                "format={},scale=-2:'min({},ih)':flags={}",
-                spf.descriptor().unwrap().name(),
-                sdh,
-                sc_scaler
-            )
-        ],
-        (Some(sdh), None) => {
-            into_smallvec!["-vf", format!("scale=-2:'min({sdh},ih)':flags={sc_scaler}")]
-        },
-        (None, Some(spf)) => into_smallvec!["-pix_fmt", spf.descriptor().unwrap().name()],
-        (None, None) => smallvec![],
+) -> anyhow::Result<(Decoder, usize)> {
+    let clip_info = input.clip_info()?;
+    let (input_width, input_height) = clip_info.resolution;
+
+    // Only downscale if needed
+    let sc_downscale_height =
+        sc_downscale_height.filter(|&downscale_height| downscale_height < input_height as usize);
+    let bit_depth = if let Some(sc_pix_format) = sc_pix_format {
+        encoder.get_format_bit_depth(sc_pix_format)?
+    } else if let Ok(input_pix_format) = clip_info.format_info.as_pixel_format() {
+        encoder.get_format_bit_depth(input_pix_format)?
+    } else {
+        clip_info.format_info.as_bit_depth()?
     };
 
-    let decoder = match input {
-        Input::VapourSynth {
-            path, ..
-        } => {
-            bit_depth = crate::vapoursynth::bit_depth(path.as_ref(), input.as_vspipe_args_map()?)?;
-            let vspipe_args = input.as_vspipe_args_vec()?;
+    let decoder = if input.is_vapoursynth() || input.is_vapoursynth_script() {
+        // VapoursynthDecoder is the only reliable method for downscaling user-provided
+        // scripts, and for our generated scripts, it is faster than piping.
 
-            if !filters.is_empty() || !vspipe_args.is_empty() {
-                let mut command = Command::new("vspipe");
-                command
-                    .arg("-c")
-                    .arg("y4m")
-                    .arg(path)
-                    .arg("-")
-                    .env("AV1AN_PERFORM_SCENE_DETECTION", "true")
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::null());
-                // Append vspipe python arguments to the environment if there are any
-                for arg in vspipe_args {
-                    command.args(["-a", &arg]);
-                }
+        // Must use from_file in order to set the CWD to the
+        // directory of the user-provided VapourSynth script
+        let mut args_map = input.as_vspipe_args_hashmap()?;
+        args_map.insert("AV1AN_PERFORM_SCENE_DETECTION".into(), "1".into());
+        let mut vs_decoder = VapoursynthDecoder::from_file(input.as_script_path(), args_map)?;
 
-                Decoder::Y4m(y4m::Decoder::new(command.spawn()?.stdout.unwrap())?)
+        if sc_downscale_height.is_some() || sc_pix_format.is_some() {
+            let downscale_height = sc_downscale_height.map(|dh| dh as u32);
+            let downscale_width = downscale_height
+                .map(|dh| (input_width as f64 * (dh as f64 / input_height as f64)).round() as u32);
+            let pix_format = if let Some(f) = sc_pix_format {
+                Some(f.to_vapoursynth_format()?)
             } else {
-                Decoder::Vapoursynth(VapoursynthDecoder::new(path.as_ref())?)
-            }
-        },
-        Input::Video {
-            path,
-        } => {
-            let input_pix_format =
-                crate::ffmpeg::get_pixel_format(path.as_ref()).unwrap_or_else(|e| {
-                    panic!("FFmpeg failed to get pixel format for input video: {e:?}")
-                });
-            bit_depth = encoder.get_format_bit_depth(sc_pix_format.unwrap_or(input_pix_format))?;
-            if !filters.is_empty() {
-                Decoder::Y4m(y4m::Decoder::new(
-                    Command::new("ffmpeg")
-                        .args(["-r", "1", "-i"])
-                        .arg(path)
-                        .args(filters.as_ref())
-                        .args(["-f", "yuv4mpegpipe", "-strict", "-1", "-"])
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::null())
-                        .spawn()?
-                        .stdout
-                        .unwrap(),
-                )?)
-            } else {
-                Decoder::Ffmpeg(FfmpegDecoder::new(path)?)
-            }
-        },
+                None
+            };
+            // Register a node modifier callback to perform downscaling
+            vs_decoder.register_node_modifier(Box::new(move |core, node| {
+                // Node is expected to exist
+                let node = node.ok_or_else(|| DecoderError::VapoursynthInternalError {
+                    cause: "No output node".to_string(),
+                })?;
+
+                let resized_node = resize_node(
+                    core,
+                    &node,
+                    // Ensure width is divisible by 2
+                    downscale_width.map(|dw| (dw / 2) * 2),
+                    downscale_height,
+                    pix_format,
+                    None,
+                )
+                .map_err(|e| DecoderError::VapoursynthInternalError {
+                    cause: e.to_string(),
+                })?;
+
+                Ok(resized_node)
+            }))?;
+        }
+
+        Decoder::from_decoder_impl(DecoderImpl::Vapoursynth(vs_decoder))?
+    } else {
+        // FFmpeg is faster if the user provides video input
+        let path = input.as_path();
+
+        let filters: SmallVec<[String; 4]> = match (sc_downscale_height, sc_pix_format) {
+            (Some(sdh), Some(spf)) => into_smallvec![
+                "-vf",
+                format!(
+                    "format={},scale=-2:'min({},ih)':flags={}",
+                    spf.to_pix_fmt_string(),
+                    sdh,
+                    sc_scaler
+                )
+            ],
+            (Some(sdh), None) => {
+                into_smallvec!["-vf", format!("scale=-2:'min({sdh},ih)':flags={sc_scaler}")]
+            },
+            (None, Some(spf)) => into_smallvec!["-pix_fmt", spf.to_pix_fmt_string()],
+            (None, None) => smallvec![],
+        };
+
+        let stdout = Command::new("ffmpeg")
+            .args(["-r", "1", "-i"])
+            .arg(path)
+            .args(filters.as_ref())
+            .args(["-f", "yuv4mpegpipe", "-strict", "-1", "-"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?
+            .stdout
+            .expect("ffmpeg should have stdout");
+        let decoder_impl = DecoderImpl::Y4m(Y4mDecoder::new(Box::new(stdout) as Box<dyn Read>)?);
+
+        Decoder::from_decoder_impl(decoder_impl)?
     };
 
     Ok((decoder, bit_depth))

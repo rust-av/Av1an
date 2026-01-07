@@ -1,9 +1,8 @@
 [package]
 name = "av1an-core"
-version = "0.4.4"
-rust-version = "1.81"
+version = "0.5.2"
+rust-version = "1.88"
 edition = "2021"
-authors = ["Zen <master_of_zen@protonmail.com>"]
 description = """
 Cross-platform command-line AV1 / VP9 / HEVC / H264 encoding framework with per scene quality encoding [Core library]
 """
@@ -16,90 +15,184 @@ readme = "../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.42"
+anyhow = { workspace = true }
 arrayvec = "0.7.2"
+av-decoders = { version = "0.8", features = ["vapoursynth"] }
 av-format = "0.7.0"
 av-ivf = "0.5.0"
-av-scenechange = { version = "0.14.1", default-features = false, features = [
-    "ffmpeg",
+av-scenechange = { version = "0.21.0", default-features = false, features = [
+    "asm",
     "vapoursynth",
 ] }
-av1-grain = { version = "0.2.4", default-features = false, features = [
+av1-grain = { version = "0.2.5", default-features = false, features = [
     "create",
 ] }
-cfg-if = "1.0.0"
+cfg-if = "1.0.4"
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.5"
-indicatif = "0.17.2"
+dashmap = { version = "6.0.0", features = ["serde"] }
+indicatif = "0.18.3"
 itertools = "0.14.0"
-log = "0.4.14"
-memchr = "2.4.1"
-nom = "7.1.1"
-num-traits = "0.2.19"
-once_cell = "1.8.0"
-parking_lot = "0.12.0"
-pastey = "0.1.0"
-path_abs = "0.5.1"
-rand = "0.9.0"
+memchr = "2.7.6"
+nom = "8.0.0"
+num-traits = { workspace = true }
+once_cell = { workspace = true }
+pastey = "0.2.0"
+path_abs = { workspace = true }
+plotters = { version = "0.3.1", default-features = false, features = [
+    "svg_backend",
+    "line_series",
+] }
+rand = "0.9.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 simdutf8 = "0.1.3"
-splines = "4.0.0"
+smallvec = { version = "1.15.1", default-features = false, features = [
+    "const_generics",
+    "const_new",
+    "union",
+] }
 strsim = "0.11.0"
-strum = { version = "0.27.1", features = ["derive"] }
-sysinfo = "0.35.1"
+strum = { version = "0.27.2", features = ["derive"] }
+sysinfo = "0.37.2"
 textwrap = "0.16.0"
-thiserror = "2.0.11"
-which = "7.0.1"
+thiserror = "2.0.17"
+tracing = { workspace = true }
+which = "8.0.0"
 y4m = "0.8.0"
+vapoursynth = "0.5.1"
 # TODO: move all of this CLI stuff to av1an-cli
-ansi_term = "0.12.1"
-ctrlc = "3.4.7"
-regex = "1.11.1"
-tokio = { version = "1.45", features = ["full"] }
-tracing = "0.1"
-tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+colored = "3.0.0"
+ctrlc = "3.5.1"
+regex = "1.12.2"
+dunce = "1.0.5"
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
 # update this when macos support is implemented
 [target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
 affinity = "0.1.2"
 
-[dependencies.smallvec]
-version = "1.7.0"
-default-features = false
-features = ["const_generics", "const_new", "union"]
-
-[dependencies.ffmpeg]
-package = "ffmpeg-the-third"
-version = "3.0.1"
-features = ["serialize"]
-
-[dependencies.plotters]
-version = "0.3.1"
-default-features = false
-features = ["svg_backend", "line_series"]
-
-[dependencies.vapoursynth]
-version = "0.4.0"
-features = ["vsscript-functions", "vapoursynth-functions"]
-
-[dependencies.dashmap]
-version = "6.0.0"
-features = ["serde"]
-
 [dev-dependencies]
-tempfile = "3.20.0"
+tempfile = { workspace = true }
 
 [features]
-default = ["vapoursynth_new_api"]
-ffmpeg_static = ["ffmpeg/static", "ffmpeg/build"]
-vapoursynth_new_api = [
-    "vapoursynth/vapoursynth-api-32",
-    "vapoursynth/vsscript-api-31",
-]
+default = []
 
 [lints.clippy]
+# Performance
+clear_with_drain = "warn"
+format_collect = "warn"
+format_push_string = "warn"
+imprecise_flops = "warn"
+inefficient_to_string = "warn"
 inline_always = "warn"
+iter_with_drain = "warn"
+large_include_file = "warn"
+large_types_passed_by_value = "warn"
+linkedlist = "deny"
 missing_inline_in_public_items = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+naive_bytecount = "warn"
+needless_bitwise_bool = "warn"
+needless_collect = "warn"
+needless_pass_by_value = "warn"
+non_std_lazy_statics = "warn"
+non_zero_suggestions = "warn"
+or_fun_call = "warn"
+rc_buffer = "warn"
+redundant_clone = "warn"
+ref_option = "warn"
+set_contains_or_insert = "warn"
+stable_sort_primitive = "warn"
+string_lit_chars_any = "warn"
+suboptimal_flops = "warn"
+trivial_regex = "warn"
+trivially_copy_pass_by_ref = "warn"
+unnecessary_box_returns = "warn"
+unnecessary_join = "warn"
+unused_async = "warn"
+verbose_file_reads = "warn"
+# Readability/Code Intention
+# Disabled because of a lint difference between stable and nightly
+# allow_attributes = "warn"
+checked_conversions = "warn"
+clone_on_ref_ptr = "warn"
+cloned_instead_of_copied = "warn"
+enum_glob_use = "warn"
+equatable_if_let = "warn"
+filter_map_next = "warn"
+flat_map_option = "warn"
+if_then_some_else_none = "warn"
+implicit_clone = "warn"
+inconsistent_struct_constructor = "warn"
+invalid_upcast_comparisons = "warn"
+iter_filter_is_ok = "warn"
+iter_filter_is_some = "warn"
+iter_on_empty_collections = "warn"
+iter_on_single_items = "warn"
+macro_use_imports = "warn"
+manual_assert = "warn"
+manual_instant_elapsed = "warn"
+manual_is_power_of_two = "warn"
+manual_is_variant_and = "warn"
+manual_let_else = "warn"
+manual_string_new = "warn"
+map_unwrap_or = "warn"
+map_with_unused_argument_over_ranges = "warn"
+match_bool = "warn"
+needless_continue = "warn"
+needless_pass_by_ref_mut = "warn"
+option_as_ref_cloned = "warn"
+option_if_let_else = "warn"
+pathbuf_init_then_push = "warn"
+precedence_bits = "warn"
+range_minus_one = "warn"
+range_plus_one = "warn"
+redundant_test_prefix = "warn"
+ref_option_ref = "warn"
+# Disabled due to https://github.com/rust-lang/rust-clippy/issues/14697
+# self_named_module_files = "warn"
+semicolon_if_nothing_returned = "warn"
+tests_outside_test_module = "warn"
+transmute_ptr_to_ptr = "warn"
+unused_peekable = "warn"
+unused_rounding = "warn"
+verbose_bit_mask = "warn"
+zero_sized_map_values = "warn"
+# Correctness/Safety
+case_sensitive_file_extension_comparisons = "warn"
+cfg_not_test = "deny"
+collection_is_never_read = "warn"
+create_dir = "warn"
+dbg_macro = "warn"
+debug_assert_with_mut_call = "deny"
+expl_impl_clone_on_copy = "deny"
+filetype_is_file = "warn"
+future_not_send = "warn"
+ignore_without_reason = "warn"
+infinite_loop = "warn"
+large_futures = "warn"
+large_stack_arrays = "warn"
+large_stack_frames = "warn"
+manual_midpoint = "warn"
+maybe_infinite_iter = "warn"
+mem_forget = "warn"
+mismatching_type_param_order = "warn"
+mixed_read_write_in_expression = "warn"
+mut_mut = "warn"
+non_send_fields_in_send_ty = "deny"
+path_buf_push_overwrite = "warn"
+rc_mutex = "warn"
+read_zero_byte_vec = "warn"
+significant_drop_in_scrutinee = "deny"
+str_split_at_newline = "warn"
+string_slice = "warn"
+suspicious_operation_groupings = "warn"
+suspicious_xor_used_as_pow = "warn"
+transmute_undefined_repr = "warn"
+undocumented_unsafe_blocks = "warn"
+unnecessary_debug_formatting = "warn"
+unwrap_used = "warn"
+# Annoyances
+uninlined_format_args = "allow"

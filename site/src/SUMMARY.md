@@ -15,11 +15,15 @@
 
 - [Target Quality](./Features/TargetQuality.md)
 
-# Instalation
+# Installation
 
  - [Compiling](./compiling.md)
  - [Docker](./docker.md)
 
+
+# Contributing
+
+ - [Developing and Contributing](./contributing.md)
 
 
 # Encoders

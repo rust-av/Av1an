@@ -8,6 +8,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   DEBIAN_FRONTEND: noninteractive
 
@@ -16,14 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
+        uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      
+
       - name: Validate formatting
         run: |
           cargo fmt --all -- --check
@@ -32,12 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v6
         with:
-          toolchain: stable
-          override: true
+          lfs: "true"
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       - name: Validate encoders
@@ -70,246 +70,21 @@ jobs:
         run: |
           cargo test --profile ci
 
-  encode-tests:
-    needs: [ formatting, unit-tests ]
-    runs-on: ubuntu-latest
-    container: shssoichiro/av1an-ci:latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Validate encoders
+      - name: Testing integration tests
+        working-directory: ./av1an
         run: |
-          which aomenc
-          which SvtAv1EncApp
-          which rav1e
-          which vpxenc
-          which x265
-          which x264
-          which vspipe
-          which ffmpeg
-
-      # 352x240 112 frames test video
-      - name: Download test video
-        run: |
-          curl -LO https://media.xiph.org/video/derf/y4m/tt_sif.y4m
-
-      - name: Build Av1an
-        run: |
-          cargo build --profile ci
-
-      # The baseline tests should not include the faster default params, because we want to also test that
-      # it works without params passed
-      - name: Testing baseline aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv"
-          du -h tt_sif.mkv
-
-      - name: Testing baseline rav1e
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e rav1e --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv"
-          du -h tt_sif.mkv
-
-      - name: Testing baseline svt-av1
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e svt-av1 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv"
-          du -h tt_sif.mkv
-
-      - name: Testing baseline vpx
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e vpx --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv"
-          du -h tt_sif.mkv
-
-      - name: Testing baseline x265
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x265 --pix-format yuv420p -c mkvmerge --sc-method fast -y -o "tt_sif.mkv"
-          du -h tt_sif.mkv
-
-      - name: Testing baseline x264
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x264 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv"
-          du -h tt_sif.mkv
-
-      - name: Testing baseline-select aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --chunk-method select
-          du -h tt_sif.mkv
-
-      - name: Testing baseline-select rav1e
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e rav1e --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --speed 10 --low-latency" --chunk-method select
-          du -h tt_sif.mkv
-
-      - name: Testing baseline-select svt-av1
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e svt-av1 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --preset 8" --chunk-method select
-          du -h tt_sif.mkv
-
-      - name: Testing baseline-select vpx
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e vpx --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=9 --rt --threads=4" --chunk-method select
-          du -h tt_sif.mkv
-
-      - name: Testing baseline-select x265
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x265 --pix-format yuv420p -c mkvmerge --sc-method fast -y -o "tt_sif.mkv" -v " --preset ultrafast" --chunk-method select
-          du -h tt_sif.mkv
-
-      - name: Testing baseline-select x264
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x264 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --preset ultrafast" --chunk-method select
-          du -h tt_sif.mkv
-
-      - name: Testing target-quality
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x265 --pix-format yuv420p -c mkvmerge --sc-method fast -y -v " --preset ultrafast" --target-quality 95 -o "95.mkv" --log-file 95
-          target/ci/av1an -i tt_sif.y4m -e x265 --pix-format yuv420p -c mkvmerge --sc-method fast -y -v " --preset ultrafast" --target-quality 80 -o "80.mkv" --log-file 80
-          du -h 95.mkv 80.mkv
-          # compare the size of the two files to make sure 95.mkv is larger than 80.mkv
-          if [ $(stat -c%s "95.mkv") -gt $(stat -c%s "80.mkv") ]; then echo "Target quality is working correctly"; else echo "95.mkv is smaller than 80.mkv"; cat 95.log 80.log; exit 1; fi
-
-      - name: Testing target-quality aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --target-quality 95
-          du -h tt_sif.mkv
-
-      - name: Testing target-quality rav1e
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e rav1e --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --speed 10 --low-latency" --target-quality 95
-          du -h tt_sif.mkv
-
-      - name: Testing target-quality svt-av1
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e svt-av1 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --preset 8" --target-quality 95
-          du -h tt_sif.mkv
-
-      - name: Testing target-quality vpx
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e vpx --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=9 --rt --threads=4" --target-quality 95
-          du -h tt_sif.mkv
-
-      - name: Testing target-quality x265
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x265 --pix-format yuv420p -c mkvmerge --sc-method fast -y -o "tt_sif.mkv" -v " --preset ultrafast" --target-quality 95
-          du -h tt_sif.mkv
-
-      - name: Testing target-quality x264
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x264 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --preset ultrafast" --target-quality 95
-          du -h tt_sif.mkv
-
-      - name: Testing target-quality replace crf
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x264 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --preset ultrafast --crf 0" --target-quality 95
-          du -h tt_sif.mkv
-
-      - name: Testing probe-slow aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --target-quality 95 --probe-slow
-          du -h tt_sif.mkv
-
-      - name: Testing probe-slow rav1e
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e rav1e --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --speed 10 --low-latency" --target-quality 95 --probe-slow
-          du -h tt_sif.mkv
-
-      - name: Testing probe-slow svt-av1
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e svt-av1 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --preset 8" --target-quality 95 --probe-slow
-          du -h tt_sif.mkv
-
-      - name: Testing probe-slow vpx
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e vpx --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=9 --rt --threads=4" --target-quality 95 --probe-slow
-          du -h tt_sif.mkv
-
-      - name: Testing probe-slow x265
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x265 --pix-format yuv420p -c mkvmerge --sc-method fast -y -o "tt_sif.mkv" -v " --preset ultrafast" --target-quality 95 --probe-slow
-          du -h tt_sif.mkv
-
-      - name: Testing probe-slow x264
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e x264 --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --preset ultrafast" --target-quality 95 --probe-slow
-          du -h tt_sif.mkv
-
-      - name: Testing chunk_hybrid aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --chunk-method hybrid
-          du -h tt_sif.mkv
-
-      - name: Testing chunk_select aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --chunk-method select
-          du -h tt_sif.mkv
-
-      - name: Testing chunk_ffms2 aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --chunk-method ffms2
-          du -h tt_sif.mkv
-
-      - name: Testing chunk_lsmash aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --chunk-method lsmash
-          du -h tt_sif.mkv
-
-      - name: Testing scenes aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" -s scenes.json
-          du -h tt_sif.mkv
-
-      - name: Testing workers aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" -w 2
-          du -h tt_sif.mkv
-
-      - name: Testing vmaf aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --vmaf
-          du -h tt_sif.mkv
-
-      - name: Testing extra_splits aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" -x 10
-          du -h tt_sif.mkv
-
-      - name: Testing temp aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" --temp temporary
-          du -h tt_sif.mkv
-
-      - name: Testing concat ffmpeg aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p --sc-method fast -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4" -c ffmpeg
-          du -h tt_sif.mkv
-
-      - name: Testing slow scenechange aom
-        run: |
-          target/ci/av1an -i tt_sif.y4m -e aom --pix-format yuv420p -y -o "tt_sif.mkv" -v " --cpu-used=10 --rt --threads=4"
-          du -h tt_sif.mkv
-
-      - name: Testing sc-only
-        run: |
-          target/ci/av1an -i tt_sif.y4m --sc-only --sc-method fast -s "tt_sif_scenes.json"
-          du -h tt_sif_scenes.json
-        continue-on-error: true
+          cargo test --profile ci
 
   code-coverage:
-    needs: [ formatting, unit-tests, encode-tests ]
+    needs: [formatting, unit-tests]
     runs-on: ubuntu-latest
     container: shssoichiro/av1an-ci:latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust stable
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v6
         with:
-          toolchain: stable
-          override: true
+          lfs: "true"
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       - name: Validate encoders
@@ -336,14 +111,14 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.log
-          fail_ci_if_error: true
+          fail_ci_if_error: false
 
   docker:
-    needs: [ formatting, unit-tests ]
+    needs: [formatting, unit-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -352,7 +127,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Cache Docker layers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -382,24 +157,18 @@ jobs:
   publish-check:
     runs-on: ubuntu-latest
     outputs:
-      should_publish: ${{ steps.publish_check.outputs.should_publish }}
+      should_publish: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       - name: Check for DOCKERHUB_USERNAME and DOCKERHUB_TOKEN
-        id: publish_check
-        run: |
-          if [ -z ${{ secrets.DOCKERHUB_USERNAME }} ] || [ -z ${{ secrets.DOCKERHUB_TOKEN }} ]; then
-            echo "should_publish=false" >> $GITHUB_OUTPUT
-          else
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-          fi
+        run: echo "Checking if Docker Hub secrets are configured"
 
   docker-publish:
-    needs: [ unit-tests, encode-tests, docker, publish-check ]
+    needs: [unit-tests, docker, publish-check]
     runs-on: ubuntu-latest
     if: needs.publish-check.outputs.should_publish == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Docker meta
         id: docker_meta
@@ -428,7 +197,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Cache Docker layers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
