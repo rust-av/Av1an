@@ -16,8 +16,8 @@ jobs:
       CARGO_INCREMENTAL: 0
       vsynth_ver: "R73"
       vsynth_path: "C:/Program Files/Vapoursynth"
-      FFMS_LIB_DIR: ${{github.workspace}}\ffms2-5.0-msvc\x64
-      FFMS_INCLUDE_DIR: ${{github.workspace}}\ffms2-5.0-msvc\include
+      FFMS_LIB_DIR: ${{github.workspace}}\ffms2\x64
+      FFMS_INCLUDE_DIR: ${{github.workspace}}\ffms2\include
 
     steps:
       - name: NASM setup
@@ -33,10 +33,11 @@ jobs:
           Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
           Expand-Archive "$tempFile" "$env:vsynth_path"
 
-      - name: Download and extract deps
+      - name: FFMS2 installation
         run: |
           curl -L -o ffms2.7z "https://github.com/FFMS/ffms2/releases/download/5.0/ffms2-5.0-msvc.7z"
           7z x ffms2.7z
+          Rename-Item -Path "ffms2-5.0-msvc" -Destination "ffms2"
 
       - uses: actions/checkout@v6
 
