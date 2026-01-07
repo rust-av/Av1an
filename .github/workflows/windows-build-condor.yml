@@ -16,8 +16,8 @@ jobs:
       CARGO_INCREMENTAL: 0
       vsynth_ver: "R73"
       vsynth_path: "C:/Program Files/Vapoursynth"
-      FFMS_LIB_DIR: ${{github.workspace}}\ffms2\x64
-      FFMS_INCLUDE_DIR: ${{github.workspace}}\ffms2\include
+      FFMS_LIB_DIR: C:\ffms2\x64
+      FFMS_INCLUDE_DIR: C:\ffms2\include
 
     steps:
       - name: NASM setup
@@ -37,7 +37,7 @@ jobs:
         run: |
           curl -L -o ffms2.7z "https://github.com/FFMS/ffms2/releases/download/5.0/ffms2-5.0-msvc.7z"
           7z x ffms2.7z
-          Move-Item -Path "ffms2-5.0-msvc" -Destination "ffms2"
+          Move-Item -Path "ffms2-5.0-msvc" -Destination "C:\ffms2"
 
       - uses: actions/checkout@v6
 
