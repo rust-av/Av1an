@@ -1,4 +1,4 @@
-name: Build Av1an (Windows x64)
+name: Build California Condor (Windows x64)
 on:
   push:
     branches:
