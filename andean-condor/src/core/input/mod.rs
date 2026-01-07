@@ -1,7 +1,8 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     io::{Cursor, Write},
     path::PathBuf,
+    sync::{Arc, Condvar, Mutex},
 };
 
 use anyhow::{ensure, Context, Result};
@@ -509,12 +510,12 @@ impl Input {
                         let frame = decoder.get_video_frame::<u8>(index).context(CONTEXT)?;
 
                         let mut planes = Vec::new();
-                        planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                        planes.extend(frame.y_plane.byte_data());
                         if let Some(plane) = frame.u_plane {
-                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            planes.extend(plane.byte_data());
                         }
                         if let Some(plane) = frame.v_plane {
-                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            planes.extend(plane.byte_data());
                         }
                         stream.write_all(&planes)?;
                     },
@@ -522,12 +523,12 @@ impl Input {
                         let frame = decoder.get_video_frame::<u16>(index).context(CONTEXT)?;
 
                         let mut planes = Vec::new();
-                        planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                        planes.extend(frame.y_plane.byte_data());
                         if let Some(plane) = frame.u_plane {
-                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            planes.extend(plane.byte_data());
                         }
                         if let Some(plane) = frame.v_plane {
-                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            planes.extend(plane.byte_data());
                         }
                         stream.write_all(&planes)?;
                     },
@@ -593,12 +594,12 @@ impl Input {
                             let frame = decoder.get_video_frame::<u8>(index).context(CONTEXT)?;
 
                             let mut planes = Vec::new();
-                            planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                            planes.extend(frame.y_plane.byte_data());
                             if let Some(plane) = frame.u_plane {
-                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                                planes.extend(plane.byte_data());
                             }
                             if let Some(plane) = frame.v_plane {
-                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                                planes.extend(plane.byte_data());
                             }
                             planes
                         },
@@ -606,12 +607,12 @@ impl Input {
                             let frame = decoder.get_video_frame::<u16>(index).context(CONTEXT)?;
 
                             let mut planes = Vec::new();
-                            planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                            planes.extend(frame.y_plane.byte_data());
                             if let Some(plane) = frame.u_plane {
-                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                                planes.extend(plane.byte_data());
                             }
                             if let Some(plane) = frame.v_plane {
-                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                                planes.extend(plane.byte_data());
                             }
                             planes
                         },
@@ -629,8 +630,29 @@ impl Input {
                 decoder, ..
             } => {
                 let node = decoder.get_vapoursynth_node()?;
+                let pair = Arc::new((Mutex::new(BTreeMap::new()), Condvar::new()));
                 for index in start..end {
-                    let frame = node.get_frame(index)?;
+                    let pair_clone = Arc::clone(&pair);
+                    node.get_frame_async(index, move |frame, _index, _node| {
+                        let frame = frame.expect("Failed to get frame");
+                        let (lock, condvar) = &*pair_clone;
+                        let mut map = lock.lock().expect("mutex should acquire lock");
+                        map.insert(index, frame);
+                        condvar.notify_one();
+                    });
+                }
+
+                let mut next_frame_index = start;
+
+                while next_frame_index < end {
+                    let (map, condvar) = &*pair;
+                    let map = map.lock().expect("mutex should acquire lock");
+                    let mut map = condvar
+                        .wait_while(map, |m| !m.contains_key(&next_frame_index))
+                        .expect("Condvar should be notified");
+
+                    let (_index, frame) = map.pop_first().expect("Map should have frame");
+                    next_frame_index += 1;
                     let framedata = {
                         let mut data = Vec::new();
                         data.extend_from_slice(FRAME_HEADER.as_bytes());
@@ -655,8 +677,6 @@ impl Input {
 
                     frame_sender.send(Cursor::new(framedata))?;
                 }
-
-                // stream.write_all(&framedata)?;
             },
         }
 
