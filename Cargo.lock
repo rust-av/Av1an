@@ -157,9 +157,9 @@ dependencies = [
 
 [[package]]
 name = "av-decoders"
-version = "0.8.0"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc14fe31c1fbb6186cd28b6952072e46dfac24726f4649a72e14c100de89d78f"
+checksum = "79f063f8386782048e127ce2a55a6768ead91d934c71a6e50118fa1293e0588b"
 dependencies = [
  "num-rational",
  "thiserror",
@@ -193,9 +193,9 @@ dependencies = [
 
 [[package]]
 name = "av-scenechange"
-version = "0.21.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5b63be4bfcb1eafe6fe791aa391576893fdd8d29de27695ca26610191e3c74f"
+checksum = "5434fb668e4c01096c5b89158ae8207bebbc62acc8a01875ef9c49766c5cb120"
 dependencies = [
  "aligned",
  "anyhow",
@@ -1604,9 +1604,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.148"
+version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3084b546a1dd6289475996f182a22aba973866ea8e8b02c51d9f46b1336a22da"
+checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
  "itoa",
  "memchr",
@@ -1727,9 +1727,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.113"
+version = "2.0.114"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "678faa00651c9eb72dd2020cbdf275d92eccb2400d568e419efdd64838145cb4"
+checksum = "d4d107df263a3013ef9b1879b0df87d706ff80f65a86ea879bd9c31f9b307c2a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1986,9 +1986,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "v_frame"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4f0f7dd3f0a3b18a6c2ed036a70477c40ef2de8e4be3148bd37c40822f4c755"
+checksum = "327127c37e0b0d9d93dc053beb60ce876174aaa469d282d46d3212c634958add"
 dependencies = [
  "aligned-vec",
  "num-traits",
@@ -2431,18 +2431,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.31"
+version = "0.8.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd74ec98b9250adb3ca554bdde269adf631549f51d8a8f8f0a10b50f1cb298c3"
+checksum = "1fabae64378cb18147bb18bca364e63bdbe72a0ffe4adf0addfec8aa166b2c56"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.31"
+version = "0.8.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8a8d209fdf45cf5138cbb5a506f6b52522a25afccc534d1475dad8e31105c6a"
+checksum = "c9c2d862265a8bb4471d87e033e730f536e2a285cc7cb05dbce09a2a97075f90"
 dependencies = [
  "proc-macro2",
  "quote",
