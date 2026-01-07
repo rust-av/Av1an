@@ -81,6 +81,8 @@ impl Configuration {
         let clip_info = input_instance.clip_info()?;
         let fps = *clip_info.frame_rate.numer() as f64 / *clip_info.frame_rate.denom() as f64;
 
+        let scenes_directory = temp.join("scenes");
+
         let mut configuration = Self {
             condor:            CondorModel {
                 input:           input_data,
@@ -104,10 +106,10 @@ impl Configuration {
                     benchmarker:         BenchmarkerConfig::default(),
                     parallel_encoder:    ParallelEncoderConfig {
                         workers:          None,
-                        scenes_directory: temp.join("scenes"),
+                        scenes_directory: scenes_directory.clone(),
                         input:            None,
                     },
-                    scene_concatenation: SceneConcatenatorConfig::default(),
+                    scene_concatenation: SceneConcatenatorConfig::new(&scenes_directory),
                 },
             },
             input:             input.to_path_buf(),
