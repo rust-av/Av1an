@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'condor'
+  - workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,8 +16,8 @@ jobs:
       CARGO_INCREMENTAL: 0
       vsynth_ver: "R73"
       vsynth_path: "C:/Program Files/Vapoursynth"
-      FFMS_LIB_DIR: ${{github.workspace}}/ffms2-5.0-msvc\x64
-      FFMS_INCLUDE_DIR: ${{github.workspace}}/ffms2-5.0-msvc\include
+      FFMS_LIB_DIR: ${{github.workspace}}\ffms2-5.0-msvc\x64
+      FFMS_INCLUDE_DIR: ${{github.workspace}}\ffms2-5.0-msvc\include
 
     steps:
       - name: NASM setup
