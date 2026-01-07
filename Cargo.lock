@@ -53,10 +53,10 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "arrayvec",
- "av-decoders 0.8.1",
+ "av-decoders",
  "av-format",
  "av-ivf",
- "av-scenechange 0.20.0",
+ "av-scenechange",
  "av1-grain",
  "cfg-if",
  "crossbeam-channel",
@@ -203,19 +203,6 @@ dependencies = [
 
 [[package]]
 name = "av-decoders"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80cea20b241ae547b284dc073c15899577f2165b9a18f9f58483427f5a07d17c"
-dependencies = [
- "num-rational",
- "thiserror 2.0.17",
- "v_frame 0.3.9",
- "vapoursynth",
- "y4m",
-]
-
-[[package]]
-name = "av-decoders"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3badbe2fd30055bc2b83197c289990cab6b713835bf7e4d15a38fb091140a960"
@@ -223,7 +210,7 @@ dependencies = [
  "ffms2-sys",
  "num-rational",
  "thiserror 2.0.17",
- "v_frame 0.4.2",
+ "v_frame",
  "vapoursynth",
  "y4m",
 ]
@@ -253,30 +240,6 @@ dependencies = [
 
 [[package]]
 name = "av-scenechange"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be6c427092acf901527b888d8e4e8e1cbac777285446f9cf335a9b478446e66c"
-dependencies = [
- "aligned",
- "anyhow",
- "arrayvec",
- "av-decoders 0.7.0",
- "cc",
- "cfg-if",
- "cpufeatures",
- "libc",
- "log",
- "nasm-rs",
- "num-rational",
- "num-traits",
- "rayon",
- "thiserror 2.0.17",
- "v_frame 0.3.9",
- "y4m",
-]
-
-[[package]]
-name = "av-scenechange"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5b63be4bfcb1eafe6fe791aa391576893fdd8d29de27695ca26610191e3c74f"
@@ -284,7 +247,7 @@ dependencies = [
  "aligned",
  "anyhow",
  "arrayvec",
- "av-decoders 0.8.1",
+ "av-decoders",
  "cc",
  "cfg-if",
  "cpufeatures",
@@ -296,7 +259,7 @@ dependencies = [
  "pastey",
  "rayon",
  "thiserror 2.0.17",
- "v_frame 0.4.2",
+ "v_frame",
  "y4m",
 ]
 
@@ -339,10 +302,10 @@ dependencies = [
  "affinity",
  "anyhow",
  "arrayvec",
- "av-decoders 0.8.1",
+ "av-decoders",
  "av-format",
  "av-ivf",
- "av-scenechange 0.21.0",
+ "av-scenechange",
  "av1-grain",
  "cfg-if",
  "colored",
@@ -3001,17 +2964,6 @@ dependencies = [
  "atomic",
  "getrandom",
  "js-sys",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "v_frame"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "666b7727c8875d6ab5db9533418d7c764233ac9c0cff1d469aec8fa127597be2"
-dependencies = [
- "aligned-vec",
- "num-traits",
  "wasm-bindgen",
 ]
 

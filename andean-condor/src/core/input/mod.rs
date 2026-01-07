@@ -459,16 +459,16 @@ impl Input {
         let details = decoder.get_video_details();
 
         let chroma_str = match details.chroma_sampling {
-            av_decoders::v_frame::pixel::ChromaSampling::Cs400 => "mono",
-            av_decoders::v_frame::pixel::ChromaSampling::Cs420 => "420",
-            av_decoders::v_frame::pixel::ChromaSampling::Cs422 => "422",
-            av_decoders::v_frame::pixel::ChromaSampling::Cs444 => "444",
+            av_decoders::v_frame::chroma::ChromaSubsampling::Monochrome => "mono",
+            av_decoders::v_frame::chroma::ChromaSubsampling::Yuv420 => "420",
+            av_decoders::v_frame::chroma::ChromaSubsampling::Yuv422 => "422",
+            av_decoders::v_frame::chroma::ChromaSubsampling::Yuv444 => "444",
         };
         let chroma_header = format!(
             "{}{}{}",
             chroma_str,
             match details.chroma_sampling {
-                av_decoders::v_frame::pixel::ChromaSampling::Cs400 => "",
+                av_decoders::v_frame::chroma::ChromaSubsampling::Monochrome => "",
                 _ if details.bit_depth > 8 => "p",
                 _ => "",
             },
@@ -508,21 +508,28 @@ impl Input {
                     8 => {
                         let frame = decoder.get_video_frame::<u8>(index).context(CONTEXT)?;
 
-                        for plane in frame.planes.iter() {
-                            let pixels = plane.iter().collect::<Vec<u8>>();
-                            stream.write_all(&pixels)?;
+                        let mut planes = Vec::new();
+                        planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                        if let Some(plane) = frame.u_plane {
+                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
                         }
+                        if let Some(plane) = frame.v_plane {
+                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                        }
+                        stream.write_all(&planes)?;
                     },
                     _ => {
                         let frame = decoder.get_video_frame::<u16>(index).context(CONTEXT)?;
 
-                        for plane in frame.planes.iter() {
-                            let pixels = plane
-                                .iter()
-                                .flat_map(|pixel| pixel.to_le_bytes())
-                                .collect::<Vec<u8>>();
-                            stream.write_all(&pixels)?;
+                        let mut planes = Vec::new();
+                        planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                        if let Some(plane) = frame.u_plane {
+                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
                         }
+                        if let Some(plane) = frame.v_plane {
+                            planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                        }
+                        stream.write_all(&planes)?;
                     },
                 }
             },
@@ -585,25 +592,28 @@ impl Input {
                         8 => {
                             let frame = decoder.get_video_frame::<u8>(index).context(CONTEXT)?;
 
-                            frame
-                                .planes
-                                .iter()
-                                .flat_map(|plane| plane.iter().collect::<Vec<u8>>())
-                                .collect::<Vec<u8>>()
+                            let mut planes = Vec::new();
+                            planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                            if let Some(plane) = frame.u_plane {
+                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            }
+                            if let Some(plane) = frame.v_plane {
+                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            }
+                            planes
                         },
                         _ => {
                             let frame = decoder.get_video_frame::<u16>(index).context(CONTEXT)?;
 
-                            frame
-                                .planes
-                                .iter()
-                                .flat_map(|plane| {
-                                    plane
-                                        .iter()
-                                        .flat_map(|pixel| pixel.to_le_bytes())
-                                        .collect::<Vec<u8>>()
-                                })
-                                .collect::<Vec<u8>>()
+                            let mut planes = Vec::new();
+                            planes.extend(frame.y_plane.byte_data().collect::<Vec<u8>>());
+                            if let Some(plane) = frame.u_plane {
+                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            }
+                            if let Some(plane) = frame.v_plane {
+                                planes.extend_from_slice(&plane.byte_data().collect::<Vec<u8>>());
+                            }
+                            planes
                         },
                     };
                     let mut cursor = Cursor::new(Vec::new());
