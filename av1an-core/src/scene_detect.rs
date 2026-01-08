@@ -234,9 +234,9 @@ fn build_decoder(
     let sc_downscale_height =
         sc_downscale_height.filter(|&downscale_height| downscale_height < input_height as usize);
     let bit_depth = if let Some(sc_pix_format) = sc_pix_format {
-        encoder.get_format_bit_depth(sc_pix_format)?
+        sc_pix_format.get_format_bit_depth_usize()
     } else if let Ok(input_pix_format) = clip_info.format_info.as_pixel_format() {
-        encoder.get_format_bit_depth(input_pix_format)?
+        input_pix_format.get_format_bit_depth_usize()
     } else {
         clip_info.format_info.as_bit_depth()?
     };

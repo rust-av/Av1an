@@ -1057,7 +1057,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             temp: temp.clone(),
             force: args.force,
             no_defaults: args.no_defaults,
-            passes: args.passes.map_or_else(|| args.encoder.get_default_pass(), |passes| passes),
+            passes: args.passes.unwrap_or_else(|| args.encoder.get_default_pass()),
             video_params: video_params.clone(),
             output_file: if let Some(path) = args.output_file.as_ref() {
                 let path = PathAbs::new(path)?;
