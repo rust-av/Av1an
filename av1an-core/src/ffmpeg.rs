@@ -357,6 +357,40 @@ impl FFPixelFormat {
             ),
         })
     }
+
+    #[inline]
+    pub fn get_format_bit_depth_usize(&self) -> usize {
+        match self {
+            FFPixelFormat::GBRP => 8,
+            FFPixelFormat::GBRP10LE => 10,
+            FFPixelFormat::GBRP12L => 12,
+            FFPixelFormat::GBRP12LE => 12,
+            FFPixelFormat::GRAY10LE => 10,
+            FFPixelFormat::GRAY12L => 12,
+            FFPixelFormat::GRAY12LE => 12,
+            FFPixelFormat::GRAY8 => 8,
+            FFPixelFormat::NV12 => 8,
+            FFPixelFormat::NV16 => 8,
+            FFPixelFormat::NV20LE => 10,
+            FFPixelFormat::NV21 => 8,
+            FFPixelFormat::YUV420P => 8,
+            FFPixelFormat::YUV420P10LE => 10,
+            FFPixelFormat::YUV420P12LE => 12,
+            FFPixelFormat::YUV422P => 8,
+            FFPixelFormat::YUV422P10LE => 10,
+            FFPixelFormat::YUV422P12LE => 12,
+            FFPixelFormat::YUV440P => 8,
+            FFPixelFormat::YUV440P10LE => 10,
+            FFPixelFormat::YUV440P12LE => 12,
+            FFPixelFormat::YUV444P => 8,
+            FFPixelFormat::YUV444P10LE => 10,
+            FFPixelFormat::YUV444P12LE => 12,
+            FFPixelFormat::YUVA420P => 8,
+            FFPixelFormat::YUVJ420P => 8,
+            FFPixelFormat::YUVJ422P => 8,
+            FFPixelFormat::YUVJ444P => 8,
+        }
+    }
 }
 
 impl FromStr for FFPixelFormat {
