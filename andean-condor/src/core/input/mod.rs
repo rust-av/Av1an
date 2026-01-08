@@ -19,6 +19,7 @@ use crate::{
         VapourSynthImportMethod,
         VapourSynthScriptSource,
     },
+    utils::semaphore::Semaphore,
     vapoursynth::{
         get_clip_info as get_vs_clip_info,
         plugins::{
@@ -630,23 +631,31 @@ impl Input {
                 decoder, ..
             } => {
                 let node = decoder.get_vapoursynth_node()?;
+                let frame_semaphore = Arc::new(Semaphore::new(24));
                 let pair = Arc::new((Mutex::new(BTreeMap::new()), Condvar::new()));
+
                 for index in start..end {
+                    frame_semaphore.acquire();
+
                     let pair_clone = Arc::clone(&pair);
+                    let frame_semaphore_clone = Arc::clone(&frame_semaphore);
+
                     node.get_frame_async(index, move |frame, _index, _node| {
                         let frame = frame.expect("Failed to get frame");
                         let (lock, condvar) = &*pair_clone;
+
                         let mut map = lock.lock().expect("mutex should acquire lock");
                         map.insert(index, frame);
                         condvar.notify_one();
+
+                        frame_semaphore_clone.release();
                     });
                 }
 
                 let mut next_frame_index = start;
-
                 while next_frame_index < end {
-                    let (map, condvar) = &*pair;
-                    let map = map.lock().expect("mutex should acquire lock");
+                    let (map_lock, condvar) = &*pair;
+                    let map = map_lock.lock().expect("mutex should acquire lock");
                     let mut map = condvar
                         .wait_while(map, |m| !m.contains_key(&next_frame_index))
                         .expect("Condvar should be notified");
@@ -654,6 +663,7 @@ impl Input {
                     let (_index, frame) = map.pop_first().expect("Map should have frame");
                     next_frame_index += 1;
                     drop(map);
+
                     let framedata = {
                         let mut data = Vec::new();
                         data.extend_from_slice(FRAME_HEADER.as_bytes());
@@ -664,6 +674,7 @@ impl Input {
                         } else {
                             [0, 1, 2]
                         };
+
                         for plane_index in planes_indices {
                             if let Ok(plane_data) = frame.data(plane_index) {
                                 data.extend_from_slice(plane_data);
