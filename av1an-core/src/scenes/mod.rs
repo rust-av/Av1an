@@ -3,7 +3,7 @@ mod tests;
 
 use std::{
     collections::{BTreeMap, HashMap},
-    fs::File,
+    fs::{create_dir_all, File},
     io::Write,
     path::Path,
     process::{exit, Command},
@@ -424,6 +424,14 @@ impl SceneFactory {
     pub fn write_scenes_to_file<P: AsRef<Path>>(&self, scene_path: P) -> anyhow::Result<()> {
         if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
+        }
+
+        if let Some(parent) = scene_path.as_ref().parent() {
+            if !parent.exists() {
+                if let Err(e) = create_dir_all(parent) {
+                    bail!("Cannot create folder at {}: {}", parent.display(), e);
+                }
+            }
         }
 
         let json = serde_json::to_string_pretty(&self.data).expect("serialize should not fail");
