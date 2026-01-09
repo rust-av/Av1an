@@ -3,7 +3,7 @@ mod tests;
 
 use std::{
     collections::{BTreeMap, HashMap},
-    fs::{create_dir_all, File},
+    fs::File,
     io::Write,
     path::Path,
     process::{exit, Command},
@@ -23,9 +23,10 @@ use nom::{
     Parser,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
+    create_dir,
     get_done,
     parse::valid_params,
     scene_detect::av_scenechange_detect,
@@ -427,11 +428,7 @@ impl SceneFactory {
         }
 
         if let Some(parent) = scene_path.as_ref().parent() {
-            if !parent.exists() {
-                if let Err(e) = create_dir_all(parent) {
-                    bail!("Cannot create folder at {}: {}", parent.display(), e);
-                }
-            }
+            create_dir!(parent)?;
         }
 
         let json = serde_json::to_string_pretty(&self.data).expect("serialize should not fail");
