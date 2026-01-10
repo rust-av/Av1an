@@ -325,3 +325,20 @@ If not specified, `source` is used.
 ### Examples
 
 - `> av1an -i input.mkv -o output.mkv --cache-mode temp` Place index file in temporary directory
+
+## Pixel Format Converter `--pix-format-converter`
+
+Set converter to use for converting pixel format this only affect video input. This option does not affect target quality pixel format converter
+
+### Possible Values
+
+- `ffmpeg` Use ffmpeg to convert pixel format.
+- `vs-resize` Use vapoursynth built in resize function to convert pixel format.
+
+### Default
+
+If not specified, `ffmpeg` is used.
+
+### Examples
+
+- `> av1an -i input.mkv -o output.mkv --cache-mode vs-resize` Place index file in temporary directory
