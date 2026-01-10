@@ -72,6 +72,7 @@ Name | Flag | Type | Default
 [Pixel Format](./Cli/encoding.md#pixel-format---pix-format) | `--pix-format` | `PIX_FORMAT` | `yuv420p10le`
 [Zones](./Cli/encoding.md#zones---zones) | `-z`, `--zones` | Path | 
 [Cache Index Mode](./Cli/encoding.md#Cache---Index---Mode) | `--cache-mode` | `CacheMode` | `source`
+[Pixel Format Converter](./Cli/encoding.md#Pixel---Format---Converter) | `--pix-format-converter` | `PIX_FORMAT_CONVERTER` | `ffmpeg`
 
 ### [VMAF](./Cli/vmaf.md)
 

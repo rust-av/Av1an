@@ -29,7 +29,7 @@ pub use crate::{
     concat::ConcatMethod,
     context::Av1anContext,
     encoder::Encoder,
-    settings::{EncodeArgs, InputPixelFormat, PixelFormat},
+    settings::{EncodeArgs, InputPixelFormat, PixelFormat, PixelFormatConverter},
     target_quality::{InterpolationMethod, TargetQuality},
     util::read_in_dir,
 };
