@@ -23,9 +23,10 @@ use nom::{
     Parser,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
+    create_dir,
     get_done,
     parse::valid_params,
     scene_detect::av_scenechange_detect,
@@ -424,6 +425,10 @@ impl SceneFactory {
     pub fn write_scenes_to_file<P: AsRef<Path>>(&self, scene_path: P) -> anyhow::Result<()> {
         if self.data.scenes.is_none() {
             bail!("compute_scenes must be called first");
+        }
+
+        if let Some(parent) = scene_path.as_ref().parent() {
+            create_dir!(parent)?;
         }
 
         let json = serde_json::to_string_pretty(&self.data).expect("serialize should not fail");

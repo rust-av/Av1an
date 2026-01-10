@@ -291,7 +291,9 @@ impl Input {
             },
             Input::Video {
                 ..
-            } => panic!("called `Input::as_script_path()` on an `Input::Video` variant"),
+            } => {
+                panic!("called `Input::as_script_path()` on an `Input::Video` variant")
+            },
         }
     }
 
