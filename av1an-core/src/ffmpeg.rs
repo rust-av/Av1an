@@ -391,7 +391,7 @@ impl FFPixelFormat {
             FFPixelFormat::YUVJ444P => 8,
         }
     }
-    
+
     // use to convert ffmpeg pixel format to vapoursynth format for use in python
     // script.
     #[inline]
