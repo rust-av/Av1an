@@ -20,7 +20,7 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 av1an-core = { path = "../av1an-core", version = "0.5.1" }
 clap = { version = "4.5.53", features = ["derive"] }
-clap_complete = "4.5.61"
+clap_complete = "4.5.65"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 path_abs = { workspace = true }
@@ -37,7 +37,7 @@ vergen-git2 = { version = "1.0.0", features = ["build", "rustc", "cargo"] }
 default = []
 
 [dev-dependencies]
-assert_cmd = "2.1.1"
+assert_cmd = "2.1.2"
 serial_test = "3.3"
 tempfile = { workspace = true }
 
