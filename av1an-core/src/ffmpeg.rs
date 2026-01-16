@@ -415,7 +415,7 @@ impl FFPixelFormat {
             FFPixelFormat::YUVJ444P => "YUV444P8",
             x => {
                 bail!(
-                    "ixel format {} cannot be converted to VapourSynth python format",
+                    "pixel format {} cannot be converted to VapourSynth python format",
                     x.to_pix_fmt_string()
                 )
             },
