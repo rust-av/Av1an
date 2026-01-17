@@ -991,9 +991,6 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.vspipe_args.clone(),
             temp.as_str(),
             chunk_method,
-            args.sc_downscale_height,
-            args.sc_pix_format,
-            Some(&scaler),
             false,
             args.cache_mode,
         )?;
@@ -1007,9 +1004,6 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 args.vspipe_args.clone(),
                 temp.as_str(),
                 chunk_method,
-                args.sc_downscale_height,
-                args.sc_pix_format,
-                Some(&scaler),
                 true,
                 args.cache_mode,
             )?)

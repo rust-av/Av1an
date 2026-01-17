@@ -20,7 +20,6 @@ use vapoursynth::{
 
 use super::ChunkMethod;
 use crate::{
-    ffmpeg::FFPixelFormat,
     metrics::{
         butteraugli::ButteraugliSubMetric,
         xpsnr::{weight_xpsnr, XPSNRSubMetric},
@@ -131,9 +130,7 @@ pub fn get_clip_info(source: &Input, vspipe_args_map: &OwnedMap) -> anyhow::Resu
             .eval_file(source.as_path(), EvalFlags::SetWorkingDir)
             .context(CONTEXT_MSG)?;
     } else {
-        environment
-            .eval_script(&source.as_script_text(None, None, None)?)
-            .context(CONTEXT_MSG)?;
+        environment.eval_script(&source.as_script_text()?).context(CONTEXT_MSG)?;
     }
 
     let (node, _) = environment.get_output(OUTPUT_INDEX)?;
@@ -666,14 +663,11 @@ fn compare_xpsnr<'core>(
 pub fn create_vs_file(loadscript_args: &LoadscriptArgs) -> anyhow::Result<(PathBuf, bool)> {
     let (load_script_text, cache_file_already_exists) =
         generate_loadscript_text(&LoadscriptArgs {
-            temp:                             loadscript_args.temp,
-            source:                           loadscript_args.source,
-            chunk_method:                     loadscript_args.chunk_method,
-            scene_detection_downscale_height: loadscript_args.scene_detection_downscale_height,
-            scene_detection_pixel_format:     loadscript_args.scene_detection_pixel_format,
-            scene_detection_scaler:           loadscript_args.scene_detection_scaler,
-            is_proxy:                         loadscript_args.is_proxy,
-            cache_mode:                       loadscript_args.cache_mode,
+            temp:         loadscript_args.temp,
+            source:       loadscript_args.source,
+            chunk_method: loadscript_args.chunk_method,
+            is_proxy:     loadscript_args.is_proxy,
+            cache_mode:   loadscript_args.cache_mode,
         })?;
     // Ensure the temp folder exists
     let temp: &Path = loadscript_args.temp.as_ref();
@@ -715,14 +709,11 @@ pub fn create_vs_file(loadscript_args: &LoadscriptArgs) -> anyhow::Result<(PathB
 }
 
 pub struct LoadscriptArgs<'a> {
-    pub temp:                             &'a str,
-    pub source:                           &'a Path,
-    pub chunk_method:                     ChunkMethod,
-    pub scene_detection_downscale_height: Option<usize>,
-    pub scene_detection_pixel_format:     Option<FFPixelFormat>,
-    pub scene_detection_scaler:           &'a str,
-    pub is_proxy:                         bool,
-    pub cache_mode:                       CacheSource,
+    pub temp:         &'a str,
+    pub source:       &'a Path,
+    pub chunk_method: ChunkMethod,
+    pub is_proxy:     bool,
+    pub cache_mode:   CacheSource,
 }
 
 #[inline]
@@ -872,7 +863,7 @@ pub fn measure_butteraugli(
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
     // Consider using eval_file only when source is not in CWD
-    environment.eval_script(&source.as_script_text(None, None, None)?)?;
+    environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -910,7 +901,7 @@ pub fn measure_ssimulacra2(
     environment.set_variables(&args)?;
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
-    environment.eval_script(&source.as_script_text(None, None, None)?)?;
+    environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
@@ -949,7 +940,7 @@ pub fn measure_xpsnr(
     environment.set_variables(&args)?;
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
-    environment.eval_script(&source.as_script_text(None, None, None)?)?;
+    environment.eval_script(&source.as_script_text()?)?;
     let core = environment.get_core()?;
 
     let source_node = environment.get_output(0)?.0;
