@@ -10,21 +10,6 @@ cache_mode = os.environ.get("AV1AN_CACHE_MODE", None)
 cache_file = os.environ.get("AV1AN_CACHE_FILE", None)
 pix_fmt = os.environ.get("AV1AN_PIXEL_FORMAT", None)
 
-# Default valid chunk methods
-VALID_CHUNK_METHODS: list[str] = ["lsmash", "ffms2", "dgdecnv", "bestsource"]
-
-# Ensure chunk_method is valid
-if chunk_method not in VALID_CHUNK_METHODS:
-    raise ValueError(f"Invalid chunk method: {chunk_method}")
-
-# Check if source is provided
-if not source:
-    raise ValueError("Source path not provided")
-
-# Ensure source exists
-if not os.path.exists(source):
-    raise ValueError("Source path does not exist")
-
 # Import video
 match (chunk_method):  # type: ignore
     case "lsmash":

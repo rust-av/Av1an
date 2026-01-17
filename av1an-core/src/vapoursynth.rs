@@ -769,7 +769,6 @@ pub fn generate_loadscript_text(
     };
 
     // Include rich loadscript.vpy and specify source, chunk_method, and cache_file
-    // Also specify downscale_height, pixel_format, and scaler for Scene Detection
     // TODO should probably check if the syntax for rust strings and escaping utf
     // and stuff like that is the same as in python
     let mut load_script_text = include_str!("loadscript.vpy")
@@ -785,25 +784,6 @@ pub fn generate_loadscript_text(
             &format!("chunk_method = {chunk_method_lower:?}"),
         );
 
-    if let Some(scene_detection_downscale_height) = loadscript_args.scene_detection_downscale_height
-    {
-        load_script_text = load_script_text.replace(
-            "downscale_height = os.environ.get(\"AV1AN_DOWNSCALE_HEIGHT\", None)",
-            &format!(
-                "downscale_height = os.environ.get(\"AV1AN_DOWNSCALE_HEIGHT\", \
-                 {scene_detection_downscale_height})"
-            ),
-        );
-    }
-    if let Some(scene_detection_pixel_format) = loadscript_args.scene_detection_pixel_format {
-        load_script_text = load_script_text.replace(
-            "sc_pix_format = os.environ.get(\"AV1AN_PIXEL_FORMAT\", None)",
-            &format!(
-                "pixel_format = os.environ.get(\"AV1AN_PIXEL_FORMAT\", \
-                 \"{scene_detection_pixel_format:?}\")"
-            ),
-        );
-    }
     if loadscript_args.cache_mode == CacheSource::TEMP {
         load_script_text = load_script_text.replace(
             "cache_file = os.environ.get(\"AV1AN_CACHE_FILE\", None)",
@@ -817,12 +797,6 @@ pub fn generate_loadscript_text(
     load_script_text = load_script_text.replace(
         "cache_mode = os.environ.get(\"AV1AN_CACHE_MODE\", None)",
         &format!("cache_mode = \"{}\"", loadscript_args.cache_mode),
-    );
-
-    let scene_detection_scaler = loadscript_args.scene_detection_scaler;
-    load_script_text = load_script_text.replace(
-        "scaler = os.environ.get(\"AV1AN_SCALER\", None)",
-        &format!("scaler = os.environ.get(\"AV1AN_SCALER\", {scene_detection_scaler:?})"),
     );
 
     let cache_file_already_exists = match loadscript_args.chunk_method {
