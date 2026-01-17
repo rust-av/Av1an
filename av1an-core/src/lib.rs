@@ -98,15 +98,11 @@ pub enum Input {
 
 impl Input {
     #[inline]
-    #[expect(clippy::too_many_arguments)]
     pub fn new<P: AsRef<Path> + Into<PathBuf>>(
         path: P,
         vspipe_args: Vec<String>,
         temporary_directory: &str,
         chunk_method: ChunkMethod,
-        scene_detection_downscale_height: Option<usize>,
-        scene_detection_pixel_format: Option<FFPixelFormat>,
-        scene_detection_scaler: Option<&str>,
         is_proxy: bool,
         cache_mode: CacheSource,
     ) -> anyhow::Result<Self> {
@@ -149,9 +145,6 @@ impl Input {
                 temp: temporary_directory,
                 source: input.as_path(),
                 chunk_method,
-                scene_detection_downscale_height,
-                scene_detection_pixel_format,
-                scene_detection_scaler: scene_detection_scaler.unwrap_or_default(),
                 is_proxy,
                 cache_mode,
             })?;
@@ -165,9 +158,6 @@ impl Input {
                 temp: temporary_directory,
                 source: input.as_path(),
                 chunk_method,
-                scene_detection_downscale_height,
-                scene_detection_pixel_format,
-                scene_detection_scaler: scene_detection_scaler.unwrap_or_default(),
                 is_proxy,
                 cache_mode,
             })?;
@@ -231,12 +221,7 @@ impl Input {
     /// Returns a VapourSynth script as a string. If `self` is `Video`, the
     /// script will be generated for supported VapourSynth chunk methods.
     #[inline]
-    pub fn as_script_text(
-        &self,
-        scene_detection_downscale_height: Option<usize>,
-        scene_detection_pixel_format: Option<FFPixelFormat>,
-        scene_detection_scaler: Option<&str>,
-    ) -> anyhow::Result<String> {
+    pub fn as_script_text(&self) -> anyhow::Result<String> {
         match &self {
             Input::VapourSynth {
                 script_text, ..
@@ -256,9 +241,6 @@ impl Input {
                         temp,
                         source: path,
                         chunk_method: *chunk_method,
-                        scene_detection_downscale_height,
-                        scene_detection_pixel_format,
-                        scene_detection_scaler: scene_detection_scaler.unwrap_or_default(),
                         is_proxy: *is_proxy,
                         cache_mode: *cache_mode,
                     })?;

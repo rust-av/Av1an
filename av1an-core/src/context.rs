@@ -189,14 +189,11 @@ impl Av1anContext {
                     ..
                 } => {
                     let (script_path, _) = create_vs_file(&LoadscriptArgs {
-                        temp:                             &self.args.temp,
-                        source:                           path,
-                        chunk_method:                     self.args.chunk_method,
-                        scene_detection_downscale_height: self.args.sc_downscale_height,
-                        scene_detection_pixel_format:     self.args.sc_pix_format,
-                        scene_detection_scaler:           &self.args.scaler,
-                        is_proxy:                         *is_proxy,
-                        cache_mode:                       self.args.cache_mode,
+                        temp:         &self.args.temp,
+                        source:       path,
+                        chunk_method: self.args.chunk_method,
+                        is_proxy:     *is_proxy,
+                        cache_mode:   self.args.cache_mode,
                     })?;
                     script_path
                 },
@@ -213,11 +210,7 @@ impl Av1anContext {
                     )?
                 },
                 video_input => av_scenechange::Decoder::from_script(
-                    &video_input.as_script_text(
-                        self.args.sc_downscale_height,
-                        self.args.sc_pix_format,
-                        Some(&self.args.scaler),
-                    )?,
+                    &video_input.as_script_text()?,
                     variables_map,
                 )?,
             };
@@ -1064,11 +1057,7 @@ impl Av1anContext {
             input: Input::VapourSynth {
                 path:        vs_script.to_path_buf(),
                 vspipe_args: self.args.input.as_vspipe_args_vec()?,
-                script_text: self.args.input.as_script_text(
-                    self.args.sc_downscale_height,
-                    self.args.sc_pix_format,
-                    Some(&self.args.scaler),
-                )?,
+                script_text: self.args.input.as_script_text()?,
                 is_proxy:    false,
             },
             proxy: if let Some(vs_proxy_script) = vs_proxy_script {
@@ -1085,11 +1074,7 @@ impl Av1anContext {
                         .proxy
                         .as_ref()
                         .expect("proxy should be set")
-                        .as_script_text(
-                            self.args.sc_downscale_height,
-                            self.args.sc_pix_format,
-                            Some(&self.args.scaler),
-                        )?,
+                        .as_script_text()?,
                     is_proxy:    true,
                 })
             } else {
