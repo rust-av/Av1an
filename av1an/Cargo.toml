@@ -30,6 +30,9 @@ tracing-appender = "0.2"
 # FIXME: Locked due to https://github.com/tokio-rs/tracing/issues/3369
 tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
 
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "=3.0.6"
+
 [build-dependencies]
 vergen-git2 = { version = "1.0.0", features = ["build", "rustc", "cargo"] }
 

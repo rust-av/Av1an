@@ -12,5 +12,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .add_instructions(&cargo)?
         .add_instructions(&rustc)?
         .emit()?;
+
+    #[cfg(windows)]
+    embed_resource::compile("av1an.exe.rc", embed_resource::NONE)
+        .manifest_optional()
+        .unwrap();
+
     Ok(())
 }
