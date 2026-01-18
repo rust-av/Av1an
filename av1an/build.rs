@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     #[cfg(windows)]
     embed_resource::compile("av1an.exe.rc", embed_resource::NONE)
-        .manifest_optional()
+        .manifest_required()
         .unwrap();
 
     Ok(())
