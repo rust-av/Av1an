@@ -56,13 +56,13 @@ strsim = "0.11.0"
 strum = { version = "0.27.2", features = ["derive"] }
 sysinfo = "0.37.2"
 textwrap = "0.16.0"
-thiserror = "2.0.17"
+thiserror = "2.0.18"
 tracing = { workspace = true }
 which = "8.0.0"
 y4m = "0.8.0"
 vapoursynth = "0.5.2"
 # TODO: move all of this CLI stuff to av1an-cli
-colored = "3.0.0"
+colored = "3.1.1"
 ctrlc = "3.5.1"
 regex = "1.12.2"
 dunce = "1.0.5"
