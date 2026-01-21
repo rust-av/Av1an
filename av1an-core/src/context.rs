@@ -16,6 +16,9 @@ use std::{
     thread::{self, available_parallelism},
 };
 
+use std::fs::OpenOptions;
+use crate::log_merge::LogMerger;
+
 use anyhow::Context;
 use av1_grain::TransferFunction;
 use av_decoders::VapoursynthDecoder;
@@ -320,16 +323,17 @@ impl Av1anContext {
                     let mut progress_file = File::create(progress_file)?;
                     progress_file.write_all(serde_json::to_string(get_done())?.as_bytes())?;
 
-                    if let Some(ref audio_output) = audio_output {
-                        let audio_size = audio_output.metadata()?.len();
-                        set_audio_size(audio_size);
-                    }
+                if let Some(ref audio_output) = audio_output { // Line 405 in original
+                    let audio_size = audio_output.metadata()?.len();
+                    set_audio_size(audio_size);
+                }
 
                     Ok(audio_output.is_some())
                 })
             });
 
             if self.args.workers == 0 {
+
                 self.args.workers = determine_workers(&self.args)? as usize;
             }
             self.args.workers = cmp::min(self.args.workers, chunk_queue.len());
@@ -383,7 +387,14 @@ impl Av1anContext {
                 project: self,
             };
 
-            let (tx, rx) = mpsc::channel();
+            let logs_path = Path::new(&self.args.temp).join("logs");
+        if !logs_path.exists() {
+            fs::create_dir(&logs_path).with_context(|| {
+                format!("Failed to create logs directory in {}", logs_path.display())
+            })?;
+        }
+
+        let (tx, rx) = mpsc::channel();
             let handle = s.spawn(|_| -> anyhow::Result<()> {
                 broker.encoding_loop(tx, self.args.set_thread_affinity, total_chunks as u32)?;
                 Ok(())
@@ -488,9 +499,52 @@ impl Av1anContext {
                      {temp}",
                     temp = self.args.temp
                 );
-            } else if !self.args.keep {
-                if let Err(e) = fs::remove_dir_all(&self.args.temp) {
-                    warn!("Failed to delete temp directory: {e}");
+            } else {
+                // Merge logs
+                let encoder_name = self.args.encoder.to_string();
+                if (encoder_name.contains("x264") || encoder_name.contains("x265")) && self.args.params_indicate_logging() {
+                    info!("Merging log files...");
+                    let mut merger = LogMerger::new(&encoder_name);
+                    let temp_path = Path::new(&self.args.temp);
+                    
+                    let mut processed_count = 0;
+                    for i in 0..total_chunks {
+                        let log_path = temp_path.join("logs").join(format!("log_{}.log", i));
+                        if log_path.exists() {
+                            processed_count += 1;
+                            if let Err(e) = merger.process_chunk(&log_path, i == 0) {
+                                warn!("Failed to process log chunk {}: {}", i, e);
+                            }
+                        }
+                    }
+                    
+                    info!("Processed {} log chunks.", processed_count);
+                    
+                    let output_log_path = if let Some(ref user_path) = self.args.user_log_file {
+                        PathBuf::from(user_path)
+                    } else {
+                        PathBuf::from(format!("{}.log", self.args.output_file))
+                    };
+                    
+                    let display_path = output_log_path.display().to_string().replace("\\\\?\\", "");
+                    info!("Writing merged log to: {}", display_path);
+                    
+                    match File::create(&output_log_path) {
+                        Ok(log_file) => {
+                            if let Err(e) = merger.write_merged(log_file) {
+                                warn!("Failed to write merged log: {}", e);
+                            }
+                        },
+                        Err(e) => {
+                            error!("Failed to create log file at {}: {}", output_log_path.display(), e);
+                        }
+                    }
+                }
+
+                if !self.args.keep {
+                    if let Err(e) = fs::remove_dir_all(&self.args.temp) {
+                        warn!("Failed to delete temp directory: {e}");
+                    }
                 }
             }
 
@@ -734,6 +788,13 @@ impl Av1anContext {
 
                 let mut buf = Vec::with_capacity(128);
                 let mut enc_stderr = String::with_capacity(128);
+                
+                let log_file_path = Path::new(&chunk.temp).join("logs").join(format!("log_{}.log", chunk.index));
+                let mut log_file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_file_path)
+                    .ok();
 
                 while let Ok(read) = reader.read_until(b'\r', &mut buf) {
                     if read == 0 {
@@ -741,6 +802,39 @@ impl Av1anContext {
                     }
 
                     if let Ok(line) = simdutf8::basic::from_utf8_mut(&mut buf) {
+                        // Filter progress lines and empty/whitespace lines from being written to the log file
+                        if let Some(f) = &mut log_file {
+                            // The buffer might contain multiple lines (e.g. headers followed by valid lines), 
+                            // so we split by newline to filter granularly.
+                            for part in line.split_inclusive('\n') {
+                                let trimmed = part.trim();
+                                // Skip empty lines (often caused by \r or clearing spaces)
+                                if trimmed.is_empty() {
+                                    continue;
+                                }
+                                
+                                // Explicitly whitelist lines we NEED for log merging
+                                let is_stat = part.contains("frame I:") || 
+                                              part.contains("frame P:") || 
+                                              part.contains("frame B:") || 
+                                              part.contains("encoded");
+
+                                // Filter out progress bar noise (blacklist)
+                                // Note: x265 uses "Frames:", x264 uses digit-start or "time=" typically in stderr progress
+                                // ffmpeg uses "time="
+                                let is_progress = part.contains("Frames") || part.contains("eta ") || part.contains("time=");
+                                
+                                // Write if it's a known stat line OR if it's NOT a progress line
+                                if is_stat || !is_progress {
+                                    let _ = f.write_all(part.as_bytes());
+                                    // Ensure newline if missing (prevent line merging)
+                                    if !part.ends_with('\n') {
+                                        let _ = f.write_all(b"\n");
+                                    }
+                                }
+                            }
+                        }
+
                         if self.args.verbosity == Verbosity::Verbose && !line.contains('\n') {
                             update_mp_msg(worker_id, line.trim().to_string());
                         }

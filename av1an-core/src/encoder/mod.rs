@@ -191,7 +191,7 @@ impl Encoder {
             )
             .collect(),
             Self::x264 => chain!(
-                into_array!["x264", "--stitchable", "--log-level", "error", "--demuxer", "y4m",],
+                into_array!["x264", "--stitchable", "--demuxer", "y4m",],
                 params,
                 into_array!["-", "-o", output]
             )
@@ -243,8 +243,6 @@ impl Encoder {
                 into_array![
                     "x264",
                     "--stitchable",
-                    "--log-level",
-                    "error",
                     "--pass",
                     "1",
                     "--demuxer",
@@ -258,8 +256,6 @@ impl Encoder {
                 into_array![
                     "x265",
                     "--repeat-headers",
-                    "--log-level",
-                    "error",
                     "--pass",
                     "1",
                     "--y4m",
@@ -320,8 +316,6 @@ impl Encoder {
                 into_array![
                     "x264",
                     "--stitchable",
-                    "--log-level",
-                    "error",
                     "--pass",
                     "2",
                     "--demuxer",
@@ -335,8 +329,6 @@ impl Encoder {
                 into_array![
                     "x265",
                     "--repeat-headers",
-                    "--log-level",
-                    "error",
                     "--pass",
                     "2",
                     "--y4m",
