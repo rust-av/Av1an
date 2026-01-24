@@ -13,10 +13,6 @@ Av1an is a video encoding framework. It can increase your encoding speed and imp
 
 For help with av1an, please reach out to us on [Discord](https://discord.gg/Ar8MvJh) or file a GitHub issue.
 
-## NOTICE
-
-av1an is currently incompatible with Vapoursynth R73. Please remain on R72 for the time being, until we can update to the new API.
-
 ## Features
 
 - Hyper-scalable video encoding
