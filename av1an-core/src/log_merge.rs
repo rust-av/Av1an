@@ -1,26 +1,27 @@
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, Write};
-use std::path::Path;
-
+use std::{
+    fs::File,
+    io::{self, BufRead, BufReader, Write},
+    path::Path,
+};
 
 pub struct LogMerger {
-    encoder: String,
+    encoder:       String,
     total_seconds: f64,
     // Frame type stats: (count, total_qp, total_size_or_rate)
-    // For x264, 3rd element is Bytes. For x265, strict parsing is harder for rate, 
-    // but x265 reports 'kb/s' per type. We can try to sum kb/s * time? 
+    // For x264, 3rd element is Bytes. For x265, strict parsing is harder for rate,
+    // but x265 reports 'kb/s' per type. We can try to sum kb/s * time?
     // Or just parse whatever the 3rd metric is.
     // x264 'size' is Bytes. x265 'kb/s' is Rate.
     frame_i_stats: (usize, f64, f64),
     frame_p_stats: (usize, f64, f64),
     frame_b_stats: (usize, f64, f64),
-    
+
     // Header lines to preserve (from first chunk)
     headers: Vec<String>,
-    
+
     // Captured log prefix (e.g. "x264 [info]: ")
     log_prefix: String,
-    
+
     // Flag to stop collecting headers once encoding starts
     header_done: bool,
 }
@@ -28,14 +29,14 @@ pub struct LogMerger {
 impl LogMerger {
     pub fn new(encoder: &str) -> Self {
         Self {
-            encoder: encoder.to_string(),
+            encoder:       encoder.to_string(),
             total_seconds: 0.0,
             frame_i_stats: (0, 0.0, 0.0),
             frame_p_stats: (0, 0.0, 0.0),
             frame_b_stats: (0, 0.0, 0.0),
-            headers: Vec::new(),
-            log_prefix: String::new(),
-            header_done: false,
+            headers:       Vec::new(),
+            log_prefix:    String::new(),
+            header_done:   false,
         }
     }
 
@@ -51,7 +52,7 @@ impl LogMerger {
             if trim.contains("Frames") || trim.contains("time=") || trim.contains("FPS") {
                 continue;
             }
-            
+
             let is_stat = if self.encoder.contains("x265") {
                 self.parse_x265_line(trim)
             } else {
@@ -62,21 +63,21 @@ impl LogMerger {
                 self.header_done = true;
                 continue;
             }
-            
+
             // Capture headers
             if is_first && !self.header_done {
                 // Heuristic: Keep lines that look like config/headers.
                 // Exclude known stats/progress patterns if they slipped through
-                if !trim.contains("frame I:") && 
-                   !trim.contains("frame P:") && 
-                   !trim.contains("frame B:") && 
-                   !trim.contains("encoded") &&
-                   !trim.contains("Weighted") &&
-                   !trim.contains("consecutive B-frames") &&
-                   !trim.contains("kb/s:") &&
-                   !trim.is_empty() 
+                if !trim.contains("frame I:")
+                    && !trim.contains("frame P:")
+                    && !trim.contains("frame B:")
+                    && !trim.contains("encoded")
+                    && !trim.contains("Weighted")
+                    && !trim.contains("consecutive B-frames")
+                    && !trim.contains("kb/s:")
+                    && !trim.is_empty()
                 {
-                     self.headers.push(line.clone());
+                    self.headers.push(line.clone());
                 }
             }
         }
@@ -90,7 +91,7 @@ impl LogMerger {
 
         let matched = self.parse_stats_generic(line, true);
         if matched {
-             // Debug print if needed
+            // Debug print if needed
         }
         matched
     }
@@ -99,14 +100,15 @@ impl LogMerger {
         // Robust x264 parser
         // source: "frame %c:%-5d Avg QP:%5.2f  size:%6.0f"
         // Example: "x264 [info]: frame I:17    Avg QP:15.35  size: 38890"
-        
-        // Similar generic parsing but expect "size" instead of "kb/s" and handle accumulated bytes
+
+        // Similar generic parsing but expect "size" instead of "kb/s" and handle
+        // accumulated bytes
         self.parse_stats_generic(line, false)
     }
 
     fn parse_stats_generic(&mut self, line: &str, is_x265: bool) -> bool {
         let mut matched = false;
-        
+
         for &type_char in &['I', 'P', 'B'] {
             let tag = format!("frame {}:", type_char);
             if let Some(mut idx) = line.find(&tag) {
@@ -117,25 +119,36 @@ impl LogMerger {
                 // Strategy: Extract number up to next alpha character or comma or colon
                 // x265: "    473, Avg QP..."
                 // x264: "17    Avg QP..."
-                
-                let count_str: String = remainder.chars()
-                    .take_while(|c| c.is_ascii_digit() || c.is_whitespace()).collect();
-                
-                // If comma exists in count_str, strip it? no, take_while digit/space won't take comma.
-                // Wait. x265 has comma. "473, "
+
+                let count_str: String = remainder
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || c.is_whitespace())
+                    .collect();
+
+                // If comma exists in count_str, strip it? no, take_while digit/space won't take
+                // comma. Wait. x265 has comma. "473, "
                 // If I take digits/space, I stop at comma. Correct.
-                
+
                 let trimmed_count = count_str.trim();
-                let Ok(count) = trimmed_count.parse::<usize>() else { continue };
+                let Ok(count) = trimmed_count.parse::<usize>() else {
+                    continue;
+                };
 
                 // QP Anchor
                 // x265: "Avg QP:" . x264: "Avg QP:" or "QP:"
-                let qp_anchor = if remainder.contains("Avg QP:") { "Avg QP:" } else { "QP:" };
+                let qp_anchor = if remainder.contains("Avg QP:") {
+                    "Avg QP:"
+                } else {
+                    "QP:"
+                };
                 let qp = remainder.find(qp_anchor).map_or(0.0, |qp_idx| {
-                    let s = remainder.get(qp_idx+qp_anchor.len()..).unwrap_or("");
+                    let s = remainder.get(qp_idx + qp_anchor.len()..).unwrap_or("");
                     // Parse float
-                    let qp_val_str: String = s.trim_start().chars()
-                        .take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+                    let qp_val_str: String = s
+                        .trim_start()
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit() || *c == '.')
+                        .collect();
                     qp_val_str.parse().unwrap_or(0.0)
                 });
 
@@ -174,10 +187,10 @@ impl LogMerger {
                     'B' => &mut self.frame_b_stats,
                     _ => unreachable!(),
                 };
-                
+
                 stats.0 += count;
                 stats.1 += qp * count as f64;
-                
+
                 if is_rate {
                     // x265 rate case
                     stats.2 += metric_val * count as f64;
@@ -185,12 +198,12 @@ impl LogMerger {
                     // x264 size case (bytes)
                     stats.2 += metric_val;
                 }
-                
+
                 matched = true;
                 break; // Found the type for this line
             }
         }
-        
+
         if !matched && line.contains("encoded") && line.contains("frames") {
             self.parse_summary(line);
             matched = true;
@@ -211,41 +224,47 @@ impl LogMerger {
         // Common parsers for time/fps to help reconstruct global stats if needed
         // x265: encoded 100 frames in 10.00s (10.00 fps), 1000.00 kb/s...
         // x264: encoded 100 frames, 10.00 fps, 1000.00 kb/s... (duration inferred?)
-        
+
         let mut frames = 0;
         if let Some(idx) = line.find("encoded") {
-            let s = line.get(idx+7..).unwrap_or(""); // after "encoded"
+            let s = line.get(idx + 7..).unwrap_or(""); // after "encoded"
             let frames_str: String = s.trim().chars().take_while(|c| c.is_ascii_digit()).collect();
             if let Ok(f) = frames_str.parse::<usize>() {
-                 frames = f;
+                frames = f;
             }
         }
-        
+
         // Extract duration/FPS to accumulate total_seconds
         // x265: "in 123.45s"
         if let Some(in_idx) = line.find("in ") {
-            let s = line.get(in_idx+3..).unwrap_or("");
-            let time_str: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+            let s = line.get(in_idx + 3..).unwrap_or("");
+            let time_str: String =
+                s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             if let Ok(time) = time_str.parse::<f64>() {
                 self.total_seconds += time;
             }
         } else if let Some(fps_idx) = line.find("fps") {
             // fallback for x264 which often puts frame count and fps
             // "1684 frames, 35.53 fps"
-            // We need frame count for *this chunk* to get duration. 
+            // We need frame count for *this chunk* to get duration.
             // Parsing frame count again from this line:
-             if frames > 0 {
-                 let before_fps = line.get(..fps_idx).unwrap_or("");
-                 let fps_str: String = before_fps.trim().chars().rev().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-                 let fps_str: String = fps_str.chars().rev().collect();
-                 if let Ok(fps) = fps_str.parse::<f64>() {
-                     if fps > 0.0 {
-                         self.total_seconds += frames as f64 / fps;
-                     }
-                 }
-             }
+            if frames > 0 {
+                let before_fps = line.get(..fps_idx).unwrap_or("");
+                let fps_str: String = before_fps
+                    .trim()
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                let fps_str: String = fps_str.chars().rev().collect();
+                if let Ok(fps) = fps_str.parse::<f64>() {
+                    if fps > 0.0 {
+                        self.total_seconds += frames as f64 / fps;
+                    }
+                }
+            }
         }
-        
+
         // Accumulate size?
         // WE already accumulated in parse_stats.
     }
@@ -257,9 +276,13 @@ impl LogMerger {
         writeln!(writer)?; // Spacing after headers
 
         let prefix = if self.log_prefix.is_empty() {
-             if self.encoder.contains("x265") { "x265 [info]:" } else { "x264 [info]:" }
+            if self.encoder.contains("x265") {
+                "x265 [info]:"
+            } else {
+                "x264 [info]:"
+            }
         } else {
-             &self.log_prefix
+            &self.log_prefix
         };
 
         // Write Frame Stats
@@ -267,15 +290,25 @@ impl LogMerger {
         // x264: "frame I:17    Avg QP:15.35  size: 38890"
 
         let write_stat = |w: &mut W, type_char: char, s: (usize, f64, f64)| -> io::Result<()> {
-            if s.0 == 0 { return Ok(()); }
+            if s.0 == 0 {
+                return Ok(());
+            }
             let avg_qp = s.1 / s.0 as f64;
-            
+
             if self.encoder.contains("x265") {
                 let avg_rate = s.2 / s.0 as f64;
-                writeln!(w, "{} frame {}: {:>8}, Avg QP: {:>5.2}  kb/s: {:>8.2}", prefix, type_char, s.0, avg_qp, avg_rate)?;
+                writeln!(
+                    w,
+                    "{} frame {}: {:>8}, Avg QP: {:>5.2}  kb/s: {:>8.2}",
+                    prefix, type_char, s.0, avg_qp, avg_rate
+                )?;
             } else {
                 let total_size = s.2 as u64;
-                writeln!(w, "{} frame {}:{:>5}    Avg QP:{:>5.2}  size: {:>8}", prefix, type_char, s.0, avg_qp, total_size)?;
+                writeln!(
+                    w,
+                    "{} frame {}:{:>5}    Avg QP:{:>5.2}  size: {:>8}",
+                    prefix, type_char, s.0, avg_qp, total_size
+                )?;
             }
             Ok(())
         };
@@ -283,39 +316,61 @@ impl LogMerger {
         write_stat(&mut writer, 'I', self.frame_i_stats)?;
         write_stat(&mut writer, 'P', self.frame_p_stats)?;
         write_stat(&mut writer, 'B', self.frame_b_stats)?;
-        
+
         writeln!(writer)?;
 
         // Summary
         let total_frames = self.frame_i_stats.0 + self.frame_p_stats.0 + self.frame_b_stats.0;
         let total_time = self.total_seconds;
-        let fps = if total_time > 0.0 { total_frames as f64 / total_time } else { 0.0 };
-        
-        // Calculate global bitrate
-        // x265 accumulated Rate*Count in .2. -> Sum(Rate*Count) / TotalFrames = AvgRate.
-        // x264 accumulated Bytes in .2. -> Sum(Bytes) * 8 / 1000 / TotalTime = Bitrate (kbps).
-        
-        let kbps = if self.encoder.contains("x265") {
-             // Weighted average of rates
-             let sum_rate_count = self.frame_i_stats.2 + self.frame_p_stats.2 + self.frame_b_stats.2;
-             if total_frames > 0 { sum_rate_count / total_frames as f64 } else { 0.0 }
+        let fps = if total_time > 0.0 {
+            total_frames as f64 / total_time
         } else {
-             let total_bytes = self.frame_i_stats.2 + self.frame_p_stats.2 + self.frame_b_stats.2;
-             if total_time > 0.0 { (total_bytes * 8.0) / 1000.0 / total_time } else { 0.0 }
+            0.0
+        };
+
+        // Calculate global bitrate
+        // x265 accumulated Rate*Count in .2. -> Sum(Rate*Count) / TotalFrames =
+        // AvgRate. x264 accumulated Bytes in .2. -> Sum(Bytes) * 8 / 1000 /
+        // TotalTime = Bitrate (kbps).
+
+        let kbps = if self.encoder.contains("x265") {
+            // Weighted average of rates
+            let sum_rate_count = self.frame_i_stats.2 + self.frame_p_stats.2 + self.frame_b_stats.2;
+            if total_frames > 0 {
+                sum_rate_count / total_frames as f64
+            } else {
+                0.0
+            }
+        } else {
+            let total_bytes = self.frame_i_stats.2 + self.frame_p_stats.2 + self.frame_b_stats.2;
+            if total_time > 0.0 {
+                (total_bytes * 8.0) / 1000.0 / total_time
+            } else {
+                0.0
+            }
         };
 
         let avg_qp = if total_frames > 0 {
-            (self.frame_i_stats.1 + self.frame_p_stats.1 + self.frame_b_stats.1) / total_frames as f64
-        } else { 0.0 };
+            (self.frame_i_stats.1 + self.frame_p_stats.1 + self.frame_b_stats.1)
+                / total_frames as f64
+        } else {
+            0.0
+        };
 
         if self.encoder.contains("x265") {
             // encoded 33138 frames in 9989.67s (3.32 fps), 20845.84 kb/s, Avg QP:11.15
-            writeln!(writer, "encoded {} frames in {:.2}s ({:.2} fps), {:.2} kb/s, Avg QP:{:.2}",
-                total_frames, total_time, fps, kbps, avg_qp)?;
+            writeln!(
+                writer,
+                "encoded {} frames in {:.2}s ({:.2} fps), {:.2} kb/s, Avg QP:{:.2}",
+                total_frames, total_time, fps, kbps, avg_qp
+            )?;
         } else {
             // encoded 1684 frames, 35.53 fps, 2732.18 kb/s
-             writeln!(writer, "{} encoded {} frames, {:.2} fps, {:.2} kb/s",
-                prefix, total_frames, fps, kbps)?;
+            writeln!(
+                writer,
+                "{} encoded {} frames, {:.2} fps, {:.2} kb/s",
+                prefix, total_frames, fps, kbps
+            )?;
         }
 
         Ok(())

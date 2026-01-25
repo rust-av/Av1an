@@ -9,9 +9,9 @@ use std::{
 
 use anyhow::{bail, ensure};
 use itertools::{chain, Itertools};
+use path_abs::PathInfo;
 use serde::{Deserialize, Serialize};
 use strum::{EnumString, IntoStaticStr};
-use path_abs::PathInfo;
 use tracing::warn;
 
 use crate::{
@@ -147,7 +147,7 @@ pub struct EncodeArgs {
     pub vmaf_filter:    Option<String>,
 
     pub vapoursynth_plugins: Option<VapoursynthPlugins>,
-    
+
     // Intercepted --log-file from user params
     pub user_log_file: Option<String>,
 }
@@ -332,21 +332,19 @@ impl EncodeArgs {
             }
         }
 
-
-
         // Intercept --log-file to prevent concurrent write issues in workers
         // We will separate it and use it for the final merged log
         if self.encoder == Encoder::x264 || self.encoder == Encoder::x265 {
             let mut new_params = Vec::new();
             let mut skip_next = false;
             let mut log_file_found = None;
-            
+
             for (i, param) in self.video_params.iter().enumerate() {
                 if skip_next {
                     skip_next = false;
                     continue;
                 }
-                
+
                 if param == "--log-file" {
                     if let Some(next_param) = self.video_params.get(i + 1) {
                         log_file_found = Some(next_param.clone());
@@ -354,17 +352,18 @@ impl EncodeArgs {
                     }
                     continue;
                 }
-                
+
                 // Handle x265 --log-file=filename style if needed?
                 // x265 usually supports space, but args from CLI might be split differently.
                 // Assuming space-separated for now as per standard av1an parsing.
-                
+
                 new_params.push(param.clone());
             }
-            
+
             if let Some(lf) = log_file_found {
                 let trimmed = lf.trim_matches(|c| c == '"' || c == '\'');
-                // Resolve to absolute path using CWD, avoiding PathAbs to prevent \\?\ prefix and existence checks
+                // Resolve to absolute path using CWD, avoiding PathAbs to prevent \\?\ prefix
+                // and existence checks
                 let p = Path::new(trimmed);
                 if p.is_absolute() {
                     self.user_log_file = Some(trimmed.to_string());
@@ -372,7 +371,7 @@ impl EncodeArgs {
                     self.user_log_file = Some(cwd.join(p).to_string_lossy().to_string());
                 } else {
                     // Fallback if CWD fails (unlikely)
-                    self.user_log_file = Some(trimmed.to_string()); 
+                    self.user_log_file = Some(trimmed.to_string());
                 }
                 self.video_params = new_params;
             }
@@ -585,16 +584,16 @@ impl EncodeArgs {
     #[inline]
     pub fn params_indicate_logging(&self) -> bool {
         // x264/x265 logging indicators
-        // Usually, users just run the command without --log-file if they want stderr logs.
-        // But if we want to be conditional based on "user explicitly asked for logs",
-        // we might look for --log-level (not 'none' or 'error') or specific output flags.
-        // However, the user request says "parameters specified --log related output".
-        
-        self.user_log_file.is_some() ||
-        self.video_params.iter().any(|p| {
-            p.contains("--log-level") || 
-            p.contains("--csv") // x265 csv logging
-        })
+        // Usually, users just run the command without --log-file if they want stderr
+        // logs. But if we want to be conditional based on "user explicitly
+        // asked for logs", we might look for --log-level (not 'none' or
+        // 'error') or specific output flags. However, the user request says
+        // "parameters specified --log related output".
+
+        self.user_log_file.is_some()
+            || self.video_params.iter().any(|p| {
+                p.contains("--log-level") || p.contains("--csv") // x265 csv logging
+            })
     }
 }
 

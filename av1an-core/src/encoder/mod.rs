@@ -240,26 +240,13 @@ impl Encoder {
             )
             .collect(),
             Self::x264 => chain!(
-                into_array![
-                    "x264",
-                    "--stitchable",
-                    "--pass",
-                    "1",
-                    "--demuxer",
-                    "y4m",
-                ],
+                into_array!["x264", "--stitchable", "--pass", "1", "--demuxer", "y4m",],
                 params,
                 into_array!["--stats", format!("{fpf}.log"), "-", "-o", NULL]
             )
             .collect(),
             Self::x265 => chain!(
-                into_array![
-                    "x265",
-                    "--repeat-headers",
-                    "--pass",
-                    "1",
-                    "--y4m",
-                ],
+                into_array!["x265", "--repeat-headers", "--pass", "1", "--y4m",],
                 params,
                 into_array![
                     "--stats",
@@ -313,26 +300,13 @@ impl Encoder {
             )
             .collect(),
             Self::x264 => chain!(
-                into_array![
-                    "x264",
-                    "--stitchable",
-                    "--pass",
-                    "2",
-                    "--demuxer",
-                    "y4m",
-                ],
+                into_array!["x264", "--stitchable", "--pass", "2", "--demuxer", "y4m",],
                 params,
                 into_array!["--stats", format!("{fpf}.log"), "-", "-o", output]
             )
             .collect(),
             Self::x265 => chain!(
-                into_array![
-                    "x265",
-                    "--repeat-headers",
-                    "--pass",
-                    "2",
-                    "--y4m",
-                ],
+                into_array!["x265", "--repeat-headers", "--pass", "2", "--y4m",],
                 params,
                 into_array![
                     "--stats",
