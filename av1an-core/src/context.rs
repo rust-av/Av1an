@@ -389,7 +389,7 @@ impl Av1anContext {
 
             let logs_path = Path::new(&self.args.temp).join("logs");
         if !logs_path.exists() {
-            fs::create_dir(&logs_path).with_context(|| {
+            fs::create_dir_all(&logs_path).with_context(|| {
                 format!("Failed to create logs directory in {}", logs_path.display())
             })?;
         }

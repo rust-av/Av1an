@@ -112,7 +112,7 @@ impl LogMerger {
             if let Some(mut idx) = line.find(&tag) {
                 // Found frame tag.
                 idx += tag.len();
-                let remainder = &line[idx..];
+                let remainder = line.get(idx..).unwrap_or("");
 
                 // Strategy: Extract number up to next alpha character or comma or colon
                 // x265: "    473, Avg QP..."
@@ -126,33 +126,42 @@ impl LogMerger {
                 // If I take digits/space, I stop at comma. Correct.
                 
                 let trimmed_count = count_str.trim();
-                let count = if let Ok(n) = trimmed_count.parse::<usize>() { n } else { continue };
+                let Ok(count) = trimmed_count.parse::<usize>() else { continue };
 
                 // QP Anchor
                 // x265: "Avg QP:" . x264: "Avg QP:" or "QP:"
                 let qp_anchor = if remainder.contains("Avg QP:") { "Avg QP:" } else { "QP:" };
-                let qp = if let Some(qp_idx) = remainder.find(qp_anchor) {
-                    let s = &remainder[qp_idx+qp_anchor.len()..];
+                let qp = remainder.find(qp_anchor).map_or(0.0, |qp_idx| {
+                    let s = remainder.get(qp_idx+qp_anchor.len()..).unwrap_or("");
                     // Parse float
                     let qp_val_str: String = s.trim_start().chars()
                         .take_while(|c| c.is_ascii_digit() || *c == '.').collect();
                     qp_val_str.parse().unwrap_or(0.0)
-                } else { 0.0 };
+                });
 
                 // Rate/Size Anchor
-                let (metric_val, is_rate) = if let Some(kb_idx) = remainder.find("kb/s:") {
-                    let s = &remainder[kb_idx+5..];
-                    let val_str: String = s.trim_start().chars()
-                        .take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-                    (val_str.parse().unwrap_or(0.0), true)
-                } else if let Some(sz_idx) = remainder.find("size:") {
-                    let s = &remainder[sz_idx+5..];
-                    let val_str: String = s.trim_start().chars()
-                        .take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-                    (val_str.parse().unwrap_or(0.0), false)
-                } else {
-                    (0.0, is_x265)
-                };
+                let (metric_val, is_rate) = remainder.find("kb/s:").map_or_else(
+                    || {
+                        remainder.find("size:").map_or((0.0, is_x265), |sz_idx| {
+                            let s = remainder.get(sz_idx + 5..).unwrap_or("");
+                            let val_str: String = s
+                                .trim_start()
+                                .chars()
+                                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                                .collect();
+                            (val_str.parse().unwrap_or(0.0), false)
+                        })
+                    },
+                    |kb_idx| {
+                        let s = remainder.get(kb_idx + 5..).unwrap_or("");
+                        let val_str: String = s
+                            .trim_start()
+                            .chars()
+                            .take_while(|c| c.is_ascii_digit() || *c == '.')
+                            .collect();
+                        (val_str.parse().unwrap_or(0.0), true)
+                    },
+                );
 
                 if matches!(type_char, 'I') {
                     self.capture_prefix(line, &tag);
@@ -193,7 +202,7 @@ impl LogMerger {
     fn capture_prefix(&mut self, line: &str, tag: &str) {
         if self.log_prefix.is_empty() {
             if let Some(idx) = line.find(tag) {
-                self.log_prefix = line[..idx].trim().to_string();
+                self.log_prefix = line.get(..idx).unwrap_or("").trim().to_string();
             }
         }
     }
@@ -205,7 +214,7 @@ impl LogMerger {
         
         let mut frames = 0;
         if let Some(idx) = line.find("encoded") {
-            let s = &line[idx+7..]; // after "encoded"
+            let s = line.get(idx+7..).unwrap_or(""); // after "encoded"
             let frames_str: String = s.trim().chars().take_while(|c| c.is_ascii_digit()).collect();
             if let Ok(f) = frames_str.parse::<usize>() {
                  frames = f;
@@ -215,7 +224,7 @@ impl LogMerger {
         // Extract duration/FPS to accumulate total_seconds
         // x265: "in 123.45s"
         if let Some(in_idx) = line.find("in ") {
-            let s = &line[in_idx+3..];
+            let s = line.get(in_idx+3..).unwrap_or("");
             let time_str: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
             if let Ok(time) = time_str.parse::<f64>() {
                 self.total_seconds += time;
@@ -226,7 +235,7 @@ impl LogMerger {
             // We need frame count for *this chunk* to get duration. 
             // Parsing frame count again from this line:
              if frames > 0 {
-                 let before_fps = &line[..fps_idx];
+                 let before_fps = line.get(..fps_idx).unwrap_or("");
                  let fps_str: String = before_fps.trim().chars().rev().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
                  let fps_str: String = fps_str.chars().rev().collect();
                  if let Ok(fps) = fps_str.parse::<f64>() {
@@ -245,7 +254,7 @@ impl LogMerger {
         for line in &self.headers {
             writeln!(writer, "{}", line)?;
         }
-        writeln!(writer, "")?; // Spacing after headers
+        writeln!(writer)?; // Spacing after headers
 
         let prefix = if self.log_prefix.is_empty() {
              if self.encoder.contains("x265") { "x265 [info]:" } else { "x264 [info]:" }
@@ -275,7 +284,7 @@ impl LogMerger {
         write_stat(&mut writer, 'P', self.frame_p_stats)?;
         write_stat(&mut writer, 'B', self.frame_b_stats)?;
         
-        writeln!(writer, "")?;
+        writeln!(writer)?;
 
         // Summary
         let total_frames = self.frame_i_stats.0 + self.frame_p_stats.0 + self.frame_b_stats.0;

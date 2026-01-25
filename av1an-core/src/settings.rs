@@ -368,13 +368,11 @@ impl EncodeArgs {
                 let p = Path::new(trimmed);
                 if p.is_absolute() {
                     self.user_log_file = Some(trimmed.to_string());
+                } else if let Ok(cwd) = std::env::current_dir() {
+                    self.user_log_file = Some(cwd.join(p).to_string_lossy().to_string());
                 } else {
-                    if let Ok(cwd) = std::env::current_dir() {
-                        self.user_log_file = Some(cwd.join(p).to_string_lossy().to_string());
-                    } else {
-                        // Fallback if CWD fails (unlikely)
-                        self.user_log_file = Some(trimmed.to_string()); 
-                    }
+                    // Fallback if CWD fails (unlikely)
+                    self.user_log_file = Some(trimmed.to_string()); 
                 }
                 self.video_params = new_params;
             }
@@ -584,6 +582,7 @@ impl EncodeArgs {
         );
         Ok(())
     }
+    #[inline]
     pub fn params_indicate_logging(&self) -> bool {
         // x264/x265 logging indicators
         // Usually, users just run the command without --log-file if they want stderr logs.
