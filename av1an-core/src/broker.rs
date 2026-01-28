@@ -9,12 +9,12 @@ use std::{
         mpsc::Sender,
         Arc,
     },
-    thread::available_parallelism,
+    // thread::available_parallelism,
 };
 
 use anyhow::bail;
 use cfg_if::cfg_if;
-use smallvec::SmallVec;
+// use smallvec::SmallVec;
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
@@ -152,10 +152,10 @@ impl Broker<'_> {
                                         if threads == 0 {
                                             warn!("Ignoring set_thread_affinity: Requested 0 threads");
                                         } else {
-                                            match available_parallelism() {
+                                            match std::thread::available_parallelism() {
                                                 Ok(parallelism) => {
                                                     let available_threads = parallelism.get();
-                                                    let mut cpu_set = SmallVec::<[usize; 16]>::new();
+                                                    let mut cpu_set = smallvec::SmallVec::<[usize; 16]>::new();
                                                     let start_thread = (threads * worker_id) % available_threads;
                                                     cpu_set.extend((start_thread..start_thread + threads).map(|t| t % available_threads));
                                                     if let Err(e) = affinity::set_thread_affinity(&cpu_set) {
