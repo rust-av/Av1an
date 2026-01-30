@@ -16,10 +16,10 @@ readme = "./README.md"
 [dependencies]
 anyhow = { workspace = true }
 arrayvec = "0.7.2"
-av-decoders = { version = "0.8", features = ["vapoursynth", "ffms2"] }
+av-decoders = { version = "0.9", features = ["vapoursynth", "ffms2"] }
 av-format = "0.7.0"
 av-ivf = "0.5.0"
-av-scenechange = { version = "0.21", default-features = false, features = [
+av-scenechange = { version = "0.22", default-features = false, features = [
     "asm",
     "vapoursynth",
 ] }
@@ -38,7 +38,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
 simdutf8 = "0.1.5"
 strum = { version = "0.27.2", features = ["derive"] }
-sysinfo = "0.37.2"
+sysinfo = "0.38"
 textwrap = "0.16.2"
 thiserror = "2.0.17"
 tracing = { workspace = true }

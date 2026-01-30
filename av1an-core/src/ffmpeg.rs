@@ -357,6 +357,70 @@ impl FFPixelFormat {
             ),
         })
     }
+
+    #[inline]
+    pub fn get_format_bit_depth_usize(&self) -> usize {
+        match self {
+            FFPixelFormat::GBRP => 8,
+            FFPixelFormat::GBRP10LE => 10,
+            FFPixelFormat::GBRP12L => 12,
+            FFPixelFormat::GBRP12LE => 12,
+            FFPixelFormat::GRAY10LE => 10,
+            FFPixelFormat::GRAY12L => 12,
+            FFPixelFormat::GRAY12LE => 12,
+            FFPixelFormat::GRAY8 => 8,
+            FFPixelFormat::NV12 => 8,
+            FFPixelFormat::NV16 => 8,
+            FFPixelFormat::NV20LE => 10,
+            FFPixelFormat::NV21 => 8,
+            FFPixelFormat::YUV420P => 8,
+            FFPixelFormat::YUV420P10LE => 10,
+            FFPixelFormat::YUV420P12LE => 12,
+            FFPixelFormat::YUV422P => 8,
+            FFPixelFormat::YUV422P10LE => 10,
+            FFPixelFormat::YUV422P12LE => 12,
+            FFPixelFormat::YUV440P => 8,
+            FFPixelFormat::YUV440P10LE => 10,
+            FFPixelFormat::YUV440P12LE => 12,
+            FFPixelFormat::YUV444P => 8,
+            FFPixelFormat::YUV444P10LE => 10,
+            FFPixelFormat::YUV444P12LE => 12,
+            FFPixelFormat::YUVA420P => 8,
+            FFPixelFormat::YUVJ420P => 8,
+            FFPixelFormat::YUVJ422P => 8,
+            FFPixelFormat::YUVJ444P => 8,
+        }
+    }
+
+    // use to convert ffmpeg pixel format to vapoursynth format for use in python
+    // script.
+    #[inline]
+    pub fn to_vapoursynth_string(&self) -> anyhow::Result<&'static str> {
+        Ok(match self {
+            FFPixelFormat::GRAY8 => "GRAY8",
+            FFPixelFormat::GRAY10LE => "GRAY10",
+            FFPixelFormat::GRAY12LE => "GRAY12",
+            FFPixelFormat::YUV420P => "YUV420P8",
+            FFPixelFormat::YUV420P10LE => "YUV420P10",
+            FFPixelFormat::YUV420P12LE => "YUV420P12",
+            FFPixelFormat::YUV422P => "YUV422P8",
+            FFPixelFormat::YUV422P10LE => "YUV422P10",
+            FFPixelFormat::YUV422P12LE => "YUV422P12",
+            FFPixelFormat::GRAY12L => "GRAY12",
+            FFPixelFormat::YUV444P => "YUV444P8",
+            FFPixelFormat::YUV444P10LE => "YUV444P10",
+            FFPixelFormat::YUV444P12LE => "YUV444P12",
+            FFPixelFormat::YUVJ420P => "YUV420P8",
+            FFPixelFormat::YUVJ422P => "YUV422P8",
+            FFPixelFormat::YUVJ444P => "YUV444P8",
+            x => {
+                bail!(
+                    "pixel format {} cannot be converted to VapourSynth python format",
+                    x.to_pix_fmt_string()
+                )
+            },
+        })
+    }
 }
 
 impl FromStr for FFPixelFormat {

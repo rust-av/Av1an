@@ -1,26 +1,14 @@
 import os
-from vapoursynth import core
+import vapoursynth as vs
+
+core = vs.core
 
 source = os.environ.get("AV1AN_SOURCE", None)
 chunk_method = os.environ.get("AV1AN_CHUNK_METHOD", None)
 perform_scene_detection = globals().get("AV1AN_PERFORM_SCENE_DETECTION", None)
 cache_mode = os.environ.get("AV1AN_CACHE_MODE", None)
 cache_file = os.environ.get("AV1AN_CACHE_FILE", None)
-
-# Default valid chunk methods
-VALID_CHUNK_METHODS: list[str] = ["lsmash", "ffms2", "dgdecnv", "bestsource"]
-
-# Ensure chunk_method is valid
-if chunk_method not in VALID_CHUNK_METHODS:
-    raise ValueError(f"Invalid chunk method: {chunk_method}")
-
-# Check if source is provided
-if not source:
-    raise ValueError("Source path not provided")
-
-# Ensure source exists
-if not os.path.exists(source):
-    raise ValueError("Source path does not exist")
+pix_fmt = os.environ.get("AV1AN_PIXEL_FORMAT", None)
 
 # Import video
 match (chunk_method):  # type: ignore
@@ -53,6 +41,8 @@ if perform_scene_detection is None:
     core.num_threads = 1
     core.max_cache_size = 1024
 
+if pix_fmt is not None:
+    video = video.resize.Bicubic(format=vs.PresetVideoFormat[pix_fmt])
 
 # Output video
 video.set_output()

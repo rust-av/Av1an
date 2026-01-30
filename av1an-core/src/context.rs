@@ -61,6 +61,7 @@ use crate::{
     DashMap,
     DoneJson,
     Input,
+    PixelFormatConverter,
     Verbosity,
 };
 
@@ -188,14 +189,11 @@ impl Av1anContext {
                     ..
                 } => {
                     let (script_path, _) = create_vs_file(&LoadscriptArgs {
-                        temp:                             &self.args.temp,
-                        source:                           path,
-                        chunk_method:                     self.args.chunk_method,
-                        scene_detection_downscale_height: self.args.sc_downscale_height,
-                        scene_detection_pixel_format:     self.args.sc_pix_format,
-                        scene_detection_scaler:           &self.args.scaler,
-                        is_proxy:                         *is_proxy,
-                        cache_mode:                       self.args.cache_mode,
+                        temp:         &self.args.temp,
+                        source:       path,
+                        chunk_method: self.args.chunk_method,
+                        is_proxy:     *is_proxy,
+                        cache_mode:   self.args.cache_mode,
                     })?;
                     script_path
                 },
@@ -212,11 +210,7 @@ impl Av1anContext {
                     )?
                 },
                 video_input => av_scenechange::Decoder::from_script(
-                    &video_input.as_script_text(
-                        self.args.sc_downscale_height,
-                        self.args.sc_pix_format,
-                        Some(&self.args.scaler),
-                    )?,
+                    &video_input.as_script_text()?,
                     variables_map,
                 )?,
             };
@@ -565,13 +559,59 @@ impl Av1anContext {
 
         let (source_pipe_stderr, ffmpeg_pipe_stderr, enc_output, enc_stderr, frame) =
             thread::scope(|scope| -> Result<_, (anyhow::Error, u64)> {
+                let mut use_vs_resize_converter = false;
                 let mut source_pipe = if let [source, args @ ..] = &*chunk.source_cmd {
                     let mut command = Command::new(source);
+
                     for arg in chunk.input.as_vspipe_args_vec().map_err(|e| (e, 0))? {
                         command.args(["-a", &arg]);
                     }
+
+                    command.args(args);
+                    if self.args.ffmpeg_filter_args.is_empty() {
+                        match &self.args.input_pix_format {
+                            InputPixelFormat::FFmpeg {
+                                format,
+                            } => {
+                                if self.args.output_pix_format.format != *format
+                                    && self.args.pix_format_converter
+                                        == PixelFormatConverter::VsResize
+                                    && self.args.input.is_video()
+                                {
+                                    command.env(
+                                        "AV1AN_PIXEL_FORMAT",
+                                        self.args
+                                            .output_pix_format
+                                            .format
+                                            .to_vapoursynth_string()
+                                            .map_err(|e| (e, 0))?,
+                                    );
+                                    use_vs_resize_converter = true;
+                                }
+                            },
+                            InputPixelFormat::VapourSynth {
+                                bit_depth,
+                            } => {
+                                if self.args.output_pix_format.bit_depth != *bit_depth
+                                    && self.args.pix_format_converter
+                                        == PixelFormatConverter::VsResize
+                                    && self.args.input.is_video()
+                                {
+                                    command.env(
+                                        "AV1AN_PIXEL_FORMAT",
+                                        self.args
+                                            .output_pix_format
+                                            .format
+                                            .to_vapoursynth_string()
+                                            .map_err(|e| (e, 0))?,
+                                    );
+                                    use_vs_resize_converter = true;
+                                }
+                            },
+                        }
+                    }
+
                     command
-                        .args(args)
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped())
                         .spawn()
@@ -621,7 +661,9 @@ impl Av1anContext {
                             InputPixelFormat::FFmpeg {
                                 format,
                             } => {
-                                if self.args.output_pix_format.format == *format {
+                                if use_vs_resize_converter
+                                    || self.args.output_pix_format.format == *format
+                                {
                                     (source_pipe_stdout, source_pipe_stderr, None)
                                 } else {
                                     create_ffmpeg_pipe(source_pipe_stdout, source_pipe_stderr)?
@@ -630,7 +672,9 @@ impl Av1anContext {
                             InputPixelFormat::VapourSynth {
                                 bit_depth,
                             } => {
-                                if self.args.output_pix_format.bit_depth == *bit_depth {
+                                if use_vs_resize_converter
+                                    || self.args.output_pix_format.bit_depth == *bit_depth
+                                {
                                     (source_pipe_stdout, source_pipe_stderr, None)
                                 } else {
                                     create_ffmpeg_pipe(source_pipe_stdout, source_pipe_stderr)?
@@ -1013,11 +1057,7 @@ impl Av1anContext {
             input: Input::VapourSynth {
                 path:        vs_script.to_path_buf(),
                 vspipe_args: self.args.input.as_vspipe_args_vec()?,
-                script_text: self.args.input.as_script_text(
-                    self.args.sc_downscale_height,
-                    self.args.sc_pix_format,
-                    Some(&self.args.scaler),
-                )?,
+                script_text: self.args.input.as_script_text()?,
                 is_proxy:    false,
             },
             proxy: if let Some(vs_proxy_script) = vs_proxy_script {
@@ -1034,11 +1074,7 @@ impl Av1anContext {
                         .proxy
                         .as_ref()
                         .expect("proxy should be set")
-                        .as_script_text(
-                            self.args.sc_downscale_height,
-                            self.args.sc_pix_format,
-                            Some(&self.args.scaler),
-                        )?,
+                        .as_script_text()?,
                     is_proxy:    true,
                 })
             } else {

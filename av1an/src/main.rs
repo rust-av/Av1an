@@ -24,6 +24,7 @@ use av1an_core::{
     InputPixelFormat,
     InterpolationMethod,
     PixelFormat,
+    PixelFormatConverter,
     ScenecutMethod,
     SplitMethod,
     TargetMetric,
@@ -615,6 +616,17 @@ pub struct CliOpts {
     #[clap(long, default_value_t = CacheSource::SOURCE, help_heading = "Encoding" ,)]
     pub cache_mode: CacheSource,
 
+    /// Set converter to use for converting pixel format this only affect
+    /// video input. This option does not affect target quality pixel format
+    /// converter.
+    ///
+    /// ffmpeg - use ffmpeg to convert pixel format. (default)
+    ///
+    /// vs-resize - use vapoursynth built in resize function to convert pixel
+    /// format.
+    #[clap(long, default_value_t = PixelFormatConverter::FFMPEG, help_heading = "Encoding" ,)]
+    pub pix_format_converter: PixelFormatConverter,
+
     /// Plot an SVG of the VMAF for the encode
     ///
     /// This option is independent of --target-quality, i.e. it can be used with
@@ -979,9 +991,6 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.vspipe_args.clone(),
             temp.as_str(),
             chunk_method,
-            args.sc_downscale_height,
-            args.sc_pix_format,
-            Some(&scaler),
             false,
             args.cache_mode,
         )?;
@@ -995,9 +1004,6 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                 args.vspipe_args.clone(),
                 temp.as_str(),
                 chunk_method,
-                args.sc_downscale_height,
-                args.sc_pix_format,
-                Some(&scaler),
                 true,
                 args.cache_mode,
             )?)
@@ -1057,7 +1063,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             temp: temp.clone(),
             force: args.force,
             no_defaults: args.no_defaults,
-            passes: args.passes.map_or_else(|| args.encoder.get_default_pass(), |passes| passes),
+            passes: args.passes.unwrap_or_else(|| args.encoder.get_default_pass()),
             video_params: video_params.clone(),
             output_file: if let Some(path) = args.output_file.as_ref() {
                 let path = PathAbs::new(path)?;
@@ -1107,6 +1113,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             max_tries: args.max_tries as usize,
             min_scene_len: args.min_scene_len,
             cache_mode: args.cache_mode,
+            pix_format_converter: args.pix_format_converter,
             input_pix_format: {
                 match &input {
                     Input::Video {

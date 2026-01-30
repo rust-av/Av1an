@@ -2,6 +2,7 @@ use std::{
     borrow::{Borrow, Cow},
     cmp::Ordering,
     collections::HashSet,
+    fmt::Display,
     path::{absolute, Path, PathBuf},
     process::{exit, Command},
 };
@@ -9,6 +10,7 @@ use std::{
 use anyhow::{bail, ensure};
 use itertools::{chain, Itertools};
 use serde::{Deserialize, Serialize};
+use strum::{EnumString, IntoStaticStr};
 use tracing::warn;
 
 use crate::{
@@ -27,6 +29,21 @@ use crate::{
     TargetMetric,
     Verbosity,
 };
+
+#[derive(EnumString, IntoStaticStr, Debug, PartialEq, Clone, Copy)]
+pub enum PixelFormatConverter {
+    #[strum(serialize = "ffmpeg")]
+    FFMPEG,
+    #[strum(serialize = "vs-resize")]
+    VsResize,
+}
+
+impl Display for PixelFormatConverter {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(<&'static str>::from(self))
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PixelFormat {
@@ -90,18 +107,21 @@ pub struct EncodeArgs {
 
     pub max_tries: usize,
 
-    pub passes:              u8,
-    pub video_params:        Vec<String>,
-    pub tiles:               (u32, u32), /* tile (cols, rows) count; log2 will be applied later
-                                          * for specific encoders */
-    pub encoder:             Encoder,
-    pub workers:             usize,
-    pub set_thread_affinity: Option<usize>,
-    pub photon_noise:        Option<u8>,
-    pub photon_noise_size:   (Option<u32>, Option<u32>), // Width and Height
-    pub chroma_noise:        bool,
-    pub zones:               Option<PathBuf>,
-    pub cache_mode:          CacheSource,
+    pub passes:               u8,
+    pub video_params:         Vec<String>,
+    pub tiles:                (u32, u32), /* tile (cols, rows) count; log2 will be
+                                           * applied
+                                           * later
+                                           * for specific encoders */
+    pub encoder:              Encoder,
+    pub workers:              usize,
+    pub set_thread_affinity:  Option<usize>,
+    pub photon_noise:         Option<u8>,
+    pub photon_noise_size:    (Option<u32>, Option<u32>), // Width and Height
+    pub chroma_noise:         bool,
+    pub zones:                Option<PathBuf>,
+    pub cache_mode:           CacheSource,
+    pub pix_format_converter: PixelFormatConverter,
 
     // FFmpeg params
     pub ffmpeg_filter_args: Vec<String>,
