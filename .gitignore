@@ -16,8 +16,8 @@ __pycache__/
 *.lwi
 
 # Hidden folders
-!.github
 .*
+!.github
 !.mergify.yml
 
 # Distribution / packaging

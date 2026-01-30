@@ -1,5 +1,5 @@
 [workspace]
-members = ["av1an-core", "av1an"]
+members = ["av1an-core", "av1an", "andean-condor", "california-condor"]
 resolver = "2"
 
 [workspace.dependencies]

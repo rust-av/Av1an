@@ -1,0 +1,252 @@
+use std::{path::Path, process::Command, str::FromStr};
+
+use anyhow::{bail, Result};
+use av_format::rational::Rational64;
+use serde::{Deserialize, Serialize};
+use vapoursynth::format::PresetFormat;
+
+use crate::core::input::{clip_info::ClipInfo, pixel_format::PixelFormat};
+
+#[derive(Debug, Clone, Deserialize)]
+struct FfProbeInfo {
+    pub streams: Vec<FfProbeStreamInfo>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FfProbeStreamInfo {
+    pub width:          u32,
+    pub height:         u32,
+    pub pix_fmt:        String,
+    pub color_transfer: Option<String>,
+    pub avg_frame_rate: String,
+    pub nb_frames:      Option<String>,
+}
+
+#[inline]
+pub fn get_clip_info(source: &Path) -> Result<ClipInfo> {
+    let output = Command::new("ffprobe")
+        .arg("-v")
+        .arg("quiet")
+        .arg("-select_streams")
+        .arg("v:0")
+        .arg("-print_format")
+        .arg("json")
+        .arg("-show_entries")
+        .arg("stream=width,height,pix_fmt,avg_frame_rate,nb_frames,color_transfer")
+        .arg(source)
+        .output()?
+        .stdout;
+    let ffprobe_info: FfProbeInfo = serde_json::from_slice(&output)?;
+    let stream_info = ffprobe_info
+        .streams
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("no video streams found in source file"))?;
+
+    Ok(ClipInfo {
+        format_info:              PixelFormat::FFmpeg {
+            format: FFPixelFormat::from_str(&stream_info.pix_fmt)?,
+        },
+        frame_rate:               parse_frame_rate(&stream_info.avg_frame_rate)?,
+        resolution:               (stream_info.width, stream_info.height),
+        transfer_characteristics: match stream_info.color_transfer.as_deref() {
+            Some("smpte2084") => av1_grain::TransferFunction::SMPTE2084,
+            _ => av1_grain::TransferFunction::BT1886,
+        },
+        num_frames:               match stream_info.nb_frames.as_deref().map(str::parse) {
+            Some(Ok(nb_frames)) => nb_frames,
+            _ => get_num_frames(source)?,
+        },
+    })
+}
+
+/// Get frame count using FFmpeg
+#[inline]
+pub fn get_num_frames(source: &Path) -> anyhow::Result<usize> {
+    let output = Command::new("ffprobe")
+        .arg("-v")
+        .arg("error")
+        .arg("-select_streams")
+        .arg("v:0")
+        .arg("-count_packets")
+        .arg("-show_entries")
+        .arg("stream=nb_read_packets")
+        .arg("-print_format")
+        .arg("csv=p=0")
+        .arg(source)
+        .output()?
+        .stdout;
+    match String::from_utf8_lossy(&output).trim().parse::<usize>() {
+        Ok(x) if x > 0 => Ok(x),
+        _ => {
+            // If we got empty output or a 0 frame count, try using the slower
+            // but more reliable method
+            get_num_frames_slow(source)
+        },
+    }
+}
+
+/// Slower but more reliable frame count method
+fn get_num_frames_slow(source: &Path) -> anyhow::Result<usize> {
+    let output = Command::new("ffprobe")
+        .arg("-v")
+        .arg("error")
+        .arg("-count_frames")
+        .arg("-select_streams")
+        .arg("v:0")
+        .arg("-show_entries")
+        .arg("stream=nb_read_frames")
+        .arg("-print_format")
+        .arg("default=noprint_wrappers=1:nokey=1")
+        .arg(source)
+        .output()?
+        .stdout;
+    Ok(String::from_utf8_lossy(&output).trim().parse::<usize>()?)
+}
+
+fn parse_frame_rate(rate: &str) -> anyhow::Result<Rational64> {
+    let (numer, denom) = rate
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("failed to parse frame rate from ffprobe output"))?;
+    Ok(Rational64::new(
+        numer.parse::<i64>()?,
+        denom.parse::<i64>()?,
+    ))
+}
+
+/// Pixel formats supported by ffmpeg
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum FFPixelFormat {
+    GBRP,
+    GBRP10LE,
+    GBRP12L,
+    GBRP12LE,
+    GRAY10LE,
+    GRAY12L,
+    GRAY12LE,
+    GRAY8,
+    NV12,
+    NV16,
+    NV20LE,
+    NV21,
+    YUV420P,
+    YUV420P10LE,
+    YUV420P12LE,
+    YUV422P,
+    YUV422P10LE,
+    YUV422P12LE,
+    YUV440P,
+    YUV440P10LE,
+    YUV440P12LE,
+    YUV444P,
+    YUV444P10LE,
+    YUV444P12LE,
+    YUVA420P,
+    YUVJ420P,
+    YUVJ422P,
+    YUVJ444P,
+}
+
+impl FFPixelFormat {
+    /// The string to be used with ffmpeg's `-pix_fmt` argument.
+    #[inline]
+    pub fn to_pix_fmt_string(&self) -> &'static str {
+        match self {
+            FFPixelFormat::GBRP => "gbrp",
+            FFPixelFormat::GBRP10LE => "gbrp10le",
+            FFPixelFormat::GBRP12L => "gbrp12l",
+            FFPixelFormat::GBRP12LE => "gbrp12le",
+            FFPixelFormat::GRAY10LE => "gray10le",
+            FFPixelFormat::GRAY12L => "gray12l",
+            FFPixelFormat::GRAY12LE => "gray12le",
+            FFPixelFormat::GRAY8 => "gray",
+            FFPixelFormat::NV12 => "nv12",
+            FFPixelFormat::NV16 => "nv16",
+            FFPixelFormat::NV20LE => "nv20le",
+            FFPixelFormat::NV21 => "nv21",
+            FFPixelFormat::YUV420P => "yuv420p",
+            FFPixelFormat::YUV420P10LE => "yuv420p10le",
+            FFPixelFormat::YUV420P12LE => "yuv420p12le",
+            FFPixelFormat::YUV422P => "yuv422p",
+            FFPixelFormat::YUV422P10LE => "yuv422p10le",
+            FFPixelFormat::YUV422P12LE => "yuv422p12le",
+            FFPixelFormat::YUV440P => "yuv440p",
+            FFPixelFormat::YUV440P10LE => "yuv440p10le",
+            FFPixelFormat::YUV440P12LE => "yuv440p12le",
+            FFPixelFormat::YUV444P => "yuv444p",
+            FFPixelFormat::YUV444P10LE => "yuv444p10le",
+            FFPixelFormat::YUV444P12LE => "yuv444p12le",
+            FFPixelFormat::YUVA420P => "yuva420p",
+            FFPixelFormat::YUVJ420P => "yuvj420p",
+            FFPixelFormat::YUVJ422P => "yuvj422p",
+            FFPixelFormat::YUVJ444P => "yuvj444p",
+        }
+    }
+
+    #[inline]
+    pub fn to_vapoursynth_format(&self) -> anyhow::Result<PresetFormat> {
+        Ok(match self {
+            // Vapoursynth doesn't have a Gray10/Gray12 so use the next best thing.
+            // No quality loss from 10/12->16 but might be slightly slower.
+            FFPixelFormat::GRAY10LE => PresetFormat::Gray16,
+            FFPixelFormat::GRAY12L => PresetFormat::Gray16,
+            FFPixelFormat::GRAY12LE => PresetFormat::Gray16,
+            FFPixelFormat::GRAY8 => PresetFormat::Gray8,
+            FFPixelFormat::YUV420P => PresetFormat::YUV420P8,
+            FFPixelFormat::YUV420P10LE => PresetFormat::YUV420P10,
+            FFPixelFormat::YUV420P12LE => PresetFormat::YUV420P12,
+            FFPixelFormat::YUV422P => PresetFormat::YUV422P8,
+            FFPixelFormat::YUV422P10LE => PresetFormat::YUV422P10,
+            FFPixelFormat::YUV422P12LE => PresetFormat::YUV422P12,
+            FFPixelFormat::YUV440P => PresetFormat::YUV440P8,
+            FFPixelFormat::YUV444P => PresetFormat::YUV444P8,
+            FFPixelFormat::YUV444P10LE => PresetFormat::YUV444P10,
+            FFPixelFormat::YUV444P12LE => PresetFormat::YUV444P12,
+            FFPixelFormat::YUVJ420P => PresetFormat::YUV420P8,
+            FFPixelFormat::YUVJ422P => PresetFormat::YUV422P8,
+            FFPixelFormat::YUVJ444P => PresetFormat::YUV444P8,
+            x => bail!(
+                "pixel format {} cannot be converted to Vapoursynth format",
+                x.to_pix_fmt_string()
+            ),
+        })
+    }
+}
+
+impl FromStr for FFPixelFormat {
+    type Err = anyhow::Error;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "gbrp" => FFPixelFormat::GBRP,
+            "gbrp10le" => FFPixelFormat::GBRP10LE,
+            "gbrp12l" => FFPixelFormat::GBRP12L,
+            "gbrp12le" => FFPixelFormat::GBRP12LE,
+            "gray10le" => FFPixelFormat::GRAY10LE,
+            "gray12l" => FFPixelFormat::GRAY12L,
+            "gray12le" => FFPixelFormat::GRAY12LE,
+            "gray" => FFPixelFormat::GRAY8,
+            "nv12" => FFPixelFormat::NV12,
+            "nv16" => FFPixelFormat::NV16,
+            "nv20le" => FFPixelFormat::NV20LE,
+            "nv21" => FFPixelFormat::NV21,
+            "yuv420p" => FFPixelFormat::YUV420P,
+            "yuv420p10le" => FFPixelFormat::YUV420P10LE,
+            "yuv420p12le" => FFPixelFormat::YUV420P12LE,
+            "yuv422p" => FFPixelFormat::YUV422P,
+            "yuv422p10le" => FFPixelFormat::YUV422P10LE,
+            "yuv422p12le" => FFPixelFormat::YUV422P12LE,
+            "yuv440p" => FFPixelFormat::YUV440P,
+            "yuv440p10le" => FFPixelFormat::YUV440P10LE,
+            "yuv440p12le" => FFPixelFormat::YUV440P12LE,
+            "yuv444p" => FFPixelFormat::YUV444P,
+            "yuv444p10le" => FFPixelFormat::YUV444P10LE,
+            "yuv444p12le" => FFPixelFormat::YUV444P12LE,
+            "yuva420p" => FFPixelFormat::YUVA420P,
+            "yuvj420p" => FFPixelFormat::YUVJ420P,
+            "yuvj422p" => FFPixelFormat::YUVJ422P,
+            "yuvj444p" => FFPixelFormat::YUVJ444P,
+            s => bail!("Unsupported pixel format string: {s}"),
+        })
+    }
+}

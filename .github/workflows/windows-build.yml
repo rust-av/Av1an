@@ -13,8 +13,10 @@ jobs:
 
     env:
       CARGO_INCREMENTAL: 0
-      vsynth_ver: "R72"
+      vsynth_ver: "R73"
       vsynth_path: "C:/Program Files/Vapoursynth"
+      FFMS_LIB_DIR: ${{github.workspace}}\ffms2-5.0-msvc\x64
+      FFMS_INCLUDE_DIR: ${{github.workspace}}\ffms2-5.0-msvc\include
 
     steps:
       - name: NASM setup
@@ -30,6 +32,11 @@ jobs:
           Invoke-WebRequest "$uri" -OutFile "$tempFile" -TimeoutSec 10
           Expand-Archive "$tempFile" "$env:vsynth_path"
 
+      - name: Download and extract deps
+        run: |
+          curl -L -o ffms2.7z "https://github.com/FFMS/ffms2/releases/download/5.0/ffms2-5.0-msvc.7z"
+          7z x ffms2.7z
+
       - uses: actions/checkout@v6
 
       - uses: Swatinem/rust-cache@v2
@@ -40,7 +47,6 @@ jobs:
         run: |
           $commit = git log -1 --pretty=format:"%h: %s (%an)"
           echo "message=$commit" >> $env:GITHUB_OUTPUT
-
       - name: Av1an build
         run: cargo build --release
 
@@ -55,4 +61,20 @@ jobs:
             Commit:
             ${{ steps.get_commit.outputs.message }}
           files: target/release/av1an.exe
+          fail_on_unmatched_files: true
+
+      - name: Condor build
+        run: cargo build --release --bin condor
+
+      - name: Create or update prerelease for Condor
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          tag_name: latest-condor
+          body: |
+            Latest build from ${{ github.sha }}
+
+            Commit:
+            ${{ steps.get_commit.outputs.message }}
+          files: target/release/condor.exe
           fail_on_unmatched_files: true
