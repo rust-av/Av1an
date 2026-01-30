@@ -2,7 +2,7 @@ name: Build California Condor (Windows x64)
 on:
   push:
     branches:
-      - 'condor'
+      - 'master'
   workflow_dispatch:
 
 permissions:
