@@ -225,7 +225,7 @@ impl TuiApp for ParallelEncoderApp {
                 },
                 ParallelEncoderAppEvent::SceneBytes(scene, bytes) => {
                     self.scenes.entry(scene).and_modify(|(_, scene)| {
-                        scene.processing.parallel_encoder.bytes = Some(bytes);
+                        scene.sequence_data.parallel_encoder.bytes = Some(bytes);
                     });
                     if !stdout_is_terminal {
                         let event = ParallelEncoderConsoleEvent::SceneSize {
@@ -308,7 +308,7 @@ impl TuiApp for ParallelEncoderApp {
         frame.render_widget(active_encoders, layout[1]);
 
         let completed_scenes = self.scenes.iter().filter(|(_, (_, scene))| {
-            scene.processing.parallel_encoder.bytes.is_some_and(|bytes| bytes > 0)
+            scene.sequence_data.parallel_encoder.bytes.is_some_and(|bytes| bytes > 0)
         });
         let (bitrate, estimated_bytes) = self.estimate_size();
         let progress_bar = ProgressBar {
@@ -373,13 +373,13 @@ impl ParallelEncoderApp {
         let (frames_completed, bytes_completed) = self
             .scenes
             .iter()
-            .filter(|(_, (_, scene))| scene.processing.parallel_encoder.bytes.is_some())
+            .filter(|(_, (_, scene))| scene.sequence_data.parallel_encoder.bytes.is_some())
             .fold(
                 (0, 0),
                 |(frames_completed, bytes_completed), (_, (_, scene))| {
                     (
                         frames_completed + (scene.end_frame - scene.start_frame) as u64,
-                        bytes_completed + scene.processing.parallel_encoder.bytes.unwrap_or(0),
+                        bytes_completed + scene.sequence_data.parallel_encoder.bytes.unwrap_or(0),
                     )
                 },
             );

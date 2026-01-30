@@ -10,9 +10,16 @@ use std::{
 };
 
 use anyhow::{bail, Context, Result};
-use av_format::rational::{Ratio, Rational64};
+use av_format::{
+    buffer::AccReader,
+    demuxer::{Context as DemuxerContext, Event},
+    muxer::{Context as MuxerContext, Writer},
+    rational::{Ratio, Rational64},
+};
+use av_ivf::{demuxer::IvfDemuxer, muxer::IvfMuxer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::{error, trace};
 
 use crate::{
     core::{
@@ -175,7 +182,7 @@ where
             ConcatMethod::FFmpeg => {
                 Self::ffmpeg(&config.scenes_directory, &condor.output.path, &scene_paths)?;
             },
-            ConcatMethod::Ivf => todo!(),
+            ConcatMethod::Ivf => Self::ivf(&condor.output.path, &scene_paths)?,
         };
 
         Ok(((), warnings))
@@ -322,6 +329,82 @@ impl SceneConcatenator {
                 status: out.status
             });
         }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn ivf(output: &Path, scene_paths: &[PathBuf]) -> Result<()> {
+        let output = File::create(output)?;
+        let mut muxer = MuxerContext::new(IvfMuxer::new(), Writer::new(output));
+        let global_info = {
+            let acc = AccReader::new(std::fs::File::open(&scene_paths[0])?);
+            let mut demuxer = DemuxerContext::new(IvfDemuxer::new(), acc);
+            demuxer.read_headers()?;
+            // attempt to set the duration correctly
+            let duration = demuxer.info.duration.unwrap_or(0)
+                + scene_paths.iter().skip(1).try_fold(0u64, |sum, file| -> anyhow::Result<_> {
+                    let acc = AccReader::new(std::fs::File::open(file)?);
+                    let mut demuxer = DemuxerContext::new(IvfDemuxer::new(), acc);
+
+                    demuxer.read_headers()?;
+                    Ok(sum + demuxer.info.duration.unwrap_or(0))
+                })?;
+
+            let mut info = demuxer.info;
+            info.duration = Some(duration);
+            info
+        };
+
+        muxer.set_global_info(global_info)?;
+        muxer.configure()?;
+        muxer.write_header()?;
+
+        let mut pos_offset: usize = 0;
+        for file in scene_paths {
+            let mut last_pos: usize = 0;
+            let input = std::fs::File::open(file)?;
+
+            let acc = AccReader::new(input);
+
+            let mut demuxer = DemuxerContext::new(IvfDemuxer::new(), acc);
+            demuxer.read_headers()?;
+
+            trace!("global info: {:#?}", demuxer.info);
+
+            loop {
+                match demuxer.read_event() {
+                    Ok(event) => match event {
+                        Event::MoreDataNeeded(sz) => panic!("needed more data: {sz} bytes"),
+                        Event::NewStream(s) => panic!("new stream: {s:?}"),
+                        Event::NewPacket(mut packet) => {
+                            if let Some(p) = packet.pos.as_mut() {
+                                last_pos = *p;
+                                *p += pos_offset;
+                            }
+
+                            trace!("received packet with pos: {:?}", packet.pos);
+                            muxer.write_packet(Arc::new(packet))?;
+                        },
+                        Event::Continue => {
+                            // do nothing
+                        },
+                        Event::Eof => {
+                            trace!("EOF received.");
+                            break;
+                        },
+                        _ => unimplemented!(),
+                    },
+                    Err(e) => {
+                        error!("{:?}", e);
+                        break;
+                    },
+                }
+            }
+            pos_offset += last_pos + 1;
+        }
+
+        muxer.write_trailer()?;
 
         Ok(())
     }

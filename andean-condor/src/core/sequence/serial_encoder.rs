@@ -200,7 +200,8 @@ where
 
             let y4m_header = input.y4m_header(Some(scene.end_frame - scene.start_frame))?;
             frames_tx.send(Cursor::new(Vec::from(y4m_header.as_bytes())))?;
-            input.y4m_frames(frames_tx, scene.start_frame, scene.end_frame)?;
+            let frame_indices = (scene.start_frame..scene.end_frame).collect::<Vec<_>>();
+            input.y4m_frames(frames_tx, &frame_indices)?;
 
             let _ = encoder_thread
                 .join()

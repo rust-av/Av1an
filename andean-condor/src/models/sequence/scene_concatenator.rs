@@ -76,3 +76,21 @@ impl Display for ConcatMethod {
         f.write_str(<&'static str>::from(self))
     }
 }
+
+impl ConcatMethod {
+    #[inline]
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::MKVMerge => "mkv",
+            Self::FFmpeg => "mkv",
+            Self::Ivf => "ivf",
+        }
+    }
+
+    #[inline]
+    pub fn with_extension(&self, path: &Path) -> PathBuf {
+        let mut path = path.to_path_buf();
+        path.set_extension(self.extension());
+        path
+    }
+}

@@ -573,26 +573,21 @@ impl Input {
     #[inline]
     pub fn y4m_frames(
         &mut self,
-        // frame_sender: mpsc::Sender<Cursor<Vec<u8>>>,
         frame_sender: crossbeam_channel::Sender<Cursor<Vec<u8>>>,
-        start: usize,
-        end: usize,
+        frame_indices: &[usize],
     ) -> Result<()> {
         static FRAME_HEADER: &str = "FRAME\n";
         static CONTEXT: &str = "get y4m frame";
-        // let mut stream = Cursor::new(Vec::new());
         let bit_depth = self.clip_info()?.format_info.as_bit_depth()?;
 
         match self {
             Input::Video {
                 decoder, ..
             } => {
-                // let details = decoder.get_video_details();
-                for index in start..end {
-                    // let framedata = match details.bit_depth {
+                for index in frame_indices {
                     let framedata = match bit_depth {
                         8 => {
-                            let frame = decoder.get_video_frame::<u8>(index).context(CONTEXT)?;
+                            let frame = decoder.get_video_frame::<u8>(*index).context(CONTEXT)?;
 
                             let mut planes = Vec::new();
                             planes.extend(frame.y_plane.byte_data());
@@ -605,7 +600,7 @@ impl Input {
                             planes
                         },
                         _ => {
-                            let frame = decoder.get_video_frame::<u16>(index).context(CONTEXT)?;
+                            let frame = decoder.get_video_frame::<u16>(*index).context(CONTEXT)?;
 
                             let mut planes = Vec::new();
                             planes.extend(frame.y_plane.byte_data());
@@ -634,13 +629,13 @@ impl Input {
                 let frame_semaphore = Arc::new(Semaphore::new(24));
                 let pair = Arc::new((Mutex::new(BTreeMap::new()), Condvar::new()));
 
-                for index in start..end {
+                for index in frame_indices {
                     frame_semaphore.acquire();
 
                     let pair_clone = Arc::clone(&pair);
                     let frame_semaphore_clone = Arc::clone(&frame_semaphore);
 
-                    node.get_frame_async(index, move |frame, _index, _node| {
+                    node.get_frame_async(*index, move |frame, _index, _node| {
                         let frame = frame.expect("Failed to get frame");
                         let (lock, condvar) = &*pair_clone;
 
@@ -652,16 +647,14 @@ impl Input {
                     });
                 }
 
-                let mut next_frame_index = start;
-                while next_frame_index < end {
+                for index in frame_indices {
                     let (map_lock, condvar) = &*pair;
                     let map = map_lock.lock().expect("mutex should acquire lock");
                     let mut map = condvar
-                        .wait_while(map, |m| !m.contains_key(&next_frame_index))
+                        .wait_while(map, |m| !m.contains_key(index))
                         .expect("Condvar should be notified");
 
-                    let (_index, frame) = map.pop_first().expect("Map should have frame");
-                    next_frame_index += 1;
+                    let frame = map.remove(index).expect("Map should have frame");
                     drop(map);
 
                     let framedata = {
@@ -692,16 +685,8 @@ impl Input {
             },
         }
 
-        drop(frame_sender);
-
         Ok(())
     }
-
-    // #[inline]
-    // pub fn y4m_frames_node(node: Node, frame_sender:
-    // mpsc::Sender<Cursor<Vec<u8>>>, start: usize, end: usize) -> Result<()> {
-
-    // }
 }
 
 #[derive(Debug, ThisError)]

@@ -209,7 +209,7 @@ where
                         end_frame:   end,
                         sub_scenes:  None,
                         encoder:     condor.encoder.clone(),
-                        processing:  DataHandler::default(),
+                        sequence_data:  DataHandler::default(),
                     });
                     progress_tx
                         .send(SequenceStatus::Whole(Status::Processing {
@@ -254,11 +254,11 @@ where
                         start_frame,
                         end_frame,
                         sub_scenes: None,
-                        processing: DataHandler::default(),
+                        sequence_data: DataHandler::default(),
                     };
 
                     // Update with non-default scenecut scores
-                    scene.processing.get_scene_detection_mut()?.scenecut_scores =
+                    scene.sequence_data.get_scene_detection_mut()?.scenecut_scores =
                         Some(scene_scores);
 
                     condor.scenes.push(scene);
@@ -273,7 +273,7 @@ where
                         start_frame: last_scene.end_frame,
                         end_frame:   frames,
                         sub_scenes:  None,
-                        processing:  DataHandler::default(),
+                        sequence_data:  DataHandler::default(),
                     };
                     condor.scenes.push(scene.clone());
                     progress_tx.send(SequenceStatus::Whole(Status::Processing {
@@ -311,7 +311,7 @@ where
                         end_frame:   end,
                         sub_scenes:  None,
                         encoder:     condor.encoder.clone(),
-                        processing:  DataHandler::default(),
+                        sequence_data:  DataHandler::default(),
                     };
                     scenes_vec.push(scene);
                     prev_end = end;

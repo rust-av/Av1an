@@ -11,7 +11,12 @@ use crate::models::sequence::{
     quality_check::{QualityCheckData, QualityCheckDataHandler},
     scene_concatenator::{SceneConcatenatorConfig, SceneConcatenatorConfigHandler},
     scene_detector::{SceneDetectorConfig, SceneDetectorData, SceneDetectorDataHandler},
-    target_quality::{TargetQualityConfig, TargetQualityData, TargetQualityDataHandler},
+    target_quality::{
+        TargetQualityConfig,
+        TargetQualityConfigHandler,
+        TargetQualityData,
+        TargetQualityDataHandler,
+    },
 };
 
 pub mod benchmarker;
@@ -30,7 +35,10 @@ pub trait SequenceConfigHandler: Default + Clone + Serialize {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefaultSequenceConfig
 where
-    Self: SequenceConfigHandler + ParallelEncoderConfigHandler + SceneConcatenatorConfigHandler,
+    Self: SequenceConfigHandler
+        + TargetQualityConfigHandler
+        + ParallelEncoderConfigHandler
+        + SceneConcatenatorConfigHandler,
 {
     pub scene_detector:     SceneDetectorConfig,
     pub target_quality:     Option<TargetQualityConfig>,
@@ -51,6 +59,18 @@ impl Default for DefaultSequenceConfig {
 }
 
 impl SequenceConfigHandler for DefaultSequenceConfig {
+}
+
+impl TargetQualityConfigHandler for DefaultSequenceConfig {
+    #[inline]
+    fn target_quality(&self) -> Result<&Option<TargetQualityConfig>> {
+        Ok(&self.target_quality)
+    }
+
+    #[inline]
+    fn target_quality_mut(&mut self) -> Result<&mut Option<TargetQualityConfig>> {
+        Ok(&mut self.target_quality)
+    }
 }
 
 impl ParallelEncoderConfigHandler for DefaultSequenceConfig {

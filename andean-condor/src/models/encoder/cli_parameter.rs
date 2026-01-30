@@ -97,6 +97,47 @@ impl CLIParameter {
         )
     }
 
+    /// Check if the current parameter matches the other parameter by prefix and
+    /// delimiter but not value.
+    #[inline]
+    pub fn matches(&self, other: &CLIParameter) -> bool {
+        match self {
+            CLIParameter::String {
+                prefix,
+                delimiter,
+                ..
+            } => match other {
+                CLIParameter::String {
+                    prefix: other_prefix,
+                    delimiter: other_delimiter,
+                    ..
+                } => prefix == other_prefix && delimiter == other_delimiter,
+                _ => false,
+            },
+            CLIParameter::Number {
+                prefix,
+                delimiter,
+                ..
+            } => match other {
+                CLIParameter::Number {
+                    prefix: other_prefix,
+                    delimiter: other_delimiter,
+                    ..
+                } => prefix == other_prefix && delimiter == other_delimiter,
+                _ => false,
+            },
+            CLIParameter::Bool {
+                prefix, ..
+            } => match other {
+                CLIParameter::Bool {
+                    prefix: other_prefix,
+                    ..
+                } => prefix == other_prefix,
+                _ => false,
+            },
+        }
+    }
+
     #[inline]
     pub fn to_parameter_string(&self, name: &str) -> String {
         match self {

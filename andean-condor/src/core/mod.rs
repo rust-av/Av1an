@@ -499,7 +499,7 @@ mod tests {
                     start_frame: *start,
                     end_frame: *end,
                     sub_scenes: None,
-                    processing: DefaultSequenceData::default(),
+                    sequence_data: DefaultSequenceData::default(),
                 });
             }
             scenes

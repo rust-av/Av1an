@@ -195,8 +195,7 @@ where
             .map(|(index, (original_index, scene))| Task {
                 original_index,
                 index,
-                start_frame: scene.start_frame,
-                end_frame: scene.end_frame,
+                frame_indices: (scene.start_frame..scene.end_frame).collect::<Vec<_>>(),
                 sub_scenes: scene.sub_scenes.clone(),
                 encoder: scene.encoder.clone(),
                 output: scenes_directory.join(format!(
@@ -222,7 +221,8 @@ where
                     if let Some(scene) = condor.scenes.get_mut(encoder_result.scene)
                         && encoder_result.bytes != 0
                     {
-                        let parallel_encode_data = scene.processing.get_parallel_encoder_mut()?;
+                        let parallel_encode_data =
+                            scene.sequence_data.get_parallel_encoder_mut()?;
                         parallel_encode_data.bytes = Some(encoder_result.bytes);
                         parallel_encode_data.started_on = Some(
                             encoder_result
@@ -231,7 +231,7 @@ where
                                 .expect("Time is valid")
                                 .as_millis(),
                         );
-                        scene.processing.get_parallel_encoder_mut()?.started_on = Some(
+                        scene.sequence_data.get_parallel_encoder_mut()?.started_on = Some(
                             encoder_result
                                 .ended
                                 .duration_since(std::time::UNIX_EPOCH)
@@ -287,8 +287,7 @@ impl ParallelEncoder {
         let mut frames_receivers = BTreeMap::new();
         let mut encoder_semaphores = BTreeMap::new();
         let total_tasks = tasks.len();
-        let total_process_frames =
-            tasks.iter().fold(0, |acc, task| acc + (task.end_frame - task.start_frame));
+        let total_process_frames = tasks.iter().fold(0, |acc, task| acc + task.frame_indices.len());
         for task in tasks.iter() {
             let index = task.index;
             task_tx.send(task.clone())?;
@@ -319,7 +318,7 @@ impl ParallelEncoder {
                 let size_tx = progress_tx.clone();
                 let task = task_rx.recv()?;
                 let total_passes = task.encoder.total_passes();
-                let total_scene_frames = task.end_frame - task.start_frame;
+                let total_scene_frames = task.frame_indices.len();
                 let worker_semaphore = Arc::clone(&worker_semaphore);
                 let decoder_semaphore_clone = Arc::clone(&decoder_semaphore);
                 let encoder_semaphore =
@@ -494,10 +493,9 @@ impl ParallelEncoder {
                     debug!("Decoding Scene {}", task.original_index);
                     let frames_tx =
                         frames_senders.remove(&task.index).expect("should have frames_tx");
-                    let y4m_header = input.y4m_header(Some(task.end_frame - task.start_frame))?;
+                    let y4m_header = input.y4m_header(Some(task.frame_indices.len()))?;
                     frames_tx.send(Cursor::new(Vec::from(y4m_header.as_bytes())))?;
-
-                    input.y4m_frames(frames_tx, task.start_frame, task.end_frame)?;
+                    input.y4m_frames(frames_tx, &task.frame_indices)?;
                 }
                 encoder_semaphores
                     .get(&task.index)
@@ -537,8 +535,7 @@ impl ParallelEncoder {
 pub struct Task {
     pub original_index: usize,
     pub index:          usize,
-    pub start_frame:    usize,
-    pub end_frame:      usize,
+    pub frame_indices:  Vec<usize>,
     pub sub_scenes:     Option<Vec<SubScene>>,
     pub encoder:        Encoder,
     pub output:         PathBuf,

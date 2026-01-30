@@ -165,8 +165,7 @@ where
                     ParallelEncodeTask {
                         index,
                         original_index: index,
-                        start_frame: start,
-                        end_frame: end,
+                        frame_indices: (start..end).collect::<Vec<_>>(),
                         sub_scenes: None,
                         encoder: condor.encoder.clone(),
                         output: benchmarker_directory.join(format!(
@@ -204,8 +203,7 @@ where
                 .map(|(index, scene)| ParallelEncodeTask {
                     original_index: index,
                     index,
-                    start_frame: scene.start_frame,
-                    end_frame: scene.end_frame,
+                    frame_indices: (scene.start_frame..scene.end_frame).collect::<Vec<_>>(),
                     sub_scenes: None,
                     encoder: condor.encoder.clone(),
                     output: benchmarker_directory.join(format!(

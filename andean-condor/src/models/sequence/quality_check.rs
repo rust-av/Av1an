@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::input::Input,
-    models::sequence::target_quality::{QualityMetric, QualityPass},
+    models::sequence::target_quality::types::{QualityMetric, QualityPass},
 };
 
 pub trait QualityCheckSequence {

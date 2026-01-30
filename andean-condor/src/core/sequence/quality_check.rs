@@ -8,7 +8,7 @@ use crate::{
     },
     models::sequence::{
         quality_check::QualityCheckDataHandler,
-        target_quality::QualityMetric,
+        target_quality::types::QualityMetric,
         SequenceConfigHandler,
         SequenceDataHandler,
     },
