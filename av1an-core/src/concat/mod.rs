@@ -171,7 +171,11 @@ pub fn mkvmerge(
     num_chunks: usize,
     output_fps: Option<Rational64>,
 ) -> anyhow::Result<()> {
-    const MAXIMUM_CHUNKS_PER_MERGE: usize = 100;
+    #[cfg(windows)]
+    const MAXIMUM_CHUNKS_PER_MERGE: usize = usize::MAX;
+    #[cfg(not(windows))]
+    const MAXIMUM_CHUNKS_PER_MERGE: usize = 960;
+
     // mkvmerge does not accept UNC paths on Windows
     #[cfg(windows)]
     fn fix_path<P: AsRef<Path>>(p: P) -> String {
@@ -221,6 +225,39 @@ pub fn mkvmerge(
                 .collect()
         })
         .collect();
+
+    // If there is only one chunk group, we can skip the intermediate merge/file
+    // creation
+    if chunk_groups.len() == 1 {
+        let options_path = PathBuf::from(&temp_dir).join("options.json");
+        let options_json_contents = mkvmerge_options_json(
+            &chunk_groups[0],
+            &fix_path(output.to_string_lossy().as_ref()),
+            audio_file.as_deref(),
+            output_fps,
+        );
+
+        let mut options_json = File::create(options_path)?;
+        options_json.write_all(options_json_contents?.as_bytes())?;
+
+        let mut cmd = Command::new("mkvmerge");
+        cmd.current_dir(&encode_dir);
+        cmd.arg("@../options.json");
+
+        let out = cmd
+            .output()
+            .with_context(|| "Failed to execute mkvmerge command for concatenation")?;
+
+        if !out.status.success() {
+            error!(
+                "mkvmerge concatenation failed with output: {:#?}\ncommand: {:?}",
+                out, cmd
+            );
+            return Err(anyhow!("mkvmerge concatenation failed"));
+        }
+
+        return Ok(());
+    }
 
     chunk_groups.iter().enumerate().try_for_each(|(group_index, chunk_group)| {
         let group_options_path =
