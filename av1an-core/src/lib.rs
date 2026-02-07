@@ -45,6 +45,7 @@ mod concat;
 mod context;
 mod encoder;
 pub mod ffmpeg;
+mod log_merge;
 mod metrics {
     pub mod butteraugli;
     pub mod statistics;
