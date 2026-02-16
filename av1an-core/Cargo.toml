@@ -31,9 +31,9 @@ cfg-if = "1.0.4"
 crossbeam-channel = "0.5.15"
 crossbeam-utils = "0.8.5"
 dashmap = { version = "6.0.0", features = ["serde"] }
-indicatif = "0.18.3"
+indicatif = "0.18.4"
 itertools = "0.14.0"
-memchr = "2.7.6"
+memchr = "2.8.0"
 nom = "8.0.0"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
@@ -63,8 +63,8 @@ y4m = "0.8.0"
 vapoursynth = "0.5.2"
 # TODO: move all of this CLI stuff to av1an-cli
 colored = "3.1.1"
-ctrlc = "3.5.1"
-regex = "1.12.2"
+ctrlc = "3.5.2"
+regex = "1.12.3"
 dunce = "1.0.5"
 
 # TODO: https://github.com/elast0ny/affinity/issues/2
