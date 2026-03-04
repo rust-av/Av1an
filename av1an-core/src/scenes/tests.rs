@@ -88,6 +88,7 @@ fn get_test_args() -> Av1anContext {
         vapoursynth_plugins:   None,
         cache_mode:            CacheSource::SOURCE,
         pix_format_converter:  crate::PixelFormatConverter::FFMPEG,
+        user_log_file:         None,
     };
     Av1anContext {
         vs_script: None,

@@ -1169,6 +1169,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             scaler,
             ignore_frame_mismatch: args.ignore_frame_mismatch,
             vapoursynth_plugins,
+            user_log_file: None,
         };
 
         if !args.overwrite {
