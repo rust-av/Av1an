@@ -222,11 +222,11 @@ pub fn parse_svt_av1_frames(input: &str) -> Option<u64> {
     // Handle the new progress format introduced in https://gitlab.com/AOMediaCodec/SVT-AV1/-/merge_requests/2511
     if s.starts_with(SVT_AV1_NEW_PREFIX) {
         let line = s.get(SVT_AV1_NEW_PREFIX.len()..)?.trim_start();
-        if let Some((frames, _)) = line.split_once('/') {
-            if let Ok(frames) = frames.parse() {
-                // Frame count is known
-                return Some(frames);
-            }
+        if let Some((frames, _)) = line.split_once('/')
+            && let Ok(frames) = frames.parse()
+        {
+            // Frame count is known
+            return Some(frames);
         }
 
         // Frame count unknown

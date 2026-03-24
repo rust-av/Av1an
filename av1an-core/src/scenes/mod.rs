@@ -312,14 +312,13 @@ impl Scene {
                     .position(|param| param == key || param.starts_with(&format!("{key}=")))
                 {
                     video_params.remove(pos);
-                    if let Some(next) = video_params.get(pos) {
-                        if !([Encoder::aom, Encoder::vpx].contains(&encoder)
+                    if let Some(next) = video_params.get(pos)
+                        && !([Encoder::aom, Encoder::vpx].contains(&encoder)
                             || next.starts_with("--")
                             || (next.starts_with('-')
                                 && next.chars().nth(1).is_some_and(char::is_alphabetic)))
-                        {
-                            video_params.remove(pos);
-                        }
+                    {
+                        video_params.remove(pos);
                     }
                 }
             }

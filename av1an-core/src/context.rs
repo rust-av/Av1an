@@ -238,8 +238,8 @@ impl Av1anContext {
         {
             self.vs_script = Some(cache_vs_input(&self.args.input)?);
         }
-        if let Some(proxy) = &self.args.proxy {
-            if proxy.is_vapoursynth()
+        if let Some(proxy) = &self.args.proxy
+            && (proxy.is_vapoursynth()
                 || (proxy.is_video()
                     && matches!(
                         self.args.chunk_method,
@@ -248,10 +248,9 @@ impl Av1anContext {
                             | ChunkMethod::DGDECNV
                             | ChunkMethod::BESTSOURCE
                     )
-                    && !self.args.resume)
-            {
-                self.vs_proxy_script = Some(cache_vs_input(proxy)?);
-            }
+                    && !self.args.resume))
+        {
+            self.vs_proxy_script = Some(cache_vs_input(proxy)?);
         }
 
         let clip_info = self.args.input.clip_info()?;
@@ -488,10 +487,10 @@ impl Av1anContext {
                      {temp}",
                     temp = self.args.temp
                 );
-            } else if !self.args.keep {
-                if let Err(e) = fs::remove_dir_all(&self.args.temp) {
-                    warn!("Failed to delete temp directory: {e}");
-                }
+            } else if !self.args.keep
+                && let Err(e) = fs::remove_dir_all(&self.args.temp)
+            {
+                warn!("Failed to delete temp directory: {e}");
             }
 
             Ok(())
@@ -749,17 +748,16 @@ impl Av1anContext {
                         enc_stderr.push_str(line);
                         enc_stderr.push('\n');
 
-                        if current_pass == chunk.passes {
-                            if let Some(new) = chunk.encoder.parse_encoded_frames(line) {
-                                if new > frame {
-                                    if self.args.verbosity == Verbosity::Normal {
-                                        inc_bar(new - frame);
-                                    } else if self.args.verbosity == Verbosity::Verbose {
-                                        inc_mp_bar(new - frame);
-                                    }
-                                    frame = new;
-                                }
+                        if current_pass == chunk.passes
+                            && let Some(new) = chunk.encoder.parse_encoded_frames(line)
+                            && new > frame
+                        {
+                            if self.args.verbosity == Verbosity::Normal {
+                                inc_bar(new - frame);
+                            } else if self.args.verbosity == Verbosity::Verbose {
+                                inc_mp_bar(new - frame);
                             }
+                            frame = new;
                         }
                     }
 
@@ -993,9 +991,11 @@ impl Av1anContext {
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
+        let color_range = self.args.input.clip_info()?.color_range;
         chunk.apply_photon_noise_args(
             overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
             self.args.chroma_noise,
+            color_range,
         )?;
         if chunk.target_quality.target.is_some() {
             chunk.tq_cq = Some(chunk.target_quality.per_shot_target_quality(
@@ -1104,6 +1104,7 @@ impl Av1anContext {
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
+        let color_range = self.args.input.clip_info()?.color_range;
         chunk.apply_photon_noise_args(
             scene
                 .zone_overrides
@@ -1113,6 +1114,7 @@ impl Av1anContext {
                 .zone_overrides
                 .as_ref()
                 .map_or(self.args.chroma_noise, |ovr| ovr.chroma_noise),
+            color_range,
         )?;
         Ok(chunk)
     }
@@ -1343,9 +1345,11 @@ impl Av1anContext {
             tq_cq: None,
             ignore_frame_mismatch: self.args.ignore_frame_mismatch,
         };
+        let color_range = self.args.input.clip_info()?.color_range;
         chunk.apply_photon_noise_args(
             overrides.map_or(self.args.photon_noise, |ovr| ovr.photon_noise),
             self.args.chroma_noise,
+            color_range,
         )?;
         Ok(chunk)
     }

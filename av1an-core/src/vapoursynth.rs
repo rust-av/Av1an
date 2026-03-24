@@ -25,6 +25,7 @@ use crate::{
         xpsnr::{weight_xpsnr, XPSNRSubMetric},
     },
     ClipInfo,
+    ColorRange,
     Input,
     InputPixelFormat,
 };
@@ -143,6 +144,7 @@ pub fn get_clip_info(source: &Input, vspipe_args_map: &OwnedMap) -> anyhow::Resu
         },
         frame_rate:               get_frame_rate(&info)?,
         resolution:               get_resolution(&info)?,
+        color_range:              get_color_range(&environment)?,
         transfer_characteristics: match get_transfer(&environment)? {
             16 => av1_grain::TransferFunction::SMPTE2084,
             _ => av1_grain::TransferFunction::BT1886,
@@ -210,9 +212,37 @@ fn get_transfer(env: &Environment) -> anyhow::Result<u8> {
 
     let (node, _) = env.get_output(OUTPUT_INDEX)?;
     let frame = node.get_frame(0).context("get_transfer")?;
-    let transfer = frame.props().get::<i64>("_Transfer").map(|val| val as u8).unwrap_or(2);
+    let transfer = frame.props().get::<i64>("_Transfer").map_or(2, |val| val as u8);
 
     Ok(transfer)
+}
+
+/// Get the color range from an environment that has already been evaluated on
+/// a script.
+fn get_color_range(env: &Environment) -> anyhow::Result<Option<ColorRange>> {
+    // Get the output node.
+    const OUTPUT_INDEX: i32 = 0;
+
+    let (node, _) = env.get_output(OUTPUT_INDEX)?;
+    let frame = node.get_frame(0).context("get_color_range")?;
+    let color_range = frame
+        .props()
+        .get::<i64>("_ColorRange")
+        .ok()
+        .and_then(map_vapoursynth_color_range);
+
+    Ok(color_range)
+}
+
+#[inline]
+const fn map_vapoursynth_color_range(color_range: i64) -> Option<ColorRange> {
+    match color_range {
+        // RATIONALE: VapourSynth frame props use the legacy convention where
+        // 0 means full-range and 1 means limited-range.
+        0 => Some(ColorRange::Full),
+        1 => Some(ColorRange::Limited),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -253,6 +283,18 @@ fn get_plugin(core: CoreRef, plugin_id: PluginId) -> anyhow::Result<Plugin> {
             plugin_id = plugin_id.as_str()
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_vapoursynth_color_range_values() {
+        assert_eq!(map_vapoursynth_color_range(0), Some(ColorRange::Full));
+        assert_eq!(map_vapoursynth_color_range(1), Some(ColorRange::Limited));
+        assert_eq!(map_vapoursynth_color_range(2), None);
+    }
 }
 
 fn import_lsmash<'core>(

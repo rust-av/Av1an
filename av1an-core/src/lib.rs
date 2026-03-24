@@ -14,7 +14,6 @@ use std::{
     time::Instant,
 };
 
-use ::vapoursynth::{api::API, map::OwnedMap};
 use anyhow::{bail, Context};
 use av1_grain::TransferFunction;
 use av_format::rational::Rational64;
@@ -383,9 +382,10 @@ impl Input {
     /// python environment If the input is not a vapoursynth script, the map
     /// will be empty.
     #[inline]
-    pub fn as_vspipe_args_map(&self) -> anyhow::Result<OwnedMap<'static>> {
-        let mut args_map = OwnedMap::new(
-            API::get().ok_or_else(|| anyhow::anyhow!("failed to access Vapoursynth API"))?,
+    pub fn as_vspipe_args_map(&self) -> anyhow::Result<::vapoursynth::map::OwnedMap<'static>> {
+        let mut args_map = ::vapoursynth::map::OwnedMap::new(
+            ::vapoursynth::api::API::get()
+                .ok_or_else(|| anyhow::anyhow!("failed to access Vapoursynth API"))?,
         );
 
         for arg in self.as_vspipe_args_vec()? {
@@ -676,12 +676,19 @@ pub struct ProbingStatistic {
     pub value: Option<f64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorRange {
+    Full,
+    Limited,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ClipInfo {
     pub num_frames:               usize,
     pub format_info:              InputPixelFormat,
     pub frame_rate:               Rational64,
     pub resolution:               (u32, u32), // (width, height), consider using type aliases
+    pub color_range:              Option<ColorRange>,
     /// This is overly simplified because we currently only use it for photon
     /// noise gen, which only supports two transfer functions
     pub transfer_characteristics: TransferFunction,

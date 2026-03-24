@@ -66,13 +66,12 @@ pub fn init_logging(
     // Allow override through environment variables
     if let Ok(rust_log) = env::var("RUST_LOG") {
         for directive in rust_log.split(',') {
-            if let Some((module, level)) = directive.split_once('=') {
-                if let (Some(config), Ok(level)) =
+            if let Some((module, level)) = directive.split_once('=')
+                && let (Some(config), Ok(level)) =
                     (module_configs.get_mut(module), level.parse::<LevelFilter>())
-                {
-                    config.console_level = level;
-                    config.file_level = level;
-                }
+            {
+                config.console_level = level;
+                config.file_level = level;
             }
         }
     }
@@ -134,6 +133,7 @@ pub fn init_logging(
     let console_layer = fmt::layer()
     .compact()
     .with_ansi(std::io::stderr().is_terminal())
+    .with_ansi_sanitization(false)
     .with_target(false)
     .with_file(false)
     .with_thread_ids(false)
