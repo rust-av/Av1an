@@ -172,12 +172,17 @@ impl Broker<'_> {
                             }
 
                             while let Ok(mut chunk) = rx.recv() {
-                                if terminations_requested.load(Ordering::SeqCst) == 0 {
-                                    if let Err(e) = queue.encode_chunk(&mut chunk, worker_id, &terminations_requested, total_chunks) {
-                                            error!("[chunk {index}] {e}", index = chunk.index);
-                                        tx.send(()).expect("should send successfully");
-                                        return Err(());
-                                    }
+                                if terminations_requested.load(Ordering::SeqCst) == 0
+                                    && let Err(e) = queue.encode_chunk(
+                                        &mut chunk,
+                                        worker_id,
+                                        &terminations_requested,
+                                        total_chunks,
+                                    )
+                                {
+                                    error!("[chunk {index}] {e}", index = chunk.index);
+                                    tx.send(()).expect("should send successfully");
+                                    return Err(());
                                 }
                             }
                             Ok(())
@@ -249,12 +254,11 @@ impl Broker<'_> {
             }
 
             if chunk.target_quality.params_copied
-                && chunk.tq_cq.is_some()
                 && chunk.target_quality.probing_rate == 1
                 && self.project.args.ffmpeg_filter_args.is_empty()
                 && chunk.proxy.is_none()
+                && let Some(optimal_q) = chunk.tq_cq
             {
-                let optimal_q = chunk.tq_cq.expect("tq_cq is some");
                 let extension = match self.project.args.encoder {
                     crate::encoder::Encoder::x264 => "264",
                     crate::encoder::Encoder::x265 => "hevc",

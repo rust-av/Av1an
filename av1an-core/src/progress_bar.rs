@@ -211,13 +211,13 @@ pub fn reset_bar_at(pos: u64) {
 }
 
 pub fn reset_mp_bar_at(pos: u64) {
-    if let Some((_, pbs)) = MULTI_PROGRESS_BAR.get() {
-        if let Some(pb) = pbs.last() {
-            pb.reset();
-            pb.set_position(pos);
-            pb.reset_eta();
-            pb.reset_elapsed();
-        }
+    if let Some((_, pbs)) = MULTI_PROGRESS_BAR.get()
+        && let Some(pb) = pbs.last()
+    {
+        pb.reset();
+        pb.set_position(pos);
+        pb.reset_eta();
+        pb.reset_elapsed();
     }
 }
 

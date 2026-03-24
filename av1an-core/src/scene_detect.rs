@@ -127,11 +127,11 @@ pub fn scene_detect(
     let mut frames_read = 0;
     loop {
         let mut min_scene_len = min_scene_len;
-        if let Some(zone) = cur_zone {
-            if let Some(ref overrides) = zone.zone_overrides {
-                min_scene_len = overrides.min_scene_len;
-            }
-        };
+        if let Some(zone) = cur_zone
+            && let Some(ref overrides) = zone.zone_overrides
+        {
+            min_scene_len = overrides.min_scene_len;
+        }
         let options = DetectionOptions {
             min_scenecut_distance: Some(min_scene_len),
             analysis_speed: match sc_method {
@@ -169,15 +169,15 @@ pub fn scene_detect(
                 callback.as_ref().map(|cb| cb as &dyn Fn(usize, usize)),
             )
         }?;
-        if let Some(limit) = frame_limit {
-            if limit != sc_result.frame_count {
-                bail!(
-                    "Scene change: Expected {} frames but saw {}. This may indicate an issue with \
-                     the input or filters.",
-                    limit,
-                    sc_result.frame_count
-                );
-            }
+        if let Some(limit) = frame_limit
+            && limit != sc_result.frame_count
+        {
+            bail!(
+                "Scene change: Expected {} frames but saw {}. This may indicate an issue with the \
+                 input or filters.",
+                limit,
+                sc_result.frame_count
+            );
         }
         scores.extend(sc_result.scores.iter().map(|(k, v)| (k + frames_read, *v)));
 

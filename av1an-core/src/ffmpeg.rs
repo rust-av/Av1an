@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 use vapoursynth::format::PresetFormat;
 
-use crate::{into_array, into_vec, ClipInfo, InputPixelFormat};
+use crate::{into_array, into_vec, ClipInfo, ColorRange, InputPixelFormat};
 
 #[inline]
 pub fn compose_ffmpeg_pipe<S: Into<String>>(
@@ -47,6 +47,7 @@ struct FfProbeStreamInfo {
     pub width:          u32,
     pub height:         u32,
     pub pix_fmt:        String,
+    pub color_range:    Option<String>,
     pub color_transfer: Option<String>,
     pub avg_frame_rate: String,
     pub nb_frames:      Option<String>,
@@ -62,7 +63,7 @@ pub fn get_clip_info(source: &Path) -> anyhow::Result<ClipInfo> {
         .arg("-print_format")
         .arg("json")
         .arg("-show_entries")
-        .arg("stream=width,height,pix_fmt,avg_frame_rate,nb_frames,color_transfer")
+        .arg("stream=width,height,pix_fmt,avg_frame_rate,nb_frames,color_range,color_transfer")
         .arg(source)
         .output()?
         .stdout;
@@ -71,22 +72,47 @@ pub fn get_clip_info(source: &Path) -> anyhow::Result<ClipInfo> {
         .streams
         .first()
         .ok_or_else(|| anyhow::anyhow!("no video streams found in source file"))?;
+    let format = FFPixelFormat::from_str(&stream_info.pix_fmt)?;
+    let color_range = stream_info.color_range.as_deref().map_or_else(
+        || infer_color_range_from_pix_fmt(format),
+        parse_ffprobe_color_range,
+    );
 
     Ok(ClipInfo {
-        format_info:              InputPixelFormat::FFmpeg {
-            format: FFPixelFormat::from_str(&stream_info.pix_fmt)?,
+        format_info: InputPixelFormat::FFmpeg {
+            format,
         },
-        frame_rate:               parse_frame_rate(&stream_info.avg_frame_rate)?,
-        resolution:               (stream_info.width, stream_info.height),
+        frame_rate: parse_frame_rate(&stream_info.avg_frame_rate)?,
+        resolution: (stream_info.width, stream_info.height),
+        color_range,
         transfer_characteristics: match stream_info.color_transfer.as_deref() {
             Some("smpte2084") => av1_grain::TransferFunction::SMPTE2084,
             _ => av1_grain::TransferFunction::BT1886,
         },
-        num_frames:               match stream_info.nb_frames.as_deref().map(str::parse) {
+        num_frames: match stream_info.nb_frames.as_deref().map(str::parse) {
             Some(Ok(nb_frames)) => nb_frames,
             _ => get_num_frames(source)?,
         },
     })
+}
+
+#[inline]
+const fn infer_color_range_from_pix_fmt(pix_fmt: FFPixelFormat) -> Option<ColorRange> {
+    match pix_fmt {
+        FFPixelFormat::YUVJ420P | FFPixelFormat::YUVJ422P | FFPixelFormat::YUVJ444P => {
+            Some(ColorRange::Full)
+        },
+        _ => None,
+    }
+}
+
+#[inline]
+fn parse_ffprobe_color_range(color_range: &str) -> Option<ColorRange> {
+    match color_range {
+        "pc" | "jpeg" | "full" => Some(ColorRange::Full),
+        "tv" | "mpeg" | "limited" => Some(ColorRange::Limited),
+        _ => None,
+    }
 }
 
 /// Get frame count using FFmpeg
@@ -459,5 +485,41 @@ impl FromStr for FFPixelFormat {
             "yuvj444p" => FFPixelFormat::YUVJ444P,
             s => bail!("Unsupported pixel format string: {s}"),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_ffprobe_color_range_aliases() {
+        assert_eq!(parse_ffprobe_color_range("pc"), Some(ColorRange::Full));
+        assert_eq!(parse_ffprobe_color_range("jpeg"), Some(ColorRange::Full));
+        assert_eq!(parse_ffprobe_color_range("full"), Some(ColorRange::Full));
+        assert_eq!(parse_ffprobe_color_range("tv"), Some(ColorRange::Limited));
+        assert_eq!(parse_ffprobe_color_range("mpeg"), Some(ColorRange::Limited));
+        assert_eq!(
+            parse_ffprobe_color_range("limited"),
+            Some(ColorRange::Limited)
+        );
+        assert_eq!(parse_ffprobe_color_range("unknown"), None);
+    }
+
+    #[test]
+    fn infer_color_range_from_legacy_jpeg_formats() {
+        assert_eq!(
+            infer_color_range_from_pix_fmt(FFPixelFormat::YUVJ420P),
+            Some(ColorRange::Full)
+        );
+        assert_eq!(
+            infer_color_range_from_pix_fmt(FFPixelFormat::YUVJ422P),
+            Some(ColorRange::Full)
+        );
+        assert_eq!(
+            infer_color_range_from_pix_fmt(FFPixelFormat::YUVJ444P),
+            Some(ColorRange::Full)
+        );
+        assert_eq!(infer_color_range_from_pix_fmt(FFPixelFormat::YUV420P), None);
     }
 }

@@ -159,7 +159,7 @@ fn apply_photon_noise_args_with_noise() -> anyhow::Result<()> {
         ignore_frame_mismatch: false,
     };
 
-    ch.apply_photon_noise_args(Some(8), true)?;
+    ch.apply_photon_noise_args(Some(8), true, None)?;
     assert!(ch.video_params.iter().any(|p| p.contains("fgs-table")));
     Ok(())
 }
@@ -197,7 +197,7 @@ fn apply_photon_noise_args_no_noise() -> anyhow::Result<()> {
         ignore_frame_mismatch: false,
     };
 
-    ch.apply_photon_noise_args(None, false)?;
+    ch.apply_photon_noise_args(None, false, None)?;
     assert!(!ch.video_params.iter().any(|p| p.contains("fgs-table")));
     Ok(())
 }
@@ -235,6 +235,6 @@ fn apply_photon_noise_args_unsupported_encoder() -> anyhow::Result<()> {
         ignore_frame_mismatch: false,
     };
 
-    assert!(ch.apply_photon_noise_args(Some(8), true).is_err());
+    assert!(ch.apply_photon_noise_args(Some(8), true, None).is_err());
     Ok(())
 }

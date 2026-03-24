@@ -920,7 +920,9 @@ fn confirm(prompt: &str) -> io::Result<bool> {
 /// Given Folder and File path as inputs
 /// Converts them all to file paths
 /// Converting only depth 1 of Folder paths
-pub(crate) fn resolve_file_paths(path: &Path) -> anyhow::Result<Box<dyn Iterator<Item = PathBuf>>> {
+pub(crate) fn resolve_file_paths(
+    path: &Path,
+) -> anyhow::Result<Box<dyn Iterator<Item = PathBuf> + '_>> {
     // TODO: to validate file extensions
     // let valid_media_extensions = ["mkv", "mov", "mp4", "webm", "avi", "qt", "ts",
     // "m2t", "py", "vpy"];

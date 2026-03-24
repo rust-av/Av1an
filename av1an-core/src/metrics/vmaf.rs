@@ -145,7 +145,7 @@ pub fn plot(
 
     let pipe_cmd: SmallVec<[&OsStr; 8]> = match reference {
         Input::Video {
-            ref path, ..
+            path, ..
         } => {
             vspipe_args = vec![];
             ref_smallvec!(OsStr, 8, [
@@ -160,7 +160,7 @@ pub fn plot(
             ])
         },
         Input::VapourSynth {
-            ref path,
+            path,
             vspipe_args: args,
             ..
         } => {

@@ -7,7 +7,13 @@ use av1_grain::{generate_photon_noise_params, write_grain_table, NoiseGenArgs};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use crate::{encoder::Encoder, settings::insert_noise_table_params, Input, TargetQuality};
+use crate::{
+    encoder::Encoder,
+    settings::insert_noise_table_params,
+    ColorRange,
+    Input,
+    TargetQuality,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunk {
@@ -56,6 +62,7 @@ impl Chunk {
         &mut self,
         photon_noise: Option<u8>,
         chroma_noise: bool,
+        color_range: Option<ColorRange>,
     ) -> anyhow::Result<()> {
         if let Some(strength) = photon_noise {
             let iso_setting = u32::from(strength) * 100;
@@ -78,6 +85,7 @@ impl Chunk {
                     height,
                     transfer_function,
                     chroma_grain: chroma_noise,
+                    full_range: matches!(color_range, Some(ColorRange::Full)),
                     random_seed: None,
                 });
                 write_grain_table(&grain_table, &[params])?;

@@ -551,7 +551,7 @@ impl TargetQuality {
         let source_cmd = chunk.proxy_cmd.clone().unwrap_or_else(|| chunk.source_cmd.clone());
         let (ff_cmd, output) = cmd.clone();
 
-        thread::scope(move |scope| {
+        thread::scope(move |scope| -> Result<(), Box<EncoderCrash>> {
             let mut source = if let [pipe_cmd, args @ ..] = &*source_cmd {
                 std::process::Command::new(pipe_cmd)
                     .args(args)
@@ -662,13 +662,13 @@ impl TargetQuality {
             );
 
             if !enc_status.success() {
-                return Err(EncoderCrash {
+                return Err(Box::new(EncoderCrash {
                     exit_status:        enc_status,
                     source_pipe_stderr: stderr_handles.0.into(),
                     ffmpeg_pipe_stderr: stderr_handles.1.map(|h| h.into()),
                     stderr:             stderr_handles.2.into(),
                     stdout:             String::new().into(),
-                });
+                }));
             }
 
             Ok(())
