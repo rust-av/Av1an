@@ -961,6 +961,56 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
     let vapoursynth_plugins = get_vapoursynth_plugins().ok();
 
     for (index, input) in inputs.into_iter().enumerate() {
+        let output_file = {
+            if let Some(path) = args.output_file.as_ref() {
+                let path = PathAbs::new(path)?;
+
+                if let Ok(parent) = path.parent() {
+                    ensure!(parent.exists(), "Path to file {:?} is invalid", path);
+                } else {
+                    bail!("Failed to get parent directory of path: {:?}", path);
+                }
+
+                if !args.overwrite
+                    && path.exists()
+                    && (args.never_overwrite
+                        || !confirm(&format!(
+                            "Output file {} exists. Do you want to overwrite it? [y/N]: ",
+                            path.file_name().expect("file name should exist").display()
+                        ))?)
+                {
+                    println!("Not overwriting, aborting.");
+                    exit(0);
+                }
+
+                path.to_string_lossy().to_string()
+            } else {
+                let output_file = format!(
+                    "{}_{}.mkv",
+                    input
+                        .as_path()
+                        .file_stem()
+                        .unwrap_or_else(|| input.as_path().as_ref())
+                        .to_string_lossy(),
+                    args.encoder
+                );
+
+                if !args.overwrite
+                    && Path::new(&output_file).exists()
+                    && (args.never_overwrite
+                        || !confirm(&format!(
+                            "Default output file {} exists. Do you want to overwrite it? [y/N]: ",
+                            output_file
+                        ))?)
+                {
+                    println!("Not overwriting, aborting.");
+                    exit(0);
+                }
+
+                output_file
+            }
+        };
+
         let temp = args.temp.as_ref().map_or_else(
             || format!(".{}", hash_path(input.as_path())),
             |path| path.to_string_lossy().to_string(),
@@ -1065,27 +1115,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             no_defaults: args.no_defaults,
             passes: args.passes.unwrap_or_else(|| args.encoder.get_default_pass()),
             video_params: video_params.clone(),
-            output_file: if let Some(path) = args.output_file.as_ref() {
-                let path = PathAbs::new(path)?;
-
-                if let Ok(parent) = path.parent() {
-                    ensure!(parent.exists(), "Path to file {:?} is invalid", path);
-                } else {
-                    bail!("Failed to get parent directory of path: {:?}", path);
-                }
-
-                path.to_string_lossy().to_string()
-            } else {
-                format!(
-                    "{}_{}.mkv",
-                    input
-                        .as_path()
-                        .file_stem()
-                        .unwrap_or_else(|| input.as_path().as_ref())
-                        .to_string_lossy(),
-                    args.encoder
-                )
-            },
+            output_file,
             audio_params: if let Some(args) = args.audio_params.as_ref() {
                 shlex::split(args)
                     .ok_or_else(|| anyhow!("Failed to split ffmpeg audio encoder arguments"))?
@@ -1170,35 +1200,6 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             ignore_frame_mismatch: args.ignore_frame_mismatch,
             vapoursynth_plugins,
         };
-
-        if !args.overwrite {
-            // UGLY: taking first file for output file
-            if let Some(path) = args.output_file.as_ref() {
-                if path.exists()
-                    && (args.never_overwrite
-                        || !confirm(&format!(
-                            "Output file {} exists. Do you want to overwrite it? [y/N]: ",
-                            path.display()
-                        ))?)
-                {
-                    println!("Not overwriting, aborting.");
-                    exit(0);
-                }
-            } else {
-                let path: &Path = arg.output_file.as_ref();
-
-                if path.exists()
-                    && (args.never_overwrite
-                        || !confirm(&format!(
-                            "Default output file {} exists. Do you want to overwrite it? [y/N]: ",
-                            path.display()
-                        ))?)
-                {
-                    println!("Not overwriting, aborting.");
-                    exit(0);
-                }
-            }
-        }
 
         valid_args.push(arg);
     }
