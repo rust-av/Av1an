@@ -24,7 +24,7 @@ av-scenechange = { version = "0.23.0", default-features = false, features = [
     "asm",
     "vapoursynth",
 ] }
-av1-grain = { version = "0.4.1", default-features = false, features = [
+av1-grain = { version = "0.4.2", default-features = false, features = [
     "create",
 ] }
 cfg-if = "1.0.4"
