@@ -285,18 +285,6 @@ fn get_plugin(core: CoreRef, plugin_id: PluginId) -> anyhow::Result<Plugin> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn map_vapoursynth_color_range_values() {
-        assert_eq!(map_vapoursynth_color_range(0), Some(ColorRange::Full));
-        assert_eq!(map_vapoursynth_color_range(1), Some(ColorRange::Limited));
-        assert_eq!(map_vapoursynth_color_range(2), None);
-    }
-}
-
 fn import_lsmash<'core>(
     core: CoreRef<'core>,
     encoded: &Path,
@@ -1025,4 +1013,16 @@ pub fn measure_xpsnr(
     }
 
     Ok(scores)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_vapoursynth_color_range_values() {
+        assert_eq!(map_vapoursynth_color_range(0), Some(ColorRange::Full));
+        assert_eq!(map_vapoursynth_color_range(1), Some(ColorRange::Limited));
+        assert_eq!(map_vapoursynth_color_range(2), None);
+    }
 }

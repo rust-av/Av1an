@@ -14,6 +14,10 @@ __pycache__/
 *.webm
 *.y4m
 *.lwi
+av1an/80
+av1an/95
+*.bsindex
+*.ffindex
 
 # Hidden folders
 !.github

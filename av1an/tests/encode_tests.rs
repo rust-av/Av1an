@@ -9,10 +9,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[expect(
-    deprecated,
-    reason = "https://github.com/assert-rs/assert_cmd/issues/258"
-)]
 use assert_cmd::{cargo::cargo_bin, Command};
 use serial_test::serial;
 use tempfile::{NamedTempFile, TempDir, TempPath};
