@@ -10,6 +10,10 @@ path_abs = "0.5.1"
 tempfile = "3.26.0"
 tracing = "0.1"
 
+[patch.crates-io]
+vapoursynth = { path = "third_party/vapoursynth" }
+vapoursynth-sys = { path = "third_party/vapoursynth-sys" }
+
 [profile.dev.package."*"]
 opt-level = 2
 

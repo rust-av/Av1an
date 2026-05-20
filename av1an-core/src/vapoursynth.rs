@@ -3,6 +3,7 @@ use std::{
     fs::{create_dir_all, File},
     io::Write,
     path::{absolute, Path, PathBuf},
+    panic::{catch_unwind, AssertUnwindSafe},
     process::Command,
 };
 
@@ -88,8 +89,9 @@ pub enum VSZipVersion {
 
 #[inline]
 pub fn get_vapoursynth_plugins() -> anyhow::Result<VapoursynthPlugins> {
-    let env = Environment::new().expect("Failed to initialize VapourSynth environment");
-    let core = env.get_core().expect("Failed to get VapourSynth core");
+    const CONTEXT_MSG: &str = "get_vapoursynth_plugins";
+    let env = create_environment(CONTEXT_MSG)?;
+    let core = vsscript_call(CONTEXT_MSG, "get VapourSynth core", || env.get_core())?;
 
     Ok(VapoursynthPlugins {
         lsmash:     core.get_plugin_by_id(PluginId::Lsmash.as_str())?.is_some(),
@@ -110,6 +112,22 @@ pub fn get_vapoursynth_plugins() -> anyhow::Result<VapoursynthPlugins> {
     })
 }
 
+#[inline]
+fn create_environment(context: &str) -> anyhow::Result<Environment> {
+    vsscript_call(context, "initialize VapourSynth environment", Environment::new)
+}
+
+#[inline]
+fn vsscript_call<T, E, F>(context: &str, operation: &str, f: F) -> anyhow::Result<T>
+where
+    E: std::fmt::Display,
+    F: FnOnce() -> std::result::Result<T, E>,
+{
+    catch_unwind(AssertUnwindSafe(f))
+        .map_err(|_| anyhow!("{context}: {operation} panicked"))?
+        .map_err(|e| anyhow!("{context}: {operation} failed: {e}"))
+}
+
 // There is no way to get the version of a plugin
 // so check for a function signature instead
 fn is_vszip_r7_or_newer(plugin: Plugin) -> anyhow::Result<bool> {
@@ -122,19 +140,18 @@ pub fn get_clip_info(source: &Input, vspipe_args_map: &OwnedMap) -> anyhow::Resu
     const CONTEXT_MSG: &str = "get_clip_info";
     const OUTPUT_INDEX: i32 = 0;
 
-    let mut environment = Environment::new().context(CONTEXT_MSG)?;
-    if environment.set_variables(vspipe_args_map).is_err() {
-        bail!("Failed to set vspipe arguments");
-    };
+    let mut environment = create_environment(CONTEXT_MSG)?;
+    vsscript_call(CONTEXT_MSG, "set vspipe arguments", || environment.set_variables(vspipe_args_map))?;
     if source.is_vapoursynth() {
-        environment
-            .eval_file(source.as_path(), EvalFlags::SetWorkingDir)
-            .context(CONTEXT_MSG)?;
+        vsscript_call(CONTEXT_MSG, "evaluate script file", || {
+            environment.eval_file(source.as_path(), EvalFlags::SetWorkingDir)
+        })?;
     } else {
-        environment.eval_script(&source.as_script_text()?).context(CONTEXT_MSG)?;
+        let script_text = source.as_script_text()?;
+        vsscript_call(CONTEXT_MSG, "evaluate generated script", || environment.eval_script(&script_text))?;
     }
 
-    let (node, _) = environment.get_output(OUTPUT_INDEX)?;
+    let (node, _) = vsscript_call(CONTEXT_MSG, "get script output", || environment.get_output(OUTPUT_INDEX))?;
     let info = node.info();
 
     Ok(ClipInfo {
@@ -210,7 +227,7 @@ fn get_transfer(env: &Environment) -> anyhow::Result<u8> {
     // Get the output node.
     const OUTPUT_INDEX: i32 = 0;
 
-    let (node, _) = env.get_output(OUTPUT_INDEX)?;
+    let (node, _) = vsscript_call("get_transfer", "get script output", || env.get_output(OUTPUT_INDEX))?;
     let frame = node.get_frame(0).context("get_transfer")?;
     let transfer = frame.props().get::<i64>("_Transfer").map_or(2, |val| val as u8);
 
@@ -223,7 +240,7 @@ fn get_color_range(env: &Environment) -> anyhow::Result<Option<ColorRange>> {
     // Get the output node.
     const OUTPUT_INDEX: i32 = 0;
 
-    let (node, _) = env.get_output(OUTPUT_INDEX)?;
+    let (node, _) = vsscript_call("get_color_range", "get script output", || env.get_output(OUTPUT_INDEX))?;
     let frame = node.get_frame(0).context("get_color_range")?;
     let color_range = frame
         .props()
@@ -887,16 +904,17 @@ pub fn measure_butteraugli(
     sample_rate: usize,
     plugins: VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
-    let mut environment = Environment::new()?;
+    let mut environment = create_environment("measure_butteraugli")?;
     let args = source.as_vspipe_args_map()?;
-    environment.set_variables(&args)?;
+    vsscript_call("measure_butteraugli", "set vspipe arguments", || environment.set_variables(&args))?;
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
     // Consider using eval_file only when source is not in CWD
-    environment.eval_script(&source.as_script_text()?)?;
-    let core = environment.get_core()?;
+    let script_text = source.as_script_text()?;
+    vsscript_call("measure_butteraugli", "evaluate generated script", || environment.eval_script(&script_text))?;
+    let core = vsscript_call("measure_butteraugli", "get VapourSynth core", || environment.get_core())?;
 
-    let source_node = environment.get_output(0)?.0;
+    let source_node = vsscript_call("measure_butteraugli", "get script output", || environment.get_output(0))?.0;
     let (chunk_node, encoded_node) = get_comparands(
         core,
         &source_node,
@@ -926,15 +944,16 @@ pub fn measure_ssimulacra2(
     sample_rate: usize,
     plugins: VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
-    let mut environment = Environment::new()?;
+    let mut environment = create_environment("measure_ssimulacra2")?;
     let args = source.as_vspipe_args_map()?;
-    environment.set_variables(&args)?;
+    vsscript_call("measure_ssimulacra2", "set vspipe arguments", || environment.set_variables(&args))?;
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
-    environment.eval_script(&source.as_script_text()?)?;
-    let core = environment.get_core()?;
+    let script_text = source.as_script_text()?;
+    vsscript_call("measure_ssimulacra2", "evaluate generated script", || environment.eval_script(&script_text))?;
+    let core = vsscript_call("measure_ssimulacra2", "get VapourSynth core", || environment.get_core())?;
 
-    let source_node = environment.get_output(0)?.0;
+    let source_node = vsscript_call("measure_ssimulacra2", "get script output", || environment.get_output(0))?.0;
     let (chunk_node, encoded_node) = get_comparands(
         core,
         &source_node,
@@ -965,15 +984,16 @@ pub fn measure_xpsnr(
     sample_rate: usize,
     plugins: VapoursynthPlugins,
 ) -> anyhow::Result<Vec<f64>> {
-    let mut environment = Environment::new()?;
+    let mut environment = create_environment("measure_xpsnr")?;
     let args = source.as_vspipe_args_map()?;
-    environment.set_variables(&args)?;
+    vsscript_call("measure_xpsnr", "set vspipe arguments", || environment.set_variables(&args))?;
     // Cannot use eval_file because it causes file system access errors during
     // Target Quality probing
-    environment.eval_script(&source.as_script_text()?)?;
-    let core = environment.get_core()?;
+    let script_text = source.as_script_text()?;
+    vsscript_call("measure_xpsnr", "evaluate generated script", || environment.eval_script(&script_text))?;
+    let core = vsscript_call("measure_xpsnr", "get VapourSynth core", || environment.get_core())?;
 
-    let source_node = environment.get_output(0)?.0;
+    let source_node = vsscript_call("measure_xpsnr", "get script output", || environment.get_output(0))?.0;
     let (chunk_node, encoded_node) = get_comparands(
         core,
         &source_node,

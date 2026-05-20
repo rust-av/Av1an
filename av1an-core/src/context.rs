@@ -7,6 +7,7 @@ use std::{
     iter,
     path::{Path, PathBuf},
     process::{exit, ChildStderr, Command, Stdio},
+    panic::{catch_unwind, AssertUnwindSafe},
     sync::{
         atomic::{self, AtomicBool, AtomicUsize},
         mpsc,
@@ -32,6 +33,7 @@ use crate::{
     create_dir,
     determine_workers,
     ffmpeg::{compose_ffmpeg_pipe, get_num_frames},
+    flowencode_protocol,
     get_done,
     init_done,
     into_vec,
@@ -174,6 +176,7 @@ impl Av1anContext {
     #[tracing::instrument(skip(self))]
     #[inline]
     pub fn encode_file(&mut self) -> anyhow::Result<()> {
+        flowencode_protocol::emit_run_started(&self.args);
         let initial_frames =
             get_done().done.iter().map(|ref_multi| ref_multi.frames).sum::<usize>();
 
@@ -204,10 +207,14 @@ impl Av1anContext {
                 Input::VapourSynth {
                     path, ..
                 } => {
-                    let dec = VapoursynthDecoder::from_file(path, variables_map)?;
-                    av_scenechange::Decoder::from_decoder_impl(
-                        av_decoders::DecoderImpl::Vapoursynth(dec),
-                    )?
+                    let dec = catch_unwind(AssertUnwindSafe(|| VapoursynthDecoder::from_file(path, variables_map)))
+                        .map_err(|_| anyhow::anyhow!("cache_vs_input: VapoursynthDecoder::from_file panicked"))??;
+                    catch_unwind(AssertUnwindSafe(|| {
+                        av_scenechange::Decoder::from_decoder_impl(
+                            av_decoders::DecoderImpl::Vapoursynth(dec),
+                        )
+                    }))
+                    .map_err(|_| anyhow::anyhow!("cache_vs_input: Decoder::from_decoder_impl panicked"))??
                 },
                 video_input => av_scenechange::Decoder::from_script(
                     &video_input.as_script_text()?,
@@ -216,7 +223,8 @@ impl Av1anContext {
             };
             // Getting the details will evaluate the script and produce the VapourSynth
             // cache file
-            let _ = decoder.get_video_details();
+            let _ = catch_unwind(AssertUnwindSafe(|| decoder.get_video_details()))
+                .map_err(|_| anyhow::anyhow!("cache_vs_input: decoder.get_video_details panicked"))?;
 
             Ok::<PathBuf, anyhow::Error>(script_path)
         };
@@ -254,6 +262,7 @@ impl Av1anContext {
         }
 
         let clip_info = self.args.input.clip_info()?;
+        flowencode_protocol::emit_input_probed(&self.args, &clip_info);
         let res = clip_info.resolution;
         let fps_ratio = clip_info.frame_rate;
         let fps = fps_ratio.to_f64().expect("fps_ratio is not NaN");
@@ -291,6 +300,7 @@ impl Av1anContext {
         }
 
         let (chunk_queue, total_chunks) = self.load_or_gen_chunk_queue(&splits)?;
+        flowencode_protocol::emit_chunk_plan(self.args.progress_format, total_chunks);
 
         let mut chunks_done = 0;
         if self.args.resume {
@@ -392,6 +402,11 @@ impl Av1anContext {
             // chunk crashed) more than MAX_TRIES. So, we have to explicitly
             // exit the program if that happens.
             if rx.recv().is_ok() {
+                flowencode_protocol::emit_run_failed(
+                    self.args.progress_format,
+                    1,
+                    "Encoding loop terminated after worker failure",
+                );
                 exit(1);
             }
 
@@ -487,10 +502,19 @@ impl Av1anContext {
                      {temp}",
                     temp = self.args.temp
                 );
+                flowencode_protocol::emit_run_failed(
+                    self.args.progress_format,
+                    1,
+                    "Concatenation did not produce the expected output file",
+                );
             } else if !self.args.keep
                 && let Err(e) = fs::remove_dir_all(&self.args.temp)
             {
                 warn!("Failed to delete temp directory: {e}");
+            }
+
+            if Path::new(&self.args.output_file).exists() {
+                flowencode_protocol::emit_run_completed(self.args.progress_format);
             }
 
             Ok(())

@@ -63,6 +63,7 @@ fn get_test_args() -> Av1anContext {
             format:    FFPixelFormat::YUV420P10LE,
             bit_depth: 10,
         },
+        progress_format:       crate::flowencode_protocol::ProgressFormat::Human,
         resume:                false,
         scenes:                None,
         split_method:          SplitMethod::AvScenechange,

@@ -21,6 +21,7 @@ use tracing::{debug, error, warn};
 use crate::{
     context::Av1anContext,
     finish_progress_bar,
+    flowencode_protocol,
     get_done,
     progress_bar::{
         dec_bar,
@@ -295,6 +296,13 @@ impl Broker<'_> {
                         (get_done().done.len() as u32, total_chunks),
                     );
 
+                    flowencode_protocol::emit_chunk_progress(
+                        self.project.args.progress_format,
+                        get_done().done.len(),
+                        total_chunks as usize,
+                        Some(chunk),
+                    );
+
                     return Ok(());
                 }
             }
@@ -369,6 +377,13 @@ impl Broker<'_> {
             self.project.frames,
             self.project.args.verbosity,
             (get_done().done.len() as u32, total_chunks),
+        );
+
+        flowencode_protocol::emit_chunk_progress(
+            self.project.args.progress_format,
+            get_done().done.len(),
+            total_chunks as usize,
+            Some(chunk),
         );
 
         debug!(

@@ -1,19 +1,22 @@
 use std::{
+    env,
     fmt::Write as FmtWrite,
     io::{self, Write as IoWrite},
     panic,
     path::{Path, PathBuf},
-    process::{self, exit},
+    process::exit,
     thread::available_parallelism,
 };
 
 use anyhow::{anyhow, bail, ensure, Context};
 use av1an_core::{
+    flowencode_protocol,
     ffmpeg::FFPixelFormat,
+    flowencode_capabilities,
     hash_path,
     into_vec,
     read_in_dir,
-    vapoursynth::{get_vapoursynth_plugins, CacheSource, VSZipVersion},
+    vapoursynth::{get_vapoursynth_plugins, CacheSource},
     Av1anContext,
     ChunkMethod,
     ChunkOrdering,
@@ -25,6 +28,7 @@ use av1an_core::{
     InterpolationMethod,
     PixelFormat,
     PixelFormatConverter,
+    ProgressFormat,
     ScenecutMethod,
     SplitMethod,
     TargetMetric,
@@ -43,12 +47,63 @@ use crate::logging::{init_logging, DEFAULT_LOG_LEVEL};
 
 mod logging;
 
+#[cfg(windows)]
+fn seed_vsscript_path_from_registry() {
+    use std::path::Path;
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    const VSSCRIPT_PATH_VARIABLE: &str = "VSSCRIPT_PATH";
+    const SUBKEY: &str = "SOFTWARE\\VapourSynth";
+    const VALUE_NAME: &str = "VSScriptDLL";
+
+    if env::var_os(VSSCRIPT_PATH_VARIABLE).is_some() {
+        return;
+    }
+
+    let candidates = [
+        RegKey::predef(HKEY_CURRENT_USER),
+        RegKey::predef(HKEY_LOCAL_MACHINE),
+    ];
+
+    for root in candidates {
+        let Ok(key) = root.open_subkey(SUBKEY) else {
+            continue;
+        };
+        let Ok(path) = key.get_value::<String, _>(VALUE_NAME) else {
+            continue;
+        };
+        if !path.is_empty() && Path::new(&path).exists() {
+            unsafe {
+                env::set_var(VSSCRIPT_PATH_VARIABLE, &path);
+            }
+            return;
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn seed_vsscript_path_from_registry() {}
+
 fn main() -> anyhow::Result<()> {
+    seed_vsscript_path_from_registry();
     let orig_hook = panic::take_hook();
-    // Catch panics in child threads
+    // Keep a custom hook for diagnostics, but do not force-exit here.
+    // Some code paths intentionally use `catch_unwind` to downgrade VSScript
+    // panics into recoverable errors. Calling `exit(1)` inside the hook would
+    // bypass those recovery paths completely.
     panic::set_hook(Box::new(move |panic_info| {
+        if detect_progress_format_from_argv() == ProgressFormat::Jsonl {
+            let panic_message = if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
+                *message
+            } else if let Some(message) = panic_info.payload().downcast_ref::<String>() {
+                message.as_str()
+            } else {
+                "panic"
+            };
+            flowencode_protocol::emit_run_failed(ProgressFormat::Jsonl, 1, panic_message);
+        }
         orig_hook(panic_info);
-        process::exit(1);
     }));
     run()
 }
@@ -56,59 +111,6 @@ fn main() -> anyhow::Result<()> {
 // needs to be static, runtime allocated string to avoid evil hacks to
 // concatenate non-trivial strings at compile-time
 fn version() -> &'static str {
-    fn get_vs_info() -> String {
-        let vapoursynth_plugins = get_vapoursynth_plugins()
-            .map_err(|e| warn!("Failed to detect VapourSynth plugins: {}", e))
-            .ok();
-        vapoursynth_plugins.map_or_else(
-            || {
-                "\
-* VapourSynth: Not Found"
-                    .to_string()
-            },
-            |plugins| {
-                let isfound = |found: bool| if found { "Found" } else { "Not found" };
-                format!(
-                    "\
-* VapourSynth Plugins
-  systems.innocent.lsmas : {}
-  com.vapoursynth.ffms2  : {}
-  com.vapoursynth.dgdecodenv : {}
-  com.vapoursynth.bestsource : {}
-  com.julek.plugin : {}
-  com.julek.vszip : {}
-  com.lumen.vship : {}",
-                    isfound(plugins.lsmash),
-                    isfound(plugins.ffms2),
-                    isfound(plugins.dgdecnv),
-                    isfound(plugins.bestsource),
-                    isfound(plugins.julek),
-                    isfound(plugins.vszip != VSZipVersion::None),
-                    isfound(plugins.vship)
-                )
-            },
-        )
-    }
-
-    fn get_encoder_info() -> String {
-        format!(
-            "\
-* Available Encoders
-  aomenc  : {}
-  SVT-AV1 : {}
-  rav1e   : {}
-  x264    : {}
-  x265    : {}
-  vpxenc  : {}",
-            Encoder::aom.version_text().as_deref().unwrap_or("Not found"),
-            Encoder::svt_av1.version_text().as_deref().unwrap_or("Not found"),
-            Encoder::rav1e.version_text().as_deref().unwrap_or("Not found"),
-            Encoder::x264.version_text().as_deref().unwrap_or("Not found"),
-            Encoder::x265.version_text().as_deref().unwrap_or("Not found"),
-            Encoder::vpx.version_text().as_deref().unwrap_or("Not found")
-        )
-    }
-
     static INSTANCE: OnceCell<String> = OnceCell::new();
     INSTANCE.get_or_init(|| {
         match (
@@ -128,20 +130,7 @@ fn version() -> &'static str {
                 Some(commit_date),
             ) => {
                 format!(
-                    "{}-unstable (rev {}) ({})
-
-* Compiler
-  rustc {} (LLVM {})
-
-* Target Triple
-  {}
-
-* Date Info
-  Commit Date:  {}
-
-{}
-
-{}",
+                    "{}-unstable (rev {}) ({}) | rustc {} (LLVM {}) | {} | {}",
                     env!("CARGO_PKG_VERSION"),
                     git_hash,
                     if cargo_debug.parse::<bool>().unwrap() {
@@ -152,23 +141,10 @@ fn version() -> &'static str {
                     rustc_ver,
                     llvm_ver,
                     target_triple,
-                    commit_date,
-                    get_vs_info(),
-                    get_encoder_info()
+                    commit_date
                 )
             },
-            _ => format!(
-                "\
-{}
-
-{}
-
-{}",
-                // only include the semver on a release (when git information isn't available)
-                env!("CARGO_PKG_VERSION"),
-                get_vs_info(),
-                get_encoder_info()
-            ),
+            _ => env!("CARGO_PKG_VERSION").to_string(),
         }
     })
 }
@@ -239,6 +215,18 @@ pub struct CliOpts {
     /// Generate shell completions for the specified shell and exit
     #[clap(long, conflicts_with = "input", value_name = "SHELL")]
     pub completions: Option<clap_complete::Shell>,
+
+    /// Print FlowEncode protocol version and exit
+    #[clap(long, conflicts_with = "input")]
+    pub protocol_version: bool,
+
+    /// Print FlowEncode-compatible backend capabilities as JSON and exit
+    #[clap(long, conflicts_with = "input")]
+    pub capabilities: bool,
+
+    /// Progress output format: human (default) or jsonl
+    #[clap(long, default_value = "human")]
+    pub progress_format: String,
 
     /// Resume previous session from temporary directory
     #[clap(short, long)]
@@ -959,9 +947,6 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 
     let mut valid_args: Vec<EncodeArgs> = Vec::with_capacity(inputs.len());
 
-    // Don't hard error, we can proceed if Vapoursynth isn't available
-    let vapoursynth_plugins = get_vapoursynth_plugins().ok();
-
     for (index, input) in inputs.into_iter().enumerate() {
         let output_file = {
             if let Some(path) = args.output_file.as_ref() {
@@ -1018,8 +1003,21 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             |path| path.to_string_lossy().to_string(),
         );
 
+        let input_is_vapoursynth = input
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("vpy"));
+        let proxy_path = proxies.get(index).or_else(|| proxies.first());
+        let proxy_is_vapoursynth = proxy_path
+            .and_then(|path| path.extension())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("vpy"));
+        let vapoursynth_plugins = if input_is_vapoursynth || proxy_is_vapoursynth {
+            get_vapoursynth_plugins().ok()
+        } else {
+            None
+        };
+
         let chunk_method = args.chunk_method.unwrap_or_else(|| {
-            vapoursynth_plugins.map_or(ChunkMethod::Hybrid, |p| p.best_available_chunk_method())
+            vapoursynth_plugins.map_or(ChunkMethod::Hybrid, |plugins| plugins.best_available_chunk_method())
         });
         let scaler = {
             let mut scaler = args.scaler.clone();
@@ -1049,7 +1047,6 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 
         // Assumes proxies supplied are the same number as inputs. Otherwise gets the
         // first proxy if available
-        let proxy_path = proxies.get(index).or_else(|| proxies.first());
         let proxy = if let Some(path) = proxy_path {
             Some(Input::new(
                 path,
@@ -1176,6 +1173,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             input,
             proxy,
             output_pix_format,
+            progress_format: parse_progress_format(&args.progress_format)?,
             resume: args.resume,
             scenes: args.scenes.clone(),
             split_method: args.split_method.clone(),
@@ -1212,6 +1210,17 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
 #[instrument]
 pub fn run() -> anyhow::Result<()> {
     let cli_options = CliOpts::parse();
+    let progress_format = parse_progress_format(&cli_options.progress_format).unwrap_or(ProgressFormat::Human);
+
+    if cli_options.protocol_version {
+        println!("{}", av1an_core::FLOWENCODE_PROTOCOL_VERSION);
+        return Ok(());
+    }
+
+    if cli_options.capabilities {
+        println!("{}", serde_json::to_string(&flowencode_capabilities())?);
+        return Ok(());
+    }
 
     let completions = cli_options.completions;
     if let Some(shell) = completions {
@@ -1242,12 +1251,47 @@ pub fn run() -> anyhow::Result<()> {
         log_level,
     )?;
 
-    let args = parse_cli(&cli_options)?;
+    let args = match parse_cli(&cli_options) {
+        Ok(args) => args,
+        Err(error) => {
+            flowencode_protocol::emit_run_failed(progress_format, 1, &error.to_string());
+            return Err(error);
+        }
+    };
+
     for arg in args {
-        Av1anContext::new(arg)?.encode_file()?;
+        if let Err(error) = Av1anContext::new(arg).and_then(|mut context| context.encode_file()) {
+            flowencode_protocol::emit_run_failed(progress_format, 1, &error.to_string());
+            return Err(error);
+        }
     }
 
     Ok(())
+}
+
+fn detect_progress_format_from_argv() -> ProgressFormat {
+    let args: Vec<String> = std::env::args().collect();
+    for (index, arg) in args.iter().enumerate() {
+        if let Some(value) = arg.strip_prefix("--progress-format=") {
+            return parse_progress_format(value).unwrap_or(ProgressFormat::Human);
+        }
+
+        if arg == "--progress-format"
+            && let Some(value) = args.get(index + 1)
+        {
+            return parse_progress_format(value).unwrap_or(ProgressFormat::Human);
+        }
+    }
+
+    ProgressFormat::Human
+}
+
+fn parse_progress_format(value: &str) -> anyhow::Result<ProgressFormat> {
+    match value.trim().to_lowercase().as_str() {
+        "human" => Ok(ProgressFormat::Human),
+        "jsonl" => Ok(ProgressFormat::Jsonl),
+        _ => bail!("Invalid progress format: {value}. Expected 'human' or 'jsonl'"),
+    }
 }
 
 fn parse_comma_separated_numbers(string: &str) -> anyhow::Result<Vec<usize>> {

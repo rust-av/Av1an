@@ -28,6 +28,7 @@ pub use crate::{
     concat::ConcatMethod,
     context::Av1anContext,
     encoder::Encoder,
+    flowencode_protocol::{capabilities as flowencode_capabilities, ProgressFormat, FLOWENCODE_PROTOCOL_VERSION},
     settings::{EncodeArgs, InputPixelFormat, PixelFormat, PixelFormatConverter},
     target_quality::{InterpolationMethod, TargetQuality},
     util::read_in_dir,
@@ -44,6 +45,7 @@ mod concat;
 mod context;
 mod encoder;
 pub mod ffmpeg;
+pub mod flowencode_protocol;
 mod metrics {
     pub mod butteraugli;
     pub mod statistics;

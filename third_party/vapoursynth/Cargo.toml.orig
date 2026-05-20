@@ -1,0 +1,40 @@
+[package]
+name = "vapoursynth"
+edition = "2024"
+version = "0.5.6"
+description = "Safe Rust wrapper for VapourSynth and VSScript."
+license = "MIT/Apache-2.0"
+
+readme = "../README.md"
+documentation = "https://docs.rs/vapoursynth"
+repository = "https://github.com/rust-av/vapoursynth-rs"
+keywords = ["vapoursynth", "vsscript", "video", "bindings"]
+categories = ["api-bindings", "external-ffi-bindings", "multimedia::video"]
+
+[badges]
+travis-ci = { repository = "rust-av/vapoursynth-rs" }
+appveyor = { repository = "rust-av/vapoursynth-rs" }
+
+[dependencies]
+half = { version = "2.0.0", optional = true }
+anyhow = "1.0.58"
+thiserror = "2.0.17"
+vapoursynth-sys = { version = "0.6", path = "../vapoursynth-sys" }
+
+[dev-dependencies]
+clap = "3.2.10"
+
+[dev-dependencies.num-rational]
+version = "0.4.1"
+default-features = false
+features = ["std"]
+
+[features]
+default = ["vsscript-r73-compat"]
+# Enable the half::f16 type to be used for frame pixel data.
+f16-pixel-type = ["half"]
+
+vsscript-r73-compat = ["vapoursynth-sys/vsscript-r73-compat"]
+
+[package.metadata.docs.rs]
+features = ["f16-pixel-type"]
