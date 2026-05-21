@@ -239,6 +239,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "vergen-git2",
+ "winreg",
 ]
 
 [[package]]
