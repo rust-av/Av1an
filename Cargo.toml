@@ -1,6 +1,6 @@
 [workspace]
 members = ["av1an-core", "av1an"]
-resolver = "2"
+resolver = "3"
 
 [workspace.dependencies]
 anyhow = "1.0.99"
