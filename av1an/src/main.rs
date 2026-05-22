@@ -72,6 +72,8 @@ fn seed_vsscript_path_from_registry() {
         };
 
         if !path.is_empty() && Path::new(&path).exists() {
+            // SAFETY: This runs during startup before Av1an initializes worker threads,
+            // so mutating the process environment here cannot race with other threads.
             unsafe {
                 env::set_var(VSSCRIPT_PATH_VARIABLE, path);
             }
