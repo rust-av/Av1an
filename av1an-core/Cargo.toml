@@ -1,7 +1,7 @@
 [package]
 name = "av1an-core"
-version = "0.5.2"
-rust-version = "1.89"
+version = "0.6.0"
+rust-version = "1.95"
 edition = "2024"
 description = """
 Cross-platform command-line AV1 / VP9 / HEVC / H264 encoding framework with per scene quality encoding [Core library]

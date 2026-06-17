@@ -1,7 +1,7 @@
 [package]
 name = "av1an"
-version = "0.5.2"
-rust-version = "1.89"
+version = "0.6.0"
+rust-version = "1.95"
 edition = "2024"
 description = """
 Cross-platform command-line AV1 / VP9 / HEVC / H264 encoding framework with per scene quality encoding [Command line library]
@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-av1an-core = { path = "../av1an-core", version = "0.5.1" }
+av1an-core = { workspace = true }
 clap = { version = "4.5.60", features = ["derive"] }
 clap_complete = "4.5.66"
 num-traits = { workspace = true }
