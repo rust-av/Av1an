@@ -1,6 +1,6 @@
 [package]
 name = "av1an-core"
-version = "0.5.2"
+version = "0.6.0"
 rust-version = "1.95"
 edition = "2024"
 description = """
