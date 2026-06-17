@@ -218,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "av1an"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "av1an-core"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "affinity",
  "anyhow",

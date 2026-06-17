@@ -1,6 +1,6 @@
 [package]
 name = "av1an"
-version = "0.5.2"
+version = "0.6.0"
 rust-version = "1.95"
 edition = "2024"
 description = """
@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-av1an-core = { path = "../av1an-core", version = "0.5.1" }
+av1an-core = { workspace = true }
 clap = { version = "4.5.60", features = ["derive"] }
 clap_complete = "4.5.66"
 num-traits = { workspace = true }
