@@ -24,7 +24,7 @@ clap_complete = "4.5.66"
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 path_abs = { workspace = true }
-shlex = "1.3.0"
+shlex = "2.0.1"
 tracing = { workspace = true }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
