@@ -249,7 +249,7 @@ fn build_decoder(
         // directory of the user-provided VapourSynth script
         let mut args_map = input.as_vspipe_args_hashmap()?;
         args_map.insert("AV1AN_PERFORM_SCENE_DETECTION".into(), "1".into());
-        let mut vs_decoder = VapoursynthDecoder::from_file(input.as_script_path(), args_map)?;
+        let mut vs_decoder = VapoursynthDecoder::from_file(input.as_script_path(), args_map, None)?;
 
         if sc_downscale_height.is_some() || sc_pix_format.is_some() {
             let downscale_height = sc_downscale_height.map(|dh| dh as u32);
