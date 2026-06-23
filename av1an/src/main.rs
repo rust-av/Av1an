@@ -1,4 +1,5 @@
 use std::{
+    env,
     fmt::Write as FmtWrite,
     io::{self, Write as IoWrite},
     panic,
@@ -43,7 +44,49 @@ use crate::logging::{init_logging, DEFAULT_LOG_LEVEL};
 
 mod logging;
 
+#[cfg(windows)]
+fn seed_vsscript_path_from_registry() {
+    use std::path::Path;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    const VSSCRIPT_PATH_VARIABLE: &str = "VSSCRIPT_PATH";
+    const VAPOURSYNTH_SUBKEY: &str = "SOFTWARE\\VapourSynth";
+    const VSSCRIPT_DLL_VALUE: &str = "VSScriptDLL";
+
+    if env::var_os(VSSCRIPT_PATH_VARIABLE).is_some_and(|value| !value.is_empty()) {
+        return;
+    }
+
+    let roots = [
+        RegKey::predef(HKEY_CURRENT_USER),
+        RegKey::predef(HKEY_LOCAL_MACHINE),
+    ];
+
+    for root in roots {
+        let Ok(key) = root.open_subkey(VAPOURSYNTH_SUBKEY) else {
+            continue;
+        };
+        let Ok(path) = key.get_value::<String, _>(VSSCRIPT_DLL_VALUE) else {
+            continue;
+        };
+
+        if !path.is_empty() && Path::new(&path).exists() {
+            // SAFETY: This runs during startup before Av1an initializes worker threads,
+            // so mutating the process environment here cannot race with other threads.
+            unsafe {
+                env::set_var(VSSCRIPT_PATH_VARIABLE, path);
+            }
+            return;
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn seed_vsscript_path_from_registry() {}
+
 fn main() -> anyhow::Result<()> {
+    seed_vsscript_path_from_registry();
     let orig_hook = panic::take_hook();
     // Catch panics in child threads
     panic::set_hook(Box::new(move |panic_info| {
