@@ -5,6 +5,8 @@ RUN pacman -Syu --noconfirm
 # Install dependancies needed by all steps including runtime step
 RUN pacman -S --noconfirm --needed aom ffmpeg vapoursynth ffms2 libvpx mkvtoolnix-cli svt-av1 vmaf
 
+# Add extra plugins to ENV to cover VS R74 packaging changes
+ENV VAPOURSYNTH_EXTRA_PLUGIN_PATH="/usr/lib/vapoursynth"
 
 FROM base AS build-base
 
