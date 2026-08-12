@@ -1,4 +1,7 @@
-use crate::encoder::parse_svt_av1_version;
+use crate::{
+    encoder::{parse_svt_av1_version, Encoder},
+    ffmpeg::FFPixelFormat,
+};
 
 #[test]
 fn svt_av1_parsing() {
@@ -16,4 +19,21 @@ fn svt_av1_parsing() {
     for (s, ans) in test_cases {
         assert_eq!(parse_svt_av1_version(s.as_bytes()), ans);
     }
+}
+
+#[test]
+fn ffmpeg_probe_uses_fps_mode_passthrough() {
+    let (pipe, _) = Encoder::svt_av1.probe_cmd(
+        "temp".to_owned(),
+        0,
+        30.0,
+        FFPixelFormat::YUV420P10LE,
+        2,
+        1,
+        None,
+    );
+    let pipe = pipe.expect("FFmpeg pipe should be present");
+
+    assert!(pipe.windows(2).any(|args| args[0] == "-fps_mode" && args[1] == "passthrough"));
+    assert!(!pipe.iter().any(|arg| arg == "-vsync"));
 }

@@ -27,7 +27,17 @@ pub fn segment(
 
     cmd.args(["-hide_banner", "-y", "-i"]);
     cmd.arg(input);
-    cmd.args(["-map", "0:V:0", "-an", "-c", "copy", "-avoid_negative_ts", "1", "-vsync", "0"]);
+    cmd.args([
+        "-map",
+        "0:V:0",
+        "-an",
+        "-c",
+        "copy",
+        "-avoid_negative_ts",
+        "1",
+        "-fps_mode",
+        "passthrough",
+    ]);
 
     if segments.is_empty() {
         let split_path = Path::new(temp).join("split").join("0.mkv");

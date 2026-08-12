@@ -977,8 +977,8 @@ impl Encoder {
             vec![
                 "-vf".to_string(),
                 format!("select=not(mod(n\\,{probing_rate}))"),
-                "-vsync".to_string(),
-                "0".to_string(),
+                "-fps_mode".to_string(),
+                "passthrough".to_string(),
             ]
         } else {
             Vec::new()
