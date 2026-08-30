@@ -38,7 +38,7 @@ jobs:
           tool: mdbook@${{ env.MDBOOK_VERSION }}
       - name: Setup Pages
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Build with mdBook
         run: mdbook build ./site
       - name: Upload artifact
