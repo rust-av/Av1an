@@ -938,7 +938,7 @@ pub(crate) fn resolve_file_paths(
     if path.is_dir() {
         Ok(Box::new(read_in_dir(path)?))
     } else {
-        Ok(Box::new(std::iter::once(path.to_path_buf())))
+        Ok(Box::new(path.canonicalize().into_iter()))
     }
 }
 
