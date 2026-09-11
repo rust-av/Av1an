@@ -131,6 +131,6 @@ pub fn read_in_dir(path: &Path) -> anyhow::Result<impl Iterator<Item = PathBuf>>
     Ok(dir.into_iter().filter_map(Result::ok).filter_map(|d| {
         d.file_type()
             .map_or(None, |file_type| (!file_type.is_dir()).then(|| d.path()))
-            .and_then(|v| v.canonicalize().ok())
+            .and_then(|v| std::path::absolute(v).ok())
     }))
 }
