@@ -73,6 +73,7 @@ pub fn run_xpsnr(
             source_pipe.args(["-a", &arg]);
         }
         source_pipe.args(args);
+        source_pipe.stdin(Stdio::null());
         source_pipe.stdout(Stdio::piped());
         source_pipe.stderr(Stdio::null());
         source_pipe.spawn()?

@@ -558,6 +558,7 @@ impl TargetQuality {
             let mut source = if let [pipe_cmd, args @ ..] = &*source_cmd {
                 std::process::Command::new(pipe_cmd)
                     .args(args)
+                    .stdin(std::process::Stdio::null())
                     .stderr(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::piped())
                     .spawn()

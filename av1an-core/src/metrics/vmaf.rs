@@ -277,6 +277,7 @@ pub fn run_vmaf(
             source_pipe.args(["-a", &arg]);
         }
         source_pipe.args(args);
+        source_pipe.stdin(Stdio::null());
         source_pipe.stdout(Stdio::piped());
         source_pipe.stderr(Stdio::null());
         source_pipe.spawn()?
@@ -393,6 +394,7 @@ pub fn run_vmaf_weighted(
             source_pipe.args(["-a", &arg]);
         }
         source_pipe.args(args);
+        source_pipe.stdin(Stdio::null());
         source_pipe.stdout(Stdio::piped());
         source_pipe.stderr(Stdio::null());
         source_pipe.spawn()?
