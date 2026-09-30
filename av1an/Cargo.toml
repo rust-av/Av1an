@@ -29,6 +29,9 @@ tracing = { workspace = true }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55.0"
+
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "3.0.6"
 
