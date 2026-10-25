@@ -321,7 +321,8 @@ impl Broker<'_> {
                 if let Err((e, frames)) = res {
                     dec_bar(frames);
 
-                    // If user presses CTRL+C more than once, do not let the worker finish
+                    // If user presses CTRL+C more than once, do not let the
+                    // worker finish
                     if terminations_requested.load(Ordering::SeqCst) > 1 {
                         bail!(
                             "Termination requested after Worker restart. Skipping chunk {}",
@@ -337,8 +338,10 @@ impl Broker<'_> {
                             tries = self.project.args.max_tries
                         );
                     }
-                    // avoids double-print of the error message as both a WARN and ERROR,
-                    // since `Broker::encoding_loop` will print the error message as well
+                    // avoids double-print of the error message as both a WARN
+                    // and ERROR,
+                    // since `Broker::encoding_loop` will print the error
+                    // message as well
                     warn!(
                         "Encoder failed (on chunk {index}):\n{e}",
                         index = chunk.index

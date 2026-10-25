@@ -303,8 +303,8 @@ impl EncodeArgs {
                 self.video_params = self.encoder.get_default_arguments(self.tiles);
             } else {
                 // merge video_params with defaults, overriding defaults
-                // TODO: consider using hashmap to store program arguments instead of string
-                // vector
+                // TODO: consider using hashmap to store program arguments
+                // instead of string vector
                 let default_video_params = self.encoder.get_default_arguments(self.tiles);
                 let mut skip = false;
                 let mut _default_params: Vec<String> = Vec::new();
@@ -369,12 +369,12 @@ impl EncodeArgs {
             .iter()
             .filter_map(|param| {
                 if param.starts_with('-') && [Encoder::aom, Encoder::vpx].contains(&self.encoder) {
-                    // These encoders require args to be passed using an equal sign,
-                    // e.g. `--cq-level=30`
+                    // These encoders require args to be passed using an equal
+                    // sign, e.g. `--cq-level=30`
                     param.split('=').next()
                 } else {
-                    // The other encoders use a space, so we don't need to do extra splitting,
-                    // e.g. `--crf 30`
+                    // The other encoders use a space, so we don't need to do
+                    // extra splitting, e.g. `--crf 30`
                     None
                 }
             })
@@ -551,8 +551,8 @@ pub(crate) fn suggest_fix<'a>(
     wrong_arg: &str,
     arg_dictionary: &'a HashSet<Cow<'a, str>>,
 ) -> Option<&'a str> {
-    // Minimum threshold to consider a suggestion similar enough that it could be a
-    // typo
+    // Minimum threshold to consider a suggestion similar enough that it could
+    // be a typo
     const MIN_THRESHOLD: f64 = 0.75;
 
     arg_dictionary

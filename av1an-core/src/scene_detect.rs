@@ -242,8 +242,9 @@ fn build_decoder(
     };
 
     let decoder = if input.is_vapoursynth() || input.is_vapoursynth_script() {
-        // VapoursynthDecoder is the only reliable method for downscaling user-provided
-        // scripts, and for our generated scripts, it is faster than piping.
+        // VapoursynthDecoder is the only reliable method for downscaling
+        // user-provided scripts, and for our generated scripts, it is
+        // faster than piping.
 
         // Must use from_file in order to set the CWD to the
         // directory of the user-provided VapourSynth script

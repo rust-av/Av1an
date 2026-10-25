@@ -575,8 +575,8 @@ pub fn determine_workers(args: &EncodeArgs) -> anyhow::Result<u64> {
     // This is a rough estimate of how many cpu cores will be fully loaded by an
     // encoder worker. With rav1e, CPU usage scales with tiles, but not 1:1.
     // Other encoders don't seem to significantly scale CPU usage with tiles.
-    // CPU threads/worker here is relative to default threading parameters, e.g. aom
-    // will use 1 thread/worker if --threads=1 is set.
+    // CPU threads/worker here is relative to default threading parameters, e.g.
+    // aom will use 1 thread/worker if --threads=1 is set.
     let cpu_threads = match args.encoder {
         Encoder::aom => 4,
         Encoder::rav1e => ((tiles.0 * tiles.1) as f32 * 0.7).ceil() as u64,
@@ -584,8 +584,9 @@ pub fn determine_workers(args: &EncodeArgs) -> anyhow::Result<u64> {
         Encoder::vpx => 3,
         Encoder::x264 | Encoder::x265 => 8,
     };
-    // memory usage scales with pixel format, expressed as a multiplier of memory
-    // usage. Roughly the same behavior was observed accross all encoders.
+    // memory usage scales with pixel format, expressed as a multiplier of
+    // memory usage. Roughly the same behavior was observed accross all
+    // encoders.
     let pix_mult = match args.output_pix_format.format {
         FFPixelFormat::YUV444P | FFPixelFormat::YUV444P10LE | FFPixelFormat::YUV444P12LE => 1.5,
         FFPixelFormat::YUV422P | FFPixelFormat::YUV422P10LE | FFPixelFormat::YUV422P12LE => 1.25,
@@ -625,7 +626,7 @@ fn save_chunk_queue(temp: &str, chunk_queue: &[Chunk]) -> anyhow::Result<()> {
     file
     // serializing chunk_queue as json should never fail, so unwrap is OK here
     .write_all(serde_json::to_string(&chunk_queue)?.as_bytes())
-    .with_context(|| format!("Failed to write serialized chunk_queue data to {:?}", &file))?;
+    .with_context(|| format!("Failed to write serialized chunk_queue data to {:?}", file))?;
 
     Ok(())
 }
@@ -705,8 +706,8 @@ impl ClipInfo {
         }
         if enc_params.iter().any(|p| {
             let p = p.to_ascii_lowercase();
-            // If the user specified an SDR transfer characteristic, assume they want to
-            // encode to SDR.
+            // If the user specified an SDR transfer characteristic, assume they
+            // want to encode to SDR.
             p.ends_with("bt709")
                 || p.ends_with("bt.709")
                 || p.ends_with("bt601")

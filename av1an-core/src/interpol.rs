@@ -22,9 +22,9 @@ pub fn natural_cubic_spline(x: &[f64], y: &[f64], xi: f64) -> Option<f64> {
         return None;
     }
 
-    // Noramally, no bounds check is needed - we're interpolating, not extrapolating
-    // The target (xi) is a score value we're looking for, not restricted to input
-    // range
+    // Noramally, no bounds check is needed - we're interpolating, not
+    // extrapolating The target (xi) is a score value we're looking for, not
+    // restricted to input range
 
     // Verify xi is within the observed range (it should be by algorithm design)
     if xi < x[0] || xi > x[n - 1] {
@@ -397,7 +397,7 @@ pub fn akima_interpolate(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
     // Interior point slopes using Akima weights
     // For point 1: use differences m[0] and m[1]
     if (m[1] - m[0]).abs() < 1e-10 {
-        t[1] = 0.5 * (m[0] + m[1]);
+        t[1] = f64::midpoint(m[0], m[1]);
     } else {
         // For 4 points, we approximate the weights
         let w1 = (m[1] - m[0]).abs();
@@ -407,7 +407,7 @@ pub fn akima_interpolate(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
 
     // For point 2: use differences m[1] and m[2]
     if (m[2] - m[1]).abs() < 1e-10 {
-        t[2] = 0.5 * (m[1] + m[2]);
+        t[2] = f64::midpoint(m[1], m[2]);
     } else {
         let w1 = (m[2] - m[1]).abs();
         let w2 = (m[2] - m[1]).abs(); // Same weight for symmetry
@@ -491,7 +491,8 @@ mod tests {
     #[test]
     fn natural_cubic_spline() {
         // CRF 10 (84.872162), CRF 20 (78.517479), CRF 30 (72.812233)
-        let x = vec![72.812233, 78.517479, 84.872162]; // scores (ascending order)
+        let x = vec![72.812233, 78.517479, 84.872162]; // scores (ascending
+                                                       // order)
         let y = vec![30.0, 20.0, 10.0]; // CRFs
 
         // Test exact points
@@ -520,7 +521,8 @@ mod tests {
         );
 
         // CRF 15 (84.864449), CRF 25 (80.161186), CRF 35 (72.134048)
-        let x2 = vec![72.134048, 80.161186, 84.864449]; // scores (ascending order)
+        let x2 = vec![72.134048, 80.161186, 84.864449]; // scores (ascending
+                                                        // order)
         let y2 = vec![35.0, 25.0, 15.0]; // CRFs
 
         // Test interpolation for score 82.0
@@ -565,7 +567,8 @@ mod tests {
     #[test]
     fn fritsch_carlson() {
         // CRF 10 (84.872162), CRF 20 (78.517479), CRF 30 (72.812233)
-        let x = vec![72.812233, 78.517479, 84.872162]; // scores (ascending order)
+        let x = vec![72.812233, 78.517479, 84.872162]; // scores (ascending
+                                                       // order)
         let y = vec![30.0, 20.0, 10.0]; // CRFs
 
         // Test exact points
@@ -591,7 +594,8 @@ mod tests {
         );
 
         // CRF 15 (84.864449), CRF 25 (80.161186), CRF 35 (72.134048)
-        let x2 = vec![72.134048, 80.161186, 84.864449]; // scores (ascending order)
+        let x2 = vec![72.134048, 80.161186, 84.864449]; // scores (ascending
+                                                        // order)
         let y2 = vec![35.0, 25.0, 15.0]; // CRFs
 
         // Test interpolation for score 82.0
@@ -644,7 +648,8 @@ mod tests {
     fn pchip_interpolate() {
         // Test with monotonic data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
-        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
+        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending
+                                                      // order)
         let y = [35.0, 25.0, 15.0, 5.0]; // CRFs
 
         // Test exact points
@@ -786,7 +791,8 @@ mod tests {
     fn cubic_polynomial_interpolate() {
         // Test with CRF/score data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
-        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
+        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending
+                                                      // order)
         let y = [35.0, 25.0, 15.0, 5.0]; // CRFs
 
         // Test exact points
@@ -883,7 +889,8 @@ mod tests {
     fn catmull_rom_interpolate() {
         // Test with CRF/score data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
-        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
+        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending
+                                                      // order)
         let y = [35.0, 25.0, 15.0, 5.0]; // CRFs
 
         // Test exact points (at x[1] and x[2])
@@ -973,7 +980,8 @@ mod tests {
     fn akima_interpolate() {
         // Test with CRF/score data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
-        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
+        let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending
+                                                      // order)
         let y = [35.0, 25.0, 15.0, 5.0]; // CRFs
 
         // Test exact points

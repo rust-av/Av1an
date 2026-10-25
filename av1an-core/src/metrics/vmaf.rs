@@ -77,7 +77,8 @@ pub fn plot_vmaf_score_file(scores_file: &Path, plot_path: &Path) -> anyhow::Res
         .label(format!("25%: {perc_25}"))
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], YELLOW));
 
-    // 50% (median, except not averaged in the case of an even number of elements)
+    // 50% (median, except not averaged in the case of an even number of
+    // elements)
     chart
         .draw_series(LineSeries::new((0..=length).map(|x| (x, perc_50)), BLACK))?
         .label(format!("50%: {perc_50}"))
@@ -304,12 +305,12 @@ pub fn run_vmaf(
     let distorted = format!(
         "[0:v]scale={}:flags={}:force_original_aspect_ratio=decrease,setpts=PTS-STARTPTS,\
          setsar=1[distorted];",
-        &res, &scaler
+        res, scaler
     );
     let reference = format!(
         "[1:v]{}scale={}:flags={}:force_original_aspect_ratio=decrease,setpts=PTS-STARTPTS,\
          setsar=1[ref];",
-        filter, &res, &scaler
+        filter, res, scaler
     );
 
     cmd.arg(format!("{distorted}{reference}{vmaf}"));

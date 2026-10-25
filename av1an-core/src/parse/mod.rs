@@ -84,8 +84,8 @@ pub unsafe fn parse_aom_vpx_frames_sse41(s: &[u8]) -> Option<u64> {
     //                     ^^^
     //                     matches this number and returns `Some(141)`
     //
-    // Pass 1/1 frame 102262/102261 136473850B  131502 ms 777.65 fps [ETA  unknown]
-    // 1272F                       ^^^^^^
+    // Pass 1/1 frame 102262/102261 136473850B  131502 ms 777.65 fps [ETA
+    // unknown] 1272F                       ^^^^^^
     //                       matches this number and returns `Some(102261)`
     //
     // If invalid input is detected, this function returns `None`.
@@ -106,10 +106,10 @@ pub unsafe fn parse_aom_vpx_frames_sse41(s: &[u8]) -> Option<u64> {
         return None;
     }
 
-    // Since the aomenc output follows a particular pattern, we can calculate the
-    // position of the '/' character from the index of the first space (how to
-    // do so is explained later on). We create this mask to find the first space
-    // in the output.
+    // Since the aomenc output follows a particular pattern, we can calculate
+    // the position of the '/' character from the index of the first space
+    // (how to do so is explained later on). We create this mask to find the
+    // first space in the output.
     let spaces = _mm_set1_epi8(b' ' as i8);
 
     // Load the relevant part of the output, which are the 16 bytes after the
@@ -131,10 +131,10 @@ pub unsafe fn parse_aom_vpx_frames_sse41(s: &[u8]) -> Option<u64> {
     //       "141   156465B  208875 us 679.83 fps [ETA  unknown]"
     // mask:  110000000111000
     //                    ^^^
-    //                    These bits correspond to the first 3 characters: "141".
-    //                    Since they do not match the space, they are set to 0 in
-    // the mask.                    As printed, the leftmost bit is the most
-    // significant bit.                 ^^^
+    //                    These bits correspond to the first 3 characters:
+    // "141".                    Since they do not match the space, they are
+    // set to 0 in the mask.                    As printed, the leftmost bit
+    // is the most significant bit.                 ^^^
     //                 These bits correspond to the 3 spaces after the "141".
     //
     //       "2/102261 136473850B  131502 ms 777.65 fps [ETA  unknown]    1272F"
@@ -162,9 +162,9 @@ pub unsafe fn parse_aom_vpx_frames_sse41(s: &[u8]) -> Option<u64> {
 
     let dynamic_mask = _mm_cmplt_epi8(ascending, _mm_set1_epi8(num_digits as i8));
 
-    // At this point, we have done all the setup and can use the actual SIMD integer
-    // parsing algorithm. The description of the algorithm can be found here:
-    // https://kholdstare.github.io/technical/2020/05/26/faster-integer-parsing.html
+    // At this point, we have done all the setup and can use the actual SIMD
+    // integer parsing algorithm. The description of the algorithm can be
+    // found here: https://kholdstare.github.io/technical/2020/05/26/faster-integer-parsing.html
     let mut chunk = _mm_loadu_si128(
         s.as_ptr()
             .add(AOM_VPX_IGNORED_PREFIX.len() + first_space_index - CHUNK_SIZE)
@@ -301,7 +301,8 @@ pub fn valid_params(help_text: &str, encoder: Encoder) -> HashSet<Cow<'_, str>> 
             if encoder == Encoder::x265 {
                 // x265 does this: -m/--subme
                 //        or even: -w/--[no-]weightp
-                // So we need to ensure that in this case the short parameter is also handled.
+                // So we need to ensure that in this case the short parameter is
+                // also handled.
                 let s = s.get("-x/".len()..).map_or(s, |stripped| {
                     if stripped.starts_with("--") {
                         #[expect(
@@ -316,8 +317,9 @@ pub fn valid_params(help_text: &str, encoder: Encoder) -> HashSet<Cow<'_, str>> 
                     }
                 });
 
-                // Somehow x265 manages to have a buggy --help, where a single option
-                // (--[no-]-hrd-concat) has an extra dash.
+                // Somehow x265 manages to have a buggy --help, where a single
+                // option (--[no-]-hrd-concat) has an extra
+                // dash.
                 let arg = s
                     .strip_prefix("--[no-]")
                     .map(|stripped| stripped.strip_prefix('-').unwrap_or(stripped));
@@ -329,21 +331,26 @@ pub fn valid_params(help_text: &str, encoder: Encoder) -> HashSet<Cow<'_, str>> 
                 }
             }
 
-            // aomenc outputs '--tune=<arg>' for example, so we have to find the character
-            // from the left so as to not miss the leftmost char
+            // aomenc outputs '--tune=<arg>' for example, so we have to find the
+            // character from the left so as to not miss the
+            // leftmost char
             if let Some(idx) = s.find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
             {
-                // In some weird cases (like with x264) there may be a dash followed by a non
-                // alphanumeric character, so we just ignore that.
+                // In some weird cases (like with x264) there may be a dash
+                // followed by a non alphanumeric character, so
+                // we just ignore that.
                 if idx > 1 {
                     params.insert(Cow::Owned(s.chars().take(idx).collect()));
                 }
             } else {
-                // It's a little concerning how *two* encoders manage to have buggy help output.
+                // It's a little concerning how *two* encoders manage to have
+                // buggy help output.
                 let arg = if encoder == Encoder::vpx {
-                    // vpxenc randomly truncates the "Vizier Rate Control Options" in the help
-                    // output, which sometimes causes it to truncate at a dash, which breaks the
-                    // tests if we don't do this. Not sure what the correct solution in this case
+                    // vpxenc randomly truncates the "Vizier Rate Control
+                    // Options" in the help output, which
+                    // sometimes causes it to truncate at a dash, which breaks
+                    // the tests if we don't do this. Not
+                    // sure what the correct solution in this case
                     // is.
                     s.strip_suffix('-').unwrap_or(s)
                 } else {

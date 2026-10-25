@@ -43,8 +43,9 @@ pub static USE_OLD_SVT_AV1: Lazy<bool> = Lazy::new(|| {
         } else {
             output.stdout
         };
-        // assume an old version of SVT-AV1 if the version and unprocessed tokens failed
-        // to parse, as the format for v0.9.0+ should be the same
+        // assume an old version of SVT-AV1 if the version and unprocessed
+        // tokens failed to parse, as the format for v0.9.0+ should be
+        // the same
         parse_svt_av1_unprocessed_tokens(&out).is_none_or(|tokens| tokens.is_empty())
     }
 });
@@ -952,7 +953,8 @@ impl Encoder {
         for pattern in patterns {
             if let Some(index) = args.iter().position(|value| value.contains(pattern)) {
                 args.remove(index);
-                // If pattern does not contain =, we need to remove the index that follows.
+                // If pattern does not contain =, we need to remove the index
+                // that follows.
                 if !pattern.contains('=') {
                     args.remove(index);
                 }

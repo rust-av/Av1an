@@ -202,7 +202,8 @@ impl TargetQuality {
             let score = {
                 let value = self.probe(chunk, next_quantizer, plugins)?;
 
-                // Butteraugli is an inverse metric, invert score for comparisons
+                // Butteraugli is an inverse metric, invert score for
+                // comparisons
                 match self.metric {
                     TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3 => -value,
                     _ => value,
@@ -263,7 +264,8 @@ impl TargetQuality {
             })
             .max_by(|(q1, _), (q2, _)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or_else(|| {
-                // No quantizers within tolerance, choose the quantizer closest to target
+                // No quantizers within tolerance, choose the quantizer closest
+                // to target
                 let target_midpoint = f64::midpoint(target.0, target.1);
                 quantizer_score_history
                     .iter()
@@ -333,7 +335,8 @@ impl TargetQuality {
                         statistic.clamp(statistics.minimum(), statistics.maximum())
                     };
 
-                    // Based on quantizer - lower quantizer leads to more accurate scores (lower
+                    // Based on quantizer - lower quantizer leads to more
+                    // accurate scores (lower
                     // variance) (citation needed)
                     if self.encoder.get_cq_relative_percentage(quantizer as usize) > 0.25 {
                         // Liberal: Use mean to determine aggregate
@@ -603,7 +606,8 @@ impl TargetQuality {
                     (Some(source_pipe), enc_pipe)
                 } else {
                     // We unfortunately have to duplicate the code like this
-                    // in order to satisfy the borrow checker for `source_stdout`
+                    // in order to satisfy the borrow checker for
+                    // `source_stdout`
                     let enc_pipe = if let [cmd, args @ ..] = &*output {
                         build_encoder_pipe(cmd, args, source_stdout)?
                     } else {
@@ -1065,7 +1069,8 @@ pub fn log_probes(
     let mut sorted_quantizer_scores = quantizer_score_history.to_vec();
     sorted_quantizer_scores
         .sort_by(|(q1, _), (q2, _)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Equal));
-    // Butteraugli is an inverse metric and needs to be inverted back before display
+    // Butteraugli is an inverse metric and needs to be inverted back before
+    // display
     if matches!(
         metric,
         TargetMetric::ButteraugliINF | TargetMetric::Butteraugli3

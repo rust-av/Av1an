@@ -789,9 +789,9 @@ pub fn generate_loadscript_text(
         _ => &source,
     };
 
-    // Include rich loadscript.vpy and specify source, chunk_method, and cache_file
-    // TODO should probably check if the syntax for rust strings and escaping utf
-    // and stuff like that is the same as in python
+    // Include rich loadscript.vpy and specify source, chunk_method, and
+    // cache_file TODO should probably check if the syntax for rust strings
+    // and escaping utf and stuff like that is the same as in python
     let mut load_script_text = include_str!("loadscript.vpy")
         .replace(
             "source = os.environ.get(\"AV1AN_SOURCE\", None)",

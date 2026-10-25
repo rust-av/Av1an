@@ -418,8 +418,8 @@ impl FFPixelFormat {
         }
     }
 
-    // use to convert ffmpeg pixel format to vapoursynth format for use in python
-    // script.
+    // use to convert ffmpeg pixel format to vapoursynth format for use in
+    // python script.
     #[inline]
     pub fn to_vapoursynth_string(&self) -> anyhow::Result<&'static str> {
         Ok(match self {

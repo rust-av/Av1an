@@ -54,8 +54,8 @@ impl Display for ConcatMethod {
 #[tracing::instrument(level = "debug")]
 pub fn sort_files_by_filename(files: &mut [PathBuf]) {
     files.sort_unstable_by_key(|x| {
-        // If the temp directory follows the expected format of 00000.ivf, 00001.ivf,
-        // etc., then these unwraps will not fail
+        // If the temp directory follows the expected format of 00000.ivf,
+        // 00001.ivf, etc., then these unwraps will not fail
         x.file_stem()
             .expect("should have file stem")
             .to_string_lossy()
@@ -318,8 +318,9 @@ pub fn mkvmerge(
         .with_context(|| "Failed to execute mkvmerge command for concatenation")?;
 
     if !out.status.success() {
-        // TODO: make an EncoderCrash-like struct, but without all the other fields so
-        // it can be used in a more broad scope than just for the pipe/encoder
+        // TODO: make an EncoderCrash-like struct, but without all the other
+        // fields so it can be used in a more broad scope than just for
+        // the pipe/encoder
         error!(
             "mkvmerge concatenation failed with output: {:#?}\ncommand: {:?}",
             out, cmd

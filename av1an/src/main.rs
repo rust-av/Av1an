@@ -925,8 +925,8 @@ pub(crate) fn resolve_file_paths(
     path: &Path,
 ) -> anyhow::Result<Box<dyn Iterator<Item = PathBuf> + '_>> {
     // TODO: to validate file extensions
-    // let valid_media_extensions = ["mkv", "mov", "mp4", "webm", "avi", "qt", "ts",
-    // "m2t", "py", "vpy"];
+    // let valid_media_extensions = ["mkv", "mov", "mp4", "webm", "avi", "qt",
+    // "ts", "m2t", "py", "vpy"];
 
     ensure!(
         path.exists(),
@@ -938,7 +938,7 @@ pub(crate) fn resolve_file_paths(
     if path.is_dir() {
         Ok(Box::new(read_in_dir(path)?))
     } else {
-        Ok(Box::new(std::iter::once(path.to_path_buf())))
+        Ok(Box::new(std::path::absolute(path).into_iter()))
     }
 }
 
@@ -1029,7 +1029,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             if scaler.starts_with("lanczos") {
                 for n in 1..=9 {
                     if scaler.ends_with(&n.to_string()) {
-                        write!(&mut scaler_ext, ":param0={}", &n.to_string())
+                        write!(&mut scaler_ext, ":param0={}", n)
                             .expect("write to string should work");
                         scaler = "lanczos".to_string();
                     }
@@ -1048,8 +1048,8 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             args.cache_mode,
         )?;
 
-        // Assumes proxies supplied are the same number as inputs. Otherwise gets the
-        // first proxy if available
+        // Assumes proxies supplied are the same number as inputs. Otherwise
+        // gets the first proxy if available
         let proxy_path = proxies.get(index).or_else(|| proxies.first());
         let proxy = if let Some(path) = proxy_path {
             Some(Input::new(
@@ -1113,11 +1113,11 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
             } else {
                 Vec::new()
             },
-            temp: temp.clone(),
+            temp,
             force: args.force,
             no_defaults: args.no_defaults,
             passes: args.passes.unwrap_or_else(|| args.encoder.get_default_pass()),
-            video_params: video_params.clone(),
+            video_params,
             output_file,
             audio_params: if let Some(args) = args.audio_params.as_ref() {
                 shlex::split(args)
@@ -1138,7 +1138,7 @@ pub fn parse_cli(args: &CliOpts) -> anyhow::Result<Vec<EncodeArgs>> {
                         as usize,
                 ),
             },
-            photon_noise: args.photon_noise.and_then(|arg| if arg == 0 { None } else { Some(arg) }),
+            photon_noise: args.photon_noise.filter(|&arg| arg != 0),
             photon_noise_size: (args.photon_noise_width, args.photon_noise_height),
             chroma_noise: args.chroma_noise,
             sc_pix_format: args.sc_pix_format,
