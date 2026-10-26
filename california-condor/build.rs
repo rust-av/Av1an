@@ -63,5 +63,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         "cargo:rustc-env=CONDOR_SCHEMA_URL={schema_base_url}/{schema_tag}/configuration.schema.\
          json"
     );
+
+    // Embeds `condor.exe.manifest` so the Windows binary declares `longPathAware`.
+    // Without it, paths longer than MAX_PATH fail inside VapourSynth with
+    // "Source path does not exist".
+    #[cfg(windows)]
+    embed_resource::compile("condor.exe.rc", embed_resource::NONE)
+        .manifest_required()
+        .unwrap();
+
     Ok(())
 }

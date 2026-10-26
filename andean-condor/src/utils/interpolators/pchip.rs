@@ -3,48 +3,54 @@
 /// preserve monotonicity.
 const PCHIP_MAX_TAU_SQUARED: f64 = 9.0;
 
+/// Piecewise Cubic Hermite Interpolating Polynomial over any number of points.
+///
+/// The interior derivatives are weighted harmonic means of the neighbouring
+/// secant slopes, and the monotonicity constraint scales them back wherever
+/// they would otherwise make the interpolant overshoot. The result is a smooth
+/// curve that never leaves the range the samples actually span, which is what
+/// keeps a predicted quantizer inside the probed range.
 #[inline]
-pub fn pchip(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
+pub fn pchip(x: &[f64], y: &[f64], xi: f64) -> Option<f64> {
+    let n = x.len();
+    if n < 2 || y.len() != n {
+        return None;
+    }
+
     // Check strictly increasing
-    for i in 0..3 {
+    for i in 0..n - 1 {
         if x[i + 1] <= x[i] {
             return None;
         }
     }
 
-    // Find interval containing xi
-    let mut k = 0;
-    for i in 0..3 {
-        if xi >= x[i] && xi <= x[i + 1] {
-            k = i;
-            break;
-        }
+    // Verify xi is within the observed range
+    if xi < x[0] || xi > x[n - 1] {
+        return None;
     }
 
-    // Calculate slopes
-    let s0 = (y[1] - y[0]) / (x[1] - x[0]);
-    let s1 = (y[2] - y[1]) / (x[2] - x[1]);
-    let s2 = (y[3] - y[2]) / (x[3] - x[2]);
+    // Find interval containing xi
+    let k = (0..n - 1).find(|&i| xi >= x[i] && xi <= x[i + 1]).unwrap_or(0);
 
-    // Calculate derivatives using PCHIP method
-    let mut d = [0.0; 4];
+    // Secant slope of every interval
+    let s: Vec<f64> = (0..n - 1).map(|i| (y[i + 1] - y[i]) / (x[i + 1] - x[i])).collect();
+
+    // Derivatives at every knot
+    let mut d = vec![0.0; n];
 
     // Endpoint derivatives
-    d[0] = s0;
-    d[3] = s2;
+    d[0] = s[0];
+    d[n - 1] = s[n - 2];
 
     // Interior derivatives (weighted harmonic mean)
-    #[expect(clippy::needless_range_loop)]
-    for i in 1..=2 {
-        let (s_prev, s_next, h_prev, h_next) = if i == 1 {
-            (s0, s1, x[1] - x[0], x[2] - x[1])
-        } else {
-            (s1, s2, x[2] - x[1], x[3] - x[2])
-        };
-
+    for i in 1..n - 1 {
+        let s_prev = s[i - 1];
+        let s_next = s[i];
         if s_prev * s_next <= 0.0 {
             d[i] = 0.0;
         } else {
+            let h_prev = x[i] - x[i - 1];
+            let h_next = x[i + 1] - x[i];
             let w1 = 2.0f64.mul_add(h_next, h_prev);
             let w2 = 2.0f64.mul_add(h_prev, h_next);
             d[i] = (w1 + w2) / (w1 / s_prev + w2 / s_next);
@@ -52,20 +58,19 @@ pub fn pchip(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
     }
 
     // Monotonicity constraint
-    let slopes = [s0, s1, s2];
-    for i in 0..3 {
-        if slopes[i] == 0.0 {
+    for i in 0..n - 1 {
+        if s[i] == 0.0 {
             d[i] = 0.0;
             d[i + 1] = 0.0;
         } else {
-            let alpha = d[i] / slopes[i];
-            let beta = d[i + 1] / slopes[i];
+            let alpha = d[i] / s[i];
+            let beta = d[i + 1] / s[i];
             let tau = alpha.mul_add(alpha, beta * beta);
 
             if tau > PCHIP_MAX_TAU_SQUARED {
                 let scale = 3.0 / tau.sqrt();
-                d[i] = scale * alpha * slopes[i];
-                d[i + 1] = scale * beta * slopes[i];
+                d[i] = scale * alpha * s[i];
+                d[i + 1] = scale * beta * s[i];
             }
         }
     }
@@ -76,15 +81,16 @@ pub fn pchip(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
     let t2 = t * t;
     let t3 = t2 * t;
 
-    // (2.0 * t3 - 3.0 * t2 + 1.0) * y[k]
-    // + (t3 - 2.0 * t2 + t) * h * d[k]
-    // + (-2.0 * t3 + 3.0 * t2) * y[k + 1]
-    // + (t3 - t2) * h * d[k + 1],
-    Some(
-        (2.0f64.mul_add(t3, -(3.0 * t2)) + 1.0)
-            .mul_add(y[k], (2.0f64.mul_add(-t2, t3) + t) * h * d[k])
-            + (-2.0f64).mul_add(t3, 3.0 * t2).mul_add(y[k + 1], (t3 - t2) * h * d[k + 1]),
-    )
+    let h00 = 2.0f64.mul_add(t3, -3.0 * t2) + 1.0;
+    let h10 = 2.0f64.mul_add(-t2, t3) + t;
+    let h01 = (-2.0f64).mul_add(t3, 3.0 * t2);
+    let h11 = t3 - t2;
+
+    // h00 * y[k] + h10 * h * d[k] + h01 * y[k + 1] + h11 * h * d[k + 1]
+    Some(h00.mul_add(
+        y[k],
+        (h10 * h).mul_add(d[k], (h11 * h).mul_add(d[k + 1], h01 * y[k + 1])),
+    ))
 }
 
 #[cfg(test)]
@@ -146,5 +152,45 @@ mod tests {
         let result = interpolate_pchip(&x_flat, &y_flat, 5.1);
         assert!(result.is_some());
         // Should handle the nearly flat region gracefully
+
+        // Test with mismatched lengths (should return None)
+        let x_short = [72.9709, 80.5088];
+        let y_long = [35.0, 25.0, 15.0, 5.0];
+        assert_eq!(interpolate_pchip(&x_short, &y_long, 76.0), None);
+
+        // Test with too few points (should return None)
+        assert_eq!(interpolate_pchip(&[72.9709], &[35.0], 72.9709), None);
+
+        // Test extrapolation (should return None)
+        assert_eq!(interpolate_pchip(&x, &y, 65.0), None); // Below range
+        assert_eq!(interpolate_pchip(&x, &y, 95.0), None); // Above range
+    }
+
+    /// The generalized signature serves the 6th-and-later probes, which hand it
+    /// more than four points.
+    #[test]
+    fn pchip_accepts_more_than_four_points() {
+        // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709),
+        // CRF 45 (57.916622), CRF 55 (37.303120)
+        let x = [37.303120, 57.916622, 72.9709, 80.5088, 85.7452, 92.4354];
+        let y = [55.0, 45.0, 35.0, 25.0, 15.0, 5.0];
+
+        // Every knot is reproduced exactly
+        for (score, crf) in x.iter().zip(&y) {
+            assert!(
+                (interpolate_pchip(&x, &y, *score).expect("result should exist") - *crf).abs()
+                    < 1e-10
+            );
+        }
+
+        // Monotone data must not overshoot on any subinterval
+        for step in 1..40 {
+            let score = (x[5] - x[0]).mul_add(step as f64 / 40.0, x[0]);
+            let crf = interpolate_pchip(&x, &y, score).expect("result should exist");
+            assert!(
+                (5.0..=55.0).contains(&crf),
+                "score {score} predicted CRF {crf} outside the observed range"
+            );
+        }
     }
 }

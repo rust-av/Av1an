@@ -7,7 +7,7 @@
 | `metric` | Object | Yes | `{ "SSIMULACRA2": { "target_range": [74.0, 76.0], "resolution": null, "threads": null } }` | One key: `VMAF`, `SSIMULACRA2`, `BUTTERAUGLI`, `XPSNR`, `CVVDP`. CLI `--metric` |
 | `maximum_probes` | Integer (u8) | Yes | `4` | Max probes per scene |
 | `quantizer_range` | Array `[u32, u32]` | Yes | Per-encoder (see [condor.encoder](../encoder.md)) | `[min, max]`. CLI `--min-q`/`--max-q` |
-| `interpolators` | Array `[string, string]` | Yes | `["natural", "pchip"]` | Interpolation methods: `linear`, `quadratic`, `natural`, `pchip`, `catmull`, `akima`, `cubicpolynomial` |
+| `interpolators` | Array `[string, string]` | Yes | `["FritschCarlson", "Pchip"]` | Interpolation methods: `"Linear"`, `"Quadratic"`, `"Natural"`, `"FritschCarlson"`, `"Pchip"`, `"Catmull"`, `"Akima"`, `"CubicPolynomial"` |
 | `input` | Input object or null | Yes | `null` | Override encode input. Same shape as [condor.input](../input.md) |
 | `metric_input` | Input object or null | Yes | `null` | Override metric reference input |
 | `probing` | Object | Yes | `{ "encoder_options": null, "strategy": "Whole", "statistic": "Mean" }` | Probe strategy + statistic. CLI `--profile` presets |
@@ -46,7 +46,7 @@ Example:
     "metric": { "SSIMULACRA2": { "target_range": [74.0, 76.0], "resolution": null, "threads": null } },
     "maximum_probes": 4,
     "quantizer_range": [5, 55],
-    "interpolators": ["natural", "pchip"],
+    "interpolators": ["FritschCarlson", "Pchip"],
     "input": null,
     "metric_input": null,
     "probing": {

@@ -74,6 +74,8 @@ Open a command prompt or PowerShell window inside the cloned repository/extracte
 
 The release archive also needs the metric libraries and the VMAF and TransNetV2 models beside the executable; see [Installation](./installation.md) for the layout the released archives ship with.
 
+The Windows build embeds `condor.exe.manifest` through `embed-resource`, which declares the executable `longPathAware`. Without it, paths longer than `MAX_PATH` fail inside VapourSynth with "Source path does not exist"; this happens automatically, so no extra step is needed.
+
 ## Configuration schema
 
 The `$schema` URL in `condor.json` points at a release asset. Regenerate the schema from the configuration structs with

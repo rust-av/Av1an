@@ -213,7 +213,10 @@ fn main() -> Result<()> {
             },
             maximum_probes:  DEFAULT_MAXIMUM_PROBES,
             quantizer_range: TargetQuality::default_quantizer_range(&EncoderBase::X264),
-            interpolators:   (InterpolationMethod::Natural, InterpolationMethod::Pchip),
+            interpolators:   (
+                InterpolationMethod::FritschCarlson,
+                InterpolationMethod::Pchip,
+            ),
             input:           Some(tq_input_model),
             metric_input:    None,
             probing:         TargetQualityProbing {

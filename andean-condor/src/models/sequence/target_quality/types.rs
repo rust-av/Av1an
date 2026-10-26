@@ -36,6 +36,8 @@ pub enum InterpolationMethod {
     Quadratic,
     #[strum(serialize = "natural")]
     Natural,
+    #[strum(serialize = "fritschcarlson")]
+    FritschCarlson,
     #[strum(serialize = "pchip")]
     Pchip,
     #[strum(serialize = "catmull")]

@@ -118,7 +118,7 @@ $ condor detect-scenes set method avscenechange --minimum-frames 20 --maximum-fr
 $ condor scale-noise set threshold 0.002
 $ condor scale-speed set speed-quantizers 20=6 35=4 55=2
 $ condor target-quality set quantizer-range 18-30
-$ condor target-quality set interpolators natural pchip
+$ condor target-quality set interpolators fritsch-carlson pchip
 $ condor target-quality set target 85
 $ condor quality-check set strategy subset --position end --length-percent 25
 $ condor detect-noise set reference-filters "resize:width=960;" "wnnm:sigma=3.0,0.0,0.0;"

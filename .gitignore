@@ -49,6 +49,9 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
+# The PyInstaller-generated manifests above stay ignored, but the Windows
+# application manifest `embed-resource` compiles into `condor.exe` is source.
+!california-condor/condor.exe.manifest
 *.spec
 
 # Installer logs

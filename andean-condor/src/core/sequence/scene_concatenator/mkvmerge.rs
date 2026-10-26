@@ -105,6 +105,7 @@ impl SceneConcatenator {
                 // directory, so mkvmerge must run from it too.
                 let mut group_cmd = Command::new("mkvmerge");
                 group_cmd.arg(format!("@{}", fix_path(&group_options_path)));
+                group_cmd.stdin(Stdio::null());
                 group_cmd.stdout(Stdio::piped());
                 group_cmd.stderr(Stdio::piped());
 
@@ -186,6 +187,7 @@ impl SceneConcatenator {
 
         let mut cmd = Command::new("mkvmerge");
         cmd.arg(format!("@{}", fix_path(options_path)));
+        cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         let mut child = cmd.spawn().with_context(|| "Failed to spawn mkvmerge")?;

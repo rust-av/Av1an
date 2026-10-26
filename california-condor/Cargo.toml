@@ -54,6 +54,12 @@ av-format = { version = "0.7", optional = true }
 [build-dependencies]
 vergen-git2 = { version = "9.1.0", features = ["build", "rustc", "cargo"] }
 
+# Embeds the application manifest so `condor.exe` opts into Windows long path
+# support; without it VapourSynth fails with "Source path does not exist" on
+# paths longer than MAX_PATH.
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3.0.12"
+
 [features]
 default = []
 # Hardware acceleration for the TransNetV2 scene detector; see andean-condor.

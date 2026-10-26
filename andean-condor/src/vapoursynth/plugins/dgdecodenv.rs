@@ -317,6 +317,7 @@ impl DGSource {
         .arg(&absolute_source)
         .arg("-o")
         .arg(&absolute_cache)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

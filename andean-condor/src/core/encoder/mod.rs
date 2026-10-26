@@ -1401,7 +1401,11 @@ impl Encoder {
             Encoder::AOM {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--help").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--help")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let version_line = stdout.lines().find(|line| line.starts_with("    av1"))?;
                 Some(
@@ -1417,7 +1421,11 @@ impl Encoder {
             Encoder::RAV1E {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--version").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--version")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let version_line = stdout.lines().find(|line| line.starts_with("rav1e"))?;
                 Some(version_line.to_string())
@@ -1425,7 +1433,11 @@ impl Encoder {
             Encoder::VPX {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--help").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--help")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let version_line = stdout.lines().find(|line| line.starts_with("    vp9"))?;
                 Some(
@@ -1441,7 +1453,11 @@ impl Encoder {
             Encoder::SVTAV1 {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--version").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--version")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let version_line = stdout.lines().find(|line| line.starts_with("SVT-AV1"))?;
                 Some(version_line.to_string())
@@ -1449,7 +1465,11 @@ impl Encoder {
             Encoder::AVM {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--help").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--help")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let version_line = stdout.lines().find(|line| line.starts_with("    av2"))?;
                 Some(
@@ -1465,7 +1485,11 @@ impl Encoder {
             Encoder::X264 {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--version").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--version")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let version_line = stdout.lines().find(|line| line.starts_with("x264"))?;
                 Some(
@@ -1480,7 +1504,11 @@ impl Encoder {
             Encoder::X265 {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--version").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--version")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 let version_line = stderr.lines().find(|line| line.starts_with("x265"))?;
                 Some(
@@ -1495,7 +1523,11 @@ impl Encoder {
             Encoder::VVenC {
                 ..
             } => {
-                let result = Command::new(self.executable()).arg("--version").output().ok()?;
+                let result = Command::new(self.executable())
+                    .arg("--version")
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let version_line = stdout.lines().find(|line| line.starts_with("vvencapp"))?;
                 Some(version_line.to_string())
@@ -1503,7 +1535,7 @@ impl Encoder {
             Encoder::FFmpeg {
                 ..
             } => {
-                let result = Command::new(self.executable()).output().ok()?;
+                let result = Command::new(self.executable()).stdin(Stdio::null()).output().ok()?;
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 let version_line = stderr.lines().find(|line| line.starts_with("ffmpeg"))?;
                 version_line.split(' ').nth(2).map(String::from)

@@ -1497,6 +1497,11 @@ impl TargetQuality {
                                 &quantizers,
                                 target_score,
                             ),
+                            InterpolationMethod::FritschCarlson => interpolators::fritsch_carlson(
+                                &[scores[0], scores[1], scores[2]],
+                                &[quantizers[0], quantizers[1], quantizers[2]],
+                                target_score,
+                            ),
                             _ => None,
                         }
                     },
@@ -1519,6 +1524,11 @@ impl TargetQuality {
                                 &quantizers,
                                 target_score,
                             ),
+                            InterpolationMethod::FritschCarlson => interpolators::fritsch_carlson(
+                                &[s[0], s[1], s[2]],
+                                &[q[0], q[1], q[2]],
+                                target_score,
+                            ),
                             InterpolationMethod::Pchip => interpolators::pchip(s, q, target_score),
                             InterpolationMethod::Catmull => {
                                 interpolators::catmull_rom(s, q, target_score)
@@ -1529,7 +1539,9 @@ impl TargetQuality {
                             },
                         }
                     },
-                    _ => None,
+                    // 6th and later probes: pchip over every point, which is monotone and so
+                    // cannot predict a quantizer outside the probed range
+                    _ => interpolators::pchip(&scores, &quantizers, target_score),
                 };
 
                 result.unwrap_or_else(|| {

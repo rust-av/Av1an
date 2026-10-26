@@ -40,7 +40,10 @@ impl Default for TargetQualityConfig {
             metric:          QualityMetric::default(),
             maximum_probes:  DEFAULT_MAXIMUM_PROBES,
             quantizer_range: (0, 51),
-            interpolators:   (InterpolationMethod::Natural, InterpolationMethod::Pchip),
+            interpolators:   (
+                InterpolationMethod::FritschCarlson,
+                InterpolationMethod::Pchip,
+            ),
             input:           None,
             metric_input:    None,
             probing:         TargetQualityProbing::default(),

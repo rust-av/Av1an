@@ -37,6 +37,7 @@ impl SceneConcatenator {
 
         let mut cmd = Command::new("ffmpeg");
 
+        cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 

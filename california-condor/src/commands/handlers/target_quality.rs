@@ -264,6 +264,7 @@ pub enum Interpolator {
     Linear,
     Quadratic,
     Natural,
+    FritschCarlson,
     Pchip,
     Catmull,
     Akima,
@@ -277,6 +278,7 @@ impl From<Interpolator> for InterpolationMethod {
             Interpolator::Linear => Self::Linear,
             Interpolator::Quadratic => Self::Quadratic,
             Interpolator::Natural => Self::Natural,
+            Interpolator::FritschCarlson => Self::FritschCarlson,
             Interpolator::Pchip => Self::Pchip,
             Interpolator::Catmull => Self::Catmull,
             Interpolator::Akima => Self::Akima,
@@ -898,7 +900,10 @@ mod tests {
             },
             maximum_probes:  4,
             quantizer_range: (8, 40),
-            interpolators:   (InterpolationMethod::Natural, InterpolationMethod::Pchip),
+            interpolators:   (
+                InterpolationMethod::FritschCarlson,
+                InterpolationMethod::Pchip,
+            ),
             input:           Some(Input::VapourSynth {
                 path:          input_abs.clone(),
                 import_method: VapourSynthImportMethod::LSMASHWorks {

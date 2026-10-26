@@ -119,7 +119,7 @@ If not specified, `standard` is used.
 - `set target SCORE` — folds the score into the metric's acceptable range; `reset target` restores the metric's default range.
 - `set maximum-probes N` — probes a scene may take (`≥ 1`).
 - `set quantizer-range MIN-MAX` — the quantizers the search may probe, as one value (`18-30`); rejected unless `MIN ≤ MAX`.
-- `set interpolators BELOW ABOVE` — the spline methods used below and above a probe value (`linear`, `quadratic`, `natural`, `pchip`, `catmull`, `akima`, `cubic-polynomial`).
+- `set interpolators BELOW ABOVE` — the spline methods used below and above a probe value (`linear`, `quadratic`, `natural`, `fritsch-carlson`, `pchip`, `catmull`, `akima`, `cubic-polynomial`).
 - `set strategy KIND [FRAMES]` — the probing strategy: `whole`, `skip FRAMES`, or `subset [--position start|middle|end] [--length-frames N | --length-percent P]` (same values as `quality-check set strategy`).
 - `set statistic KIND [VALUE] …` — how probe scores become one result: `mean`, `median`, `harmonic`, `percentile PERCENT` (or `--percentile P`), `standard-deviation-distance SIGMA` (or `--sigma S`), `mode`, `minimum`, `maximum`, `root-mean-square`.
 - `set params "--crf 16 --tune 0"` — the encoder parameters the probes encode with (same syntax as `--params`); pairs you omit keep their value, `reset params` falls back to the encoder defaults.
@@ -129,7 +129,7 @@ If not specified, `standard` is used.
 ```bash
 $ condor target-quality set target 85
 $ condor target-quality set quantizer-range 18-30
-$ condor target-quality set interpolators natural pchip
+$ condor target-quality set interpolators fritsch-carlson pchip
 $ condor target-quality set strategy subset --position end --length-percent 25
 $ condor target-quality set params "--crf 16 --tune 0"
 $ condor target-quality reset target
