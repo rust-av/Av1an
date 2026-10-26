@@ -350,6 +350,19 @@ Defaults to no filter.
 "#;
 pub const HELP_FFMPEG_FILTER_SHORT: &str = short_help(HELP_FFMPEG_FILTER);
 
+pub const HELP_DISABLE_COLOR_DATA: &str = r#"Do not append the input's colour and HDR metadata to the encoder parameters.
+
+Colour metadata appending is on by default: the input's colour primaries, transfer
+characteristics, matrix coefficients, chroma sample location, range, mastering
+display and content light levels are written into the encoder's own parameters,
+after the pass parameters but before anything set with *--params*, so a value you
+set set overrides it.
+
+This flag turns the appending off for the whole encode; per-scene overrides keep
+their own setting.
+"#;
+pub const HELP_DISABLE_COLOR_DATA_SHORT: &str = short_help(HELP_DISABLE_COLOR_DATA);
+
 pub const HELP_SCD_FILTERS: &str = concat!(
     r#"Filters to apply to the Scene Detector input.
 

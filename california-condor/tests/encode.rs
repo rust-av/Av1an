@@ -160,10 +160,11 @@ mod tests {
         );
         encoder_params.insert("crf".to_owned(), CLIParameter::new_number("--", " ", 18.0));
         expected_config.condor.encoder = Encoder::X264 {
-            executable:    None,
-            pass:          EncoderPasses::All(2),
-            options:       encoder_params,
-            ffmpeg_filter: None,
+            executable:        None,
+            pass:              EncoderPasses::All(2),
+            options:           encoder_params,
+            ffmpeg_filter:     None,
+            append_color_data: true,
         };
         // immutable shadow
         let expected_config = expected_config;

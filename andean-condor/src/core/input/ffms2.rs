@@ -131,7 +131,7 @@ pub fn from_video(data: &InputModel) -> Result<Input> {
 pub fn clip_info(decoder: &Decoder) -> Result<ClipInfo> {
     let details = decoder.get_video_details();
     Ok(ClipInfo {
-        format_info:              PixelFormat::FFmpeg {
+        format_info:                   PixelFormat::FFmpeg {
             format: ffms2_pixel_format(details.bit_depth, details.chroma_sampling).ok_or_else(
                 || {
                     anyhow::anyhow!(
@@ -142,19 +142,19 @@ pub fn clip_info(decoder: &Decoder) -> Result<ClipInfo> {
                 },
             )?,
         },
-        frame_rate:               Rational64::new(
+        frame_rate:                    Rational64::new(
             i64::from(*details.frame_rate.numer()),
             i64::from(*details.frame_rate.denom()),
         ),
-        color_range:              details.color_range.and_then(map_color_range),
-        resolution:               (details.width as u32, details.height as u32),
-        transfer_characteristics: match details.color_transfer_characteristic {
-            Some(av_decoders::TransferCharacteristic::SMPTE2084) => {
-                av1_grain::TransferFunction::SMPTE2084
-            },
-            _ => av1_grain::TransferFunction::BT1886,
-        },
-        num_frames:               details
+        color_range:                   details.color_range.and_then(map_color_range),
+        color_primaries:               details.color_primaries,
+        color_transfer_characteristic: details.color_transfer_characteristic,
+        color_space:                   details.color_space,
+        chroma_location:               details.chroma_location,
+        mastering_display:             details.mastering_display,
+        content_light_level:           details.content_light_level,
+        resolution:                    (details.width as u32, details.height as u32),
+        num_frames:                    details
             .total_frames
             .ok_or_else(|| anyhow::anyhow!("FFMS2 decoder did not report a frame count"))?,
     })

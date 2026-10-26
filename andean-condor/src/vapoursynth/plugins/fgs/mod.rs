@@ -91,7 +91,7 @@ impl FGS {
         let fgs_data = self.build_grain_binary(
             Some(width),
             Some(height),
-            clip_info.transfer_characteristics,
+            clip_info.photon_noise_transfer_function(),
             clip_info.color_range,
         )?;
 

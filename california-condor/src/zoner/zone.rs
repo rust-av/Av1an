@@ -133,19 +133,23 @@ pub struct ZoneEncoderMerge {
     /// are left unchanged, which keeps one encoder's parameters off another's
     /// command line.
     #[serde(default)]
-    pub base:          Option<EncoderBase>,
+    pub base:              Option<EncoderBase>,
     /// The encoder binary to use instead of the base's default.
     #[serde(default)]
-    pub executable:    Option<PathBuf>,
+    pub executable:        Option<PathBuf>,
     /// The encoder options to merge into (or replace) the scene's.
     #[serde(default)]
-    pub options:       Option<ZoneOptions>,
+    pub options:           Option<ZoneOptions>,
     /// The Photon Noise table to merge into (or replace) the scene's.
     #[serde(default)]
-    pub photon_noise:  Option<ZonePhotonNoise>,
+    pub photon_noise:      Option<ZonePhotonNoise>,
     /// The FFmpeg filtergraph to apply to the scene's frames.
     #[serde(default)]
-    pub ffmpeg_filter: Option<String>,
+    pub ffmpeg_filter:     Option<String>,
+    /// Whether to append the source's colour and HDR metadata to the scene's
+    /// encoder parameters.
+    #[serde(default)]
+    pub append_color_data: Option<bool>,
 }
 
 impl ZoneEncoderMerge {
@@ -157,6 +161,7 @@ impl ZoneEncoderMerge {
             && self.options.is_none()
             && self.photon_noise.is_none()
             && self.ffmpeg_filter.is_none()
+            && self.append_color_data.is_none()
     }
 
     fn apply(
@@ -198,6 +203,9 @@ impl ZoneEncoderMerge {
         }
         if let Some(zone_noise) = &self.photon_noise {
             apply_photon_noise(index, scene, zone_noise, warnings);
+        }
+        if let Some(append_color_data) = self.append_color_data {
+            scene.encoder.set_append_color_data(append_color_data);
         }
         if let Some(filter) = &self.ffmpeg_filter {
             if scene.encoder.base() == EncoderBase::FFmpeg {
@@ -982,18 +990,19 @@ mod tests {
             end_frame:      Some(100),
             maximum_frames: Some(100),
             encoder:        Some(ZoneEncoder::Merge(ZoneEncoderMerge {
-                base:          Some(EncoderBase::SVTAV1),
-                executable:    Some(PathBuf::from("/tools/fish")),
-                options:       Some(ZoneOptions::Merge(ZoneOptionsBody::Params(
+                base:              Some(EncoderBase::SVTAV1),
+                executable:        Some(PathBuf::from("/tools/fish")),
+                options:           Some(ZoneOptions::Merge(ZoneOptionsBody::Params(
                     "--preset 3 --crf 23".to_owned(),
                 ))),
-                photon_noise:  Some(ZonePhotonNoise::Replace(ZonePhotonNoiseBody {
+                photon_noise:      Some(ZonePhotonNoise::Replace(ZonePhotonNoiseBody {
                     iso: Some(400),
                     chroma_iso: Some(800),
                     c_y: Some(vec![34, -1, 32]),
                     ..Default::default()
                 })),
-                ffmpeg_filter: Some("crop=iw-16:ih-16".to_owned()),
+                ffmpeg_filter:     Some("crop=iw-16:ih-16".to_owned()),
+                append_color_data: None,
             })),
         };
 

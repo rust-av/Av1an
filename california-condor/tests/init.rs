@@ -179,10 +179,10 @@ mod tests {
             ("cq-level", 23.0),
         ]));
         expected_config.condor.encoder = Encoder::AOM {
-            executable:    None,
-            pass:          EncoderPasses::All(2),
-            options:       custom_encoder_parameters,
-            photon_noise:  Some(PhotonNoise {
+            executable:        None,
+            pass:              EncoderPasses::All(2),
+            options:           custom_encoder_parameters,
+            photon_noise:      Some(PhotonNoise {
                 iso:        400,
                 chroma_iso: None,
                 width:      None,
@@ -191,7 +191,8 @@ mod tests {
                 ccb:        None,
                 ccr:        None,
             }),
-            ffmpeg_filter: None,
+            ffmpeg_filter:     None,
+            append_color_data: true,
         };
         expected_config.condor.sequence_config.parallel_encoder.workers = Some(8);
         expected_config.condor.sequence_config.target_quality = Some(TargetQualityConfig {

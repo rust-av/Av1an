@@ -20,7 +20,7 @@ One or more zone definitions, or paths to zone files. Each definition reads
 
 `<start> <end> [replace|merge] [encoder[(executable)]] ["options"] [flags]`
 
-where the frames are half-open with `-1` for the input's first or last frame, `replace` replaces the scene's encoder instead of merging into it, the encoder accepts its binary in parentheses, the quoted string holds encoder parameters (as in [`--params`](../types/encoder-params.md)), and the flags are `--maximum-frames`, `--ffmpeg-filter`, `--iso`, `--chroma-iso`, `--width`, `--height`, `--sy`, `--ccb` and `--ccr`. See [Zone](../types/zone.md) for every part.
+where the frames are half-open with `-1` for the input's first or last frame, `replace` replaces the scene's encoder instead of merging into it, the encoder accepts its binary in parentheses, the quoted string holds encoder parameters (as in [`--params`](../types/encoder-params.md)), and the flags are `--maximum-frames`, `--ffmpeg-filter`, `--append-color-data`, `--iso`, `--chroma-iso`, `--width`, `--height`, `--sy`, `--ccb` and `--ccr`. See [Zone](../types/zone.md) for every part.
 
 A value that names an existing file is read as a zone file: `.json` for `{ "zones": [ ... ] }` or a bare array, `.jsonl`/`.ndjson` for one zone per line, and anything else as a text file of definitions with `#` comments.
 
@@ -28,6 +28,7 @@ A value that names an existing file is read as a zone file: `.json` for `{ "zone
 
 - `> condor zone '-1 200 svt-av1 "--preset 3 --crf 23"'` - Merges into the scenes of the first 200 frames
 - `> condor zone '-1 200 replace svt-av1("/tools/fish") "--preset 3 --crf 23" --iso 400'` - Replaces the encoder of those scenes, with Photon Noise
+- `> condor zone '-1 200 x264 "--crf 18" --append-color-data off'` - Leaves the colour and HDR metadata out of that zone's encoder parameters
 - `> condor zone ./zones.txt` - Applies every definition in a text file
 - `> condor zone` - Applies the zones already in the configuration
 

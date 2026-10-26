@@ -16,7 +16,8 @@
 //!   `merge`, patches the scene's own,
 //! - the quoted string holds encoder parameters, as in *--params*,
 //! - and the flags are `--maximum-frames`, `--ffmpeg-filter`, `--iso`,
-//!   `--chroma-iso`, `--width`, `--height`, `--sy`, `--ccb` and `--ccr`.
+//!   `--chroma-iso`, `--width`, `--height`, `--sy`, `--ccb`, `--ccr` and
+//!   `--append-color-data`.
 //!
 //! Only [`ZoneEncoder::Replace`] and [`ZoneEncoder::Merge`] are reachable from
 //! a string: merges always merge options and Photon Noise. The finer
@@ -177,6 +178,7 @@ pub fn parse_zone(definition: &str) -> Result<Zone> {
     let Overrides {
         maximum_frames,
         ffmpeg_filter,
+        append_color_data,
         photon_noise,
     } = scanner.overrides()?;
 
@@ -189,6 +191,7 @@ pub fn parse_zone(definition: &str) -> Result<Zone> {
             encoder,
             parameters,
             ffmpeg_filter,
+            append_color_data,
             photon_noise,
             &scanner,
         )?,
@@ -201,11 +204,16 @@ fn build_encoder(
     encoder: Option<(EncoderBase, Option<PathBuf>)>,
     parameters: Option<HashMap<String, CLIParameter>>,
     ffmpeg_filter: Option<String>,
+    append_color_data: Option<bool>,
     photon_noise: ZonePhotonNoiseBody,
     scanner: &Scanner<'_>,
 ) -> Result<Option<ZoneEncoder>> {
     let Some((base, executable)) = encoder else {
-        if parameters.is_some() || ffmpeg_filter.is_some() || !photon_noise.is_empty() {
+        if parameters.is_some()
+            || ffmpeg_filter.is_some()
+            || append_color_data.is_some()
+            || !photon_noise.is_empty()
+        {
             return Err(scanner.error(
                 "an encoder name is required for encoder options, Photon Noise and an FFmpeg \
                  filter",
@@ -233,6 +241,9 @@ fn build_encoder(
         }
         replacement.set_executable(executable);
         replacement.set_ffmpeg_filter(ffmpeg_filter);
+        if let Some(append_color_data) = append_color_data {
+            replacement.set_append_color_data(append_color_data);
+        }
         if !photon_noise.is_empty() {
             let table = photon_noise.table().map_err(|error| scanner.error(&error.to_string()))?;
             replacement.set_photon_noise(Some(table));
@@ -250,6 +261,7 @@ fn build_encoder(
             photon_noise: (!photon_noise.is_empty())
                 .then_some(ZonePhotonNoise::Merge(photon_noise)),
             ffmpeg_filter,
+            append_color_data,
         })))
     }
 }
@@ -257,9 +269,10 @@ fn build_encoder(
 /// The zone fields a string sets beyond the encoder change.
 #[derive(Default)]
 struct Overrides {
-    maximum_frames: Option<usize>,
-    ffmpeg_filter:  Option<String>,
-    photon_noise:   ZonePhotonNoiseBody,
+    maximum_frames:    Option<usize>,
+    ffmpeg_filter:     Option<String>,
+    append_color_data: Option<bool>,
+    photon_noise:      ZonePhotonNoiseBody,
 }
 
 /// A zone string split into words, with quoted strings kept whole.
@@ -352,6 +365,16 @@ impl<'a> Scanner<'a> {
         })
     }
 
+    /// The `on`/`off` value of a flag.
+    fn toggle(&mut self, flag: &str) -> Result<bool> {
+        let value = self.value(flag)?;
+        match value {
+            "on" | "enable" | "enabled" | "yes" | "true" | "1" => Ok(true),
+            "off" | "disable" | "disabled" | "no" | "false" | "0" => Ok(false),
+            _ => Err(self.error(&format!("{flag} needs on or off, found \"{value}\""))),
+        }
+    }
+
     /// The comma-separated coefficients of a Photon Noise table flag.
     fn table(&mut self, flag: &str) -> Result<Vec<i8>> {
         let value = self.value(flag)?;
@@ -420,6 +443,9 @@ impl<'a> Scanner<'a> {
             match flag {
                 "--maximum-frames" => overrides.maximum_frames = Some(self.number(flag)?),
                 "--ffmpeg-filter" => overrides.ffmpeg_filter = Some(self.value(flag)?.to_owned()),
+                "--append-color-data" => {
+                    overrides.append_color_data = Some(self.toggle(flag)?);
+                },
                 "--iso" => overrides.photon_noise.iso = Some(self.number(flag)?),
                 "--chroma-iso" => overrides.photon_noise.chroma_iso = Some(self.number(flag)?),
                 "--width" => overrides.photon_noise.width = Some(self.number(flag)?),

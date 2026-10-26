@@ -20,9 +20,12 @@ use super::{
     report::frame_range,
 };
 use crate::{
-    commands::handlers::{
-        encode::{EncodeConfigError, configure_encoder},
-        warn_missing_path,
+    commands::{
+        config::Toggle,
+        handlers::{
+            encode::{EncodeConfigError, configure_encoder},
+            warn_missing_path,
+        },
     },
     configuration::{CliSequenceData, Configuration},
     scenes::{
@@ -71,6 +74,7 @@ pub(super) fn apply_set(
             iso,
             chroma_iso,
             ffmpeg_filter,
+            append_color_data,
         } => {
             if chroma_iso.is_some() && iso.is_none() {
                 bail!(ScenesConfigError::ChromaIsoNeedsIso);
@@ -100,7 +104,11 @@ pub(super) fn apply_set(
                 *iso,
                 *chroma_iso,
                 ffmpeg_filter.as_deref(),
+                None,
             )?;
+            if let Some(toggle) = append_color_data {
+                scene.encoder.set_append_color_data(toggle.enabled());
+            }
             if let Some(path) = executable {
                 scene.encoder.set_executable(Some(path.clone()));
             }
@@ -140,6 +148,7 @@ pub(super) fn apply_set(
                 None,
                 None,
                 None,
+                None,
             )?;
             ("params", serde_json::to_value(scene.encoder.parameters())?)
         },
@@ -159,6 +168,7 @@ pub(super) fn apply_set(
                 None,
                 Some(*iso),
                 *chroma_noise,
+                None,
                 None,
             )?;
             (
@@ -182,10 +192,22 @@ pub(super) fn apply_set(
                 None,
                 None,
                 Some(filter),
+                None,
             )?;
             (
                 "ffmpeg-filter",
                 serde_json::to_value(scene.encoder.ffmpeg_filter())?,
+            )
+        },
+        ScenesSet::AppendColorData {
+            value,
+        } => {
+            let enabled = value.unwrap_or(Toggle::On).enabled();
+            let scene = require_scene_mut(scenes, index)?;
+            scene.encoder.set_append_color_data(enabled);
+            (
+                "append-color-data",
+                serde_json::to_value(scene.encoder.append_color_data())?,
             )
         },
         ScenesSet::SubScenes {

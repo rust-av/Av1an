@@ -117,6 +117,7 @@ fn run() -> anyhow::Result<()> {
             encoder,
             params,
             photon_noise,
+            disable_color_data,
             target_metric,
             target,
         }) => {
@@ -139,6 +140,7 @@ fn run() -> anyhow::Result<()> {
                 encoder.as_ref(),
                 params.as_deref(),
                 photon_noise,
+                !disable_color_data,
                 target_metric.as_ref(),
                 target,
             )?;
@@ -430,6 +432,7 @@ fn run() -> anyhow::Result<()> {
                 cli.photon_noise,
                 cli.chroma_noise,
                 cli.ffmpeg_filter.as_deref(),
+                cli.disable_color_data.then_some(false),
                 cli.target_metric.as_ref(),
                 cli.target,
                 cli.minimum_quantizer,

@@ -113,7 +113,7 @@ where
         }
         let encoder = self.encoder.as_ref().map_or(&condor.encoder, |e| e);
         let input: &mut Input = self.input.as_mut().map_or(&mut condor.input, |i| i);
-
+        let clip_info = input.clip_info()?;
         let total_frames: usize = condor.scenes.iter().map(|s| s.end_frame - s.start_frame).sum();
         let start_time = Instant::now();
         let (progress_tx, progress_rx) = sync::mpsc::channel::<EncodeProgress>();
@@ -192,7 +192,12 @@ where
             });
 
             let encoder_thread = thread::spawn(move || -> Result<()> {
-                scene_encoder.encode_with_stream(frames_rx, &output, scene_progress_tx)?;
+                scene_encoder.encode_with_stream(
+                    frames_rx,
+                    &output,
+                    scene_progress_tx,
+                    &clip_info,
+                )?;
 
                 Ok(())
             });

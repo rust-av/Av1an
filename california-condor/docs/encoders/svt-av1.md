@@ -85,6 +85,17 @@ You can also disable the encoders denoise, it is possible to use denoising filte
 ... --film-grain 10 --film-grain-denoise 0 ...
 ```
 
+# Colour metadata
+
+Condor writes the input's colour and HDR metadata into the encoder parameters by
+default. SVT-AV1 accepts all of it: `--color-primaries`,
+`--transfer-characteristics`, `--matrix-coefficients`, `--color-range`,
+`--chroma-sample-position`, `--mastering-display` and `--content-light`. Set
+`append_color_data` to `false` (or `condor encode set append-color-data off`) to
+leave it out, and set the flags yourself in `--params` if the source is tagged
+wrongly — your options replace the appended ones. See
+[`condor.encoder`'s Colour Metadata](../configuration/condor/encoder.md#colour-metadata).
+
 # Input depth
 
 ```

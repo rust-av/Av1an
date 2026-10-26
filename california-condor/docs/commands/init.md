@@ -23,6 +23,7 @@ Creating a configuration needs `INPUT` and `OUTPUT`; the `info`, `set` and `rese
 | [Encoder](#encoder--e---encoder)                             | `-e`, `--encoder` | [`ENCODER`](../types/encoder.md) | `svt-av1`              |
 | [Encoder Parameters](#encoder-parameters---params)          | `--params`        | [String](../types/encoder-params.md)    | Based on Encoder       |
 | [Photon Noise](#photon-noise---photon-noise)                | `--photon-noise`  | [Integer](../types/photon-noise.md)   |                        |
+| [Disable Colour Data](#disable-colour-data---disable-color-data) | `--disable-color-data` |  | off             |
 | [Target Metric](#target-metric---target-metric)              | `--target-metric` | [`METRIC`](../types/quality-metric.md)  | `ssimulacra2`          |
 | [Target](#target---target)                                   | `--target`        | Float     |                        |
 
@@ -156,6 +157,14 @@ Generate and apply a photon noise table using Film Grain Synthesis with the spec
 ### Examples
 
 - `> condor init input.mp4 output.mkv --photon-noise 800`
+
+## Disable Colour Data `--disable-color-data`
+
+Turns off the colour metadata appending that is on by default: the input's colour primaries, transfer characteristics, matrix coefficients, chroma sample location, range, mastering display and content light levels are normally written into the encoder's own parameters, after the pass parameters but before anything set with `--params`, so a value you set overrides it. See [`condor.encoder`'s `append_color_data`](../configuration/condor/encoder.md#colour-metadata).
+
+### Examples
+
+- `> condor init input.mp4 output.mkv --disable-color-data`
 
 ## Target Metric `--target-metric`
 

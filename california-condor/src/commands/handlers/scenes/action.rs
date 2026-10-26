@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use clap::{Subcommand, value_parser};
 use thiserror::Error;
 
-use crate::commands::EncoderMethod;
+use crate::commands::{EncoderMethod, config::Toggle};
 
 /// `condor scenes [INDEX] <action>`.
 #[derive(Debug, Clone, Subcommand)]
@@ -100,26 +100,30 @@ pub enum ScenesSet {
     Encoder {
         /// The encoder to switch to.
         #[arg(value_name = "Encoder")]
-        encoder:       EncoderMethod,
+        encoder:           EncoderMethod,
         /// Custom encoder binary path.
         #[arg(long, value_name = "Path")]
-        executable:    Option<PathBuf>,
+        executable:        Option<PathBuf>,
         /// Number of encoder passes.
         #[arg(long, value_parser = value_parser!(u8).range(1..), value_name = "Passes")]
-        passes:        Option<u8>,
+        passes:            Option<u8>,
         /// Encoder parameters (`--crf 16 --tune 0`), merged into the encoder.
         #[arg(long, value_name = "Parameters", allow_hyphen_values = true)]
-        params:        Option<String>,
+        params:            Option<String>,
         /// Photon Noise luma ISO.
         #[arg(long, value_name = "ISO")]
-        iso:           Option<u32>,
+        iso:               Option<u32>,
         /// Photon Noise chroma ISO (`--iso` is required as well).
         #[arg(long, value_name = "ISO")]
-        chroma_iso:    Option<u32>,
+        chroma_iso:        Option<u32>,
         /// FFmpeg filtergraph applied to the frames before they reach the
         /// encoder.
         #[arg(long, value_name = "Filter", allow_hyphen_values = true)]
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters (`on`/`off`); the default when omitted is `on`.
+        #[arg(long, value_name = "on|off")]
+        append_color_data: Option<Toggle>,
     },
     /// Custom encoder binary path for the scene.
     Executable {
@@ -155,6 +159,12 @@ pub enum ScenesSet {
         /// The filtergraph to apply.
         #[arg(value_name = "Filter", allow_hyphen_values = true)]
         filter: String,
+    },
+    /// Whether the source's colour and HDR metadata is appended to the scene's
+    /// encoder parameters. Bare `on` is the default when the value is omitted.
+    AppendColorData {
+        #[arg(value_name = "on|off")]
+        value: Option<Toggle>,
     },
     /// Replace the scene's sub-scenes with `START-END` frame ranges; `none`
     /// clears them.

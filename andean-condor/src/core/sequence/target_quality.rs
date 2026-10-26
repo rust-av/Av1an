@@ -627,6 +627,7 @@ impl TargetQuality {
                 pass,
                 options,
                 ffmpeg_filter,
+                append_color_data,
                 ..
             } => {
                 let psychovisual_parameters: HashMap<String, CLIParameter> =
@@ -644,11 +645,12 @@ impl TargetQuality {
                 }
 
                 Encoder::AOM {
-                    executable:    executable.clone(),
-                    pass:          *pass,
-                    options:       sanitized_options,
-                    photon_noise:  None,
-                    ffmpeg_filter: ffmpeg_filter.clone(),
+                    executable:        executable.clone(),
+                    pass:              *pass,
+                    options:           sanitized_options,
+                    photon_noise:      None,
+                    ffmpeg_filter:     ffmpeg_filter.clone(),
+                    append_color_data: *append_color_data,
                 }
             },
             Encoder::RAV1E {
@@ -656,6 +658,7 @@ impl TargetQuality {
                 pass,
                 options,
                 ffmpeg_filter,
+                append_color_data,
                 ..
             } => {
                 let psychovisual_parameters: HashMap<String, CLIParameter> = std::iter::once((
@@ -675,11 +678,12 @@ impl TargetQuality {
                 }
 
                 Encoder::RAV1E {
-                    executable:    executable.clone(),
-                    pass:          *pass,
-                    options:       sanitized_options,
-                    photon_noise:  None,
-                    ffmpeg_filter: ffmpeg_filter.clone(),
+                    executable:        executable.clone(),
+                    pass:              *pass,
+                    options:           sanitized_options,
+                    photon_noise:      None,
+                    ffmpeg_filter:     ffmpeg_filter.clone(),
+                    append_color_data: *append_color_data,
                 }
             },
             Encoder::VPX {
@@ -690,6 +694,7 @@ impl TargetQuality {
                 pass,
                 options,
                 ffmpeg_filter,
+                append_color_data,
                 ..
             } => {
                 let psychovisual_parameters: HashMap<String, CLIParameter> = [
@@ -717,11 +722,12 @@ impl TargetQuality {
                 }
 
                 Encoder::SVTAV1 {
-                    executable:    executable.clone(),
-                    pass:          *pass,
-                    options:       sanitized_options,
-                    photon_noise:  None,
-                    ffmpeg_filter: ffmpeg_filter.clone(),
+                    executable:        executable.clone(),
+                    pass:              *pass,
+                    options:           sanitized_options,
+                    photon_noise:      None,
+                    ffmpeg_filter:     ffmpeg_filter.clone(),
+                    append_color_data: *append_color_data,
                 }
             },
             Encoder::AVM {
@@ -729,6 +735,7 @@ impl TargetQuality {
                 pass,
                 options,
                 ffmpeg_filter,
+                append_color_data,
                 ..
             } => {
                 let psychovisual_parameters: HashMap<String, CLIParameter> =
@@ -746,11 +753,12 @@ impl TargetQuality {
                 }
 
                 Encoder::AVM {
-                    executable:    executable.clone(),
-                    pass:          *pass,
-                    options:       sanitized_options,
-                    photon_noise:  None,
-                    ffmpeg_filter: ffmpeg_filter.clone(),
+                    executable:        executable.clone(),
+                    pass:              *pass,
+                    options:           sanitized_options,
+                    photon_noise:      None,
+                    ffmpeg_filter:     ffmpeg_filter.clone(),
+                    append_color_data: *append_color_data,
                 }
             },
             Encoder::X264 {

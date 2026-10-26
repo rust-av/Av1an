@@ -141,10 +141,11 @@ fn main() -> Result<()> {
     );
     encoder_options.insert("crf".to_owned(), CLIParameter::new_number("--", " ", 20.0));
     let encoder = Encoder::X264 {
-        executable:    None,
-        pass:          EncoderPasses::All(1),
-        options:       encoder_options,
-        ffmpeg_filter: None,
+        executable:        None,
+        pass:              EncoderPasses::All(1),
+        options:           encoder_options,
+        ffmpeg_filter:     None,
+        append_color_data: true,
     };
 
     // Per-sequence VapourSynth script inputs, all reading script.vpy.

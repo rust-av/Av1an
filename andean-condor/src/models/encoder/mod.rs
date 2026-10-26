@@ -480,76 +480,112 @@ impl EncoderBase {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Encoder {
     AOM {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
-        photon_noise:  Option<PhotonNoise>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
+        photon_noise:      Option<PhotonNoise>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     RAV1E {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
-        photon_noise:  Option<PhotonNoise>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
+        photon_noise:      Option<PhotonNoise>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     VPX {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     SVTAV1 {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
-        photon_noise:  Option<PhotonNoise>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
+        photon_noise:      Option<PhotonNoise>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     AVM {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
-        photon_noise:  Option<PhotonNoise>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
+        photon_noise:      Option<PhotonNoise>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     X264 {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     X265 {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     VVenC {
-        executable:    Option<PathBuf>,
-        pass:          EncoderPasses,
-        options:       HashMap<String, CLIParameter>,
+        executable:        Option<PathBuf>,
+        pass:              EncoderPasses,
+        options:           HashMap<String, CLIParameter>,
         /// FFmpeg filtergraph applied to the frames before they reach this
         /// encoder. Requires FFmpeg in PATH.
-        ffmpeg_filter: Option<String>,
+        ffmpeg_filter:     Option<String>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
     FFmpeg {
-        executable: Option<PathBuf>,
-        options:    HashMap<String, CLIParameter>,
+        executable:        Option<PathBuf>,
+        options:           HashMap<String, CLIParameter>,
+        /// Append the source's colour and HDR metadata to the encoder
+        /// parameters.
+        #[serde(default = "crate::models::sequence::scene_concatenator::common::default_true")]
+        append_color_data: bool,
     },
 }
 
@@ -602,6 +638,7 @@ impl Encoder {
                 options,
                 photon_noise: None,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::RAV1E => Encoder::RAV1E {
                 executable: None,
@@ -609,12 +646,14 @@ impl Encoder {
                 options,
                 photon_noise: None,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::VPX => Encoder::VPX {
                 executable: None,
                 pass,
                 options,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::SVTAV1 => Encoder::SVTAV1 {
                 executable: None,
@@ -622,6 +661,7 @@ impl Encoder {
                 options,
                 photon_noise: None,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::AVM => Encoder::AVM {
                 executable: None,
@@ -629,28 +669,33 @@ impl Encoder {
                 options,
                 photon_noise: None,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::X264 => Encoder::X264 {
                 executable: None,
                 pass,
                 options,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::X265 => Encoder::X265 {
                 executable: None,
                 pass,
                 options,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::VVenC => Encoder::VVenC {
                 executable: None,
                 pass,
                 options,
                 ffmpeg_filter: None,
+                append_color_data: true,
             },
             EncoderBase::FFmpeg => Encoder::FFmpeg {
                 executable: None,
                 options,
+                append_color_data: true,
             },
         }
     }
@@ -968,6 +1013,76 @@ impl Encoder {
             } => {},
         }
     }
+
+    /// Whether the source's colour and HDR metadata is appended to the encoder
+    /// parameters.
+    #[inline]
+    pub fn append_color_data(&self) -> bool {
+        match self {
+            Encoder::AOM {
+                append_color_data, ..
+            }
+            | Encoder::RAV1E {
+                append_color_data, ..
+            }
+            | Encoder::VPX {
+                append_color_data, ..
+            }
+            | Encoder::SVTAV1 {
+                append_color_data, ..
+            }
+            | Encoder::AVM {
+                append_color_data, ..
+            }
+            | Encoder::X264 {
+                append_color_data, ..
+            }
+            | Encoder::X265 {
+                append_color_data, ..
+            }
+            | Encoder::VVenC {
+                append_color_data, ..
+            }
+            | Encoder::FFmpeg {
+                append_color_data, ..
+            } => *append_color_data,
+        }
+    }
+
+    /// Sets whether the source's colour and HDR metadata is appended to the
+    /// encoder parameters.
+    #[inline]
+    pub fn set_append_color_data(&mut self, append: bool) {
+        match self {
+            Encoder::AOM {
+                append_color_data, ..
+            }
+            | Encoder::RAV1E {
+                append_color_data, ..
+            }
+            | Encoder::VPX {
+                append_color_data, ..
+            }
+            | Encoder::SVTAV1 {
+                append_color_data, ..
+            }
+            | Encoder::AVM {
+                append_color_data, ..
+            }
+            | Encoder::X264 {
+                append_color_data, ..
+            }
+            | Encoder::X265 {
+                append_color_data, ..
+            }
+            | Encoder::VVenC {
+                append_color_data, ..
+            }
+            | Encoder::FFmpeg {
+                append_color_data, ..
+            } => *append_color_data = append,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1030,5 +1145,47 @@ mod tests {
         let json = r#"{"X264":{"executable":null,"pass":{"All":1},"options":{}}}"#;
         let encoder: Encoder = serde_json::from_str(json).expect("encoder deserializes");
         assert_eq!(encoder.ffmpeg_filter(), None);
+    }
+
+    #[test]
+    fn every_base_starts_appending_colour_data() {
+        for base in [
+            EncoderBase::AOM,
+            EncoderBase::RAV1E,
+            EncoderBase::VPX,
+            EncoderBase::SVTAV1,
+            EncoderBase::AVM,
+            EncoderBase::X264,
+            EncoderBase::X265,
+            EncoderBase::VVenC,
+            EncoderBase::FFmpeg,
+        ] {
+            assert!(
+                Encoder::default_from_base(&base, false).append_color_data(),
+                "{base} appends colour data by default"
+            );
+            assert!(
+                Encoder::default_from_base(&base, true).append_color_data(),
+                "{base} appends colour data even without default options"
+            );
+        }
+    }
+
+    #[test]
+    fn a_config_without_the_colour_field_appends_colour_data() {
+        let json = r#"{"X264":{"executable":null,"pass":{"All":1},"options":{}}}"#;
+        let encoder: Encoder = serde_json::from_str(json).expect("encoder deserializes");
+        assert!(encoder.append_color_data());
+    }
+
+    #[test]
+    fn the_colour_field_round_trips() {
+        for base in [EncoderBase::AOM, EncoderBase::VVenC, EncoderBase::FFmpeg] {
+            let mut encoder = Encoder::default_from_base(&base, false);
+            encoder.set_append_color_data(false);
+            let json = serde_json::to_string(&encoder).expect("encoder serializes");
+            let restored: Encoder = serde_json::from_str(&json).expect("encoder deserializes");
+            assert!(!restored.append_color_data(), "{base}");
+        }
     }
 }

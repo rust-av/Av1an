@@ -117,7 +117,7 @@ where
         // Generate Photon Noise tables
         let input = self.input.as_mut().unwrap_or(&mut condor.input);
         let clip_info = input.clip_info()?;
-        let transfer_function = clip_info.transfer_characteristics;
+        let transfer_function = clip_info.photon_noise_transfer_function();
         for scene in &mut condor.scenes {
             let params = scene.encoder.generate_photon_noise_table(
                 clip_info.resolution.0,

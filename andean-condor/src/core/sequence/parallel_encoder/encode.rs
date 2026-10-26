@@ -258,6 +258,7 @@ impl ParallelEncoder {
                         frames_rx,
                         &temp_output,
                         encode_progress_tx,
+                        &clip_info,
                     )?;
                     let ended = std::time::SystemTime::now();
                     let framerate =

@@ -32,6 +32,7 @@ $ condor --config-file ./config.json --skip-scd
 | [Photon Noise](#photon-noise---photon-noise)                      | `--photon-noise`      | [Integer](../types/photon-noise.md)      |                        |
 | [Chroma Noise](#chroma-noise---chroma-noise)                      | `--chroma-noise`      | [Integer](../types/photon-noise.md)      |                        |
 | [FFmpeg Filter](#ffmpeg-filter---ffmpeg-filter)                  | `--ffmpeg-filter`    | String      |                        |
+| [Disable Colour Data](#disable-colour-data---disable-color-data) | `--disable-color-data` |            | off                    |
 | [Zones](#zones---zones)                                           | `--zones`             | [Zone](../types/zone.md)   |                        |
 | [Target Metric](#target-metric---target-metric)                    | `--target-metric`     | [`METRIC`](../types/quality-metric.md)    | `ssimulacra2`          |
 | [Target](#target---target)                                         | `--target`            | Float       |                        |
@@ -178,6 +179,16 @@ A picture-altering filter (`crop`, `hflip`, `negate`, ...) changes what gets enc
 
 - `> condor --ffmpeg-filter "crop=iw-16:ih-16"`
 - `> condor --ffmpeg-filter "eq=brightness=0.05:saturation=1.2"`
+
+## Disable Colour Data `--disable-color-data`
+
+Turns off the colour metadata appending that is on by default: the input's colour primaries, transfer characteristics, matrix coefficients, chroma sample location, range, mastering display and content light levels are normally written into the encoder's own parameters, after the pass parameters but before anything set with `--params`, so a value you set overrides it. See [`condor.encoder`'s `append_color_data`](../configuration/condor/encoder.md#colour-metadata).
+
+The flag writes the encoder's setting, so it applies to scenes detected later. Scenes already in the config keep their own encoder copies, matching how `--params` and `--encoder` behave.
+
+### Examples
+
+- `> condor -i input.mkv -o output.mkv --disable-color-data`
 
 ## Zones `--zones`
 

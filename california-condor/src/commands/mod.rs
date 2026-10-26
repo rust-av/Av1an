@@ -36,83 +36,85 @@ pub mod version;
 )]
 pub struct CondorCli {
     #[command(subcommand)]
-    pub command:           Option<Commands>,
+    pub command:            Option<Commands>,
     #[arg(long, global = true, value_name = "Config File", help = HELP_CONFIG_SHORT, long_help = HELP_CONFIG)]
-    pub config_file:       Option<PathBuf>,
+    pub config_file:        Option<PathBuf>,
     #[arg(long, global = true, value_name = "Temporary Directory", help = HELP_TEMP_SHORT, long_help = HELP_TEMP)]
-    pub temp:              Option<PathBuf>,
+    pub temp:               Option<PathBuf>,
     #[arg(long, global = true, value_name = "Log File", help = HELP_LOGS_SHORT, long_help = HELP_LOGS)]
-    pub logs:              Option<PathBuf>,
+    pub logs:               Option<PathBuf>,
     /// Enable verbose output and logging.
     #[arg(long, global = true, default_value_t = false)]
-    pub verbose:           bool,
+    pub verbose:            bool,
     /// Display Encoder, VapourSynth and quality metric library installation
     /// information.
     #[arg(short('v'), long, global = true, default_value_t = false)]
-    pub version:           bool,
+    pub version:            bool,
     // Main command arguments
     #[arg(long, short('i'), value_name = "Input", help = HELP_INPUT_SHORT, long_help = HELP_INPUT)]
-    pub input:             Option<PathBuf>,
+    pub input:              Option<PathBuf>,
     #[arg(long, short('o'), value_name = "Output", help = HELP_OUTPUT_SHORT, long_help = HELP_OUTPUT)]
-    pub output:            Option<PathBuf>,
+    pub output:             Option<PathBuf>,
     #[arg(long, value_name = "Scene Detector Input", help = HELP_SCD_INPUT_SHORT, long_help = HELP_SCD_INPUT)]
-    pub scd_input:         Option<PathBuf>,
+    pub scd_input:          Option<PathBuf>,
     #[arg(long, value_name = "Target Quality Input", help = HELP_TQ_INPUT_SHORT, long_help = HELP_TQ_INPUT)]
-    pub tq_input:          Option<PathBuf>,
+    pub tq_input:           Option<PathBuf>,
     #[arg(long, value_name = "Decoder", help = HELP_DECODER_SHORT, long_help = HELP_DECODER)]
-    pub decoder:           Option<DecoderMethod>,
+    pub decoder:            Option<DecoderMethod>,
     #[arg(long, value_name = "Decoder", help = HELP_SCD_DECODER_SHORT, long_help = HELP_SCD_DECODER)]
-    pub scd_decoder:       Option<DecoderMethod>,
+    pub scd_decoder:        Option<DecoderMethod>,
     #[arg(long, value_name = "Decoder", help = HELP_TQ_DECODER_SHORT, long_help = HELP_TQ_DECODER)]
-    pub tq_decoder:        Option<DecoderMethod>,
+    pub tq_decoder:         Option<DecoderMethod>,
     #[arg(long, value_name = "VapourSynth Filters", help = HELP_FILTERS_SHORT, long_help = HELP_FILTERS)]
-    pub filters:           Option<Vec<VapourSynthFilter>>,
+    pub filters:            Option<Vec<VapourSynthFilter>>,
     #[arg(long, value_name = "VapourSynth Filters", help = HELP_SCD_FILTERS_SHORT, long_help = HELP_SCD_FILTERS)]
-    pub scd_filters:       Option<Vec<VapourSynthFilter>>,
+    pub scd_filters:        Option<Vec<VapourSynthFilter>>,
     #[arg(long, value_name = "VapourSynth Filters", help = HELP_TQ_FILTERS_SHORT, long_help = HELP_TQ_FILTERS)]
-    pub tq_filters:        Option<Vec<VapourSynthFilter>>,
+    pub tq_filters:         Option<Vec<VapourSynthFilter>>,
     #[arg(long, value_name = "VapourSynth Arguments", help = HELP_VS_ARGS_SHORT, long_help = HELP_VS_ARGS)]
-    pub vs_args:           Option<Vec<String>>,
+    pub vs_args:            Option<Vec<String>>,
     #[arg(long, value_name = "VapourSynth Arguments", help = HELP_SCD_VS_ARGS_SHORT, long_help = HELP_SCD_VS_ARGS)]
-    pub scd_vs_args:       Option<Vec<String>>,
+    pub scd_vs_args:        Option<Vec<String>>,
     #[arg(long, value_name = "VapourSynth Arguments", help = HELP_TQ_VS_ARGS_SHORT, long_help = HELP_TQ_VS_ARGS)]
-    pub tq_vs_args:        Option<Vec<String>>,
+    pub tq_vs_args:         Option<Vec<String>>,
     #[arg(long, value_name = "Concatenation Method", help = HELP_CONCAT_SHORT, long_help = HELP_CONCAT)]
-    pub concat:            Option<ConcatenationMethod>,
+    pub concat:             Option<ConcatenationMethod>,
     #[arg(long, value_name = "Category", value_enum, value_delimiter = ',', help = HELP_DISCARD_SHORT, long_help = HELP_DISCARD)]
-    pub discard:           Option<Vec<DiscardCategory>>,
+    pub discard:            Option<Vec<DiscardCategory>>,
     /// The amount of encoder processes to use at once
     #[arg(long, short('w'), value_name = "Workers", help = HELP_WORKERS_SHORT, long_help = HELP_WORKERS)]
-    pub workers:           Option<u8>,
+    pub workers:            Option<u8>,
     #[arg(long, short('e'), value_name = "Encoder", help = HELP_ENCODER_SHORT, long_help = HELP_ENCODER)]
-    pub encoder:           Option<EncoderMethod>,
+    pub encoder:            Option<EncoderMethod>,
     #[arg(long, value_name = "Passes", help = HELP_PASSES_SHORT, long_help = HELP_PASSES)]
-    pub passes:            Option<u8>,
+    pub passes:             Option<u8>,
     #[arg(long, value_name = "Encoder Parameters", allow_hyphen_values = true, help = HELP_PARAMS_SHORT, long_help = HELP_PARAMS)]
-    pub params:            Option<String>,
+    pub params:             Option<String>,
     #[arg(long, value_name = "Encoder Parameters", allow_hyphen_values = true, help = HELP_TQ_PARAMS_SHORT, long_help = HELP_TQ_PARAMS)]
-    pub tq_params:         Option<String>,
+    pub tq_params:          Option<String>,
     #[arg(long, value_name = "ISO", help = HELP_PHOTON_NOISE_SHORT, long_help = HELP_PHOTON_NOISE)]
-    pub photon_noise:      Option<u32>,
+    pub photon_noise:       Option<u32>,
     #[arg(long, value_name = "ISO", help = HELP_CHROMA_NOISE_SHORT, long_help = HELP_CHROMA_NOISE)]
-    pub chroma_noise:      Option<u32>,
+    pub chroma_noise:       Option<u32>,
     #[arg(long, value_name = "FFmpeg Filter", allow_hyphen_values = true, help = HELP_FFMPEG_FILTER_SHORT, long_help = HELP_FFMPEG_FILTER)]
-    pub ffmpeg_filter:     Option<String>,
+    pub ffmpeg_filter:      Option<String>,
+    #[arg(long, default_value_t = false, help = HELP_DISABLE_COLOR_DATA_SHORT, long_help = HELP_DISABLE_COLOR_DATA)]
+    pub disable_color_data: bool,
     #[arg(long, value_name = "Zone", allow_hyphen_values = true, help = HELP_ZONES_SHORT, long_help = HELP_ZONES)]
-    pub zones:             Option<Vec<String>>,
+    pub zones:              Option<Vec<String>>,
     #[arg(long, value_name = "Metric", help = HELP_TARGET_METRIC_SHORT, long_help = HELP_TARGET_METRIC)]
-    pub target_metric:     Option<QualityMetric>,
+    pub target_metric:      Option<QualityMetric>,
     #[arg(long, value_name = "Score", help = HELP_TARGET_SHORT, long_help = HELP_TARGET)]
-    pub target:            Option<f64>,
+    pub target:             Option<f64>,
     #[arg(long, value_name = "Quantizer", help = HELP_MINIMUM_QUANTIZER_SHORT, long_help = HELP_MINIMUM_QUANTIZER)]
-    pub minimum_quantizer: Option<u8>,
+    pub minimum_quantizer:  Option<u8>,
     #[arg(long, value_name = "Quantizer", help = HELP_MAXIMUM_QUANTIZER_SHORT, long_help = HELP_MAXIMUM_QUANTIZER)]
-    pub maximum_quantizer: Option<u8>,
+    pub maximum_quantizer:  Option<u8>,
     #[arg(long, value_name = "Profile", help = HELP_TARGET_QUALITY_PROFILE_SHORT, long_help = HELP_TARGET_QUALITY_PROFILE)]
-    pub target_profile:    Option<QualityProfile>,
+    pub target_profile:     Option<QualityProfile>,
     /// Skip Scene Detection. Useful when encoding a subset of scenes.
     #[arg(long, default_value_t = false)]
-    pub skip_scd:          bool,
+    pub skip_scd:           bool,
 }
 
 impl CondorCli {
@@ -191,34 +193,38 @@ pub enum Commands {
     #[command(args_conflicts_with_subcommands = true)]
     Init {
         #[command(subcommand)]
-        edit:          Option<handlers::init::InitAction>,
+        edit:               Option<handlers::init::InitAction>,
         #[arg(value_name = "Input", help = HELP_INPUT_SHORT, long_help = HELP_INPUT)]
-        input:         Option<PathBuf>,
+        input:              Option<PathBuf>,
         #[arg(value_name = "Output", help = HELP_OUTPUT_SHORT, long_help = HELP_OUTPUT)]
-        output:        Option<PathBuf>,
+        output:             Option<PathBuf>,
         #[arg(long, value_name = "Decoder", help = HELP_DECODER_SHORT, long_help = HELP_DECODER)]
-        decoder:       Option<DecoderMethod>,
+        decoder:            Option<DecoderMethod>,
         #[arg(long, value_name = "VapourSynth Filters", help = HELP_FILTERS_SHORT, long_help = HELP_FILTERS)]
-        filters:       Option<Vec<VapourSynthFilter>>,
+        filters:            Option<Vec<VapourSynthFilter>>,
         #[arg(long, value_name = "VapourSynth Arguments", help = HELP_VS_ARGS_SHORT, long_help = HELP_VS_ARGS)]
-        vs_args:       Option<Vec<String>>,
+        vs_args:            Option<Vec<String>>,
         #[arg(long, value_name = "Concatenation Method", help = HELP_CONCAT_SHORT, long_help = HELP_CONCAT)]
-        concat:        Option<ConcatenationMethod>,
+        concat:             Option<ConcatenationMethod>,
         #[arg(long, value_name = "Category", value_enum, value_delimiter = ',', help = HELP_DISCARD_SHORT, long_help = HELP_DISCARD)]
-        discard:       Option<Vec<DiscardCategory>>,
+        discard:            Option<Vec<DiscardCategory>>,
         /// The amount of encoder processes to use at once
         #[arg(long, short('w'), value_name = "Workers", help = HELP_WORKERS_SHORT, long_help = HELP_WORKERS)]
-        workers:       Option<u8>,
+        workers:            Option<u8>,
         #[arg(long, short('e'), value_name = "Encoder", help = HELP_ENCODER_SHORT, long_help = HELP_ENCODER)]
-        encoder:       Option<EncoderMethod>,
+        encoder:            Option<EncoderMethod>,
         #[arg(long, value_name = "Encoder Parameters", allow_hyphen_values = true, help = HELP_PARAMS_SHORT, long_help = HELP_PARAMS)]
-        params:        Option<String>,
+        params:             Option<String>,
         #[arg(long, value_name = "ISO", help = HELP_PHOTON_NOISE_SHORT, long_help = HELP_PHOTON_NOISE)]
-        photon_noise:  Option<u32>,
+        photon_noise:       Option<u32>,
+        /// Do not append the input's colour and HDR metadata to the encoder
+        /// parameters.
+        #[arg(long, default_value_t = false, help = HELP_DISABLE_COLOR_DATA_SHORT, long_help = HELP_DISABLE_COLOR_DATA)]
+        disable_color_data: bool,
         #[arg(long, value_name = "Metric", help = HELP_TARGET_METRIC_SHORT, long_help = HELP_TARGET_METRIC)]
-        target_metric: Option<QualityMetric>,
+        target_metric:      Option<QualityMetric>,
         #[arg(long, value_name = "Score", help = HELP_TARGET_SHORT, long_help = HELP_TARGET)]
-        target:        Option<f64>,
+        target:             Option<f64>,
     },
     /// Detect scenes (Triggers TUI).
     ///
@@ -1009,6 +1015,32 @@ mod tests {
             }
 
             #[test]
+            fn with_disable_color_data() {
+                let test_video = get_test_video();
+                let temp = tempfile::tempdir().expect("temp directory");
+                let output = temp.path().join("out.mkv");
+
+                let result = CondorCli::try_parse_from([
+                    "condor",
+                    "init",
+                    test_video.path.to_str().expect("test_video path is valid"),
+                    output.to_str().expect("output path is valid"),
+                    "--disable-color-data",
+                ]);
+                assert_matches!(
+                    result,
+                    Ok(CondorCli {
+                        command: Some(Commands::Init {
+                            disable_color_data: true,
+                            ..
+                        }),
+                        ..
+                    }),
+                    "\"condor init INPUT OUTPUT --disable-color-data\" parses"
+                );
+            }
+
+            #[test]
             fn with_invalid_optional_flags() {
                 let result = CondorCli::try_parse_from([
                     "condor",
@@ -1213,6 +1245,29 @@ mod tests {
                         ..
                     }),
                     "\"condor --input INPUT --output OUTPUT --ffmpeg-filter ...\" parses"
+                );
+            }
+
+            #[test]
+            fn with_disable_color_data() {
+                let test_video = get_test_video();
+
+                let result = CondorCli::try_parse_from([
+                    "condor",
+                    "--input",
+                    test_video.path.to_str().expect("test_video path is valid"),
+                    "--output",
+                    "./out.mkv",
+                    "--disable-color-data",
+                ]);
+                assert_matches!(
+                    result,
+                    Ok(CondorCli {
+                        command: None,
+                        disable_color_data: true,
+                        ..
+                    }),
+                    "\"condor --input INPUT --output OUTPUT --disable-color-data\" parses"
                 );
             }
 

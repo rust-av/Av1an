@@ -63,8 +63,8 @@ impl ParallelEncoder {
                     let task_rx = task_rx.clone();
                     let results_tx = results_tx.clone();
                     let progress_tx = progress_tx.clone();
-                    let (headers, errored, cancelled, total_final) =
-                        (&headers, &errored, &cancelled, &total_final);
+                    let (headers, errored, cancelled, total_final, clip_info) =
+                        (&headers, &errored, &cancelled, &total_final, &clip_info);
                     handles.push(s.spawn(
                         move || -> Result<Vec<(usize, ParallelEncoderResult)>> {
                             // Native decoders must be opened on the reading thread.
@@ -111,7 +111,12 @@ impl ParallelEncoder {
                                     });
                                     let (encoder, temp) = (&task.encoder, &temp_output);
                                     let encoder_thread = s2.spawn(move || {
-                                        encoder.encode_with_stream(frx, temp, encode_progress_tx)
+                                        encoder.encode_with_stream(
+                                            frx,
+                                            temp,
+                                            encode_progress_tx,
+                                            clip_info,
+                                        )
                                     });
                                     // Blocks when the encoder lags.
                                     let produced =

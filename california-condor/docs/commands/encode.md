@@ -133,12 +133,14 @@ A picture-altering filter (`crop`, `hflip`, `negate`, ...) changes what gets enc
 - `set passes N` — number of encoder passes (`≥ 1`); rejected for single-pass-only `ffmpeg`.
 - `set params "--crf 16 --tune 0"` — merges encoder parameters into the current encoder's options; `reset params` restores the encoder's defaults.
 - `set photon-noise ISO [--chroma-noise ISO]` — sets the Photon Noise table; rejected for encoders that do not support Photon Noise; `reset photon-noise` clears it.
+- `set append-color-data [on|off]` — whether the input's colour and HDR metadata is appended to the encoder parameters; defaults to `on`, and `reset append-color-data` restores that.
 - `set ffmpeg-filter FILTER` — sets the FFmpeg filtergraph; `reset ffmpeg-filter` clears it.
 - `info [KEY]` prints JSON for one key or both `parallel_encoder` and `encoder`; `reset KEY` resets one key, and a bare `reset` restores both to their defaults (preserving the temp-derived `scenes-directory`).
 
 ```bash
 $ condor encode set workers 4
 $ condor encode set photon-noise 800 --chroma-noise 200
+$ condor encode set append-color-data off
 $ condor encode set ffmpeg-filter "crop=iw-16:ih-16"
 $ condor encode reset photon-noise
 ```

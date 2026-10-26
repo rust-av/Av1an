@@ -58,6 +58,7 @@ pub fn init_handler(
     encoder: Option<&EncoderMethod>,
     params: Option<&str>,
     photon_noise: Option<u32>,
+    append_color_data: bool,
     target_metric: Option<&QualityMetricBase>,
     target: Option<f64>,
 ) -> Result<()> {
@@ -93,6 +94,7 @@ pub fn init_handler(
         photon_noise,
         None,
         None,
+        Some(append_color_data),
     )?;
     configure_parallel_encoder(&mut configuration, None, None, None, None, workers)?;
     configure_target_quality(
@@ -371,6 +373,7 @@ impl ConfigCommand for InitCrud {
                     *photon_noise,
                     None,
                     None,
+                    None,
                 )?;
                 if let Some(executable) = executable {
                     configuration.condor.encoder.set_executable(Some(executable.clone()));
@@ -584,6 +587,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             None,
             None,
         )
@@ -643,10 +647,10 @@ mod tests {
             filters:       custom_filters.clone(),
         };
         expected_config.condor.encoder = Encoder::AOM {
-            executable:    None,
-            pass:          EncoderPasses::All(2),
-            options:       custom_encoder_parameters,
-            photon_noise:  Some(PhotonNoise {
+            executable:        None,
+            pass:              EncoderPasses::All(2),
+            options:           custom_encoder_parameters,
+            photon_noise:      Some(PhotonNoise {
                 iso:        4800,
                 chroma_iso: None,
                 width:      None,
@@ -655,7 +659,8 @@ mod tests {
                 ccb:        None,
                 ccr:        None,
             }),
-            ffmpeg_filter: None,
+            ffmpeg_filter:     None,
+            append_color_data: true,
         };
         expected_config.condor.sequence_config.parallel_encoder.workers = Some(2);
         expected_config.condor.sequence_config.target_quality = Some(TargetQualityConfig {
@@ -688,6 +693,7 @@ mod tests {
             Some(&EncoderMethod::AOM),
             Some("--cpu-used=7"),
             Some(4800),
+            true,
             Some(&QualityMetricBase::SSIMULACRA2),
             Some(75.0),
         )
@@ -704,6 +710,42 @@ mod tests {
         );
         check_basic_config(&config, &expected_config);
         assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    /// `--disable-color-data` writes `append_color_data: false` into the
+    /// encoder the configuration starts with.
+    #[test]
+    fn init_disable_color_data_turns_appending_off() {
+        let test_video = get_test_video();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+
+        init_handler(
+            Some(&config_path),
+            None,
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+        )
+        .expect("init_handler should succeed");
+
+        let (config, _) = load_configuration(Some(&config_path)).expect("config loads");
+        assert!(
+            !config.condor.encoder.append_color_data(),
+            "append_color_data is false"
+        );
     }
 
     /// `condor init` with only INPUT parses, because `init` also carries the
@@ -769,6 +811,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             None,
             None,
         );

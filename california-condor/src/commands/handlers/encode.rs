@@ -16,7 +16,7 @@ use crate::{
     commands::{
         DecoderMethod,
         EncoderMethod,
-        config::{ConfigAction, ConfigCommand, InputOverride, PropertyChange},
+        config::{ConfigAction, ConfigCommand, InputOverride, PropertyChange, Toggle},
         handlers::{
             apply_input_filters,
             apply_stream_concurrently,
@@ -58,6 +58,7 @@ pub fn encode_handler(
         photon_noise,
         chroma_noise,
         ffmpeg_filter,
+        None,
     )?;
     configure_parallel_encoder(
         &mut configuration,
@@ -121,8 +122,9 @@ pub fn configure_parallel_encoder(
 /// [`super::scenes`].
 ///
 /// Switching the method starts from that encoder's defaults; passes,
-/// merged parameters, Photon Noise and the FFmpeg filter are written after
-/// the rebuild so a switch cannot silently drop them.
+/// merged parameters, Photon Noise, the FFmpeg filter and colour metadata
+/// appending are written after the rebuild so a switch cannot silently drop
+/// them.
 #[allow(clippy::too_many_arguments)]
 pub fn configure_encoder(
     encoder: &mut Encoder,
@@ -132,6 +134,7 @@ pub fn configure_encoder(
     photon_noise: Option<u32>,
     chroma_noise: Option<u32>,
     ffmpeg_filter: Option<&str>,
+    append_color_data: Option<bool>,
 ) -> Result<()> {
     if let Some(method) = method {
         *encoder = Encoder::default_from_base(&method.as_encoder_base(), false);
@@ -160,6 +163,9 @@ pub fn configure_encoder(
     if let Some(ffmpeg_filter) = ffmpeg_filter {
         encoder.set_ffmpeg_filter(Some(ffmpeg_filter.to_owned()));
     }
+    if let Some(append_color_data) = append_color_data {
+        encoder.set_append_color_data(append_color_data);
+    }
 
     Ok(())
 }
@@ -185,6 +191,9 @@ pub enum EncodeKey {
     PhotonNoise,
     /// FFmpeg filtergraph applied to the frames before they reach the encoder.
     FfmpegFilter,
+    /// Whether the source's colour and HDR metadata is appended to the encoder
+    /// parameters.
+    AppendColorData,
 }
 
 /// Settings `condor encode set` can change.
@@ -244,6 +253,14 @@ pub enum EncodeSet {
     FfmpegFilter {
         #[arg(value_name = "Filter", allow_hyphen_values = true)]
         filter: String,
+    },
+    /// Whether the source's colour and HDR metadata is appended to the encoder
+    /// parameters.
+    ///
+    /// Bare `on` is the default when the value is omitted.
+    AppendColorData {
+        #[arg(value_name = "on|off")]
+        value: Option<Toggle>,
     },
 }
 
@@ -323,6 +340,7 @@ impl ConfigCommand for EncodeCrud {
             Some(EncodeKey::Params) => serde_json::to_value(encoder.parameters())?,
             Some(EncodeKey::PhotonNoise) => serde_json::to_value(encoder.photon_noise())?,
             Some(EncodeKey::FfmpegFilter) => serde_json::to_value(encoder.ffmpeg_filter())?,
+            Some(EncodeKey::AppendColorData) => serde_json::to_value(encoder.append_color_data())?,
         })
     }
 
@@ -367,6 +385,7 @@ impl ConfigCommand for EncodeCrud {
                     None,
                     None,
                     None,
+                    None,
                 )?;
                 PropertyChange::new("encoder", &configuration.condor.encoder)
             },
@@ -401,6 +420,7 @@ impl ConfigCommand for EncodeCrud {
                     None,
                     None,
                     None,
+                    None,
                 )?;
                 PropertyChange::new("params", configuration.condor.encoder.parameters())
             },
@@ -420,6 +440,7 @@ impl ConfigCommand for EncodeCrud {
                     Some(*iso),
                     *chroma_noise,
                     None,
+                    None,
                 )?;
                 PropertyChange::new("photon-noise", configuration.condor.encoder.photon_noise())
             },
@@ -438,10 +459,21 @@ impl ConfigCommand for EncodeCrud {
                     None,
                     None,
                     Some(filter),
+                    None,
                 )?;
                 PropertyChange::new(
                     "ffmpeg-filter",
                     configuration.condor.encoder.ffmpeg_filter(),
+                )
+            },
+            EncodeSet::AppendColorData {
+                value,
+            } => {
+                let enabled = value.unwrap_or(Toggle::On).enabled();
+                configuration.condor.encoder.set_append_color_data(enabled);
+                PropertyChange::new(
+                    "append-color-data",
+                    configuration.condor.encoder.append_color_data(),
                 )
             },
         }
@@ -541,6 +573,13 @@ impl ConfigCommand for EncodeCrud {
                     serde_json::to_value(configuration.condor.encoder.ffmpeg_filter())?,
                 )
             },
+            Some(EncodeKey::AppendColorData) => {
+                configuration.condor.encoder.set_append_color_data(true);
+                (
+                    "append-color-data",
+                    serde_json::to_value(configuration.condor.encoder.append_color_data())?,
+                )
+            },
         };
         Ok(Some(PropertyChange {
             property: property.to_owned(),
@@ -608,6 +647,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             None,
             None,
         )
@@ -727,6 +767,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             None,
             None,
         )
@@ -793,6 +834,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             None,
             None,
         )

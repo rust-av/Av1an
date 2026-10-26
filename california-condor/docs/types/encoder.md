@@ -36,6 +36,17 @@ Each encoder ships with Condor defaults (merged with `--params`):
 
 Target Quality (`--tq-params`) additionally strips psychovisual parameters (e.g. film-grain tables) for metric accuracy.
 
+## Colour Metadata
+
+Every encoder carries an `append_color_data` boolean that defaults to `true`.
+When set, the input's colour and HDR metadata — primaries, transfer
+characteristics, matrix coefficients, chroma sample location, range, mastering
+display and content light level — is written into the encoder's parameters
+after the pass parameters and before `options`, so a matching user parameter
+overrides it. Set it to `false` to leave the command line untouched. See
+[`condor.encoder`'s Colour Metadata](../configuration/condor/encoder.md#colour-metadata)
+for the per-encoder flags.
+
 ## Photon Noise
 
 `--photon-noise` / `--chroma-noise` (Film Grain Synthesis tables) are only compatible with `aom`, `svt-av1`, `rav1e`, and `avm`. Do not combine with internal encoder grain (e.g. `--film-grain` in `svt-av1`). Minimum ISO `200` recommended against banding.

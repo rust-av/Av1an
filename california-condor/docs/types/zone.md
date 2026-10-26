@@ -34,6 +34,7 @@ The [`--zones`](../commands/condor.md#zones---zones) flag and [`zone`](../comman
 | `--chroma-iso` | Chroma ISO strength for the Photon Noise table |
 | `--width` `--height` | Photon Noise table dimensions, defaulting to the input's |
 | `--sy` `--ccb` `--ccr` | Comma-separated Photon Noise tables for the Y, Cb and Cr planes |
+| `--append-color-data` | Whether the input's colour and HDR metadata is appended to the encoder parameters, as `on`/`off` (defaults to `on`) |
 
 An encoder name is required whenever the zone sets options, Photon Noise or a filtergraph; a zone that only caps scene length needs none.
 
@@ -44,6 +45,7 @@ Merging keeps whatever the zone does not set: options are merged key by key, and
 - `condor zone '-1 200 svt-av1 "--preset 3 --crf 23" --iso 400'`
 - `condor zone '-1 200 replace aom("/tools/aomenc") "--cpu-used=4" --maximum-frames 240'`
 - `condor zone '200 -1 x265 "--crf 18" --ffmpeg-filter "crop=iw-16:ih-16"'`
+- `condor zone '-1 200 x264 --append-color-data off'`
 
 ## Zone Files
 
@@ -65,7 +67,8 @@ A value that names an existing file is read as a zone file, by extension:
                     "base": "SVTAV1",
                     "executable": "/tools/fish",
                     "options": { "Merge": "--preset 3 --crf 23" },
-                    "photon_noise": { "Merge": { "iso": 400, "chroma_iso": 800 } }
+                    "photon_noise": { "Merge": { "iso": 400, "chroma_iso": 800 } },
+                    "append_color_data": false
                 }
             }
         }
@@ -73,4 +76,4 @@ A value that names an existing file is read as a zone file, by extension:
 }
 ```
 
-The JSON format is lossless: `"Replace"` swaps the whole encoder instead of merging, `options` and `photon_noise` take their own `"Replace"` or `"Merge"`, and a `photon_noise` `"Replace"` needs an `iso`.
+The JSON format is lossless: `"Replace"` swaps the whole encoder instead of merging, `options` and `photon_noise` take their own `"Replace"` or `"Merge"`, and a `photon_noise` `"Replace"` needs an `iso`. `append_color_data` is a nullable boolean on the merge object; `null` (or leaving it out) keeps the scene's own value.

@@ -117,6 +117,7 @@ fn main() -> Result<()> {
         options,
         photon_noise: None,
         ffmpeg_filter: None,
+        append_color_data: true,
     };
 
     // Configure Sequences SceneDetector, ParallelEncoder, and SceneConcatenator

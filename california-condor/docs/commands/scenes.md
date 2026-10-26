@@ -90,11 +90,12 @@ Changes the named setting of every addressed scene. Nothing is saved unless ever
 | -------- | ------- | ----- |
 | `start FRAME` | The frame the scene starts at (inclusive) | |
 | `end FRAME` | The frame the scene ends at (exclusive) | |
-| `encoder ENCODER` | The scene's encoder, from that encoder's defaults | `--executable PATH`, `--passes PASSES`, `--params PARAMS`, `--iso LUMA`, `--chroma-iso CHROMA`, `--ffmpeg-filter FILTER` |
+| `encoder ENCODER` | The scene's encoder, from that encoder's defaults | `--executable PATH`, `--passes PASSES`, `--params PARAMS`, `--iso LUMA`, `--chroma-iso CHROMA`, `--append-color-data [on\|off]`, `--ffmpeg-filter FILTER` |
 | `executable PATH` | The encoder binary to use | |
 | `passes PASSES` | How many passes the encoder makes | |
 | `params PARAMS` | Encoder parameters (`--crf 16 --tune 0`), merged into the encoder's own | |
 | `photon-noise ISO` | The Photon Noise table's luma ISO | `--chroma-noise ISO` |
+| `append-color-data [on\|off]` | Whether the input's colour and HDR metadata is appended to the encoder parameters (defaults to `on`) | |
 | `ffmpeg-filter FILTER` | A filtergraph applied to the frames before they reach the encoder | |
 | `sub-scenes RANGE...` | The scene's sub-scenes, as `START-END` ranges; `none` clears them | |
 
@@ -128,6 +129,7 @@ Overlapping scenes are not repaired for you: the neighbouring scene keeps its ra
 ```bash
 $ condor scenes 43-46 set encoder svt-av1 --passes 2 --params "--crf 18" --iso 800 --chroma-iso 200
 $ condor scenes 2 set encoder x265 --executable /tools/x265 --params "--crf 19 --tune 0"
+$ condor scenes 2 set encoder x264 --append-color-data off
 ```
 
 The individual properties remain available when only one setting changes:
@@ -138,6 +140,7 @@ $ condor scenes 2 set executable /tools/x265
 $ condor scenes 3 set passes 2
 $ condor scenes 2 set params "--crf 18"
 $ condor scenes 4 set photon-noise 800 --chroma-noise 200
+$ condor scenes 2 set append-color-data off
 $ condor scenes 0 set ffmpeg-filter hflip
 $ condor scenes 1 set sub-scenes 121-180 180-240
 ```

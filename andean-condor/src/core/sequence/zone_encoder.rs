@@ -122,6 +122,8 @@ pub enum DifferingField {
     PhotonNoise,
     /// The FFmpeg filtergraph.
     FfmpegFilter,
+    /// Whether colour metadata is appended.
+    AppendColorData,
     /// The encoder options once the quantizer is normalized away.
     Options,
 }
@@ -135,6 +137,7 @@ impl fmt::Display for DifferingField {
             Self::Passes => "passes",
             Self::PhotonNoise => "photon_noise",
             Self::FfmpegFilter => "ffmpeg_filter",
+            Self::AppendColorData => "append_color_data",
             Self::Options => "options",
         })
     }
@@ -239,8 +242,8 @@ impl ZonePlan {
 
 /// The first part of `other`'s encoder that differs from `reference`'s apart
 /// from the quantizer, or `None` when the two encode the same way: same base,
-/// binary, passes, FFmpeg filter, photon noise and options once the quantizer
-/// is normalized away.
+/// binary, passes, FFmpeg filter, colour-data appending, photon noise and
+/// options once the quantizer is normalized away.
 fn differing_field(reference: &Encoder, other: &Encoder) -> Option<DifferingField> {
     if reference.base() != other.base() {
         return Some(DifferingField::Base);
@@ -253,6 +256,9 @@ fn differing_field(reference: &Encoder, other: &Encoder) -> Option<DifferingFiel
     }
     if reference.ffmpeg_filter() != other.ffmpeg_filter() {
         return Some(DifferingField::FfmpegFilter);
+    }
+    if reference.append_color_data() != other.append_color_data() {
+        return Some(DifferingField::AppendColorData);
     }
     if !photon_noise_equivalent(reference, other) {
         return Some(DifferingField::PhotonNoise);
@@ -454,6 +460,7 @@ impl ZoneEncoder {
 
         let started = SystemTime::now();
         let header = Cursor::new(input.y4m_header(Some(total_frames))?.into_bytes());
+        let clip_info = input.clip_info()?;
 
         // Encoder progress reports whole-stream frame counts; the receiver
         // side of the pass re-labels them "Encode".
@@ -487,7 +494,14 @@ impl ZoneEncoder {
         let encode_thread = thread::spawn({
             let encoder = encoder.clone();
             let whole_output = whole_output.clone();
-            move || encoder.encode_with_stream(encoder_rx, &whole_output, encode_progress_tx)
+            move || {
+                encoder.encode_with_stream(
+                    encoder_rx,
+                    &whole_output,
+                    encode_progress_tx,
+                    &clip_info,
+                )
+            }
         });
 
         // Feeding by hand (rather than `y4m_frames`) keeps cancellation

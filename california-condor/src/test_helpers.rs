@@ -279,11 +279,12 @@ pub fn default_config(test_video: &TestVideo, output: &Path, temp: &Path) -> Con
                 video_tags: HashMap::new(),
             },
             encoder:         Encoder::SVTAV1 {
-                executable:    None,
-                pass:          EncoderPasses::All(1),
-                options:       EncoderBase::SVTAV1.default_parameters(),
-                photon_noise:  None,
-                ffmpeg_filter: None,
+                executable:        None,
+                pass:              EncoderPasses::All(1),
+                options:           EncoderBase::SVTAV1.default_parameters(),
+                photon_noise:      None,
+                ffmpeg_filter:     None,
+                append_color_data: true,
             },
             scenes:          vec![],
             sequence_config: CliSequenceConfig {
@@ -809,6 +810,12 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
         "{encoder_name} is {:?}",
         expected_encoder.base()
     );
+    assert_eq!(
+        encoder.append_color_data(),
+        expected_encoder.append_color_data(),
+        "{encoder_name} append_color_data is {}",
+        encoder.append_color_data()
+    );
     match expected_encoder {
         Encoder::AOM {
             executable: expected_executable,
@@ -816,6 +823,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             options: expected_options,
             photon_noise: expected_photon_noise,
             ffmpeg_filter: expected_ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::AOM { .. }, "{encoder_name} is AOM");
             match encoder {
@@ -825,6 +833,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     options,
                     photon_noise,
                     ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -855,6 +864,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             options: expected_options,
             photon_noise: expected_photon_noise,
             ffmpeg_filter: expected_ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::RAV1E { .. }, "{encoder_name} is RAV1E");
             match encoder {
@@ -864,6 +874,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     options,
                     photon_noise,
                     ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -893,6 +904,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             pass: expected_pass,
             options: expected_options,
             ffmpeg_filter: expected_ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::VPX { .. }, "{encoder_name} is VPX");
             match encoder {
@@ -901,6 +913,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     pass,
                     options,
                     ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -926,6 +939,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             options: expected_options,
             photon_noise,
             ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::SVTAV1 { .. }, "{encoder_name} is SVT-AV1");
             match encoder {
@@ -935,6 +949,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     options,
                     photon_noise: expected_photon_noise,
                     ffmpeg_filter: expected_ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -965,6 +980,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             options: expected_options,
             photon_noise: expected_photon_noise,
             ffmpeg_filter: expected_ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::AVM { .. }, "{encoder_name} is AVM");
             match encoder {
@@ -974,6 +990,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     options,
                     photon_noise,
                     ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -1003,6 +1020,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             pass: expected_pass,
             options: expected_options,
             ffmpeg_filter: expected_ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::X264 { .. }, "{encoder_name} is x264");
             match encoder {
@@ -1011,6 +1029,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     pass,
                     options,
                     ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -1035,6 +1054,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             pass: expected_pass,
             options: expected_options,
             ffmpeg_filter: expected_ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::X265 { .. }, "{encoder_name} is x265");
             match encoder {
@@ -1043,6 +1063,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     pass,
                     options,
                     ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -1067,6 +1088,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
             pass: expected_pass,
             options: expected_options,
             ffmpeg_filter: expected_ffmpeg_filter,
+            ..
         } => {
             assert_matches!(encoder, Encoder::VVenC { .. }, "{encoder_name} is VVenC");
             match encoder {
@@ -1075,6 +1097,7 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
                     pass,
                     options,
                     ffmpeg_filter,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,
@@ -1097,12 +1120,14 @@ pub fn check_encoder(encoder: &Encoder, expected_encoder: &Encoder, encoder_name
         Encoder::FFmpeg {
             executable: expected_executable,
             options: expected_options,
+            ..
         } => {
             assert_matches!(encoder, Encoder::FFmpeg { .. }, "{encoder_name} is FFmpeg");
             match encoder {
                 Encoder::FFmpeg {
                     executable,
                     options,
+                    ..
                 } => {
                     assert_eq!(
                         executable, expected_executable,

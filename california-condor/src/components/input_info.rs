@@ -1,4 +1,4 @@
-use andean_condor::core::input::clip_info::{ClipInfo, TransferFunction};
+use andean_condor::core::input::clip_info::{ClipInfo, TransferCharacteristic};
 use ratatui::{
     text::Line,
     widgets::{Block, Paragraph},
@@ -16,6 +16,15 @@ impl InputInfo {
         }
     }
 
+    /// Whether the source signals an HDR transfer characteristic.
+    #[inline]
+    fn is_hdr(&self) -> bool {
+        matches!(
+            self.clip_info.color_transfer_characteristic,
+            Some(TransferCharacteristic::SMPTE2084 | TransferCharacteristic::ARIB_STD_B67)
+        )
+    }
+
     #[inline]
     pub fn generate(&self, bordered: bool) -> Paragraph<'_> {
         let input_info = format!(
@@ -24,10 +33,7 @@ impl InputInfo {
             self.clip_info.resolution.1,
             (*self.clip_info.frame_rate.numer() as f64 / *self.clip_info.frame_rate.denom() as f64),
             self.clip_info.format_info.as_bit_depth().unwrap_or_default(),
-            match self.clip_info.transfer_characteristics {
-                TransferFunction::BT1886 => "SDR",
-                TransferFunction::SMPTE2084 => "HDR",
-            }
+            if self.is_hdr() { "HDR" } else { "SDR" }
         );
         let input_paragraph = Paragraph::new(Line::from(input_info));
         let input_paragraph = if bordered {

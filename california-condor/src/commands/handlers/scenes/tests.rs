@@ -125,13 +125,14 @@ fn encoder_edits_touch_only_their_scene() {
     let global = configuration.condor.encoder.clone();
 
     apply_set(&mut configuration, 2, &ScenesSet::Encoder {
-        encoder:       x265(),
-        executable:    None,
-        passes:        None,
-        params:        None,
-        iso:           None,
-        chroma_iso:    None,
-        ffmpeg_filter: None,
+        encoder:           x265(),
+        executable:        None,
+        passes:            None,
+        params:            None,
+        iso:               None,
+        chroma_iso:        None,
+        ffmpeg_filter:     None,
+        append_color_data: None,
     })
     .expect("the encoder switches");
     apply_set(&mut configuration, 2, &ScenesSet::Params {
@@ -173,13 +174,14 @@ fn one_set_encoder_line_applies_every_flag() {
     let mut configuration = configuration(temp.path());
 
     let (name, value) = apply_set(&mut configuration, 1, &ScenesSet::Encoder {
-        encoder:       EncoderMethod::SVTAV1,
-        executable:    None,
-        passes:        Some(2),
-        params:        Some("crf=18".to_owned()),
-        iso:           Some(800),
-        chroma_iso:    Some(200),
-        ffmpeg_filter: Some("hflip".to_owned()),
+        encoder:           EncoderMethod::SVTAV1,
+        executable:        None,
+        passes:            Some(2),
+        params:            Some("crf=18".to_owned()),
+        iso:               Some(800),
+        chroma_iso:        Some(200),
+        ffmpeg_filter:     Some("hflip".to_owned()),
+        append_color_data: None,
     })
     .expect("the encoder and its settings change at once");
 
@@ -204,13 +206,14 @@ fn encoder_capability_rules_apply_to_the_new_encoder() {
     let mut configuration = configuration(temp.path());
 
     let photon_noise = apply_set(&mut configuration, 0, &ScenesSet::Encoder {
-        encoder:       x265(),
-        executable:    None,
-        passes:        None,
-        params:        None,
-        iso:           Some(800),
-        chroma_iso:    None,
-        ffmpeg_filter: None,
+        encoder:           x265(),
+        executable:        None,
+        passes:            None,
+        params:            None,
+        iso:               Some(800),
+        chroma_iso:        None,
+        ffmpeg_filter:     None,
+        append_color_data: None,
     })
     .expect_err("x265 has no Photon Noise table");
     assert!(
@@ -224,25 +227,27 @@ fn encoder_capability_rules_apply_to_the_new_encoder() {
     );
 
     let passes = apply_set(&mut configuration, 1, &ScenesSet::Encoder {
-        encoder:       EncoderMethod::FFmpeg,
-        executable:    None,
-        passes:        Some(2),
-        params:        None,
-        iso:           None,
-        chroma_iso:    None,
-        ffmpeg_filter: None,
+        encoder:           EncoderMethod::FFmpeg,
+        executable:        None,
+        passes:            Some(2),
+        params:            None,
+        iso:               None,
+        chroma_iso:        None,
+        ffmpeg_filter:     None,
+        append_color_data: None,
     })
     .expect_err("FFmpeg is single-pass");
     assert!(passes.to_string().contains("single-pass only"), "{passes}");
 
     let chroma = apply_set(&mut configuration, 1, &ScenesSet::Encoder {
-        encoder:       EncoderMethod::SVTAV1,
-        executable:    None,
-        passes:        None,
-        params:        None,
-        iso:           None,
-        chroma_iso:    Some(200),
-        ffmpeg_filter: None,
+        encoder:           EncoderMethod::SVTAV1,
+        executable:        None,
+        passes:            None,
+        params:            None,
+        iso:               None,
+        chroma_iso:        Some(200),
+        ffmpeg_filter:     None,
+        append_color_data: None,
     })
     .expect_err("chroma ISO needs a luma ISO");
     assert!(
@@ -358,13 +363,14 @@ fn resets_restore_what_a_detection_would_have_written() {
     let global = configuration.condor.encoder.clone();
 
     apply_set(&mut configuration, 2, &ScenesSet::Encoder {
-        encoder:       x265(),
-        executable:    None,
-        passes:        None,
-        params:        None,
-        iso:           None,
-        chroma_iso:    None,
-        ffmpeg_filter: None,
+        encoder:           x265(),
+        executable:        None,
+        passes:            None,
+        params:            None,
+        iso:               None,
+        chroma_iso:        None,
+        ffmpeg_filter:     None,
+        append_color_data: None,
     })
     .expect("the encoder switches");
     apply_set(&mut configuration, 2, &ScenesSet::SubScenes {
@@ -384,13 +390,14 @@ fn resets_restore_what_a_detection_would_have_written() {
     assert_eq!(configuration.condor.scenes[2].sub_scenes, None);
 
     apply_set(&mut configuration, 0, &ScenesSet::Encoder {
-        encoder:       x265(),
-        executable:    None,
-        passes:        None,
-        params:        None,
-        iso:           None,
-        chroma_iso:    None,
-        ffmpeg_filter: None,
+        encoder:           x265(),
+        executable:        None,
+        passes:            None,
+        params:            None,
+        iso:               None,
+        chroma_iso:        None,
+        ffmpeg_filter:     None,
+        append_color_data: None,
     })
     .expect("the encoder switches");
     let _ = reset_scene(&mut configuration, 0, &global).expect("the scene resets");

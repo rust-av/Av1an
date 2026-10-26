@@ -56,6 +56,7 @@ pub fn start_handler(
     photon_noise: Option<u32>,
     chroma_noise: Option<u32>,
     ffmpeg_filter: Option<&str>,
+    append_color_data: Option<bool>,
     target_metric: Option<&QualityMetric>,
     target: Option<f64>,
     minimum_quantizer: Option<u8>,
@@ -152,6 +153,7 @@ pub fn start_handler(
         photon_noise,
         chroma_noise,
         ffmpeg_filter,
+        append_color_data,
     )?;
     configure_scene_detector(
         &mut configuration,
@@ -323,6 +325,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .expect("start_handler should succeed");
 
@@ -456,10 +459,11 @@ mod tests {
             filters:       Vec::new(),
         };
         expected_config.condor.encoder = Encoder::X265 {
-            executable:    None,
-            pass:          EncoderPasses::All(3),
-            options:       custom_encoder_parameters,
-            ffmpeg_filter: None,
+            executable:        None,
+            pass:              EncoderPasses::All(3),
+            options:           custom_encoder_parameters,
+            ffmpeg_filter:     None,
+            append_color_data: true,
         };
         expected_config.condor.sequence_config.scene_detector.input = Some(Input::VapourSynth {
             path:          input_abs.clone(),
@@ -525,6 +529,7 @@ mod tests {
             Some("--preset ultrafast"),
             Some(404),
             Some(404),
+            None,
             None,
             Some(&QualityMetricBase::XPSNR),
             Some(40.0),
@@ -664,10 +669,11 @@ mod tests {
             filters:       Vec::new(),
         };
         expected_config.condor.encoder = Encoder::X265 {
-            executable:    None,
-            pass:          EncoderPasses::All(3),
-            options:       custom_encoder_parameters,
-            ffmpeg_filter: None,
+            executable:        None,
+            pass:              EncoderPasses::All(3),
+            options:           custom_encoder_parameters,
+            ffmpeg_filter:     None,
+            append_color_data: true,
         };
         expected_config.condor.sequence_config.scene_detector.input = Some(Input::VapourSynth {
             path:          input_abs.clone(),
@@ -733,6 +739,7 @@ mod tests {
             Some("--preset ultrafast"),
             Some(404),
             Some(404),
+            None,
             None,
             Some(&QualityMetricBase::XPSNR),
             Some(40.0),
@@ -840,10 +847,11 @@ mod tests {
         custom_encoder_parameters
             .insert("crf".to_owned(), CLIParameter::new_number("--", " ", 12.0));
         expected_config.condor.encoder = Encoder::X264 {
-            executable:    None,
-            pass:          EncoderPasses::All(1),
-            options:       custom_encoder_parameters.clone(),
-            ffmpeg_filter: None,
+            executable:        None,
+            pass:              EncoderPasses::All(1),
+            options:           custom_encoder_parameters.clone(),
+            ffmpeg_filter:     None,
+            append_color_data: true,
         };
         if let Some(ref mut tq) = expected_config.condor.sequence_config.target_quality {
             tq.metric = QualityMetric::CVVDP {
@@ -889,6 +897,7 @@ mod tests {
             Some(&EncoderMethod::X264),
             Some(1),
             Some("--preset medium --crf 12"),
+            None,
             None,
             None,
             None,
@@ -972,6 +981,56 @@ mod tests {
         );
     }
 
+    /// `--disable-color-data` writes `append_color_data: false` into the
+    /// encoder the configuration starts with.
+    #[test]
+    fn start_disable_color_data_turns_appending_off() {
+        let test_video = get_test_video();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+
+        let (config, _) = start_handler(
+            Some(&config_path),
+            None,
+            Some(&test_video.path),
+            None,
+            None,
+            Some(&output),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("start_handler should succeed");
+
+        assert!(
+            !config.condor.encoder.append_color_data(),
+            "append_color_data is false"
+        );
+    }
+
     #[test]
     fn start_input_not_found() {
         // let test_video = get_test_video();
@@ -991,6 +1050,7 @@ mod tests {
             None,
             None,
             Some(&output),
+            None,
             None,
             None,
             None,

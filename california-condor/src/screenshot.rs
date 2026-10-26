@@ -26,7 +26,7 @@ use std::{
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, point};
 use andean_condor::{
     core::input::{
-        clip_info::{ClipInfo, TransferFunction},
+        clip_info::{ClipInfo, TransferCharacteristic},
         pixel_format::PixelFormat,
     },
     ffmpeg::FFPixelFormat,
@@ -604,14 +604,19 @@ fn mock_scene_bounds() -> Vec<(usize, usize)> {
 
 fn clip_info() -> ClipInfo {
     ClipInfo {
-        num_frames:               CLIP_FRAMES,
-        format_info:              PixelFormat::VapourSynth {
+        num_frames:                    CLIP_FRAMES,
+        format_info:                   PixelFormat::VapourSynth {
             bit_depth: 10
         },
-        frame_rate:               av_format::rational::Rational64::new(24000, 1001),
-        resolution:               (CLIP_WIDTH as u32, CLIP_HEIGHT as u32),
-        color_range:              None,
-        transfer_characteristics: TransferFunction::SMPTE2084,
+        frame_rate:                    av_format::rational::Rational64::new(24000, 1001),
+        resolution:                    (CLIP_WIDTH as u32, CLIP_HEIGHT as u32),
+        color_range:                   None,
+        color_primaries:               None,
+        color_transfer_characteristic: Some(TransferCharacteristic::SMPTE2084),
+        color_space:                   None,
+        chroma_location:               None,
+        mastering_display:             None,
+        content_light_level:           None,
     }
 }
 

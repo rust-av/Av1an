@@ -12,6 +12,7 @@ Externally-tagged enum keyed by encoder base. Exactly one key per object: `AOM`,
 | `pass` | Object | Yes | All except `FFmpeg` | `{ "All": <u8> }` or `{ "Specific": [<u8>, <u8>] }`. Default `{"All": 2}` for AOM/VPX, `{"All": 1}` otherwise |
 | `options` | Object (string→CLIParameter) | Yes | All | Encoder CLI options. See [Encoder Parameters](../../types/encoder-params.md) |
 | `photon_noise` | Object or null | Yes | AOM, RAV1E, SVTAV1, AVM | See [Photon Noise](../../types/photon-noise.md). VPX/X264/X265/VVenC/FFmpeg have no such field |
+| `append_color_data` | Boolean | No | All | Appends the input's colour and HDR metadata to the encoder's parameters. Defaults to `true`. See [Colour Metadata](#colour-metadata) |
 | `ffmpeg_filter` | String or null | No | All except `FFmpeg` | FFmpeg filtergraph applied to the frames before they reach this encoder. Defaults to `null`. See [FFmpeg Filter](#ffmpeg-filter) |
 
 `CLIParameter` objects (see [Encoder Parameters](../../types/encoder-params.md)):
@@ -49,6 +50,64 @@ Externally-tagged enum keyed by encoder base. Exactly one key per object: `AOM`,
 | AVM | `(5, 250)` |
 | X264, X265, VVenC | `(5, 35)` |
 | FFmpeg | `(15, 50)` |
+
+## Colour Metadata
+
+`append_color_data` (default `true`) reads the input's colour description from
+the decoder and writes it into the encoder's own parameters: colour primaries,
+transfer characteristics, matrix coefficients, chroma sample location, range,
+SMPTE ST 2086 mastering display metadata and CTA-861.3 content light levels.
+Only the fields the source actually signals are written; nothing is invented.
+
+The parameters are inserted after the pass parameters (so `--pass`/`--stats`
+stay valid) but before `options`, so anything you set yourself wins:
+
+```json
+{
+    "X265": {
+        "executable": null,
+        "pass": { "All": 1 },
+        "options": {
+            "crf": { "Number": { "prefix": "--", "delimiter": " ", "value": 18.0 } },
+            "colorprim": { "String": { "prefix": "--", "delimiter": " ", "value": "bt709" } }
+        },
+        "append_color_data": true,
+        "ffmpeg_filter": null
+    }
+}
+```
+
+That encodes a BT.2020 source with `--colorprim bt709` because the user's option
+replaces the appended one. Set `append_color_data` to `false` to leave the
+encoder's parameters untouched.
+
+Each encoder expresses a different subset, with its own spelling:
+
+| Encoder | Flags | Not expressible |
+| ------- | ----- | --------------- |
+| `aom` | `--color-primaries`, `--transfer-characteristics`, `--matrix-coefficients`, `--chroma-sample-position` (`vertical`/`colocated` only) | Range, mastering display, content light level |
+| `avm` | The same four flags, with all six chroma sample positions | Range, mastering display, content light level |
+| `rav1e` | `--range`, `--primaries`, `--transfer`, `--matrix`, `--mastering-display`, `--content-light` | Chroma sample location |
+| `svt-av1` | `--color-primaries`, `--transfer-characteristics`, `--matrix-coefficients`, `--color-range`, `--chroma-sample-position`, `--mastering-display`, `--content-light` | Nothing |
+| `x264` | `--range`, `--colorprim`, `--transfer`, `--colormatrix`, `--chromaloc`, `--mastering-display`, `--cll` | Nothing (mastering display is written in fixed point) |
+| `x265` | `--range`, `--colorprim`, `--transfer`, `--colormatrix`, `--chromaloc`, `--master-display`, `--max-cll` | Nothing (mastering display is written in fixed point) |
+| `vvenc` | One `--additional` string of `Range`, `ColourPrimaries`, `TransferCharacteristics`, `MatrixCoefficients`, `ChromaLocInfoPresent`/`ChromaSampleLocType`, `MasteringDisplayColourVolume`, `MaxContentLightLevel` | Nothing |
+| `ffmpeg` | `-color_primaries`, `-color_trc`, `-colorspace`, `-color_range`, `-chroma_sample_location`, all emitted **before** `-i` | Mastering display, content light level (side data only) |
+| `vpx` | `--color-space` (matrix coefficients only) | Primaries, transfer, chroma sample location, range, mastering display, content light level |
+
+Values with no spelling for a given encoder are dropped rather than mangled: a
+`ChromaLocation::Center` source simply has no `--chroma-sample-position` under
+`aom`, and a versatile-gamut source signals no primaries at all. Encoders that
+need fixed-point mastering display values (x264, x265, VVenC) get the
+coordinates scaled by 50000 and the luminance by 10000.
+
+The `ffmpeg` flags are input options rather than output options because FFmpeg
+copies the colour properties out of every frame
+(`fftools/ffmpeg_enc.c`), which overwrites anything set on the encoder context.
+Passed after `-i`, `-color_primaries` and `-color_trc` are silently discarded;
+passed before it they reach the bitstream. `condor` therefore places all five
+ahead of `-i`, and an override in `options` still wins because the value is
+merged before the split.
 
 ## FFmpeg Filter
 
@@ -95,6 +154,7 @@ SVT-AV1 (init default):
             "progress": { "Number": { "prefix": "--", "delimiter": " ", "value": 2.0 } }
         },
         "photon_noise": null,
+        "append_color_data": true,
         "ffmpeg_filter": null
     }
 }
@@ -115,6 +175,7 @@ AOM with photon noise:
             "end-usage": { "String": { "prefix": "--", "delimiter": "=", "value": "q" } }
         },
         "photon_noise": { "iso": 800, "chroma_iso": null, "width": null, "height": null, "c_y": null, "ccb": null, "ccr": null },
+        "append_color_data": true,
         "ffmpeg_filter": null
     }
 }
@@ -131,18 +192,20 @@ x264 with a crop filter:
             "preset": { "Number": { "prefix": "--", "delimiter": " ", "value": 4.0 } },
             "crf": { "Number": { "prefix": "--", "delimiter": " ", "value": 18.0 } }
         },
+        "append_color_data": true,
         "ffmpeg_filter": "crop=iw-16:ih-16"
     }
 }
 ```
 
-FFmpeg (no `pass`, no `photon_noise`):
+FFmpeg (no `pass`, no `photon_noise`, colour data off):
 
 ```json
 {
     "FFmpeg": {
         "executable": null,
-        "options": {}
+        "options": {},
+        "append_color_data": false
     }
 }
 ```

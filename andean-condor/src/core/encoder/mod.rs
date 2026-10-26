@@ -23,7 +23,7 @@ use thiserror::Error;
 use tracing::info;
 
 use crate::{
-    core::input::{Input, color_range::ColorRange},
+    core::input::{Input, clip_info::ClipInfo, color_range::ColorRange},
     models::encoder::{
         Encoder,
         EncoderBase,
@@ -34,6 +34,7 @@ use crate::{
 };
 
 pub mod capability;
+pub mod color_data;
 pub mod parse;
 pub mod string_or_bytes;
 pub use capability::{Container, EncoderCapability};
@@ -114,7 +115,12 @@ impl Encoder {
     }
 
     #[inline]
-    pub fn parameters_with_output(&self, pass: (u8, u8), output: &PathBuf) -> Vec<String> {
+    pub fn parameters_with_output(
+        &self,
+        pass: (u8, u8),
+        output: &PathBuf,
+        clip_info: &ClipInfo,
+    ) -> Vec<String> {
         let output_path = output.to_str().expect("Output path should exist");
         let first_pass_file_name = output
             .file_stem()
@@ -122,14 +128,20 @@ impl Encoder {
             .to_str()
             .expect("Output path is not empty");
         let pass_parameters = self.base().pass_parameters(pass, first_pass_file_name);
+        let color_parameters = if self.append_color_data() {
+            color_data::color_parameters(self.base(), clip_info)
+        } else {
+            HashMap::new()
+        };
 
         match self {
             Encoder::AOM {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -157,8 +169,9 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 params.extend(CLIParameter::new_strings("--", " ", &[(
                     "output",
                     if pass.0 == pass.1 {
@@ -186,8 +199,9 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -215,8 +229,9 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = Vec::new();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 // Force progress 2. Progress 0-1 is unsupported
                 params.extend(CLIParameter::new_numbers("--", " ", &[("progress", 2.0)]));
                 params.extend(CLIParameter::new_strings("-", " ", &[
@@ -249,8 +264,9 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -278,8 +294,9 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -307,8 +324,9 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -336,8 +354,9 @@ impl Encoder {
                 options, ..
             } => {
                 let mut parameters = ["-i".to_owned(), "-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
                 params.extend(CLIParameter::new_strings("-", " ", &[(
                     "o",
                     if pass.0 == pass.1 {
@@ -364,9 +383,29 @@ impl Encoder {
             Encoder::FFmpeg {
                 options, ..
             } => {
-                let mut parameters: Vec<String> = ["-i".to_owned(), "-".to_owned()].to_vec();
-                let mut params = options.clone();
-                params.extend(pass_parameters);
+                let mut params = pass_parameters;
+                params.extend(color_parameters);
+                params.extend(options.clone());
+
+                // FFmpeg re-derives the encoder context's colour properties
+                // from each frame (`fftools/ffmpeg_enc.c`), so applying them
+                // as output options is a no-op. They have to describe the
+                // input instead, which also keeps a user override effective
+                // because `params` already carries their value.
+                let mut parameters = Vec::new();
+                for key in color_data::ffmpeg_input_parameters() {
+                    if let Some(value) = params.remove(*key)
+                        && let (Some(prefixed_key), Some(separate_value)) =
+                            value.to_string_pair(key)
+                    {
+                        parameters.push(prefixed_key);
+                        parameters.push(separate_value);
+                    }
+                }
+
+                parameters.push("-i".to_owned());
+                parameters.push("-".to_owned());
+
                 if let Some(codec) = params.remove("c:v") {
                     parameters.push("-c:v".to_owned());
                     parameters.push(codec.to_string_value());
@@ -417,9 +456,10 @@ impl Encoder {
                 progress_tx,
             )?),
             EncoderPasses::All(total) => {
+                let clip_info = input.clip_info()?;
                 let mut result = EncoderResult {
                     encoder:    self.base(),
-                    parameters: self.parameters_with_output((1, total), output),
+                    parameters: self.parameters_with_output((1, total), output, &clip_info),
                     status:     std::process::ExitStatus::default(),
                     stdout:     StringOrBytes::from(Vec::new()),
                     stderr:     StringOrBytes::from(Vec::new()),
@@ -458,10 +498,11 @@ impl Encoder {
 
         static BUFFER_CAPACITY: usize = 128;
         let base_encoder = self.base();
+        let clip_info = input.clip_info()?;
 
         let mut system = sysinfo::System::new();
         let mut encoder = Command::new(self.executable())
-            .args(self.parameters_with_output(pass, output))
+            .args(self.parameters_with_output(pass, output, &clip_info))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -578,7 +619,7 @@ impl Encoder {
 
         let encoder_result = EncoderResult {
             encoder:    self.base(),
-            parameters: self.parameters_with_output(pass, output),
+            parameters: self.parameters_with_output(pass, output, &clip_info),
             status:     encoder_output.status,
             stdout:     StringOrBytes::from(encoder_output.stdout),
             stderr:     stderr_output.lock().expect("mutex should acquire lock").clone().into(),
@@ -606,6 +647,7 @@ impl Encoder {
         frames_rx: crossbeam_channel::Receiver<Cursor<Vec<u8>>>,
         output: &PathBuf,
         progress_tx: mpsc::Sender<EncodeProgress>,
+        clip_info: &ClipInfo,
     ) -> Result<EncoderResult> {
         match self.passes() {
             EncoderPasses::All(1) => {
@@ -614,7 +656,13 @@ impl Encoder {
                     frame: 0,
                     usage: EncodeResourceUsage::default(),
                 })?;
-                Ok(self.encode_pass_with_stream((1, 1), frames_rx, output, progress_tx)?)
+                Ok(self.encode_pass_with_stream(
+                    (1, 1),
+                    frames_rx,
+                    output,
+                    progress_tx,
+                    clip_info,
+                )?)
             },
             EncoderPasses::Specific(current, total) => {
                 progress_tx.send(EncodeProgress {
@@ -627,6 +675,7 @@ impl Encoder {
                     frames_rx,
                     output,
                     progress_tx,
+                    clip_info,
                 )?)
             },
             EncoderPasses::All(total) => {
@@ -641,7 +690,7 @@ impl Encoder {
                 }
                 let mut result = EncoderResult {
                     encoder:    self.base(),
-                    parameters: self.parameters_with_output((1, total), output),
+                    parameters: self.parameters_with_output((1, total), output, clip_info),
                     status:     std::process::ExitStatus::default(),
                     stdout:     StringOrBytes::from(Vec::new()),
                     stderr:     StringOrBytes::from(Vec::new()),
@@ -667,6 +716,7 @@ impl Encoder {
                         frames_rx,
                         output,
                         progress_tx,
+                        clip_info,
                     )?;
                 }
                 Ok(result)
@@ -681,6 +731,7 @@ impl Encoder {
         frames_rx: crossbeam_channel::Receiver<Cursor<Vec<u8>>>,
         output: &PathBuf,
         progress_tx: mpsc::Sender<EncodeProgress>,
+        clip_info: &ClipInfo,
     ) -> Result<EncoderResult> {
         // TODO:
         // - Report mapped errors
@@ -694,7 +745,7 @@ impl Encoder {
         // println!("Encoding with params: {:?}", self.parameters(pass, output));
         // let mut system = sysinfo::System::new();
         let mut encoder = Command::new(self.executable())
-            .args(self.parameters_with_output(pass, output))
+            .args(self.parameters_with_output(pass, output, clip_info))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -870,7 +921,7 @@ impl Encoder {
 
         let encoder_result = EncoderResult {
             encoder:    self.base(),
-            parameters: self.parameters_with_output(pass, output),
+            parameters: self.parameters_with_output(pass, output, clip_info),
             status:     encoder_output.status,
             stdout:     StringOrBytes::from(encoder_output.stdout),
             stderr:     stderr_output.lock().expect("mutex should acquire lock").clone().into(),
@@ -1465,11 +1516,12 @@ impl Default for Encoder {
     #[inline]
     fn default() -> Self {
         Self::SVTAV1 {
-            executable:    None,
-            pass:          EncoderPasses::All(1),
-            options:       HashMap::new(),
-            photon_noise:  None,
-            ffmpeg_filter: None,
+            executable:        None,
+            pass:              EncoderPasses::All(1),
+            options:           HashMap::new(),
+            photon_noise:      None,
+            ffmpeg_filter:     None,
+            append_color_data: true,
         }
     }
 }
@@ -1523,4 +1575,167 @@ pub enum EncoderError {
     // EncoderFailedToEncodeFrame,
     #[error("Encoder {0} does not support photon noise")]
     PhotonNoiseNotSupported(EncoderBase),
+}
+
+#[cfg(test)]
+mod tests {
+    use av_decoders::{ColorPrimaries, ColorSpace, TransferCharacteristic};
+
+    use super::*;
+
+    fn clip_info() -> ClipInfo {
+        ClipInfo {
+            num_frames:                    24,
+            format_info:
+                crate::core::input::pixel_format::PixelFormat::VapourSynth {
+                    bit_depth: 10
+                },
+            frame_rate:                    av_format::rational::Rational64::new(24, 1),
+            resolution:                    (1920, 1080),
+            color_range:                   None,
+            color_primaries:               Some(ColorPrimaries::BT2020),
+            color_transfer_characteristic: Some(TransferCharacteristic::SMPTE2084),
+            color_space:                   Some(ColorSpace::BT2020NCL),
+            chroma_location:               None,
+            mastering_display:             None,
+            content_light_level:           None,
+        }
+    }
+
+    fn parameters(encoder: &Encoder) -> Vec<String> {
+        encoder.parameters_with_output((1, 1), &PathBuf::from("output.ivf"), &clip_info())
+    }
+
+    /// The value of `flag` in an argv vector built with a separate-value
+    /// delimiter.
+    fn value_of<'a>(parameters: &'a [String], flag: &str) -> Option<&'a str> {
+        parameters
+            .iter()
+            .position(|argument| argument == flag)
+            .and_then(|index| parameters.get(index + 1))
+            .map(String::as_str)
+    }
+
+    #[test]
+    fn colour_data_is_appended_by_default() {
+        let encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, true);
+        let parameters = parameters(&encoder);
+
+        assert_eq!(value_of(&parameters, "--color-primaries"), Some("bt2020"));
+        assert_eq!(
+            value_of(&parameters, "--transfer-characteristics"),
+            Some("smpte2084")
+        );
+        assert_eq!(
+            value_of(&parameters, "--matrix-coefficients"),
+            Some("bt2020-ncl")
+        );
+    }
+
+    #[test]
+    fn disabling_colour_data_appends_nothing() {
+        let mut encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, true);
+        encoder.set_append_color_data(false);
+        let parameters = parameters(&encoder);
+
+        assert_eq!(value_of(&parameters, "--color-primaries"), None);
+        assert_eq!(value_of(&parameters, "--transfer-characteristics"), None);
+        assert_eq!(value_of(&parameters, "--matrix-coefficients"), None);
+    }
+
+    #[test]
+    fn a_user_option_overrides_the_appended_colour_data() {
+        let mut encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, true);
+        encoder.parameters_mut().insert(
+            "color-primaries".to_owned(),
+            CLIParameter::new_string("--", " ", "bt709"),
+        );
+
+        let parameters = parameters(&encoder);
+        assert_eq!(value_of(&parameters, "--color-primaries"), Some("bt709"));
+        assert!(
+            !parameters.iter().any(|argument| argument == "bt2020"),
+            "the appended value must be replaced rather than duplicated"
+        );
+    }
+
+    #[test]
+    fn a_user_option_overrides_the_appended_hdr_metadata() {
+        let mut encoder = Encoder::default_from_base(&EncoderBase::X265, true);
+        encoder.parameters_mut().insert(
+            "max-cll".to_owned(),
+            CLIParameter::new_string("--", " ", "400,200"),
+        );
+        let clip_info = ClipInfo {
+            content_light_level: Some(av_decoders::ContentLightLevel {
+                max_cll:  1000,
+                max_fall: 400,
+            }),
+            ..clip_info()
+        };
+
+        let parameters =
+            encoder.parameters_with_output((1, 1), &PathBuf::from("output.hevc"), &clip_info);
+        assert_eq!(value_of(&parameters, "--max-cll"), Some("400,200"));
+    }
+
+    #[test]
+    fn colour_data_follows_the_pass_parameters() {
+        let mut encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, true);
+        encoder
+            .passes_mut()
+            .expect("svt-av1 takes passes")
+            .clone_from(&EncoderPasses::All(2));
+
+        let parameters =
+            encoder.parameters_with_output((1, 2), &PathBuf::from("output.ivf"), &clip_info());
+
+        // A two-pass SVT-AV1 command carries `--pass 1`; the colour data is
+        // merged after it, and both are present.
+        assert_eq!(value_of(&parameters, "--pass"), Some("1"));
+        assert_eq!(value_of(&parameters, "--color-primaries"), Some("bt2020"));
+    }
+
+    #[test]
+    fn ffmpeg_colour_data_precedes_the_input() {
+        let encoder = Encoder::default_from_base(&EncoderBase::FFmpeg, true);
+        let parameters =
+            encoder.parameters_with_output((1, 1), &PathBuf::from("output.mkv"), &ClipInfo {
+                chroma_location: Some(av_decoders::ChromaLocation::Left),
+                ..clip_info()
+            });
+        let input = parameters
+            .iter()
+            .position(|argument| argument == "-i")
+            .expect("ffmpeg reads the Y4M stream from stdin");
+
+        // `fftools/ffmpeg_enc.c` copies the colour properties out of every
+        // frame, so these only survive as input options.
+        for flag in ["-color_primaries", "-color_trc", "-colorspace", "-chroma_sample_location"] {
+            let index = parameters
+                .iter()
+                .position(|argument| argument == flag)
+                .unwrap_or_else(|| panic!("{flag} is missing"));
+            assert!(index < input, "{flag} must precede -i");
+        }
+        assert_eq!(value_of(&parameters, "-color_primaries"), Some("bt2020"));
+        assert_eq!(value_of(&parameters, "-color_trc"), Some("smpte2084"));
+        assert_eq!(value_of(&parameters, "-colorspace"), Some("bt2020nc"));
+    }
+
+    #[test]
+    fn a_user_option_overrides_the_appended_ffmpeg_colour_data() {
+        let mut encoder = Encoder::default_from_base(&EncoderBase::FFmpeg, true);
+        encoder.parameters_mut().insert(
+            "color_primaries".to_owned(),
+            CLIParameter::new_string("-", " ", "bt709"),
+        );
+
+        let parameters = parameters(&encoder);
+        assert_eq!(value_of(&parameters, "-color_primaries"), Some("bt709"));
+        assert!(
+            !parameters.iter().any(|argument| argument == "bt2020"),
+            "the appended value must be replaced rather than duplicated"
+        );
+    }
 }
