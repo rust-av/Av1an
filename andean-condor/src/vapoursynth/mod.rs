@@ -86,13 +86,10 @@ pub fn get_clip_info(node: &Node) -> Result<ClipInfo> {
         resolution:                    get_resolution(&info)?,
         color_range:                   get_color_range(node)?,
         color_primaries:               get_color_prop(node, "_Primaries")
-            .and_then(|value| i32::try_from(value).ok())
             .and_then(av_decoders::ColorPrimaries::from_raw),
         color_transfer_characteristic: get_color_prop(node, "_Transfer")
-            .and_then(|value| i32::try_from(value).ok())
             .and_then(av_decoders::TransferCharacteristic::from_raw),
         color_space:                   get_color_prop(node, "_Matrix")
-            .and_then(|value| i32::try_from(value).ok())
             .and_then(av_decoders::ColorSpace::from_raw),
         chroma_location:               get_color_prop(node, "_ChromaLocation")
             .and_then(map_vapoursynth_chroma_location),
@@ -175,7 +172,7 @@ const fn map_vapoursynth_chroma_location(
     // while the FFmpeg/H.273 numbering av-decoders uses starts at 0 for
     // "unspecified", so every value is shifted by one.
     av_decoders::ChromaLocation::from_raw(match chroma_location {
-        0..=5 => chroma_location as i32 + 1,
+        0..=5 => chroma_location + 1,
         _ => return None,
     })
 }

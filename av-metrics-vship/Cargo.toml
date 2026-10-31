@@ -13,7 +13,7 @@ license = "BSD-2-Clause-Patent"
 readme = "README.md"
 
 [dependencies]
-av-decoders = { git = "https://github.com/BoatsMcGee/av-decoders", branch = "v-0-12", version = "0.11", features = [
+av-decoders = { version = "0.12", features = [
     "ffms2",
     "vapoursynth",
 ] }

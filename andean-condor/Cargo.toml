@@ -16,7 +16,7 @@ readme = "./README.md"
 [dependencies]
 anyhow = { workspace = true }
 arrayvec = "0.7.2"
-av-decoders = { git = "https://github.com/BoatsMcGee/av-decoders", branch = "v-0-12", version = "0.11", features = [
+av-decoders = { version = "0.12", features = [
     "ffms2",
     "vapoursynth",
 ] }
@@ -25,7 +25,7 @@ av-metrics-vship = { path = "../av-metrics-vship", version = "0.1" }
 av-metrics-fmetrics = { path = "../av-metrics-fmetrics", version = "0.1" }
 av-format = "0.7"
 av-ivf = "0.5.0"
-av-scenechange = { git = "https://github.com/BoatsMcGee/av-scenechange", branch = "av-decoders-0.11.0", version = "0.25", default-features = false, features = [
+av-scenechange = { version = "0.25", default-features = false, features = [
     "asm",
     "vapoursynth",
 ] }
