@@ -55,7 +55,7 @@ jobs:
           cargo clippy --profile ci -- -D warnings
 
       - name: Install cargo-msrv
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-msrv
 
@@ -98,7 +98,7 @@ jobs:
           which ffmpeg
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: cargo-llvm-cov
 

@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install mdBook
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.5
         with:
           tool: mdbook@${{ env.MDBOOK_VERSION }}
       - name: Setup Pages
