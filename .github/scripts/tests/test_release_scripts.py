@@ -1185,7 +1185,7 @@ foreach ($relative in @('av-metrics-vship/scripts/install-libvship-windows.ps1',
         self.assertEqual(set(release["needs"]), {"linux", "windows"})
         self.assertEqual(release["permissions"], {"contents": "write"})
         self.assertEqual(release["concurrency"], {
-            "group": "av1an-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}",
+            "group": "condor-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}",
             "cancel-in-progress": "false",
         })
         steps = release["steps"]

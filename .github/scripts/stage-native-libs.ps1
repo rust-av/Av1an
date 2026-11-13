@@ -3,7 +3,7 @@
     Stages the native libraries a Windows release needs.
 
 .DESCRIPTION
-    Condor.exe opens libvmaf, libvship and fmetrics with `dlopen`, so the ones it
+    av1an.exe opens libvmaf, libvship and fmetrics with `dlopen`, so the ones it
     uses have to be beside the executable before packaging:
 
       libvmaf.dll          dlopened by av-metrics-vmaf; absence only costs VMAF.

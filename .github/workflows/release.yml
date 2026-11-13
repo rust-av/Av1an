@@ -27,7 +27,7 @@ jobs:
     # A queued old build can follow a new build. Recheck master inside this
     # non-cancelling lock; cancelling halfway through upload would mix assets.
     concurrency:
-      group: av1an-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}
+      group: condor-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

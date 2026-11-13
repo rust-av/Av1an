@@ -8,7 +8,7 @@
 //! driver stays free of any metric crate's types.
 //!
 //! The three native libraries are opened with `dlopen` and may be absent;
-//! [`availability`] reports that for every library at once, for `condor
+//! [`availability`] reports that for every library at once, for `av1an
 //! --version`.
 //!
 //! # Choosing an engine

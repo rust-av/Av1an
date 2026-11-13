@@ -47,7 +47,8 @@ FFMS_LIB_DIR=/usr/lib/x86_64-linux-gnu FFMS_INCLUDE_DIR=/usr/include cargo build
 
 ## Compiling on Windows
 
-The checked upstream `latest` release contains legacy `av1an.exe`, not this CLI.
+The loose `av1an.exe` asset on the checked upstream `latest` release is legacy
+Av1an (`v0`), not this rewrite.
 Until a release offers `av1an-windows-x64.zip`, build this source tree; see
 [Installation](./installation.md#windows-releases) for the conditional bundle layout.
 

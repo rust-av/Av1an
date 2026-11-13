@@ -16,7 +16,7 @@
 //!
 //! Nothing here can fail. Each probe returns a bool or an `Option`, so a
 //! machine with none of these libraries reports all of them absent rather than
-//! erroring, which is what lets `condor --version` print this unconditionally.
+//! erroring, which is what lets `av1an --version` print this unconditionally.
 
 use av_metrics_vmaf::VmafModel;
 
@@ -225,7 +225,7 @@ mod tests {
     use super::*;
 
     /// The report must be printable on a machine with none of these libraries,
-    /// which is what keeps `condor --version` working on a bare CI container.
+    /// which is what keeps `av1an --version` working on a bare CI container.
     #[test]
     fn availability_is_total_and_never_panics() {
         for info in libraries() {

@@ -135,7 +135,7 @@ impl ResultProvenance {
 
 fn refusal(index: usize, kind: &str, reason: &str) -> anyhow::Error {
     anyhow::anyhow!(
-        "scene {index} {kind} result cannot resume: {reason}; preserve original files and explicitly reset the applicable saved records (condor scenes {index} reset target-quality / quality-check / parallel-encoder) and recompute in an empty work directory, or use a new job. Resetting metadata does not delete physical chunks"
+        "scene {index} {kind} result cannot resume: {reason}; preserve original files and explicitly reset the applicable saved records (av1an scenes {index} reset target-quality / quality-check / parallel-encoder) and recompute in an empty work directory, or use a new job. Resetting metadata does not delete physical chunks"
     )
 }
 
@@ -651,4 +651,14 @@ pub fn quality_input<'a>(
     qc: Option<&'a QualityCheckConfig>,
 ) -> &'a Input {
     qc.and_then(|c| c.input.as_ref()).or(pe.input.as_ref()).unwrap_or(root)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn legacy_result_refusal_names_av1an_reset_command() {
+        let error = super::require_revision(None, 3, "TQ probe")
+            .expect_err("a legacy result must be refused");
+        assert!(error.to_string().contains("av1an scenes 3 reset"));
+    }
 }

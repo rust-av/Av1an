@@ -53,8 +53,8 @@ dependencies, or [Docker](docs/docker.md) for upstream image policy and local bu
 When a release provides **`av1an-windows-x64.zip`**, extract the whole archive;
 `av1an.exe` alone is not an install. Keep its mandatory FFMS2, MSVC CRT and
 DirectML DLLs together, plus metric DLLs and the `model/` subdirectory. See the
-[Windows bundle layout](docs/installation.md#windows-releases). The legacy
-`av1an.exe` release asset is not this CLI.
+[Windows bundle layout](docs/installation.md#windows-releases). The loose
+`av1an.exe` asset on existing releases is legacy Av1an (`v0`), not this rewrite.
 
 External tools required for decoding, filtering, encoding, metrics, and concatenation:
 
