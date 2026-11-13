@@ -7,7 +7,7 @@ use strum::{Display, EnumString, IntoStaticStr};
 
 use crate::vapoursynth::script_builder::{
     NodeVariableName, VapourSynthPluginScript,
-    script::{Imports, Line, ModuleAlias, ModuleName},
+    script::{Imports, Line, ModuleAlias, ModuleName, python_string_literal},
 };
 
 /// Only used for script generation
@@ -90,7 +90,9 @@ impl VapourSynthPluginScript for RescaleBuilder {
             self.base_width.map_or_else(String::new, |w| format!(", base_width = {}", w));
         let base_height_str =
             self.base_height.map_or_else(String::new, |h| format!(", base_height = {}", h));
-        let mode_str = self.mode.map_or_else(String::new, |m| format!(", mode = {}", m));
+        let mode_str = self.mode.map_or_else(String::new, |m| {
+            format!(", mode = {}", python_string_literal(&m.to_string()))
+        });
         lines.push(Line::Expression(
             "rescale_builder".to_owned(),
             format!(
