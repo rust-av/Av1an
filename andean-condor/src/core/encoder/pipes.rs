@@ -3,9 +3,59 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     process::Output,
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
 use super::*;
+
+/// How often the encoder process is sampled for CPU and memory usage.
+///
+/// Refreshing a process walks the system process table, so sampling it for
+/// every progress line costs more than the encoding it is reporting on.
+const RESOURCE_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Samples one encoder process at most once per `RESOURCE_SAMPLE_INTERVAL`.
+struct ResourceSampler {
+    pid: sysinfo::Pid,
+    system: sysinfo::System,
+    last: EncodeResourceUsage,
+    sampled_at: Option<Instant>,
+}
+
+impl ResourceSampler {
+    fn new(pid: u32) -> Self {
+        Self {
+            pid: sysinfo::Pid::from_u32(pid),
+            system: sysinfo::System::new(),
+            last: EncodeResourceUsage::default(),
+            sampled_at: None,
+        }
+    }
+
+    fn usage(&mut self) -> EncodeResourceUsage {
+        let due = self
+            .sampled_at
+            .is_none_or(|sampled_at| sampled_at.elapsed() >= RESOURCE_SAMPLE_INTERVAL);
+        if due {
+            self.system.refresh_processes_specifics(
+                sysinfo::ProcessesToUpdate::Some(&[self.pid]),
+                true,
+                sysinfo::ProcessRefreshKind::nothing()
+                    .with_cpu()
+                    .with_memory(),
+            );
+            self.last = self.system.process(self.pid).map_or_else(
+                EncodeResourceUsage::default,
+                |process| EncodeResourceUsage {
+                    cpu: process.cpu_usage(),
+                    memory: process.memory(),
+                },
+            );
+            self.sampled_at = Some(Instant::now());
+        }
+        self.last
+    }
+}
 
 #[derive(Default)]
 pub(super) struct PipeOutput {
@@ -90,7 +140,7 @@ pub(super) fn progress_reader(
 ) -> impl FnMut(&str) + Send {
     let mut progress = Some(progress);
     let mut count = 0;
-    let mut system = pid.map(|pid| (pid, sysinfo::System::new()));
+    let mut sampler = pid.map(ResourceSampler::new);
     move |line| {
         let latest = if stdout && base == EncoderBase::AVM {
             if !line.contains("POC:") {
@@ -111,18 +161,9 @@ pub(super) fn progress_reader(
         };
         frames.store(latest, Ordering::Relaxed);
         if let Some(sender) = &progress {
-            let usage = if let Some((pid, system)) = &mut system {
-                system.refresh_all();
-                system.process(sysinfo::Pid::from_u32(*pid)).map_or_else(
-                    EncodeResourceUsage::default,
-                    |process| EncodeResourceUsage {
-                        cpu: process.cpu_usage(),
-                        memory: process.memory(),
-                    },
-                )
-            } else {
-                EncodeResourceUsage::default()
-            };
+            let usage = sampler
+                .as_mut()
+                .map_or_else(EncodeResourceUsage::default, ResourceSampler::usage);
             if sender
                 .send(EncodeProgress {
                     pass,
