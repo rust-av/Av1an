@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use anyhow::{Ok, Result};
+use anyhow::{Ok, Result, bail};
 use av_scenechange::{DetectionOptions, ScenecutResult, detect_scene_changes};
 use thiserror::Error;
 use tracing::{debug, trace};
@@ -60,6 +60,7 @@ where
         if let Some(input) = &self.input {
             Input::validate(&input.as_data())?;
         }
+        self.method.validate_lengths()?;
 
         Ok(((), vec![]))
     }
@@ -302,7 +303,13 @@ where
                 let mut scenes_vec = Vec::new();
                 let mut prev_end = condor.scenes.last().map_or(0, |scene| scene.end_frame);
                 while prev_end < frames {
-                    let end = (prev_end + maximum_length).min(frames);
+                    // A zero length leaves `end` equal to `prev_end` forever, and a
+                    // length near `usize::MAX` overflows. Validation rejects the first;
+                    // saturating addition and this guard also cover direct callers.
+                    let end = prev_end.saturating_add(maximum_length).min(frames);
+                    if end <= prev_end {
+                        bail!("scene detection maximum length must be at least one frame");
+                    }
                     let scene = Scene {
                         start_frame: prev_end,
                         end_frame: end,
