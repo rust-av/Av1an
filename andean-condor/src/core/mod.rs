@@ -226,7 +226,10 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
     ) -> Result<((), SequenceWarningsTuple)> {
         cancelled.check()?;
         let index = processor_index.unwrap_or(0);
-        let processor = &mut self.sequences[index];
+        let sequence_count = self.sequences.len();
+        let processor = self.sequences.get_mut(index).with_context(|| {
+            format!("Sequence index {index} is out of range (only {sequence_count} sequences)")
+        })?;
         let details = processor.details();
 
         // Processors could have their own Inputs, Outputs, Encoders, and Scenes
