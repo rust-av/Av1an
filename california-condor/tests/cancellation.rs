@@ -84,7 +84,7 @@ mod tests {
                 "/tests/t06_interrupts.py"
             ))
             .arg("--v02")
-            .arg(assert_cmd::cargo::cargo_bin!("condor"))
+            .arg(assert_cmd::cargo::cargo_bin!("av1an"))
             .arg(root)
             .output()
             .expect("required Python PTY supervisor");

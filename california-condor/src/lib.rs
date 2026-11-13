@@ -371,7 +371,7 @@ fn run(cancellation: &interrupt::Interrupt) -> anyhow::Result<()> {
             Some(Commands::Scenes { index, action }) => {
                 // The index comes first and is optional: without an action the
                 // addressed scenes are printed, which is what a bare
-                // `condor scenes` performs for the whole list.
+                // `av1an scenes` performs for the whole list.
                 return commands::handlers::scenes::config(
                     config_path.as_deref(),
                     index.as_ref(),

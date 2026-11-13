@@ -82,7 +82,7 @@ jobs:
           "FMETRICS_LIB_DIR=$env:GITHUB_WORKSPACE\target\release" >> "$env:GITHUB_ENV"
 
       - name: Condor build
-        run: cargo build --release --bin condor
+        run: cargo build --release --bin av1an
 
       - name: Generate configuration schema
         shell: pwsh
@@ -107,7 +107,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Offline pinned Windows package contracts failed.' }
           $readobj = Join-Path $env:ProgramFiles 'LLVM/bin/llvm-readobj.exe'
           if (-not (Test-Path $readobj -PathType Leaf)) { throw 'Runner prerequisite llvm-readobj is missing.' }
-          python -B ./.github/scripts/verify-windows-bundle.py target/condor-windows-x64.zip --native --readobj $readobj
+          python -B ./.github/scripts/verify-windows-bundle.py target/av1an-windows-x64.zip --native --readobj $readobj
           if ($LASTEXITCODE -ne 0) { throw 'Native Windows archive smoke failed.' }
 
       - name: Stage the release assets
@@ -116,7 +116,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: condor-windows-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: av1an-windows-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
           retention-days: 1
           if-no-files-found: error

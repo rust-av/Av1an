@@ -148,7 +148,7 @@ Set this environment variable to use the install:
 
   export VSHIP_LIB_DIR='$Destination'
 
-Not needed when the library sits beside the condor binary, which is where a
+Not needed when the library sits beside the av1an binary, which is where a
 release stages it; the crate searches there on its own.
 
 Verify with:

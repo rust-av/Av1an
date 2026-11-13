@@ -134,7 +134,7 @@ pub enum DetectNoiseKey {
     DenoisedFilters,
 }
 
-/// Settings `condor detect-noise set` can change.
+/// Settings `av1an detect-noise set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum DetectNoiseSet {
     /// Read from this input instead of the main input.
@@ -163,7 +163,7 @@ pub enum DetectNoiseSet {
     },
 }
 
-/// The action triple attached to `condor detect-noise`.
+/// The action triple attached to `av1an detect-noise`.
 pub type DetectNoiseAction = ConfigAction<DetectNoiseKey, DetectNoiseSet>;
 
 /// Everything that can make a Noise Detector setting unusable.
@@ -177,7 +177,7 @@ pub enum DetectNoiseConfigError {
     },
 }
 
-/// The `condor detect-noise` configuration section.
+/// The `av1an detect-noise` configuration section.
 pub struct DetectNoiseCrud;
 
 impl DetectNoiseCrud {
@@ -328,12 +328,12 @@ impl ConfigCommand for DetectNoiseCrud {
     fn reset_hint(key: Option<&Self::Key>) -> Option<String> {
         match key {
             Some(DetectNoiseKey::ReferenceFilters) => Some(
-                "To clear every reference filter instead, run `condor detect-noise set \
+                "To clear every reference filter instead, run `av1an detect-noise set \
                  reference-filters none`."
                     .to_owned(),
             ),
             Some(DetectNoiseKey::DenoisedFilters) => Some(
-                "To clear every denoised filter instead, run `condor detect-noise set \
+                "To clear every denoised filter instead, run `av1an detect-noise set \
                  denoised-filters none`."
                     .to_owned(),
             ),
@@ -342,7 +342,7 @@ impl ConfigCommand for DetectNoiseCrud {
     }
 }
 
-/// `condor detect-noise info|set|reset`.
+/// `av1an detect-noise info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &DetectNoiseAction) -> Result<()> {
     edit::<DetectNoiseCrud>(config_path, action)
 }

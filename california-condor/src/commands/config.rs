@@ -4,9 +4,9 @@
 //! so its settings can be read, changed and reset without running it:
 //!
 //! ```text
-//! > condor detect-scenes info
-//! > condor detect-scenes set method avscenechange --minimum-frames 20 --maximum-frames 280 --save-scores
-//! > condor detect-scenes reset method
+//! > av1an detect-scenes info
+//! > av1an detect-scenes set method avscenechange --minimum-frames 20 --maximum-frames 280 --save-scores
+//! > av1an detect-scenes reset method
 //! ```
 //!
 //! `K` lists the properties `info` and `reset` accept, `S` the properties `set`
@@ -396,7 +396,7 @@ impl StatisticArgs {
 #[derive(Debug, Clone)]
 pub struct PropertyChange {
     /// The property that changed, e.g. `method` — for list-addressed edits
-    /// such as `condor scenes` it may name its item, e.g. `scene 3 params`.
+    /// such as `av1an scenes` it may name its item, e.g. `scene 3 params`.
     pub property: String,
     /// The property's value after the change, in the shape `info` prints.
     pub value: Value,

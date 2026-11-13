@@ -3,8 +3,8 @@
 Benchmark the optimum amount of workers (triggers TUI). See [guide](../guide.md).
 
 ```bash
-$ condor benchmark
-$ condor benchmark --threshold 5
+$ av1an benchmark
+$ av1an benchmark --threshold 5
 ```
 
 | Name                                | Flag          | Type    | Default |
@@ -25,7 +25,7 @@ If not specified, `5` is used.
 
 ### Examples
 
-- `> condor benchmark --threshold 5`
+- `> av1an benchmark --threshold 5`
 
 ## Edit saved settings
 
@@ -36,9 +36,9 @@ If not specified, `5` is used.
 - `info [threshold|max-memory]` prints JSON; `reset KEY` resets one of them, and a bare `reset` restores the whole section to its defaults.
 
 ```bash
-$ condor benchmark set threshold 8
-$ condor benchmark info threshold
-$ condor benchmark reset max-memory
+$ av1an benchmark set threshold 8
+$ av1an benchmark info threshold
+$ av1an benchmark reset max-memory
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -54,18 +54,18 @@ The screenshots below are generated from the live interface. Click any image to 
       <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">Benchmarking workers</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-benchmark-light.avif"><picture><source srcset="../media/tui/help-benchmark-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-benchmark-light.avif" alt="condor benchmark --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor benchmark --help</p>
+      <a href="../media/tui/help-benchmark-light.avif"><picture><source srcset="../media/tui/help-benchmark-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-benchmark-light.avif" alt="av1an benchmark --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an benchmark --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-benchmark-verbose-light.avif"><picture><source srcset="../media/tui/help-benchmark-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-benchmark-verbose-light.avif" alt="condor benchmark --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor benchmark --help --verbose</p>
+      <a href="../media/tui/help-benchmark-verbose-light.avif"><picture><source srcset="../media/tui/help-benchmark-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-benchmark-verbose-light.avif" alt="av1an benchmark --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an benchmark --help --verbose</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-benchmark-set-light.avif"><picture><source srcset="../media/tui/help-benchmark-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-benchmark-set-light.avif" alt="condor benchmark set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor benchmark set --help</p>
+      <a href="../media/tui/help-benchmark-set-light.avif"><picture><source srcset="../media/tui/help-benchmark-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-benchmark-set-light.avif" alt="av1an benchmark set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an benchmark set --help</p>
     </td>
   </tr>
 </table>

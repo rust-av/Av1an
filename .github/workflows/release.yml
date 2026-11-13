@@ -27,7 +27,7 @@ jobs:
     # A queued old build can follow a new build. Recheck master inside this
     # non-cancelling lock; cancelling halfway through upload would mix assets.
     concurrency:
-      group: condor-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}
+      group: av1an-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -38,11 +38,11 @@ jobs:
       # No run-id/pattern fallback: these are exact names in this run/attempt.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: condor-linux-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: av1an-linux-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: handoff/linux
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: condor-windows-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: av1an-windows-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: handoff/windows
       - name: Publish coordinated release
         env:

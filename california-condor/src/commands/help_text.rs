@@ -102,7 +102,7 @@ If not specified, the temporary directory is created in the current working dire
 
 For an empty saved job, changing --temp updates unset or derived TEMP/scenes encoding and concatenation directories, including the parent of Target Quality probes. Saved scenes or nonempty known work directories prevent a change: start a new job with a different --config-file, a distinct empty --temp directory, and a distinct output instead. An equivalent path (including a symlink alias) is accepted without changing saved paths or results.
 
-Custom scenes directories stay in place with a warning; use `condor encode set scenes-directory PATH` and `condor concatenate set scenes-directory PATH` to change them. --temp never moves existing files and refuses to adopt a nonempty new default scenes directory.
+Custom scenes directories stay in place with a warning; use `av1an encode set scenes-directory PATH` and `av1an concatenate set scenes-directory PATH` to change them. --temp never moves existing files and refuses to adopt a nonempty new default scenes directory.
 
 Examples:
 - `./temp`
@@ -184,8 +184,8 @@ pub const HELP_ENCODER: &str = r#"Video encoder to use.
 Defaults to **svt-av1**.
 
 Global encoder settings affect future scenes. Existing scenes keep their saved
-encoders; inspect them with `condor scenes all info encoder`. To copy the global
-default into them explicitly, use `condor scenes all reset encoder`. This does not
+encoders; inspect them with `av1an scenes all info encoder`. To copy the global
+default into them explicitly, use `av1an scenes all reset encoder`. This does not
 clean files or recompute saved results.
 "#;
 pub const HELP_ENCODER_SHORT: &str = short_help(HELP_ENCODER);
@@ -225,7 +225,7 @@ pub const HELP_PARAMS: &str = concat!(
 These parameters are passed directly to the encoder binary. These parameters will be merged with Condor's default set of encoder parameters.
 
 Global parameter edits leave existing scenes unchanged. To copy the current global
-encoder into them explicitly, use `condor scenes all reset encoder`; saved files
+encoder into them explicitly, use `av1an scenes all reset encoder`; saved files
 and results are not cleaned or recomputed.
 
 Examples:"#,
@@ -485,7 +485,7 @@ the file) and the tracks to drop are written to the *scene_concatenator.method*
 entry in the configuration file as explicit `copy: false` overrides. Repeat the
 flag, or separate the values with commas, to drop several kinds. Nothing is
 resolved when the scenes are concatenated, so the saved configuration stays the
-source of truth; `condor concatenate set method` restores the method's defaults.
+source of truth; `av1an concatenate set method` restores the method's defaults.
 
 The flag is ignored for the `ivf` method and for VapourSynth script inputs,
 which have no source tracks to copy.

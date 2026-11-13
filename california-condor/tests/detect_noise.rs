@@ -290,7 +290,7 @@ mod tests {
             .clone();
         let stdout = String::from_utf8(stdout).expect("stdout is UTF-8");
         assert!(
-            stdout.contains("condor detect-noise set reference-filters none"),
+            stdout.contains("av1an detect-noise set reference-filters none"),
             "output is {stdout}"
         );
     }

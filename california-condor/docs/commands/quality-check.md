@@ -3,8 +3,8 @@
 Measure the quality of the concatenated output per scene (triggers TUI). See [guide](../guide.md) and [type reference](../types.md).
 
 ```bash
-$ condor quality-check
-$ condor quality-check --metric ssimulacra2 --profile standard
+$ av1an quality-check
+$ av1an quality-check --metric ssimulacra2 --profile standard
 ```
 
 | Name                                                  | Flag          | Type        | Default       |
@@ -86,10 +86,10 @@ If not specified, `standard` is used.
 - `info [metric|strategy|statistic|input]` prints JSON; `reset KEY` resets one of them, and `reset` with no key drops the whole optional section back to `null`.
 
 ```bash
-$ condor quality-check set strategy subset --position end --length-percent 25
-$ condor quality-check set statistic percentile 10
-$ condor quality-check reset statistic
-$ condor quality-check reset
+$ av1an quality-check set strategy subset --position end --length-percent 25
+$ av1an quality-check set statistic percentile 10
+$ av1an quality-check reset statistic
+$ av1an quality-check reset
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -101,18 +101,18 @@ The screenshots below are generated from the live interface. Click any image to 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-quality-check-light.avif"><picture><source srcset="../media/tui/help-quality-check-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-light.avif" alt="condor quality-check --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor quality-check --help</p>
+      <a href="../media/tui/help-quality-check-light.avif"><picture><source srcset="../media/tui/help-quality-check-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-light.avif" alt="av1an quality-check --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an quality-check --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-quality-check-verbose-light.avif"><picture><source srcset="../media/tui/help-quality-check-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-verbose-light.avif" alt="condor quality-check --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor quality-check --help --verbose</p>
+      <a href="../media/tui/help-quality-check-verbose-light.avif"><picture><source srcset="../media/tui/help-quality-check-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-verbose-light.avif" alt="av1an quality-check --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an quality-check --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-quality-check-set-light.avif"><picture><source srcset="../media/tui/help-quality-check-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-set-light.avif" alt="condor quality-check set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor quality-check set --help</p>
+      <a href="../media/tui/help-quality-check-set-light.avif"><picture><source srcset="../media/tui/help-quality-check-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-set-light.avif" alt="av1an quality-check set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an quality-check set --help</p>
     </td>
     <td width="50%" valign="top"></td>
   </tr>

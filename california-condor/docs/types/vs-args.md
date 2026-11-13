@@ -7,8 +7,8 @@
 Repeat the flag for multiple values:
 
 ```bash
-$ condor encode --vs-args "message=fluffy kittens" --vs-args "head=empty"
-$ condor encode --vs-args "denoiser=primary" --vs-args "downscaler=bicubic"
+$ av1an encode --vs-args "message=fluffy kittens" --vs-args "head=empty"
+$ av1an encode --vs-args "denoiser=primary" --vs-args "downscaler=bicubic"
 ```
 
 ## Stage Overrides
@@ -21,5 +21,5 @@ $ condor encode --vs-args "denoiser=primary" --vs-args "downscaler=bicubic"
 
 ## Examples
 
-- `> condor init script.vpy output.mkv --vs-args "message=fluffy kittens" --vs-args "head=empty"`
-- `> condor detect-scenes --vs-args "downscaler=bicubic"`
+- `> av1an init script.vpy output.mkv --vs-args "message=fluffy kittens" --vs-args "head=empty"`
+- `> av1an detect-scenes --vs-args "downscaler=bicubic"`

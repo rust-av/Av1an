@@ -41,5 +41,5 @@ for those selections. Independent-frame CVVDP and other metrics are unchanged.
 
 ## Examples
 
-- `> condor target-quality --metric ssimulacra2 --target 85`
-- `> condor quality-check --metric xpsnr --profile fast`
+- `> av1an target-quality --metric ssimulacra2 --target 85`
+- `> av1an quality-check --metric xpsnr --profile fast`

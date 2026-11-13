@@ -1,6 +1,6 @@
 [package]
 name = "california-condor"
-version = "0.0.1"
+version = "1.0.0"
 rust-version = "1.97"
 edition = "2024"
 authors = ["Zen <master_of_zen@protonmail.com>", "Boats McGee"]
@@ -14,11 +14,11 @@ license = "GPL-3.0"
 readme = "README.md"
 
 [[bin]]
-name = "condor"
+name = "av1an"
 path = "src/main.rs"
 
 # Documentation screenshot generator; only built with the `screenshots`
-# feature so the shipping `condor` binary stays free of the rasterizer crates.
+# feature so the shipping `av1an` binary stays free of the rasterizer crates.
 [[bin]]
 name = "gen_screenshots"
 path = "src/bin/gen_screenshots.rs"
@@ -61,7 +61,7 @@ ctrlc = "3.5.2"
 [build-dependencies]
 vergen-git2 = { version = "9.1.0", features = ["build", "rustc", "cargo"] }
 
-# Embeds the application manifest so `condor.exe` opts into Windows long path
+# Embeds the application manifest so `av1an.exe` opts into Windows long path
 # support; without it VapourSynth fails with "Source path does not exist" on
 # paths longer than MAX_PATH.
 [target.'cfg(windows)'.build-dependencies]

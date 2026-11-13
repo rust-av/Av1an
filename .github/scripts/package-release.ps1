@@ -19,7 +19,7 @@
     Directory holding the staged release. Defaults to `target\release`.
 
 .PARAMETER OutputPath
-    Where to write the archive. Defaults to `target\condor-windows-x64.zip`.
+    Where to write the archive. Defaults to `target\av1an-windows-x64.zip`.
 
 .PARAMETER SkipSchema
     Leave `configuration.schema.json` out of the archive.
@@ -30,7 +30,7 @@ param(
     [string] $StageDir = 'target\release',
 
     [Parameter()]
-    [string] $OutputPath = 'target\condor-windows-x64.zip',
+    [string] $OutputPath = 'target\av1an-windows-x64.zip',
 
     [Parameter()]
     [string] $SchemaPath = 'california-condor/configuration.schema.json',
@@ -46,7 +46,7 @@ $ProgressPreference = 'SilentlyContinue'
 # Everything the runtime loads by relative path. `model/` is a directory rather
 # than a file, which is the whole reason this archive exists.
 $Contents = @(
-    'condor.exe'
+    'av1an.exe'
     'ffms2.dll'
     'vcruntime140.dll'
     'vcruntime140_1.dll'
@@ -76,7 +76,7 @@ Write-Step 'Checking the staged release'
 
 $missing = $Contents | Where-Object { -not (Test-Path (Join-Path $StageDir $_)) }
 if ($missing -contains 'DirectML.dll') {
-    throw 'Missing DirectML.dll: the pinned Windows ort-sys static ORT build imports it. Restore its copy-dylibs output beside condor.exe before packaging; do not use a host/System32 copy.'
+    throw 'Missing DirectML.dll: the pinned Windows ort-sys static ORT build imports it. Restore its copy-dylibs output beside av1an.exe before packaging; do not use a host/System32 copy.'
 }
 if ($missing) {
     throw "Missing from $StageDir : $($missing -join ', ')"
@@ -143,7 +143,7 @@ try {
     }
 
     if ($schema) {
-        # Sits at the archive root, where `condor init` looks for it.
+        # Sits at the archive root, where `av1an init` looks for it.
         Add-ZipFile -Source $schema -EntryName (Split-Path $schema -Leaf) -Archive $archive
         $expected += Split-Path $schema -Leaf
     }

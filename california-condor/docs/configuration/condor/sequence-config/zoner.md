@@ -1,12 +1,12 @@
 # sequence_config.zoner
 
-`sequence_config.zoner` in `condor.json`. See [sequence_config](../sequence_config.md). Created by [`zone`](../../../commands/zone.md) or [`condor --zones`](../../../commands/condor.md#zones---zones) (`null` on `init`), and applied by [`condor`](../../../commands/condor.md) right after Scene Detection.
+`sequence_config.zoner` in `condor.json`. See [sequence_config](../sequence_config.md). Created by [`zone`](../../../commands/zone.md) or [`av1an --zones`](../../../commands/condor.md#zones---zones) (`null` on `init`), and applied by [`av1an`](../../../commands/condor.md) right after Scene Detection.
 
 | Field | Type | Required | Default | Description |
 | ----- | ---- | -------- | ------- | ----------- |
 | `zones` | Array | No | `[]` | The zone overrides, applied in start-frame order. Each item is a [Zone](../../../types/zone.md) |
 
-CLI mapping: `zone ZONE...` and `condor --zones ZONE...`, where each value is a zone definition or a path to a JSON, JSON lines, or text zone file. Values replace the zones already configured.
+CLI mapping: `zone ZONE...` and `av1an --zones ZONE...`, where each value is a zone definition or a path to a JSON, JSON lines, or text zone file. Values replace the zones already configured.
 
 Ranges are half-open: all zone starts/ends cut existing scenes before settings or `maximum_frames` apply. Existing cuts, order and gaps remain; outside pieces keep their original encoder and are not capped by adjacent zones. Inside pieces use balanced length-cap splits, with crossing sub-scenes clipped at every cut.
 

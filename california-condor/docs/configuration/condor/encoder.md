@@ -90,7 +90,7 @@ encoder before opening/indexing the source or launching workers.
 - Photon Noise requests on unsupported backends and `--ffmpeg-filter` on the
   FFmpeg encoder are errors, not ignored flags. Use FFmpeg's `-vf` in `options`.
   AVM requires native `filmgrn2`, not the generated AV1 `filmgrn1` format:
-  clear legacy `photon_noise` with `condor encode reset photon-noise` or switch
+  clear legacy `photon_noise` with `av1an encode reset photon-noise` or switch
   encoders. Raw native `--film-grain-table` options remain caller-controlled.
 
 Library callers can use `Encoder::validate_settings()` without an installed
@@ -164,7 +164,7 @@ The `ffmpeg` flags are input options rather than output options because FFmpeg
 copies the colour properties out of every frame
 (`fftools/ffmpeg_enc.c`), which overwrites anything set on the encoder context.
 Passed after `-i`, `-color_primaries` and `-color_trc` are silently discarded;
-passed before it they reach the bitstream. `condor` therefore places all five
+passed before it they reach the bitstream. `av1an` therefore places all five
 ahead of `-i`, and an override in `options` still wins because the value is
 merged before the split.
 

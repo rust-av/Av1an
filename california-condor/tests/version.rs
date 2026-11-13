@@ -1,4 +1,4 @@
-//! Tests for `condor --version`.
+//! Tests for `av1an --version`.
 //!
 //! `--version` prints the three "installed" tables — VapourSynth plugins,
 //! encoders, and quality metric libraries — and the last of those is what
@@ -14,7 +14,7 @@ mod common;
 use assert_cmd::Command;
 use common::condor_cmd;
 
-/// Run `condor --version`, plus any extra arguments, and return its stdout.
+/// Run `av1an --version`, plus any extra arguments, and return its stdout.
 ///
 /// # Panics
 ///
@@ -85,6 +85,23 @@ fn metric_library_section(output: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_and_version_report_av1an_1_0_0() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let help = condor_cmd(&temp).arg("--help").assert().success();
+        let help = String::from_utf8_lossy(&help.get_output().stdout);
+        assert!(
+            help.contains("Usage: av1an"),
+            "unexpected CLI identity:\n{help}"
+        );
+
+        let version = strip_ansi(&version_output(&[]));
+        assert!(
+            version.starts_with("1.0.0"),
+            "unexpected CLI version:\n{version}"
+        );
+    }
 
     /// The header and one marker-bearing row for each metric library must
     /// appear, since which of these are present is exactly what a user is

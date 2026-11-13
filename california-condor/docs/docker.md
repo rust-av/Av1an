@@ -29,8 +29,8 @@ docker build -t av1an:local .
 
 The Dockerfile builds an Arch Linux image with the Condor CLI and native metric
 libraries. These examples use that local image, not an unverified registry release.
-Its entry point is `condor` and its working directory is `/videos`, so
-the arguments you pass are `condor` arguments. The following examples assume the
+Its entry point is `av1an` and its working directory is `/videos`, so
+the arguments you pass are `av1an` arguments. The following examples assume the
 file you want to encode is in your current working directory.
 
 Linux
@@ -47,7 +47,7 @@ docker run -v "${PWD}:/videos" -it --rm av1an:local -i S01E01.mkv -o S01E01.cond
 
 Both `-i` and `-o` are given because a full run needs the input and the output
 path; everything else comes from the configuration file or from the flags in
-[condor](commands/condor.md).
+[av1an](commands/condor.md).
 
 To specify a different directory to use you would replace $(pwd) with the directory
 

@@ -195,7 +195,7 @@ pub enum QualityCheckKey {
     Input,
 }
 
-/// Settings `condor quality-check set` can change.
+/// Settings `av1an quality-check set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum QualityCheckSet {
     /// The quality metric measured per scene.
@@ -220,10 +220,10 @@ pub enum QualityCheckSet {
     },
 }
 
-/// The action triple attached to `condor quality-check`.
+/// The action triple attached to `av1an quality-check`.
 pub type QualityCheckAction = ConfigAction<QualityCheckKey, QualityCheckSet>;
 
-/// The `condor quality-check` configuration section.
+/// The `av1an quality-check` configuration section.
 pub struct QualityCheckCrud;
 
 impl QualityCheckCrud {
@@ -332,7 +332,7 @@ impl ConfigCommand for QualityCheckCrud {
     }
 }
 
-/// `condor quality-check info|set|reset`.
+/// `av1an quality-check info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &QualityCheckAction) -> Result<()> {
     edit::<QualityCheckCrud>(config_path, action)
 }

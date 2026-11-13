@@ -49,7 +49,7 @@ The supported `avm` CLI has a native `--film-grain-table` option, but requires
 `filmgrn2` tables with 13 `p` values. Condor generates AV1 `filmgrn1` tables
 with 12 `p` values, so application Photon Noise settings are rejected for AVM.
 Legacy AVM `photon_noise` values remain stored and readable; clear them with
-`condor encode reset photon-noise` (or set the field to `null`), or switch
+`av1an encode reset photon-noise` (or set the field to `null`), or switch
 encoders. Caller-supplied native tables remain available through
 `--params "--film-grain-table=path/to/native-filmgrn2.tbl"`; Condor does not
 convert or validate their format.
@@ -61,6 +61,6 @@ convert or validate their format.
 
 ## Examples
 
-- `> condor encode --photon-noise 800`
-- `> condor encode --photon-noise 800 --chroma-noise 400`
-- `> condor scale-noise --threshold 0.002 --minimum-scaler 0.5 --maximum-scaler 2.0 --scale-chroma`
+- `> av1an encode --photon-noise 800`
+- `> av1an encode --photon-noise 800 --chroma-noise 400`
+- `> av1an scale-noise --threshold 0.002 --minimum-scaler 0.5 --maximum-scaler 2.0 --scale-chroma`

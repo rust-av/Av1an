@@ -10,9 +10,9 @@ encoder argument, including spaces or an empty string. No shell is invoked:
 variables, globs, and command substitutions are not expanded by Condor.
 
 ```bash
-condor encode --params "--preset 2 --crf 24 --aq-mode 2"
-condor encode --params "--cpu-used=3 --cq-level=30 --tune=ssim"
-condor encode -e x265 --params "--no-sao --crf 20 --analysis-save 'a b.dat'"
+av1an encode --params "--preset 2 --crf 24 --aq-mode 2"
+av1an encode --params "--cpu-used=3 --cq-level=30 --tune=ssim"
+av1an encode -e x265 --params "--no-sao --crf 20 --analysis-save 'a b.dat'"
 ```
 
 - Options accept `--name value`, `--name=value`, single-dash options, and
@@ -46,5 +46,5 @@ condor encode -e x265 --params "--no-sao --crf 20 --analysis-save 'a b.dat'"
 
 ## Examples
 
-- `> condor encode -e rav1e --params "--speed 4"`
-- `> condor target-quality --params "--preset 4" --metric ssimulacra2 --target 85`
+- `> av1an encode -e rav1e --params "--speed 4"`
+- `> av1an target-quality --params "--preset 4" --metric ssimulacra2 --target 85`

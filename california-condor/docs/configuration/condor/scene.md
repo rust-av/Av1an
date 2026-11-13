@@ -22,7 +22,7 @@ Array of scene objects. `[]` on `init`.
 | `parallel_encoder` | Object | Yes | `{ "started_on": <u128 ms epoch> or null, "completed_on": <u128 ms epoch> or null, "bytes": <u64> or null }` |
 | `target_quality` | Object | Yes | `{ "passes": [ { "quantizer": <f64>, "scores": [<f64>], "bitrate": <f64>, "started_on": <u128 ms epoch>, "completed_on": <u128 ms epoch> } ] }` |
 | `quality_check` | Object | Yes | `{ "quality": { "quantizer": <f64>, "scores": [<f64>], "bitrate": <f64>, "started_on": <u128 ms epoch>, "completed_on": <u128 ms epoch> } }` |
-| `zoner` | Object | No | `{ "zoned": <bool> }`. Absent in configurations written before zoning became idempotent; defaults to `false`. Set to `true` when the Zoner has applied the zones to the list; `condor scenes reset zoner` clears it |
+| `zoner` | Object | No | `{ "zoned": <bool> }`. Absent in configurations written before zoning became idempotent; defaults to `false`. Set to `true` when the Zoner has applied the zones to the list; `av1an scenes reset zoner` clears it |
 
 Example (two scenes, fresh detection):
 
@@ -83,4 +83,4 @@ Example (two scenes, fresh detection):
 ]
 ```
 
-Do not hand-edit `sequence_data` timestamps or scores; rerun the owning command instead, or clear a scene's saved results with `condor scenes <INDEX> reset <KEY>` (see [scenes](../../commands/scenes.md)).
+Do not hand-edit `sequence_data` timestamps or scores; rerun the owning command instead, or clear a scene's saved results with `av1an scenes <INDEX> reset <KEY>` (see [scenes](../../commands/scenes.md)).

@@ -10,6 +10,13 @@
 
 Av1an is a video encoding Rust library and command-line tool designed to be as fast as possible, easy to use, and extremely extensible. It supports a wide variety of encoders and tools to produce high quality videos.
 
+## Branch changes and legacy Av1an
+
+The default branch has been renamed from `master` to [`main`](https://github.com/rust-av/Av1an/tree/main).
+`main` now includes the Condor rewrite of Av1an, whose executable is `av1an`.
+The [`v0` branch](https://github.com/rust-av/Av1an/tree/v0) contains the latest
+stable release of legacy Av1an.
+
 ## Features
 
 * Support for Windows, Linux, and MacOS
@@ -57,18 +64,18 @@ Av1an can analyze video properties and qualities to improve encoded video qualit
 
 ### Installation
 
-The CLI's Cargo package is **`california-condor`**; its executable is **`condor`**.
-As of 2026-11-13, this package is unpublished on crates.io (`condor` there is an
-unrelated project), and the checked upstream releases do not provide Condor ZIPs.
-Use a checkout containing this workspace, not a legacy Av1an default-branch clone.
+The CLI's Cargo package is **`california-condor`**; its executable is **`av1an`**.
+As of 2026-11-13, this package is unpublished on crates.io, and the checked
+upstream releases do not provide Condor ZIPs. Use a checkout of `main` containing
+this workspace; `v0` contains legacy Av1an.
 After installing the [build prerequisites](./california-condor/docs/compiling.md),
 run from the repository root:
 
 ```bash
-cargo install --locked --path california-condor --bin condor
+cargo install --locked --path california-condor --bin av1an
 ```
 
-**Windows:** this copies only `condor.exe`, not its required DLLs. Follow the
+**Windows:** this copies only `av1an.exe`, not its required DLLs. Follow the
 [Windows runtime/build instructions](./california-condor/docs/installation.md#installation)
 instead of using this command alone.
 
@@ -80,12 +87,12 @@ for upstream image policy and local Condor builds.
 
 #### California Condor CLI
 
-The Av1an CLI, California Condor, uses a single JSON configuration file to manage the entire encoding process. Each step can also be executed individually with its own command. You can use `--help` on each command for details on how to use them (e.g. `condor --help`, `condor detect-scenes --help`, `condor target-quality --help`). For a complete guide on using California Condor, see the [California Condor README](./california-condor/README.md) and [guide](https://rust-av.github.io/Av1an/guide.html). For a quick start, see the example below.
+The Av1an CLI, California Condor, uses a single JSON configuration file to manage the entire encoding process. Each step can also be executed individually with its own command. You can use `--help` on each command for details on how to use them (e.g. `av1an --help`, `av1an detect-scenes --help`, `av1an target-quality --help`). For a complete guide on using California Condor, see the [California Condor README](./california-condor/README.md) and [guide](https://rust-av.github.io/Av1an/guide.html). For a quick start, see the example below.
 
 *Encode a 1080p 10-bit AV1 video with Film Grain Synthesis using rav1e. Use FFMS2 to decode the input. Downscale the scene detection input to 540p to detect scenes faster. Target a SSIMULACRA 2 quality score of 85 quickly. Use mkvmerge to concatenate the output video.*
 
 ```bash
-condor \
+av1an \
     --temp "./deletemelater" \
     --logs "./deletemelater/condor.log" \
     --config-file "./deletemelater/config.json" \

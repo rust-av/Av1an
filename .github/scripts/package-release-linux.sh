@@ -27,15 +27,15 @@
 #     Directory holding the staged release. Defaults to `target/release`.
 #
 # .PARAMETER OutputPath
-#     Where to write the archive. Defaults to `target/condor-linux-x64.zip`.
+#     Where to write the archive. Defaults to `target/av1an-linux-x64.zip`.
 #
 # .EXAMPLE
 #     ./.github/scripts/package-release-linux.sh
-#     ./.github/scripts/package-release-linux.sh target/release target/condor-linux-x64.zip
+#     ./.github/scripts/package-release-linux.sh target/release target/av1an-linux-x64.zip
 set -euo pipefail
 
 StageDir="${1:-target/release}"
-OutputPath="${2:-target/condor-linux-x64.zip}"
+OutputPath="${2:-target/av1an-linux-x64.zip}"
 SchemaPath="${3:-california-condor/configuration.schema.json}"
 
 step() { echo "==> $1"; }
@@ -43,7 +43,7 @@ step() { echo "==> $1"; }
 # Everything the runtime loads by relative path. `model/` is a directory
 # rather than a file, which is the whole reason this archive exists.
 Contents=(
-    'condor'
+    'av1an'
     'libvmaf.so*'
     'libvship.so'
     'libfmetrics.so'
@@ -79,7 +79,7 @@ echo "    ${#Contents[@]} entries plus $models model files"
 # overridden by LD_LIBRARY_PATH, which is fine here: a user who sets that
 # variable is deliberately pointing somewhere else.
 step "Setting the runpath to \$ORIGIN"
-patchelf --set-rpath '$ORIGIN' "$StageDir/condor"
+patchelf --set-rpath '$ORIGIN' "$StageDir/av1an"
 
 step "Writing $OutputPath"
 mkdir -p "$(dirname "$OutputPath")"
@@ -96,7 +96,7 @@ import sys
 import zipfile
 
 stage, output, schema = sys.argv[1], sys.argv[2], sys.argv[3]
-contents = ["condor", "libvmaf.so*", "libvship.so", "libfmetrics.so", "model"]
+contents = ["av1an", "libvmaf.so*", "libvship.so", "libfmetrics.so", "model"]
 
 
 def add(zf, source, entry_name, mode):
@@ -122,11 +122,11 @@ with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
         else:
             # The binary is the only entry that needs the executable bit; the
             # libraries are data the process maps, not commands it runs.
-            mode = 0o755 if entry == "condor" else 0o644
+            mode = 0o755 if entry == "av1an" else 0o644
             add(zf, os.path.join(stage, entry), entry, mode)
 
     if schema:
-        # Sits at the archive root, where `condor init` looks for it.
+        # Sits at the archive root, where `av1an init` looks for it.
         add(zf, schema, os.path.basename(schema), 0o644)
 PY
 
@@ -138,7 +138,7 @@ import zipfile
 
 with zipfile.ZipFile(sys.argv[1]) as zf:
     names = zf.namelist()
-    mode = (zf.getinfo("condor").external_attr >> 16) & 0o777
+    mode = (zf.getinfo("av1an").external_attr >> 16) & 0o777
 
 # A model outside model/ would resolve to nothing at runtime, so the layout is
 # asserted rather than assumed.
@@ -147,7 +147,7 @@ if flat:
     raise SystemExit(f"Models landed at the archive root, where they cannot be found: {flat}")
 
 if not mode & 0o111:
-    raise SystemExit(f"condor is not executable in the archive (mode {mode:o})")
+    raise SystemExit(f"av1an is not executable in the archive (mode {mode:o})")
 
 # libvmaf may be staged as libvmaf.so or libvmaf.so.3 (both are in the
 # crate's candidate list). Accept either.
@@ -155,14 +155,14 @@ vmaf_ok = any(n.endswith("libvmaf.so") or n.endswith("libvmaf.so.3") for n in na
 if not vmaf_ok:
     raise SystemExit(f"The archive is missing libvmaf.so or libvmaf.so.3. It contains: {names}")
 
-expected = ["condor", "libvship.so", "libfmetrics.so",
+expected = ["av1an", "libvship.so", "libfmetrics.so",
             "model/vmaf_v0.6.1.json"]
 for name in expected:
     leaf = os.path.basename(name)
     if not any(n.endswith(leaf) for n in names):
         raise SystemExit(f"The archive is missing {name}. It contains: {names}")
 
-print(f"    {len(names)} entries, condor mode {mode:o}")
+print(f"    {len(names)} entries, av1an mode {mode:o}")
 PY
 
 size="$(du -h "$OutputPath" | cut -f1)"

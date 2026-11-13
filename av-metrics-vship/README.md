@@ -331,7 +331,7 @@ libvship is **not** vendored, and it has no CPU fallback in the builds that are 
 
 > [!NOTE]
 > FFMS2 is unrelated to libvship, which neither needs nor loads it. Condor links
-> FFMS2 dynamically: its Windows archive ships `ffms2.dll` beside `condor.exe`,
+> FFMS2 dynamically: its Windows archive ships `ffms2.dll` beside `av1an.exe`,
 > and Linux requires the host `libffms2` shared library. These decoder dependencies
 > are separate from this crate's optional metric library.
 

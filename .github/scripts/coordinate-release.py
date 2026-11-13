@@ -45,7 +45,7 @@ def provenance(platform: str) -> dict[str, str]:
 
 def bundle_schema(directory: Path, platform: str) -> dict:
     """Require a nonempty archive and matching root schema without repacking it."""
-    archive = directory / f"condor-{platform}-x64.zip"
+    archive = directory / f"av1an-{platform}-x64.zip"
     if not archive.is_file() or archive.stat().st_size == 0:
         raise ValueError(f"Missing/empty {platform} archive: {archive}")
     schema = json.loads((directory / SCHEMA).read_text(encoding="utf-8-sig"))
@@ -63,8 +63,8 @@ def stage(platform: str) -> None:
     manifest = provenance(platform)
     directory = Path("dist")
     directory.mkdir()  # Refuse leftover output instead of merging stale handoffs.
-    shutil.copyfile(f"target/condor-{platform}-x64.zip",
-                    directory / f"condor-{platform}-x64.zip")
+    shutil.copyfile(f"target/av1an-{platform}-x64.zip",
+                    directory / f"av1an-{platform}-x64.zip")
     shutil.copyfile(Path("california-condor") / SCHEMA, directory / SCHEMA)
     bundle_schema(directory, platform)
     (directory / "provenance.json").write_text(json.dumps(manifest) + "\n")
@@ -98,7 +98,7 @@ def publish() -> None:
         if manifest != expected:
             raise ValueError(f"{platform} provenance SHA/run/attempt/platform mismatch")
         schemas.append(bundle_schema(directory, platform))
-        assets.append(str(directory / f"condor-{platform}-x64.zip"))
+        assets.append(str(directory / f"av1an-{platform}-x64.zip"))
     if schemas[0] != schemas[1]:
         raise ValueError("Linux/Windows configuration schema mismatch for source SHA")
     assets.append(str(Path("handoff/linux") / SCHEMA))
@@ -106,7 +106,7 @@ def publish() -> None:
     latest = ref == "refs/heads/master"
     tag = "latest" if latest else ref.removeprefix("refs/tags/")
 
-    with tempfile.TemporaryDirectory(prefix="condor-release-") as temp:
+    with tempfile.TemporaryDirectory(prefix="av1an-release-") as temp:
         output = Path(temp) / "changelog-output"
         scripts = Path(__file__).resolve().parent
         subprocess.run(

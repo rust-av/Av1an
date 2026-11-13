@@ -30,7 +30,7 @@ one pass, despite a stale multi-pass CRF example in the 4.2 help output.
 **Example:**
 
 ```
-condor encode --params "--rc 0 --crf 24 --preset 4 --input-depth 10 --tune 0"
+av1an encode --params "--rc 0 --crf 24 --preset 4 --input-depth 10 --tune 0"
 ```
 
 ## Variable bit-rate
@@ -49,7 +49,7 @@ VBR also needs a positive explicit `--keyint` instead of Condor's default zero.
 **Example:**
 
 ```
-condor encode --passes 2 --params "--rc 1 --tbr 2000 --preset 4 --keyint 240 --input-depth 10 --tune 0"
+av1an encode --passes 2 --params "--rc 1 --tbr 2000 --preset 4 --keyint 240 --input-depth 10 --tune 0"
 ```
 
 # Preset
@@ -99,7 +99,7 @@ Condor writes the input's colour and HDR metadata into the encoder parameters by
 default. SVT-AV1 accepts all of it: `--color-primaries`,
 `--transfer-characteristics`, `--matrix-coefficients`, `--color-range`,
 `--chroma-sample-position`, `--mastering-display` and `--content-light`. Set
-`append_color_data` to `false` (or `condor encode set append-color-data off`) to
+`append_color_data` to `false` (or `av1an encode set append-color-data off`) to
 leave it out, and set the flags yourself in `--params` if the source is tagged
 wrongly — your options replace the appended ones. See
 [`condor.encoder`'s Colour Metadata](../configuration/condor/encoder.md#colour-metadata).

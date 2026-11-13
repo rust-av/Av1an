@@ -290,7 +290,7 @@ fn model_search_paths_for(loaded_from: Option<&Path>, explicit: Option<&Path>) -
     }
 
     // Beside the running executable. This is what a release layout relies on:
-    // `condor.exe` and `model/vmaf_v0.6.1.json` shipped together, with no
+    // `av1an.exe` and `model/vmaf_v0.6.1.json` shipped together, with no
     // environment variable set.
     if let Ok(executable) = std::env::current_exe()
         && let Some(directory) = executable.parent()

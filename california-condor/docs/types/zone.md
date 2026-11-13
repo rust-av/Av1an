@@ -42,10 +42,10 @@ Merging keeps whatever the zone does not set: options are merged key by key, and
 
 ### Examples
 
-- `condor zone '-1 200 svt-av1 "--preset 3 --crf 23" --iso 400'`
-- `condor zone '-1 200 replace aom("/tools/aomenc") "--cpu-used=4" --maximum-frames 240'`
-- `condor zone '200 -1 x265 "--crf 18" --ffmpeg-filter "crop=iw-16:ih-16"'`
-- `condor zone '-1 200 x264 --append-color-data off'`
+- `av1an zone '-1 200 svt-av1 "--preset 3 --crf 23" --iso 400'`
+- `av1an zone '-1 200 replace aom("/tools/aomenc") "--cpu-used=4" --maximum-frames 240'`
+- `av1an zone '200 -1 x265 "--crf 18" --ffmpeg-filter "crop=iw-16:ih-16"'`
+- `av1an zone '-1 200 x264 --append-color-data off'`
 
 ## Zone Files
 

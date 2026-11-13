@@ -56,7 +56,7 @@ RUN cargo chef cook --release
 COPY . /tmp/Condor
 
 RUN cargo build --release -p california-condor && \
-    mv ./target/release/condor /usr/local/bin && \
+    mv ./target/release/av1an /usr/local/bin && \
     cd .. && rm -rf ./Condor
 
 
@@ -112,7 +112,7 @@ RUN pacman -S --noconfirm --needed vulkan-icd-loader
 COPY --from=metrics /usr/lib/libvship.so /usr/lib/libvship.so
 COPY --from=metrics /usr/lib/libfmetrics.so /usr/lib/libfmetrics.so
 
-COPY --from=build /usr/local/bin/condor /usr/local/bin/condor
+COPY --from=build /usr/local/bin/av1an /usr/local/bin/av1an
 
 # Create user
 RUN useradd -ms /bin/bash app_user
@@ -121,4 +121,4 @@ USER app_user
 VOLUME ["/videos"]
 WORKDIR /videos
 
-ENTRYPOINT [ "/usr/local/bin/condor" ]
+ENTRYPOINT [ "/usr/local/bin/av1an" ]

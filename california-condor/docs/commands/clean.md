@@ -4,8 +4,8 @@ Cleanup is unavailable. Both forms return a nonzero error without removing files
 or loading the configuration. Ordinary logging may still create or update the log.
 
 ```bash
-condor clean
-condor clean --all
+av1an clean
+av1an clean --all
 ```
 
 | Name                      | Flag    | Type | Default |
@@ -23,7 +23,7 @@ output so the new job cannot reuse stale chunks or replace the old output. Choos
 unused paths for this example:
 
 ```bash
-condor --config-file new-job.json --temp new-job-work init input.mp4 new-output.mkv
+av1an --config-file new-job.json --temp new-job-work init input.mp4 new-output.mkv
 ```
 
 This creates a separate configuration; it does not clean or reset the old job.
@@ -38,12 +38,12 @@ Click any image to open it full size.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-clean-light.avif"><picture><source srcset="../media/tui/help-clean-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-clean-light.avif" alt="condor clean --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor clean --help</p>
+      <a href="../media/tui/help-clean-light.avif"><picture><source srcset="../media/tui/help-clean-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-clean-light.avif" alt="av1an clean --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an clean --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-clean-verbose-light.avif"><picture><source srcset="../media/tui/help-clean-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-clean-verbose-light.avif" alt="condor clean --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor clean --help --verbose</p>
+      <a href="../media/tui/help-clean-verbose-light.avif"><picture><source srcset="../media/tui/help-clean-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-clean-verbose-light.avif" alt="av1an clean --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an clean --help --verbose</p>
     </td>
   </tr>
 </table>

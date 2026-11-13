@@ -7,7 +7,7 @@
 
 <a href="https://www.buymeacoffee.com/master_of_zen" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-California Condor is the command-line interface and Terminal User Interface (TUI) for Av1an. The `condor` binary manages all processes including encoding with a single JSON configuration file. It wraps Av1an's library, Andean Condor.
+California Condor is the command-line interface and Terminal User Interface (TUI) for Av1an. The `av1an` binary manages all processes including encoding with a single JSON configuration file. It wraps Av1an's library, Andean Condor.
 
 ## Features
 
@@ -33,25 +33,25 @@ For a complete walkthrough, see the [guide](https://rust-av.github.io/Av1an/guid
 
 ### Installation
 
-The Cargo package is **`california-condor`**, and the binary is **`condor`**.
-As of 2026-11-13, the package is unpublished on crates.io; the registry's `condor`
-is unrelated. The checked upstream releases do not yet offer this CLI's ZIPs.
-From the root of a checkout containing this workspace, with the
+The Cargo package is **`california-condor`**, and the binary is **`av1an`**.
+As of 2026-11-13, the package is unpublished on crates.io. The checked upstream
+releases do not yet offer this CLI's ZIPs.
+From the root of a `main` checkout containing this workspace, with the
 [build prerequisites](docs/compiling.md) installed:
 
 ```bash
-cargo install --locked --path california-condor --bin condor
+cargo install --locked --path california-condor --bin av1an
 ```
 
-**Windows:** this copies only `condor.exe`, not its required DLLs. Follow the
+**Windows:** this copies only `av1an.exe`, not its required DLLs. Follow the
 [Windows runtime/build instructions](docs/installation.md#installation)
 instead of using this command alone.
 
 See [Installation](docs/installation.md) for package availability and runtime
 dependencies, or [Docker](docs/docker.md) for upstream image policy and local builds.
 
-When a release provides **`condor-windows-x64.zip`**, extract the whole archive;
-`condor.exe` alone is not an install. Keep its mandatory FFMS2, MSVC CRT and
+When a release provides **`av1an-windows-x64.zip`**, extract the whole archive;
+`av1an.exe` alone is not an install. Keep its mandatory FFMS2, MSVC CRT and
 DirectML DLLs together, plus metric DLLs and the `model/` subdirectory. See the
 [Windows bundle layout](docs/installation.md#windows-releases). The legacy
 `av1an.exe` release asset is not this CLI.
@@ -70,19 +70,19 @@ External tools required for decoding, filtering, encoding, metrics, and concaten
 
 ### Usage
 
-Run the full pipeline with no subcommand, or run steps individually. Use `--help` on each command for details (e.g. `condor --help`, `condor detect-scenes --help`, `condor target-quality --help`, `condor encode --help`).
+Run the full pipeline with no subcommand, or run steps individually. Use `--help` on each command for details (e.g. `av1an --help`, `av1an detect-scenes --help`, `av1an target-quality --help`, `av1an encode --help`).
 
 ```bash
-$ condor init "input.mp4" "output.mkv"
-$ condor detect-scenes
-$ condor encode
-$ condor concatenate
+$ av1an init "input.mp4" "output.mkv"
+$ av1an detect-scenes
+$ av1an encode
+$ av1an concatenate
 ```
 
 *Encode a 1080p 10-bit AV1 video with Film Grain Synthesis using rav1e. Use FFMS2 to decode. Downscale scene detection input to 540p for faster detection. Target SSIMULACRA 2 score 85 with the fast profile. Concatenate with mkvmerge.*
 
 ```bash
-$ condor \
+$ av1an \
     --temp "./deletemelater" \
     --logs "./deletemelater/condor.log" \
     --config-file "./deletemelater/config.json" \
@@ -100,7 +100,7 @@ $ condor \
     --concat "mkvmerge"
 ```
 
-See [condor](https://rust-av.github.io/Av1an/commands/condor.html) for all full-run flags, [configuration](https://rust-av.github.io/Av1an/configuration.html) for global flags and `condor.json` validation, [types](https://rust-av.github.io/Av1an/types.html) for Decoder, Encoder, Filters, and other complex types, and the [guide](https://rust-av.github.io/Av1an/guide.html) for step ordering.
+See [av1an](https://rust-av.github.io/Av1an/commands/condor.html) for all full-run flags, [configuration](https://rust-av.github.io/Av1an/configuration.html) for global flags and `condor.json` validation, [types](https://rust-av.github.io/Av1an/types.html) for Decoder, Encoder, Filters, and other complex types, and the [guide](https://rust-av.github.io/Av1an/guide.html) for step ordering.
 
 ### Concurrent jobs and atomic configuration saves
 
@@ -157,9 +157,9 @@ config.save(&save_file)?;
 
 ## Gallery
 
-![[condor](./media/condor.avif)](./media/condor-small.avif) | ![detect-scenes](./media/detect-scenes-small.avif) |
+![[av1an](./media/condor.avif)](./media/condor-small.avif) | ![detect-scenes](./media/detect-scenes-small.avif) |
 :-: | :-: |
-`condor` | `detect-scenes` |
+`av1an` | `detect-scenes` |
 ![detect-noise](./media/detect-noise-small.avif) | ![benchmark](./media/benchmark-small.avif) |
 `detect-noise` | `benchmark` |
 ![target-quality](./media/target-quality-small.avif) | ![encode](./media/encode-small.avif) |

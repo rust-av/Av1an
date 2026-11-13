@@ -2,12 +2,12 @@
 
 You can natively build Condor on Linux and Windows. Cross-compilation is not supported.
 
-The repository is a Cargo workspace: `california-condor` is the `condor` CLI, `andean-condor` is the Rust library it is built on, and `av-metrics-vmaf`, `av-metrics-vship` and `av-metrics-fmetrics` are the native quality-metric libraries.
+The repository is a Cargo workspace: `california-condor` is the `av1an` CLI, `andean-condor` is the Rust library it is built on, and `av-metrics-vmaf`, `av-metrics-vship` and `av-metrics-fmetrics` are the native quality-metric libraries.
 
 Start at the root of a checkout that contains `california-condor/Cargo.toml` and
-the workspace `Cargo.toml`. As of 2026-11-13 these Condor crates are unpublished;
-a legacy Av1an clone/default branch or its `av1an.exe` release is not a substitute
-for this source tree. The commands below do not clone or select a source revision.
+the workspace `Cargo.toml` on `main`. As of 2026-11-13 these Condor crates are
+unpublished; the legacy Av1an `v0` branch or its `av1an.exe` release is not a
+substitute for this source tree. The commands below do not clone or select a revision.
 Use stable Rust **1.97.0 or newer** on both platforms.
 
 ## Compiling on Linux
@@ -19,7 +19,7 @@ To compile Condor from source, you need the following dependencies:
 - [clang/LLVM](https://llvm.org)
 - [FFmpeg](https://ffmpeg.org)
 - [VapourSynth](https://www.vapoursynth.com)
-- [FFMS2](https://github.com/ffms/ffms2) development files — `condor` links FFMS2 dynamically; the shared `libffms2` library is also required at runtime
+- [FFMS2](https://github.com/ffms/ffms2) development files — `av1an` links FFMS2 dynamically; the shared `libffms2` library is also required at runtime
 
 On Arch Linux, you can install these dependencies by running
 
@@ -34,21 +34,21 @@ meson ninja-build`.
 After installing the dependencies, build the CLI:
 
 ```sh
-cargo build --locked --release -p california-condor --bin condor
+cargo build --locked --release -p california-condor --bin av1an
 ```
 
-The resulting binary is `./target/release/condor`.
+The resulting binary is `./target/release/av1an`.
 
 If FFMS2 is not where the build expects it, point the build at it:
 
 ```sh
-FFMS_LIB_DIR=/usr/lib/x86_64-linux-gnu FFMS_INCLUDE_DIR=/usr/include cargo build --locked --release -p california-condor --bin condor
+FFMS_LIB_DIR=/usr/lib/x86_64-linux-gnu FFMS_INCLUDE_DIR=/usr/include cargo build --locked --release -p california-condor --bin av1an
 ```
 
 ## Compiling on Windows
 
 The checked upstream `latest` release contains legacy `av1an.exe`, not this CLI.
-Until a release offers `condor-windows-x64.zip`, build this source tree; see
+Until a release offers `av1an-windows-x64.zip`, build this source tree; see
 [Installation](./installation.md#windows-releases) for the conditional bundle layout.
 
 If you want to build the binary yourself, you will need the following dependencies:
@@ -59,7 +59,7 @@ If you want to build the binary yourself, you will need the following dependenci
 - [NASM](https://nasm.us)
 - [FFmpeg](https://ffmpeg.org)
 - [LLVM](https://releases.llvm.org)
-- [FFMS2](https://github.com/ffms/ffms2/releases) — headers and import library for the build, plus the dynamically linked `ffms2.dll` beside `condor.exe` at runtime
+- [FFMS2](https://github.com/ffms/ffms2/releases) — headers and import library for the build, plus the dynamically linked `ffms2.dll` beside `av1an.exe` at runtime
 
 ### FFMS2 setup
 
@@ -72,20 +72,20 @@ If you want to build the binary yourself, you will need the following dependenci
 Open a command prompt or PowerShell window at the workspace root described above:
 
 ```powershell
-cargo build --locked --release -p california-condor --bin condor
+cargo build --locked --release -p california-condor --bin av1an
 ```
 
-The resulting binary is `target\release\condor.exe`.
+The resulting binary is `target\release\av1an.exe`.
 
 The source-built executable also needs `ffms2.dll`, app-local MSVC runtimes from
 the selected installed Visual Studio x64 CRT redistributable, `DirectML.dll` from
 the pinned ORT build, and any other build-produced ORT runtime DLLs. Metric DLLs
 are loaded on demand; VMAF and TransNetV2 need their models in `model/` or explicit
-runtime overrides. Copying only `condor.exe` is not an installation.
+runtime overrides. Copying only `av1an.exe` is not an installation.
 `package-release.ps1` requires Python. See [Installation](./installation.md) for
 the configured bundle layout and the still-required native Windows gate.
 
-The Windows build embeds `condor.exe.manifest` through `embed-resource`, which declares the executable `longPathAware`. Without it, paths longer than `MAX_PATH` fail inside VapourSynth with "Source path does not exist"; this happens automatically, so no extra step is needed.
+The Windows build embeds `av1an.exe.manifest` through `embed-resource`, which declares the executable `longPathAware`. Without it, paths longer than `MAX_PATH` fail inside VapourSynth with "Source path does not exist"; this happens automatically, so no extra step is needed.
 
 ## Optional native metrics
 

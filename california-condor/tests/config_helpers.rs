@@ -9,9 +9,9 @@ use california_condor::{
     test_helpers::{get_test_video, path_str},
 };
 
-/// The `condor` binary with `temp` as its working directory.
+/// The `av1an` binary with `temp` as its working directory.
 fn condor_cmd(working_directory: &tempfile::TempDir) -> assert_cmd::Command {
-    let mut cmd = assert_cmd::Command::cargo_bin("condor").expect("condor binary should be built");
+    let mut cmd = assert_cmd::Command::cargo_bin("av1an").expect("av1an binary should be built");
     cmd.current_dir(working_directory.path());
     cmd
 }

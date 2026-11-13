@@ -56,7 +56,7 @@ pub enum BenchmarkKey {
     MaxMemory,
 }
 
-/// Settings `condor benchmark set` can change.
+/// Settings `av1an benchmark set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum BenchmarkSet {
     /// Speed increase (in percent) required to add an additional worker.
@@ -71,10 +71,10 @@ pub enum BenchmarkSet {
     },
 }
 
-/// The action triple attached to `condor benchmark`.
+/// The action triple attached to `av1an benchmark`.
 pub type BenchmarkAction = ConfigAction<BenchmarkKey, BenchmarkSet>;
 
-/// The `condor benchmark` configuration section.
+/// The `av1an benchmark` configuration section.
 pub struct BenchmarkCrud;
 
 impl ConfigCommand for BenchmarkCrud {
@@ -140,7 +140,7 @@ impl ConfigCommand for BenchmarkCrud {
     }
 }
 
-/// `condor benchmark info|set|reset`.
+/// `av1an benchmark info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &BenchmarkAction) -> Result<()> {
     edit::<BenchmarkCrud>(config_path, action)
 }

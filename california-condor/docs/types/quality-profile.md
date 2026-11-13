@@ -17,5 +17,5 @@ If not specified, `standard` is used.
 
 ## Examples
 
-- `> condor target-quality --profile fast --metric ssimulacra2 --target 85`
-- `> condor quality-check --profile slow`
+- `> av1an target-quality --profile fast --metric ssimulacra2 --target 85`
+- `> av1an quality-check --profile slow`

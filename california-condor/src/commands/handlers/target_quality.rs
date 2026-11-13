@@ -352,7 +352,7 @@ pub enum TargetQualityKey {
     Params,
 }
 
-/// Settings `condor target-quality set` can change.
+/// Settings `av1an target-quality set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum TargetQualitySet {
     /// The quality metric measured during the search.
@@ -407,7 +407,7 @@ pub enum TargetQualitySet {
     /// Which frames of each probe the search samples.
     ///
     /// The probing strategy of Target Quality; takes its values exactly as
-    /// *condor quality-check set strategy*.
+    /// *av1an quality-check set strategy*.
     Strategy {
         #[command(flatten)]
         args: StrategyArgs,
@@ -415,7 +415,7 @@ pub enum TargetQualitySet {
     /// How the probe scores become one result.
     ///
     /// The probe statistic of Target Quality; takes its values exactly as
-    /// *condor quality-check set statistic*.
+    /// *av1an quality-check set statistic*.
     Statistic {
         #[command(flatten)]
         args: StatisticArgs,
@@ -431,7 +431,7 @@ pub enum TargetQualitySet {
     },
 }
 
-/// The action triple attached to `condor target-quality`.
+/// The action triple attached to `av1an target-quality`.
 pub type TargetQualityAction = ConfigAction<TargetQualityKey, TargetQualitySet>;
 
 /// Everything that can make a Target Quality setting unusable.
@@ -449,7 +449,7 @@ pub enum TargetQualityConfigError {
     QuantizerRangeInverted,
 }
 
-/// The `condor target-quality` configuration section.
+/// The `av1an target-quality` configuration section.
 pub struct TargetQualityCrud;
 
 impl TargetQualityCrud {
@@ -763,7 +763,7 @@ impl ConfigCommand for TargetQualityCrud {
     }
 }
 
-/// `condor target-quality info|set|reset`.
+/// `av1an target-quality info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &TargetQualityAction) -> Result<()> {
     edit::<TargetQualityCrud>(config_path, action)
 }

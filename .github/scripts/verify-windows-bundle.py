@@ -11,7 +11,7 @@ import zipfile
 
 
 REQUIRED = (
-    "condor.exe", "ffms2.dll", "libvmaf.dll", "libvship.dll", "fmetrics.dll",
+    "av1an.exe", "ffms2.dll", "libvmaf.dll", "libvship.dll", "fmetrics.dll",
     "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "DirectML.dll",
     "libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll",
     "model/vmaf_v0.6.1.json", "model/transnetv2.onnx",
@@ -92,13 +92,13 @@ def native_smoke(path: Path, readobj: Path) -> None:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     old_error_mode = kernel32.SetErrorMode(0x0001 | 0x0002)
     try:
-        with tempfile.TemporaryDirectory(prefix="condor-windows-smoke-") as scratch:
+        with tempfile.TemporaryDirectory(prefix="av1an-windows-smoke-") as scratch:
             root = Path(scratch)
             extracted, work = root / "bundle", root / "work"
             work.mkdir()
             with zipfile.ZipFile(path) as archive:
                 archive.extractall(extracted)
-            binaries = [extracted / "condor.exe", *extracted.glob("*.dll")]
+            binaries = [extracted / "av1an.exe", *extracted.glob("*.dll")]
             imports = {}
             for binary in binaries:
                 result = subprocess.run(
@@ -116,14 +116,14 @@ def native_smoke(path: Path, readobj: Path) -> None:
                 "TEMP": str(work), "TMP": str(work), "USERPROFILE": str(work),
                 "HOME": str(work), "APPDATA": str(work), "LOCALAPPDATA": str(work),
             }
-            exe = str(extracted / "condor.exe")
+            exe = str(extracted / "av1an.exe")
 
             def run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
                 result = subprocess.run(
                     [exe, *args], cwd=work, env=env, capture_output=True,
                     text=True, timeout=120, check=False,
                 )
-                print(f"condor {' '.join(args)}: exit {result.returncode}")
+                print(f"av1an {' '.join(args)}: exit {result.returncode}")
                 print(result.stdout + result.stderr)
                 if check:
                     result.check_returncode()

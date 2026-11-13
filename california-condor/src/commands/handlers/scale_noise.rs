@@ -78,7 +78,7 @@ pub enum ScaleNoiseKey {
     ScaleChroma,
 }
 
-/// Settings `condor scale-noise set` can change.
+/// Settings `av1an scale-noise set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum ScaleNoiseSet {
     /// Noise below which a scene's Photon Noise is left untouched.
@@ -106,10 +106,10 @@ pub enum ScaleNoiseSet {
     },
 }
 
-/// The action triple attached to `condor scale-noise`.
+/// The action triple attached to `av1an scale-noise`.
 pub type ScaleNoiseAction = ConfigAction<ScaleNoiseKey, ScaleNoiseSet>;
 
-/// The `condor scale-noise` configuration section.
+/// The `av1an scale-noise` configuration section.
 pub struct ScaleNoiseCrud;
 
 impl ConfigCommand for ScaleNoiseCrud {
@@ -226,7 +226,7 @@ impl ConfigCommand for ScaleNoiseCrud {
     }
 }
 
-/// `condor scale-noise info|set|reset`.
+/// `av1an scale-noise info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &ScaleNoiseAction) -> Result<()> {
     edit::<ScaleNoiseCrud>(config_path, action)
 }

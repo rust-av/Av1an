@@ -150,7 +150,7 @@ pub fn configure_temp(configuration: &mut Configuration, temp_path: Option<&Path
     {
         if !rebased {
             warn!(
-                "Preserving custom {command} scenes directory `{}`; --temp does not move those files; use `condor {command} set scenes-directory PATH` to change it",
+                "Preserving custom {command} scenes directory `{}`; --temp does not move those files; use `av1an {command} set scenes-directory PATH` to change it",
                 directory.display()
             );
         }

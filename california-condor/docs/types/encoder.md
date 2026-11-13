@@ -53,5 +53,5 @@ for the per-encoder flags.
 
 ## Examples
 
-- `> condor encode -e rav1e --params "--speed 4"`
-- `> condor -i input.mp4 -o output.mkv -e svt-av1 --passes 1`
+- `> av1an encode -e rav1e --params "--speed 4"`
+- `> av1an -i input.mp4 -o output.mkv -e svt-av1 --passes 1`

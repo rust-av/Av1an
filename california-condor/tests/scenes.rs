@@ -851,7 +851,7 @@ mod tests {
 
         let reset = condor_cmd(&temp).args(["scenes", "reset"]).assert().success();
         assert!(
-            String::from_utf8_lossy(&reset.get_output().stdout).contains("condor detect-scenes"),
+            String::from_utf8_lossy(&reset.get_output().stdout).contains("av1an detect-scenes"),
             "the reset hints at rebuilding the scenes"
         );
         assert!(

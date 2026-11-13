@@ -75,8 +75,8 @@ synthesis. See [Photon Noise](../types/photon-noise.md).
 ## Examples
 
 ```bash
-$ condor encode --encoder vpx --params "--cq-level=24"
-$ condor encode --encoder vpx --params "--end-usage=vbr --target-bitrate=3000"
-$ condor encode --encoder vpx --params "--codec=vp8 -b 8 --profile=0 --cq-level=20"
-$ condor encode --encoder vpx --params "--cpu-used=0 --tile-columns=2 --tile-rows=1"
+$ av1an encode --encoder vpx --params "--cq-level=24"
+$ av1an encode --encoder vpx --params "--end-usage=vbr --target-bitrate=3000"
+$ av1an encode --encoder vpx --params "--codec=vp8 -b 8 --profile=0 --cq-level=20"
+$ av1an encode --encoder vpx --params "--cpu-used=0 --tile-columns=2 --tile-rows=1"
 ```

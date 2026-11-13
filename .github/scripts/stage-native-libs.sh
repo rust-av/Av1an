@@ -99,7 +99,7 @@ fi
 mv -f "$partial" "$StageDir/model/transnetv2.onnx"
 echo "    $StageDir/model/transnetv2.onnx  $(wc -c < "$StageDir/model/transnetv2.onnx") bytes, sha256 verified"
 
-# libvmaf must share condor's glibc; build the pinned source when the host
+# libvmaf must share av1an's glibc; build the pinned source when the host
 # ships none.
 step 'Staging libvmaf'
 build_libvmaf() {

@@ -3,22 +3,22 @@
     Downloads the TransNetV2 ONNX model for neural scene detection.
 
 .DESCRIPTION
-    condor never downloads the model at runtime: it searches for
+    av1an never downloads the model at runtime: it searches for
     `transnetv2.onnx` at, in order,
 
       1. the `model_path` set on the TransNetV2 scene detection method,
       2. `$env:TRANSNETV2_MODEL_PATH`,
-      3. `model/transnetv2.onnx` beside the condor executable,
-      4. `transnetv2.onnx` beside the condor executable,
+      3. `model/transnetv2.onnx` beside the av1an executable,
+      4. `transnetv2.onnx` beside the av1an executable,
       5. the per-user cache directory.
 
     This script downloads the model into the current directory and prints the
-    environment variable that points condor at it. The download is verified
+    environment variable that points av1an at it. The download is verified
     against a pinned SHA-256 before it is moved into place, so an interrupted
     download can never pass for the real model.
 
     Releases already ship the model at `model/transnetv2.onnx` beside
-    `condor.exe`, where it is found with no environment variable set; this
+    `av1an.exe`, where it is found with no environment variable set; this
     script is for source builds and custom layouts.
 
 .PARAMETER Destination
@@ -91,11 +91,11 @@ Write-Host 'Those persist for future shells. For this session only, use:'
 Write-Host ''
 Write-Host "  `$env:TRANSNETV2_MODEL_PATH = '$model'"
 Write-Host ''
-Write-Host 'Not needed when the model sits at model/transnetv2.onnx beside condor.exe,'
+Write-Host 'Not needed when the model sits at model/transnetv2.onnx beside av1an.exe,'
 Write-Host 'which is where a release stages it; the scene detector searches there on'
 Write-Host 'its own. The model_path on the TransNetV2 scene detection method in'
 Write-Host 'condor.json also wins over the environment variable.'
 Write-Host ''
 Write-Host 'Verify with:'
 Write-Host ''
-Write-Host '  condor detect-scenes --method transnetv2'
+Write-Host '  av1an detect-scenes --method transnetv2'

@@ -1,10 +1,10 @@
 ## Linux host requirements
 
-The Linux archive bundles `condor`, `libvmaf.so`, `libvship.so`,
+The Linux archive bundles `av1an`, `libvmaf.so`, `libvship.so`,
 `libfmetrics.so` and the VMAF models. The host still provides:
 
 - `libffms2` (`libffms2-5` on Debian/Ubuntu, `ffms2` on Fedora/Arch):
-  `condor` links against it, so the loader fails before the program
+  `av1an` links against it, so the loader fails before the program
   starts without it — even for `--version`
 - glibc 2.39 or newer: the executable and every bundled library are built
   against that baseline, so older hosts (Ubuntu 22.04 or earlier, Debian 12,

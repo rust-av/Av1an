@@ -50,8 +50,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 # The PyInstaller-generated manifests above stay ignored, but the Windows
-# application manifest `embed-resource` compiles into `condor.exe` is source.
-!california-condor/condor.exe.manifest
+# application manifest `embed-resource` compiles into `av1an.exe` is source.
+!california-condor/av1an.exe.manifest
 *.spec
 
 # Installer logs

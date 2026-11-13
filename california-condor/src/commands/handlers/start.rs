@@ -242,7 +242,7 @@ pub fn start_handler_cancel(
         configuration.condor.sequence_config.scene_concatenator.output.as_ref(),
     ) {
         bail!(
-            "--output (-o) is shadowed by the saved concatenation output {}; run `condor concatenate reset output` before choosing a root output, or `condor concatenate set output PATH` to change the override",
+            "--output (-o) is shadowed by the saved concatenation output {}; run `av1an concatenate reset output` before choosing a root output, or `av1an concatenate set output PATH` to change the override",
             output.display()
         );
     }

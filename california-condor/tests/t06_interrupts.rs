@@ -46,7 +46,7 @@ mod tests {
                 env!("CARGO_MANIFEST_DIR"),
                 "/tests/t06_interrupts.py"
             ))
-            .arg(assert_cmd::cargo::cargo_bin!("condor"))
+            .arg(assert_cmd::cargo::cargo_bin!("av1an"))
             .arg(root)
             .output()
             .expect("python3 is required for the Linux PTY regression");

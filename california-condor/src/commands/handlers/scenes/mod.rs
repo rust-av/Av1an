@@ -40,10 +40,10 @@ use crate::{
     scenes::{SceneSelection, ScenesError, require_scene},
 };
 
-/// The name every `condor scenes` change is reported under.
+/// The name every `av1an scenes` change is reported under.
 const SUBJECT: &str = "Scenes";
 
-/// `condor scenes [INDEX] [info|set|reset|delete|add]`.
+/// `av1an scenes [INDEX] [info|set|reset|delete|add]`.
 ///
 /// Without an action the addressed scenes are printed, the same as `info`.
 pub fn config(
@@ -75,7 +75,7 @@ pub fn config(
     }
 }
 
-/// `condor scenes [INDEX] info [KEY]`.
+/// `av1an scenes [INDEX] info [KEY]`.
 fn info(
     config_path: Option<&Path>,
     index: Option<&SceneSelection>,
@@ -92,7 +92,7 @@ fn info(
     Ok(())
 }
 
-/// `condor scenes INDEX set ...`.
+/// `av1an scenes INDEX set ...`.
 fn set(
     config_path: Option<&Path>,
     index: Option<&SceneSelection>,
@@ -122,7 +122,7 @@ fn set(
     Ok(())
 }
 
-/// `condor scenes [INDEX] reset [KEY]`.
+/// `av1an scenes [INDEX] reset [KEY]`.
 ///
 /// When neither index nor key is provided, clear the whole list.
 fn reset(
@@ -140,7 +140,7 @@ fn reset(
         let change = PropertyChange::new("section", &configuration.condor.scenes)?;
         save_edit(&configuration, &path, &before)?;
         announce(SUBJECT, &change, true);
-        println!("Run `condor detect-scenes` to rebuild the scene list.");
+        println!("Run `av1an detect-scenes` to rebuild the scene list.");
         // The summary covers the list this run cleared, so it is taken from
         // the scenes as they were found rather than from the empty list.
         report_totals(&before, &resolve(&before, None)?);
@@ -175,7 +175,7 @@ fn reset(
     Ok(())
 }
 
-/// `condor scenes INDEX delete`.
+/// `av1an scenes INDEX delete`.
 fn delete(config_path: Option<&Path>, index: Option<&SceneSelection>) -> Result<()> {
     let Some(index) = index else {
         bail!(ScenesConfigError::DeleteNeedsIndex);
@@ -208,7 +208,7 @@ fn delete(config_path: Option<&Path>, index: Option<&SceneSelection>) -> Result<
     Ok(())
 }
 
-/// `condor scenes add START END`.
+/// `av1an scenes add START END`.
 fn add(config_path: Option<&Path>, start: usize, end: usize, placement: Placement) -> Result<()> {
     let (mut configuration, path) = load_configuration(config_path)?;
     let before = configuration.condor.scenes.clone();

@@ -1,4 +1,4 @@
-//! How a `condor scenes` run reports itself: selection rendering, change
+//! How an `av1an scenes` run reports itself: selection rendering, change
 //! summaries, staleness warnings and saving.
 
 use std::path::Path;

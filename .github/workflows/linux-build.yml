@@ -58,7 +58,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Condor build
-        run: cargo build --release --bin condor
+        run: cargo build --release --bin av1an
 
       - name: Generate configuration schema
         run: cargo run --release --bin generate-schema > california-condor/configuration.schema.json
@@ -73,26 +73,26 @@ jobs:
       - name: Smoke-test the archive
         run: |
           mkdir -p /tmp/smoke && cd /tmp/smoke
-          unzip -q "$GITHUB_WORKSPACE/target/condor-linux-x64.zip"
+          unzip -q "$GITHUB_WORKSPACE/target/av1an-linux-x64.zip"
           # Build-tree overrides must not mask broken archive discovery.
           # The release uses its $ORIGIN runpath and adjacent model/ directory.
           unset FMETRICS_LIB_PATH FMETRICS_LIB_DIR VSHIP_PLUGIN_PATH VSHIP_LIB_DIR \
             VSSCRIPT_PATH VAPOURSYNTH_EXTRA_PLUGIN_PATH VMAF_LIB_DIR VMAF_MODEL_PATH \
             LD_LIBRARY_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH
-          ./condor --version > version.txt 2>&1
+          ./av1an --version > version.txt 2>&1
           cat version.txt
           sed -r 's/\x1b\[[0-9;]*[A-Za-z]//g' version.txt > verdict.txt
           # The CPU metric libraries ship in the archive: they must load.
           grep -q '✓ libvmaf' verdict.txt
           grep -q '✓ fmetrics' verdict.txt
-          readelf -d ./condor | grep -Fq "\$ORIGIN"
+          readelf -d ./av1an | grep -Fq "\$ORIGIN"
 
       - name: Stage the release assets
         run: python3 -B .github/scripts/coordinate-release.py stage linux
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: condor-linux-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: av1an-linux-x64-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
           retention-days: 1
           if-no-files-found: error

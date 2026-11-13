@@ -3,8 +3,8 @@
 Detect scenes (triggers TUI). See [guide](../guide.md) and [type reference](../types.md).
 
 ```bash
-$ condor detect-scenes
-$ condor detect-scenes -i input.mp4 --method standard --min-scene-seconds 1 --max-scene-seconds 10
+$ av1an detect-scenes
+$ av1an detect-scenes -i input.mp4 --method standard --min-scene-seconds 1 --max-scene-seconds 10
 ```
 
 | Name                                                  | Flag                  | Type      | Default      |
@@ -23,8 +23,8 @@ Path to the input file to detect scenes. Can be a video or VapourSynth script (`
 
 ### Examples
 
-- `> condor detect-scenes -i ./video.mp4`
-- `> condor detect-scenes -i ./script.vpy`
+- `> av1an detect-scenes -i ./video.mp4`
+- `> av1an detect-scenes -i ./script.vpy`
 
 ## Decoder `--decoder`
 
@@ -44,7 +44,7 @@ VapourSynth filters to apply to the Scene Detector input. Defaults to the input'
 
 ### Examples
 
-- `> condor detect-scenes --filters "resize:scaler=bilinear;width=540;height=960;"` - Downscale for faster detection
+- `> av1an detect-scenes --filters "resize:scaler=bilinear;width=540;height=960;"` - Downscale for faster detection
 
 ## VapourSynth Arguments `--vs-args`
 
@@ -52,7 +52,7 @@ VapourSynth/Python arguments to pass to the Scene Detector input script environm
 
 ### Examples
 
-- `> condor detect-scenes --vs-args "message=fluffy kittens" --vs-args "head=empty"`
+- `> av1an detect-scenes --vs-args "message=fluffy kittens" --vs-args "head=empty"`
 
 ## Method `--method`
 
@@ -94,9 +94,9 @@ If not specified, `10` is used.
 - `info [method|input]` prints JSON; `reset method` resets the algorithm, `reset input` drops the override, and a bare `reset` restores the whole section to its defaults.
 
 ```bash
-$ condor detect-scenes set method avscenechange --minimum-frames 20 --maximum-frames 280
-$ condor detect-scenes info method
-$ condor detect-scenes reset method
+$ av1an detect-scenes set method avscenechange --minimum-frames 20 --maximum-frames 280
+$ av1an detect-scenes info method
+$ av1an detect-scenes reset method
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -112,18 +112,18 @@ The screenshots below are generated from the live interface. Click any image to 
       <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">Detecting scenes</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-detect-scenes-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-light.avif" alt="condor detect-scenes --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-scenes --help</p>
+      <a href="../media/tui/help-detect-scenes-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-light.avif" alt="av1an detect-scenes --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-scenes --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-detect-scenes-verbose-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-verbose-light.avif" alt="condor detect-scenes --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-scenes --help --verbose</p>
+      <a href="../media/tui/help-detect-scenes-verbose-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-verbose-light.avif" alt="av1an detect-scenes --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-scenes --help --verbose</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-detect-scenes-set-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-set-light.avif" alt="condor detect-scenes set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-scenes set --help</p>
+      <a href="../media/tui/help-detect-scenes-set-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-set-light.avif" alt="av1an detect-scenes set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-scenes set --help</p>
     </td>
   </tr>
 </table>

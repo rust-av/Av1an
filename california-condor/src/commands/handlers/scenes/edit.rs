@@ -1,4 +1,4 @@
-//! The mutations `condor scenes` applies to the scene list: frame and
+//! The mutations `av1an scenes` applies to the scene list: frame and
 //! encoder edits, resets, removals and insertions.
 
 use andean_condor::models::{

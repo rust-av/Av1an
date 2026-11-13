@@ -212,7 +212,7 @@ Write-Host 'That persists for future shells. For this session only, use:'
 Write-Host ''
 Write-Host "  `$env:FMETRICS_LIB_DIR = '$Destination'"
 Write-Host ''
-Write-Host 'Not needed when the DLL sits beside condor.exe, which is where a'
+Write-Host 'Not needed when the DLL sits beside av1an.exe, which is where a'
 Write-Host 'release stages it; the crate searches there on its own.'
 Write-Host ''
 Write-Host 'Verify with:'

@@ -389,7 +389,7 @@ System paths are searched **before** the executable-adjacent ones, so a stray
 silently override the distribution's model. `VMAF_MODEL_PATH` is the deliberate
 exception, since setting it is an explicit choice.
 
-So for a release that ships `condor.exe`, `libvmaf.dll` and `model/`, no
+So for a release that ships `av1an.exe`, `libvmaf.dll` and `model/`, no
 configuration is needed. Otherwise point `VMAF_MODEL_PATH` at the directory holding
 `vmaf_v0.6.1.json`, or pass the file explicitly with `VmafConfig::with_model_path`.
 An explicit per-run file path takes precedence over `VMAF_MODEL_PATH`.

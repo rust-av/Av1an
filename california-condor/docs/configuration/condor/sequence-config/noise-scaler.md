@@ -28,7 +28,7 @@ or rewritten by an unrelated scene edit.
 Scene edits retain valid scaling and range-mapped measurements. If scaling must
 be withdrawn, its original PhotonNoise is restored before publication without
 resetting zone-specific encoder options. Missing proof or conflicting PhotonNoise
-edits refuse and preserve the old job. `condor scenes INDEX reset noise-scaling`
+edits refuse and preserve the old job. `av1an scenes INDEX reset noise-scaling`
 uses the same restoration before clearing metadata. Reset it before editing ISO,
 chroma or calibration fields; never recover an original by dividing rounded ISO.
 New producer records with changed dependencies refuse direct rescaling until

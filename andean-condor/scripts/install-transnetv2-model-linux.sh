@@ -3,22 +3,22 @@
 #     Downloads the TransNetV2 ONNX model for neural scene detection.
 #
 # .DESCRIPTION
-#     condor never downloads the model at runtime: it searches for
+#     av1an never downloads the model at runtime: it searches for
 #     `transnetv2.onnx` at, in order,
 #
 #       1. the `model_path` set on the TransNetV2 scene detection method,
 #       2. $TRANSNETV2_MODEL_PATH,
-#       3. model/transnetv2.onnx beside the condor executable,
-#       4. transnetv2.onnx beside the condor executable,
+#       3. model/transnetv2.onnx beside the av1an executable,
+#       4. transnetv2.onnx beside the av1an executable,
 #       5. the per-user cache directory.
 #
 #     This script downloads the model into the current directory and prints
-#     the environment variable that points condor at it. The download is
+#     the environment variable that points av1an at it. The download is
 #     verified against a pinned sha256 before it is moved into place, so an
 #     interrupted download can never pass for the real model.
 #
 #     Releases already ship the model at model/transnetv2.onnx beside the
-#     condor executable, where it is found with no environment variable set;
+#     av1an executable, where it is found with no environment variable set;
 #     this script is for source builds and custom layouts.
 #
 # .ENVIRONMENT
@@ -74,12 +74,12 @@ Set this environment variable to use the install:
   export TRANSNETV2_MODEL_PATH='$Destination/transnetv2.onnx'
 
 Add it to your shell rc to persist. Not needed when the model sits at
-model/transnetv2.onnx beside the condor binary, which is where a release
+model/transnetv2.onnx beside the av1an binary, which is where a release
 stages it; the scene detector searches there on its own. The model_path on
 the TransNetV2 scene detection method in condor.json also wins over the
 environment variable.
 
 Verify with:
 
-  condor detect-scenes --method transnetv2
+  av1an detect-scenes --method transnetv2
 EOF

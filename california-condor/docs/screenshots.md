@@ -56,148 +56,148 @@ follow the [Commands](commands/condor.md) section to see them in context.
 
 ## Command Help
 
-`condor --help` and the per-command help, in both the short and verbose
+`av1an --help` and the per-command help, in both the short and verbose
 (`--help --verbose`) forms.
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-light.avif"><picture><source srcset="media/tui/help-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-light.avif" alt="condor --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor --help</p>
+      <a href="media/tui/help-light.avif"><picture><source srcset="media/tui/help-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-light.avif" alt="av1an --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-verbose-light.avif"><picture><source srcset="media/tui/help-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-verbose-light.avif" alt="condor --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor --help --verbose</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-init-light.avif"><picture><source srcset="media/tui/help-init-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-init-light.avif" alt="condor init --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor init --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-init-verbose-light.avif"><picture><source srcset="media/tui/help-init-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-init-verbose-light.avif" alt="condor init --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor init --help --verbose</p>
+      <a href="media/tui/help-verbose-light.avif"><picture><source srcset="media/tui/help-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-verbose-light.avif" alt="av1an --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-detect-scenes-light.avif"><picture><source srcset="media/tui/help-detect-scenes-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-scenes-light.avif" alt="condor detect-scenes --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-scenes --help</p>
+      <a href="media/tui/help-init-light.avif"><picture><source srcset="media/tui/help-init-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-init-light.avif" alt="av1an init --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an init --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-detect-scenes-verbose-light.avif"><picture><source srcset="media/tui/help-detect-scenes-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-scenes-verbose-light.avif" alt="condor detect-scenes --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-scenes --help --verbose</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-zone-light.avif"><picture><source srcset="media/tui/help-zone-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-zone-light.avif" alt="condor zone --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor zone --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-zone-verbose-light.avif"><picture><source srcset="media/tui/help-zone-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-zone-verbose-light.avif" alt="condor zone --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor zone --help --verbose</p>
+      <a href="media/tui/help-init-verbose-light.avif"><picture><source srcset="media/tui/help-init-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-init-verbose-light.avif" alt="av1an init --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an init --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-detect-noise-light.avif"><picture><source srcset="media/tui/help-detect-noise-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-noise-light.avif" alt="condor detect-noise --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-noise --help</p>
+      <a href="media/tui/help-detect-scenes-light.avif"><picture><source srcset="media/tui/help-detect-scenes-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-scenes-light.avif" alt="av1an detect-scenes --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-scenes --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-detect-noise-verbose-light.avif"><picture><source srcset="media/tui/help-detect-noise-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-noise-verbose-light.avif" alt="condor detect-noise --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-noise --help --verbose</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-scale-noise-light.avif"><picture><source srcset="media/tui/help-scale-noise-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-noise-light.avif" alt="condor scale-noise --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor scale-noise --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-scale-noise-verbose-light.avif"><picture><source srcset="media/tui/help-scale-noise-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-noise-verbose-light.avif" alt="condor scale-noise --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor scale-noise --help --verbose</p>
+      <a href="media/tui/help-detect-scenes-verbose-light.avif"><picture><source srcset="media/tui/help-detect-scenes-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-scenes-verbose-light.avif" alt="av1an detect-scenes --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-scenes --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-benchmark-light.avif"><picture><source srcset="media/tui/help-benchmark-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-benchmark-light.avif" alt="condor benchmark --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor benchmark --help</p>
+      <a href="media/tui/help-zone-light.avif"><picture><source srcset="media/tui/help-zone-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-zone-light.avif" alt="av1an zone --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an zone --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-benchmark-verbose-light.avif"><picture><source srcset="media/tui/help-benchmark-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-benchmark-verbose-light.avif" alt="condor benchmark --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor benchmark --help --verbose</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-target-quality-light.avif"><picture><source srcset="media/tui/help-target-quality-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-target-quality-light.avif" alt="condor target-quality --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor target-quality --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-target-quality-verbose-light.avif"><picture><source srcset="media/tui/help-target-quality-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-target-quality-verbose-light.avif" alt="condor target-quality --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor target-quality --help --verbose</p>
+      <a href="media/tui/help-zone-verbose-light.avif"><picture><source srcset="media/tui/help-zone-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-zone-verbose-light.avif" alt="av1an zone --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an zone --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-optimize-bitrate-light.avif"><picture><source srcset="media/tui/help-optimize-bitrate-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-optimize-bitrate-light.avif" alt="condor optimize-bitrate --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor optimize-bitrate --help</p>
+      <a href="media/tui/help-detect-noise-light.avif"><picture><source srcset="media/tui/help-detect-noise-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-noise-light.avif" alt="av1an detect-noise --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-noise --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-optimize-bitrate-verbose-light.avif"><picture><source srcset="media/tui/help-optimize-bitrate-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-optimize-bitrate-verbose-light.avif" alt="condor optimize-bitrate --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor optimize-bitrate --help --verbose</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-scale-speed-light.avif"><picture><source srcset="media/tui/help-scale-speed-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-speed-light.avif" alt="condor scale-speed --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor scale-speed --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-scale-speed-verbose-light.avif"><picture><source srcset="media/tui/help-scale-speed-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-speed-verbose-light.avif" alt="condor scale-speed --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor scale-speed --help --verbose</p>
+      <a href="media/tui/help-detect-noise-verbose-light.avif"><picture><source srcset="media/tui/help-detect-noise-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-noise-verbose-light.avif" alt="av1an detect-noise --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-noise --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-encode-light.avif"><picture><source srcset="media/tui/help-encode-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-encode-light.avif" alt="condor encode --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor encode --help</p>
+      <a href="media/tui/help-scale-noise-light.avif"><picture><source srcset="media/tui/help-scale-noise-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-noise-light.avif" alt="av1an scale-noise --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an scale-noise --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-encode-verbose-light.avif"><picture><source srcset="media/tui/help-encode-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-encode-verbose-light.avif" alt="condor encode --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor encode --help --verbose</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-concatenate-light.avif"><picture><source srcset="media/tui/help-concatenate-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-concatenate-light.avif" alt="condor concatenate --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor concatenate --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-concatenate-verbose-light.avif"><picture><source srcset="media/tui/help-concatenate-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-concatenate-verbose-light.avif" alt="condor concatenate --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor concatenate --help --verbose</p>
+      <a href="media/tui/help-scale-noise-verbose-light.avif"><picture><source srcset="media/tui/help-scale-noise-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-noise-verbose-light.avif" alt="av1an scale-noise --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an scale-noise --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-quality-check-light.avif"><picture><source srcset="media/tui/help-quality-check-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-quality-check-light.avif" alt="condor quality-check --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor quality-check --help</p>
+      <a href="media/tui/help-benchmark-light.avif"><picture><source srcset="media/tui/help-benchmark-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-benchmark-light.avif" alt="av1an benchmark --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an benchmark --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-quality-check-verbose-light.avif"><picture><source srcset="media/tui/help-quality-check-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-quality-check-verbose-light.avif" alt="condor quality-check --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor quality-check --help --verbose</p>
+      <a href="media/tui/help-benchmark-verbose-light.avif"><picture><source srcset="media/tui/help-benchmark-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-benchmark-verbose-light.avif" alt="av1an benchmark --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an benchmark --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-clean-light.avif"><picture><source srcset="media/tui/help-clean-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-clean-light.avif" alt="condor clean --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor clean --help</p>
+      <a href="media/tui/help-target-quality-light.avif"><picture><source srcset="media/tui/help-target-quality-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-target-quality-light.avif" alt="av1an target-quality --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an target-quality --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-clean-verbose-light.avif"><picture><source srcset="media/tui/help-clean-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-clean-verbose-light.avif" alt="condor clean --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor clean --help --verbose</p>
+      <a href="media/tui/help-target-quality-verbose-light.avif"><picture><source srcset="media/tui/help-target-quality-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-target-quality-verbose-light.avif" alt="av1an target-quality --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an target-quality --help --verbose</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-optimize-bitrate-light.avif"><picture><source srcset="media/tui/help-optimize-bitrate-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-optimize-bitrate-light.avif" alt="av1an optimize-bitrate --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an optimize-bitrate --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-optimize-bitrate-verbose-light.avif"><picture><source srcset="media/tui/help-optimize-bitrate-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-optimize-bitrate-verbose-light.avif" alt="av1an optimize-bitrate --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an optimize-bitrate --help --verbose</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-scale-speed-light.avif"><picture><source srcset="media/tui/help-scale-speed-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-speed-light.avif" alt="av1an scale-speed --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an scale-speed --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-scale-speed-verbose-light.avif"><picture><source srcset="media/tui/help-scale-speed-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-speed-verbose-light.avif" alt="av1an scale-speed --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an scale-speed --help --verbose</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-encode-light.avif"><picture><source srcset="media/tui/help-encode-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-encode-light.avif" alt="av1an encode --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an encode --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-encode-verbose-light.avif"><picture><source srcset="media/tui/help-encode-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-encode-verbose-light.avif" alt="av1an encode --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an encode --help --verbose</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-concatenate-light.avif"><picture><source srcset="media/tui/help-concatenate-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-concatenate-light.avif" alt="av1an concatenate --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an concatenate --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-concatenate-verbose-light.avif"><picture><source srcset="media/tui/help-concatenate-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-concatenate-verbose-light.avif" alt="av1an concatenate --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an concatenate --help --verbose</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-quality-check-light.avif"><picture><source srcset="media/tui/help-quality-check-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-quality-check-light.avif" alt="av1an quality-check --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an quality-check --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-quality-check-verbose-light.avif"><picture><source srcset="media/tui/help-quality-check-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-quality-check-verbose-light.avif" alt="av1an quality-check --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an quality-check --help --verbose</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-clean-light.avif"><picture><source srcset="media/tui/help-clean-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-clean-light.avif" alt="av1an clean --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an clean --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-clean-verbose-light.avif"><picture><source srcset="media/tui/help-clean-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-clean-verbose-light.avif" alt="av1an clean --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an clean --help --verbose</p>
     </td>
   </tr>
 </table>
@@ -209,58 +209,58 @@ The property list of each command's `set` subcommand — the configuration-editi
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-detect-scenes-set-light.avif"><picture><source srcset="media/tui/help-detect-scenes-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-scenes-set-light.avif" alt="condor detect-scenes set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-scenes set --help</p>
+      <a href="media/tui/help-detect-scenes-set-light.avif"><picture><source srcset="media/tui/help-detect-scenes-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-scenes-set-light.avif" alt="av1an detect-scenes set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-scenes set --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-scale-noise-set-light.avif"><picture><source srcset="media/tui/help-scale-noise-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-noise-set-light.avif" alt="condor scale-noise set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor scale-noise set --help</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-benchmark-set-light.avif"><picture><source srcset="media/tui/help-benchmark-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-benchmark-set-light.avif" alt="condor benchmark set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor benchmark set --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-optimize-bitrate-set-light.avif"><picture><source srcset="media/tui/help-optimize-bitrate-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-optimize-bitrate-set-light.avif" alt="condor optimize-bitrate set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor optimize-bitrate set --help</p>
+      <a href="media/tui/help-scale-noise-set-light.avif"><picture><source srcset="media/tui/help-scale-noise-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-noise-set-light.avif" alt="av1an scale-noise set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an scale-noise set --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-detect-noise-set-light.avif"><picture><source srcset="media/tui/help-detect-noise-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-noise-set-light.avif" alt="condor detect-noise set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-noise set --help</p>
+      <a href="media/tui/help-benchmark-set-light.avif"><picture><source srcset="media/tui/help-benchmark-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-benchmark-set-light.avif" alt="av1an benchmark set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an benchmark set --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-target-quality-set-light.avif"><picture><source srcset="media/tui/help-target-quality-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-target-quality-set-light.avif" alt="condor target-quality set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor target-quality set --help</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-scale-speed-set-light.avif"><picture><source srcset="media/tui/help-scale-speed-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-speed-set-light.avif" alt="condor scale-speed set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor scale-speed set --help</p>
-    </td>
-    <td width="50%" valign="top">
-      <a href="media/tui/help-concatenate-set-light.avif"><picture><source srcset="media/tui/help-concatenate-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-concatenate-set-light.avif" alt="condor concatenate set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor concatenate set --help</p>
+      <a href="media/tui/help-optimize-bitrate-set-light.avif"><picture><source srcset="media/tui/help-optimize-bitrate-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-optimize-bitrate-set-light.avif" alt="av1an optimize-bitrate set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an optimize-bitrate set --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-quality-check-set-light.avif"><picture><source srcset="media/tui/help-quality-check-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-quality-check-set-light.avif" alt="condor quality-check set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor quality-check set --help</p>
+      <a href="media/tui/help-detect-noise-set-light.avif"><picture><source srcset="media/tui/help-detect-noise-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-detect-noise-set-light.avif" alt="av1an detect-noise set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-noise set --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/help-init-set-light.avif"><picture><source srcset="media/tui/help-init-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-init-set-light.avif" alt="condor init set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor init set --help</p>
+      <a href="media/tui/help-target-quality-set-light.avif"><picture><source srcset="media/tui/help-target-quality-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-target-quality-set-light.avif" alt="av1an target-quality set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an target-quality set --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/help-encode-set-light.avif"><picture><source srcset="media/tui/help-encode-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-encode-set-light.avif" alt="condor encode set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor encode set --help</p>
+      <a href="media/tui/help-scale-speed-set-light.avif"><picture><source srcset="media/tui/help-scale-speed-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-scale-speed-set-light.avif" alt="av1an scale-speed set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an scale-speed set --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-concatenate-set-light.avif"><picture><source srcset="media/tui/help-concatenate-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-concatenate-set-light.avif" alt="av1an concatenate set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an concatenate set --help</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-quality-check-set-light.avif"><picture><source srcset="media/tui/help-quality-check-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-quality-check-set-light.avif" alt="av1an quality-check set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an quality-check set --help</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-init-set-light.avif"><picture><source srcset="media/tui/help-init-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-init-set-light.avif" alt="av1an init set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an init set --help</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="media/tui/help-encode-set-light.avif"><picture><source srcset="media/tui/help-encode-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/help-encode-set-light.avif" alt="av1an encode set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an encode set --help</p>
     </td>
     <td width="50%" valign="top"></td>
   </tr>
@@ -268,19 +268,19 @@ The property list of each command's `set` subcommand — the configuration-editi
 
 ## Version
 
-The environment report printed by `condor --version`: which VapourSynth
+The environment report printed by `av1an --version`: which VapourSynth
 plugins, encoders and quality metric libraries are installed. The verbose form
 adds versions and compute-device details.
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="media/tui/version-light.avif"><picture><source srcset="media/tui/version-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/version-light.avif" alt="condor --version" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor --version</p>
+      <a href="media/tui/version-light.avif"><picture><source srcset="media/tui/version-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/version-light.avif" alt="av1an --version" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an --version</p>
     </td>
     <td width="50%" valign="top">
-      <a href="media/tui/version-verbose-light.avif"><picture><source srcset="media/tui/version-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/version-verbose-light.avif" alt="condor --version --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor --version --verbose</p>
+      <a href="media/tui/version-verbose-light.avif"><picture><source srcset="media/tui/version-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="media/tui/version-verbose-light.avif" alt="av1an --version --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an --version --verbose</p>
     </td>
   </tr>
 </table>

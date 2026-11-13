@@ -109,7 +109,7 @@ pub enum ScaleSpeedKey {
     SpeedQuantizers,
 }
 
-/// Settings `condor scale-speed set` can change.
+/// Settings `av1an scale-speed set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum ScaleSpeedSet {
     /// The speed–quantizer pairs Convex Hull interpolates between.
@@ -124,10 +124,10 @@ pub enum ScaleSpeedSet {
     },
 }
 
-/// The action triple attached to `condor scale-speed`.
+/// The action triple attached to `av1an scale-speed`.
 pub type ScaleSpeedAction = ConfigAction<ScaleSpeedKey, ScaleSpeedSet>;
 
-/// The `condor scale-speed` configuration section.
+/// The `av1an scale-speed` configuration section.
 pub struct ScaleSpeedCrud;
 
 impl ConfigCommand for ScaleSpeedCrud {
@@ -182,7 +182,7 @@ impl ConfigCommand for ScaleSpeedCrud {
     }
 }
 
-/// `condor scale-speed info|set|reset`.
+/// `av1an scale-speed info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &ScaleSpeedAction) -> Result<()> {
     edit::<ScaleSpeedCrud>(config_path, action)
 }

@@ -30,11 +30,11 @@ mod e15_tests;
 
 #[derive(Debug, ClapParser)]
 #[command(
-    name = "condor",
+    name = "av1an",
     about = "A simple, extensible Commandline tool for the Condor chunked encoding framework.",
-    version = "0.0.1",
+    version,
     disable_version_flag = true,
-    after_help = "Put execution options after the selected command (e.g. condor encode -w 8). Root execution options require no subcommand. --config-file, --logs and --verbose work at either level. Target Quality run options need --target or an existing saved target."
+    after_help = "Put execution options after the selected command (e.g. av1an encode -w 8). Root execution options require no subcommand. --config-file, --logs and --verbose work at either level. Target Quality run options need --target or an existing saved target."
 )]
 pub struct CondorCli {
     #[command(subcommand)]
@@ -172,7 +172,7 @@ impl CondorCli {
         }
     }
 
-    /// Rejects `condor scenes INDEX add` as a usage error.
+    /// Rejects `av1an scenes INDEX add` as a usage error.
     ///
     /// `add` places the scene it inserts itself, so an index before it is not
     /// a form the command has; Clap cannot express an argument that conflicts
@@ -190,7 +190,7 @@ impl CondorCli {
             scenes
                 .error(
                     clap::error::ErrorKind::ArgumentConflict,
-                    "`add` creates a new scene and takes no index: run `condor scenes add START \
+                    "`add` creates a new scene and takes no index: run `av1an scenes add START \
                      END`",
                 )
                 .exit();
@@ -238,7 +238,7 @@ pub enum Commands {
     /// unless one of the configuration subcommands below is used.
     ///
     /// Also reads, changes or resets the top-level settings of an existing
-    /// configuration without running anything: *condor init info*, *set* and
+    /// configuration without running anything: *av1an init info*, *set* and
     /// *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     Init {
@@ -284,7 +284,7 @@ pub enum Commands {
     /// Detect scenes (Triggers TUI).
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor detect-scenes info*, *set* and *reset*.
+    /// *av1an detect-scenes info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     DetectScenes {
         #[command(subcommand)]
@@ -328,7 +328,7 @@ pub enum Commands {
     /// *delete* removes them. Without an action the addressed scenes are
     /// printed.
     ///
-    /// To add a scene, run `condor scenes add START END`: it places the new
+    /// To add a scene, run `av1an scenes add START END`: it places the new
     /// scene itself, so it takes no index.
     Scenes {
         /// Which scenes to address: `1`, `0-4`, `1,3`, `1-2,8-10,16`, or
@@ -341,7 +341,7 @@ pub enum Commands {
     /// Detect noise per scene (Triggers TUI).
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor detect-noise info*, *set* and *reset*.
+    /// *av1an detect-noise info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     DetectNoise {
         #[command(subcommand)]
@@ -363,7 +363,7 @@ pub enum Commands {
     /// configured. Scenes below the threshold will not be scaled.
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor scale-noise info*, *set* and *reset*.
+    /// *av1an scale-noise info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     ScaleNoise {
         #[command(subcommand)]
@@ -386,7 +386,7 @@ pub enum Commands {
     /// Benchmark the optimum amount of workers (Triggers TUI).
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor benchmark info*, *set* and *reset*.
+    /// *av1an benchmark info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     Benchmark {
         #[command(subcommand)]
@@ -406,7 +406,7 @@ pub enum Commands {
     /// (Triggers TUI).
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor target-quality info*, *set* and *reset*.
+    /// *av1an target-quality info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     TargetQuality {
         #[command(subcommand)]
@@ -439,7 +439,7 @@ pub enum Commands {
     /// clamping the quantizer to the average quantizer value.
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor optimize-bitrate info*, *set* and *reset*.
+    /// *av1an optimize-bitrate info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     OptimizeBitrate {
         #[command(subcommand)]
@@ -455,7 +455,7 @@ pub enum Commands {
     /// spline, bounded to the configured speed range. Quantizers must be unique.
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor scale-speed info*, *set* and *reset*.
+    /// *av1an scale-speed info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     ScaleSpeed {
         #[command(subcommand)]
@@ -488,7 +488,7 @@ pub enum Commands {
     /// Encode scenes in parallel (Triggers TUI).
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor encode info*, *set* and *reset*.
+    /// *av1an encode info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     Encode {
         #[command(subcommand)]
@@ -522,7 +522,7 @@ pub enum Commands {
     /// Concatenate encoded scenes into output video (Triggers TUI).
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor concatenate info*, *set* and *reset*.
+    /// *av1an concatenate info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     Concatenate {
         /// Save explicit consent to replace a distinct final output; never prompts.
@@ -539,7 +539,7 @@ pub enum Commands {
     /// TUI).
     ///
     /// Also reads, changes or resets its saved settings without running:
-    /// *condor quality-check info*, *set* and *reset*.
+    /// *av1an quality-check info*, *set* and *reset*.
     #[command(args_conflicts_with_subcommands = true)]
     QualityCheck {
         #[command(subcommand)]
@@ -937,9 +937,9 @@ pub enum CondorCliError {
     NoConfigOrInputOrOutput,
     #[error("Cannot set Decoder without a valid Input path")]
     DecoderWithoutInput,
-    #[error("No config file found. Run 'condor init' to create a configuration.")]
+    #[error("No config file found. Run 'av1an init' to create a configuration.")]
     NoConfig,
-    #[error("No scenes found in the config. Run 'condor detect-scenes' to populate scenes")]
+    #[error("No scenes found in the config. Run 'av1an detect-scenes' to populate scenes")]
     NoScenes,
     #[error("Input {0} must be a VapourSynth script (.vpy or .py)")]
     InvalidVapourSynthScript(PathBuf),

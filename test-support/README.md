@@ -54,7 +54,7 @@ Native Windows loader acceptance still requires the separate gate above.
 The Linux release archive uses the packaged executable's `$ORIGIN` runpath,
 not the test artifacts' injected `LD_LIBRARY_PATH`. Its workflow smoke check
 clears native-library, model, and loader-path overrides locally before invoking
-`./condor --version`; build-tree exports remain available to other steps.
+`./av1an --version`; build-tree exports remain available to other steps.
 This removes runner-path overrides, not the platform's system-library fallback.
 
 ```sh

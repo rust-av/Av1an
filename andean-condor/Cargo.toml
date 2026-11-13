@@ -1,6 +1,6 @@
 [package]
 name = "andean-condor"
-version = "0.0.1"
+version = "1.0.0"
 rust-version = "1.97"
 edition = "2024"
 authors = ["Zen <master_of_zen@protonmail.com>", "Boats McGee"]

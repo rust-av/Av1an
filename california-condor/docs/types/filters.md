@@ -10,9 +10,9 @@ native `--decoder ffms2` input cannot run them; see [FFMS2 Filters](#ffms2-filte
 One or more `name:key=value;key=value;` chains, passed as repeated flags or a single string:
 
 ```bash
-$ condor encode --filters "resize:scaler=bilinear;width=1920;height=1080;format=yuv420p10le"
-$ condor detect-scenes --filters "resize:scaler=bilinear;width=540;height=960;"
-$ condor encode --filters "crop:top=140;bottom=140;" --filters "trim:start=24;end=240;"
+$ av1an encode --filters "resize:scaler=bilinear;width=1920;height=1080;format=yuv420p10le"
+$ av1an detect-scenes --filters "resize:scaler=bilinear;width=540;height=960;"
+$ av1an encode --filters "crop:top=140;bottom=140;" --filters "trim:start=24;end=240;"
 ```
 
 Filter names are case-sensitive; keys are case-insensitive. Omitted optional keys keep
@@ -163,11 +163,11 @@ inputs, creating those inputs if needed. Each inherits the path and decoder of
 
 ## Examples
 
-- `> condor encode --filters "resize:scaler=bilinear;width=1280;height=720;format=yuv420p;"` — Bilinear resize to 1280x720 8-bit
-- `> condor encode --filters "crop:top=140;bottom=140;"` — Crop 140px top and bottom
-- `> condor encode --filters "trim:start=24;end=240;"` — Trim to frames 24-240
-- `> condor encode --filters "rescale:kernel=Mitchell;width=720;height=1280;doubler=ArtCNN;"` — VSJET rescale with ArtCNN
-- `> condor encode --decoder ffms2 --filters "resize:format=yuv420p10le;"` — 10-bit output on a native FFMS2 input
+- `> av1an encode --filters "resize:scaler=bilinear;width=1280;height=720;format=yuv420p;"` — Bilinear resize to 1280x720 8-bit
+- `> av1an encode --filters "crop:top=140;bottom=140;"` — Crop 140px top and bottom
+- `> av1an encode --filters "trim:start=24;end=240;"` — Trim to frames 24-240
+- `> av1an encode --filters "rescale:kernel=Mitchell;width=720;height=1280;doubler=ArtCNN;"` — VSJET rescale with ArtCNN
+- `> av1an encode --decoder ffms2 --filters "resize:format=yuv420p10le;"` — 10-bit output on a native FFMS2 input
 
 ## JSON Shape
 

@@ -1,7 +1,7 @@
 use assert_cmd::Command;
 
 pub fn condor_bin() -> Command {
-    Command::cargo_bin("condor").expect("condor binary should be built")
+    Command::cargo_bin("av1an").expect("av1an binary should be built")
 }
 
 pub fn condor_cmd(working_directory: &tempfile::TempDir) -> Command {

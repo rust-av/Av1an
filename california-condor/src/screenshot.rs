@@ -1093,13 +1093,13 @@ fn ansi_lines(text: &str) -> Vec<Line<'static>> {
 fn session_buf(screen: &Screen, theme: Theme) -> Buffer {
     let mut canvas = Buffer::empty(Rect::new(0, 0, COLS, ROWS));
 
-    // Row 0: `PS C:\Condor> .\condor.exe <command>` in PowerShell colours —
+    // Row 0: `PS C:\Condor> .\av1an.exe <command>` in PowerShell colours —
     // the prompt is what was typed immediately before the TUI took over.
     let prompt_fg = theme.foreground;
     let spans = [
         Span::styled("PS ", Style::default().fg(theme.dim)),
         Span::styled("C:\\Condor> ", Style::default().fg(prompt_fg)),
-        Span::styled(".\\condor.exe", Style::default().fg(theme.main)),
+        Span::styled(".\\av1an.exe", Style::default().fg(theme.main)),
         Span::styled(
             format!(" {}", screen.command),
             Style::default().fg(prompt_fg),
@@ -1156,7 +1156,7 @@ fn help_screens() -> Vec<Screen> {
         screens.push(help_screen(
             "help".into(),
             "--help",
-            "condor --help".into(),
+            "av1an --help".into(),
             &short,
         ));
     }
@@ -1166,7 +1166,7 @@ fn help_screens() -> Vec<Screen> {
         screens.push(help_screen(
             "help-verbose".into(),
             "--help --verbose",
-            "condor --help --verbose".into(),
+            "av1an --help --verbose".into(),
             &long,
         ));
     }
@@ -1179,7 +1179,7 @@ fn help_screens() -> Vec<Screen> {
             screens.push(help_screen(
                 format!("help-{name}"),
                 command,
-                format!("condor {name} --help"),
+                format!("av1an {name} --help"),
                 &short,
             ));
         }
@@ -1190,7 +1190,7 @@ fn help_screens() -> Vec<Screen> {
             screens.push(help_screen(
                 format!("help-{name}-verbose"),
                 command,
-                format!("condor {name} --help --verbose"),
+                format!("av1an {name} --help --verbose"),
                 &long,
             ));
         }
@@ -1201,12 +1201,12 @@ fn help_screens() -> Vec<Screen> {
 
 fn version_screens() -> Vec<Screen> {
     [
-        (false, "version", "--version", "condor --version"),
+        (false, "version", "--version", "av1an --version"),
         (
             true,
             "version-verbose",
             "--version --verbose",
-            "condor --version --verbose",
+            "av1an --version --verbose",
         ),
     ]
     .into_iter()
@@ -1458,7 +1458,7 @@ mod tests {
         assert_eq!(lines[0].spans[0].content.as_ref(), "link");
     }
 
-    /// The real `condor --version --verbose` report (rendered by ironmark,
+    /// The real `av1an --version --verbose` report (rendered by ironmark,
     /// which emits OSC 8 hyperlinks) must not leak escape bytes like `]8;;`
     /// into the buffer — the reported screenshot bug.
     #[test]

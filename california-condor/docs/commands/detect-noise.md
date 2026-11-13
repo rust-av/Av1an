@@ -3,8 +3,8 @@
 Detect noise per scene (triggers TUI). See [guide](../guide.md) and [type reference](../types.md).
 
 ```bash
-$ condor detect-noise
-$ condor detect-noise --reference-filters "wnnm:sigma=3.0,0.0,0.0;"
+$ av1an detect-noise
+$ av1an detect-noise --reference-filters "wnnm:sigma=3.0,0.0,0.0;"
 ```
 
 | Name                                                              | Flag                  | Type        | Default                  |
@@ -21,7 +21,7 @@ Path to the input file to detect noise. Can be a video or VapourSynth script (`.
 
 ### Examples
 
-- `> condor detect-noise --input ./video.mp4`
+- `> av1an detect-noise --input ./video.mp4`
 
 ## Decoder `--decoder`
 
@@ -41,7 +41,7 @@ VapourSynth/Python arguments to pass to the input script environment. See [VS Ar
 
 ### Examples
 
-- `> condor detect-noise --vs-args "denoiser=primary"`
+- `> av1an detect-noise --vs-args "denoiser=primary"`
 
 ## Reference Filters `--reference-filters`
 
@@ -69,10 +69,10 @@ If not specified, `wnnm:sigma=6.0,0.0,0.0;` is used.
 - `info [input|reference-filters|denoised-filters]` prints JSON; `reset reference-filters` restores the default chain (and says how to empty it instead); `reset` with no key drops the whole optional section back to `null`.
 
 ```bash
-$ condor detect-noise set reference-filters "resize:width=960;" "wnnm:sigma=3.0,0.0,0.0;"
-$ condor detect-noise set reference-filters none
-$ condor detect-noise reset reference-filters
-$ condor detect-noise reset
+$ av1an detect-noise set reference-filters "resize:width=960;" "wnnm:sigma=3.0,0.0,0.0;"
+$ av1an detect-noise set reference-filters none
+$ av1an detect-noise reset reference-filters
+$ av1an detect-noise reset
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -88,18 +88,18 @@ The screenshots below are generated from the live interface. Click any image to 
       <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">Detecting noise</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-detect-noise-light.avif"><picture><source srcset="../media/tui/help-detect-noise-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-noise-light.avif" alt="condor detect-noise --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-noise --help</p>
+      <a href="../media/tui/help-detect-noise-light.avif"><picture><source srcset="../media/tui/help-detect-noise-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-noise-light.avif" alt="av1an detect-noise --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-noise --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-detect-noise-verbose-light.avif"><picture><source srcset="../media/tui/help-detect-noise-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-noise-verbose-light.avif" alt="condor detect-noise --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-noise --help --verbose</p>
+      <a href="../media/tui/help-detect-noise-verbose-light.avif"><picture><source srcset="../media/tui/help-detect-noise-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-noise-verbose-light.avif" alt="av1an detect-noise --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-noise --help --verbose</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-detect-noise-set-light.avif"><picture><source srcset="../media/tui/help-detect-noise-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-noise-set-light.avif" alt="condor detect-noise set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-noise set --help</p>
+      <a href="../media/tui/help-detect-noise-set-light.avif"><picture><source srcset="../media/tui/help-detect-noise-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-noise-set-light.avif" alt="av1an detect-noise set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-noise set --help</p>
     </td>
   </tr>
 </table>

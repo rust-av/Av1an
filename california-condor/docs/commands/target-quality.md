@@ -9,8 +9,8 @@ section, omitted targets retain the metric's range (changing metric uses its
 default range). Offline `set` commands may create the section without `--target`.
 
 ```bash
-$ condor target-quality --metric ssimulacra2 --target 85
-$ condor target-quality -i input.mp4 --metric butteraugli --target 90 --profile standard --min-q 10 --max-q 50
+$ av1an target-quality --metric ssimulacra2 --target 85
+$ av1an target-quality -i input.mp4 --metric butteraugli --target 90 --profile standard --min-q 10 --max-q 50
 ```
 
 | Name                                                  | Flag          | Type        | Default       |
@@ -32,7 +32,7 @@ Path to the input file to encode and measure quality in Target Quality. Can be a
 
 ### Examples
 
-- `> condor target-quality -i ./video.mp4 --metric ssimulacra2 --target 85`
+- `> av1an target-quality -i ./video.mp4 --metric ssimulacra2 --target 85`
 
 ## Decoder `--decoder`
 
@@ -60,7 +60,7 @@ Parameters for the video encoder used in Target Quality. Passed directly to the 
 
 ### Examples
 
-- `> condor target-quality --params "--preset 2 --crf 24 --aq-mode 2"`
+- `> av1an target-quality --params "--preset 2 --crf 24 --aq-mode 2"`
 
 ## Metric `--metric`
 
@@ -111,7 +111,7 @@ or establish their provenance. See [Editing saved settings](config-editing.md).
 
 ### Examples
 
-- `> condor target-quality --metric ssimulacra2 --target 85`
+- `> av1an target-quality --metric ssimulacra2 --target 85`
 
 ## Minimum Quantizer `--min-q`
 
@@ -169,12 +169,12 @@ If not specified, `standard` is used.
 - `info [KEY]` prints one key as JSON; `reset KEY` resets it, and `reset` with no key drops the whole optional section back to `null`.
 
 ```bash
-$ condor target-quality set target 85
-$ condor target-quality set quantizer-range 18-30
-$ condor target-quality set interpolators fritsch-carlson pchip
-$ condor target-quality set strategy subset --position end --length-percent 25
-$ condor target-quality set params "--crf 16 --tune 0"
-$ condor target-quality reset target
+$ av1an target-quality set target 85
+$ av1an target-quality set quantizer-range 18-30
+$ av1an target-quality set interpolators fritsch-carlson pchip
+$ av1an target-quality set strategy subset --position end --length-percent 25
+$ av1an target-quality set params "--crf 16 --tune 0"
+$ av1an target-quality reset target
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -209,18 +209,18 @@ The screenshots below are generated from the live interface. Click any image to 
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-target-quality-light.avif"><picture><source srcset="../media/tui/help-target-quality-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-light.avif" alt="condor target-quality --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor target-quality --help</p>
+      <a href="../media/tui/help-target-quality-light.avif"><picture><source srcset="../media/tui/help-target-quality-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-light.avif" alt="av1an target-quality --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an target-quality --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-target-quality-verbose-light.avif"><picture><source srcset="../media/tui/help-target-quality-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-verbose-light.avif" alt="condor target-quality --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor target-quality --help --verbose</p>
+      <a href="../media/tui/help-target-quality-verbose-light.avif"><picture><source srcset="../media/tui/help-target-quality-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-verbose-light.avif" alt="av1an target-quality --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an target-quality --help --verbose</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-target-quality-set-light.avif"><picture><source srcset="../media/tui/help-target-quality-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-set-light.avif" alt="condor target-quality set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor target-quality set --help</p>
+      <a href="../media/tui/help-target-quality-set-light.avif"><picture><source srcset="../media/tui/help-target-quality-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-set-light.avif" alt="av1an target-quality set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an target-quality set --help</p>
     </td>
     <td width="50%" valign="top"></td>
   </tr>

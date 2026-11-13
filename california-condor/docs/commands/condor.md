@@ -3,12 +3,12 @@
 Run the full pipeline with no subcommand (triggers TUIs per step). Runs scene detection, zoning, noise detection, benchmark, target quality, bitrate optimization, speed scaling, encode, concatenation, and quality check in order. See [guide](../guide.md) and [type reference](../types.md).
 
 ```bash
-$ condor -i "input.mp4" -o "output.mkv"
-$ condor --config-file ./config.json --skip-scd
+$ av1an -i "input.mp4" -o "output.mkv"
+$ av1an --config-file ./config.json --skip-scd
 ```
 
-Execution options belong to the selected command: use `condor encode -w 8`, not
-`condor -w 8 encode`. Root flags such as `--skip-scd` require no subcommand.
+Execution options belong to the selected command: use `av1an encode -w 8`, not
+`av1an -w 8 encode`. Root flags such as `--skip-scd` require no subcommand.
 Genuine globals `--config-file`, `--logs`, `--verbose` and `--version` work before
 or after a command. `--temp` works only for root, init-create, encode,
 detect-scenes, target-quality, concatenate, quality-check and benchmark runs;
@@ -21,8 +21,8 @@ neither options nor a saved section, Target Quality configuration stays absent.
 Root encoder flags (`--encoder`, `--params`, `--passes`, noise/filter options and
 `--disable-color-data`) change defaults for future scenes, not encoders already
 saved in the job. Bare resume keeps those overrides without an encoder-edit warning.
-Use `condor scenes all info encoder` to inspect them. To replace them explicitly,
-use `condor scenes all reset encoder`; this leaves chunks and saved results in
+Use `av1an scenes all info encoder` to inspect them. To replace them explicitly,
+use `av1an scenes all reset encoder`; this leaves chunks and saved results in
 place, so review stale work before reuse. See [encode](encode.md) for TUI labels.
 
 | Name                                                              | Flag                  | Type        | Default                |
@@ -106,7 +106,7 @@ VapourSynth filters to apply to the Scene Detector input. See [Filters](../types
 
 ### Examples
 
-- `> condor --scd-filters "resize:scaler=bilinear;width=540;height=960;" -i input.mp4 -o output.mkv`
+- `> av1an --scd-filters "resize:scaler=bilinear;width=540;height=960;" -i input.mp4 -o output.mkv`
 
 ## Target Quality Filters `--tq-filters`
 
@@ -142,7 +142,7 @@ The categories are `audio`, `subtitle`, `attachment`, `metadata`, `chapters` and
 
 ### Examples
 
-- `> condor -i input.mkv -o output.mkv --discard audio`
+- `> av1an -i input.mkv -o output.mkv --discard audio`
 
 ## Workers `-w`, `--workers`
 
@@ -196,8 +196,8 @@ A picture-altering filter (`crop`, `hflip`, `negate`, ...) changes what gets enc
 
 ### Examples
 
-- `> condor --ffmpeg-filter "crop=iw-16:ih-16"`
-- `> condor --ffmpeg-filter "eq=brightness=0.05:saturation=1.2"`
+- `> av1an --ffmpeg-filter "crop=iw-16:ih-16"`
+- `> av1an --ffmpeg-filter "eq=brightness=0.05:saturation=1.2"`
 
 ## Disable Colour Data `--disable-color-data`
 
@@ -207,7 +207,7 @@ The flag writes the encoder's setting, so it applies to scenes detected later. S
 
 ### Examples
 
-- `> condor -i input.mkv -o output.mkv --disable-color-data`
+- `> av1an -i input.mkv -o output.mkv --disable-color-data`
 
 ## Zones `--zones`
 
@@ -217,8 +217,8 @@ A zone marks the scenes that share a frame with it, merges its encoder settings 
 
 ### Examples
 
-- `> condor --zones '-1 200 svt-av1 "--preset 3 --crf 23" --iso 400'`
-- `> condor --zones '-1 200 replace aom("/tools/aomenc") "--cpu-used=4"' --zones ./zones.json`
+- `> av1an --zones '-1 200 svt-av1 "--preset 3 --crf 23" --iso 400'`
+- `> av1an --zones '-1 200 replace aom("/tools/aomenc") "--cpu-used=4"' --zones ./zones.json`
 
 ## Target Metric `--target-metric`
 
@@ -266,12 +266,12 @@ The screenshots below are generated from the live interface. Click any image to 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-light.avif"><picture><source srcset="../media/tui/help-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-light.avif" alt="condor --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor --help</p>
+      <a href="../media/tui/help-light.avif"><picture><source srcset="../media/tui/help-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-light.avif" alt="av1an --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-verbose-light.avif"><picture><source srcset="../media/tui/help-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-verbose-light.avif" alt="condor --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor --help --verbose</p>
+      <a href="../media/tui/help-verbose-light.avif"><picture><source srcset="../media/tui/help-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-verbose-light.avif" alt="av1an --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an --help --verbose</p>
     </td>
   </tr>
 </table>

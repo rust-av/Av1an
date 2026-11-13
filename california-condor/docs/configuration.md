@@ -1,6 +1,6 @@
 # Configuration
 
-Global flags and `condor.json` handling. See [guide](./guide.md) for workflow, [condor](./commands/condor.md) for full-run flags, [type reference](./types.md) for complex types, and [Configuration](./configuration/index.md) for the `condor.json` schema.
+Global flags and `condor.json` handling. See [guide](./guide.md) for workflow, [av1an](./commands/condor.md) for full-run flags, [type reference](./types.md) for complex types, and [Configuration](./configuration/index.md) for the `condor.json` schema.
 
 For the full `condor.json` struct reference, see [Configuration](./configuration/index.md).
 
@@ -24,8 +24,8 @@ If not specified, `./condor.json` in the current directory is used.
 
 ### Examples
 
-- `> condor --config-file ./deletemelater/config.json -i input.mp4 -o output.mkv`
-- `> condor init input.mp4 output.mkv --config-file ./config.json` (via `--config-file` global on `init`)
+- `> av1an --config-file ./deletemelater/config.json -i input.mp4 -o output.mkv`
+- `> av1an init input.mp4 output.mkv --config-file ./config.json` (via `--config-file` global on `init`)
 
 ## Temporary `--temp`
 
@@ -37,8 +37,8 @@ If not specified, a directory named with a hash of the input file name is create
 
 ### Examples
 
-- `> condor --temp ./temp -i input.mp4 -o output.mkv`
-- `> condor --temp /mnt/working_bird_folder -i input.mp4 -o output.mkv`
+- `> av1an --temp ./temp -i input.mp4 -o output.mkv`
+- `> av1an --temp /mnt/working_bird_folder -i input.mp4 -o output.mkv`
 
 ## Log File `--logs`
 
@@ -50,7 +50,7 @@ If not specified, logs to `./logs/condor.log`.
 
 ### Examples
 
-- `> condor --logs ./deletemelater/condor.log -i input.mp4 -o output.mkv`
+- `> av1an --logs ./deletemelater/condor.log -i input.mp4 -o output.mkv`
 
 ## Verbose `--verbose`
 
@@ -169,9 +169,9 @@ For an explicit metadata reset, inspect the affected scene first, then use the
 applicable commands (replace `0` with its index):
 
 ```sh
-condor scenes 0 reset target-quality
-condor scenes 0 reset quality-check
-condor scenes 0 reset parallel-encoder
+av1an scenes 0 reset target-quality
+av1an scenes 0 reset quality-check
+av1an scenes 0 reset parallel-encoder
 ```
 
 These reset **records only**; they do not remove physical chunks. Preserve or move

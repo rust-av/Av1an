@@ -342,7 +342,7 @@ pub enum ConcatenateKey {
     ScenesDirectory,
 }
 
-/// Settings `condor concatenate set` can change.
+/// Settings `av1an concatenate set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum ConcatenateSet {
     /// The tool used to join the encoded scenes.
@@ -365,10 +365,10 @@ pub enum ConcatenateSet {
     },
 }
 
-/// The action triple attached to `condor concatenate`.
+/// The action triple attached to `av1an concatenate`.
 pub type ConcatenateAction = ConfigAction<ConcatenateKey, ConcatenateSet>;
 
-/// The `condor concatenate` configuration section.
+/// The `av1an concatenate` configuration section.
 pub struct ConcatenateCrud;
 
 impl ConfigCommand for ConcatenateCrud {
@@ -461,7 +461,7 @@ impl ConfigCommand for ConcatenateCrud {
     }
 }
 
-/// `condor concatenate info|set|reset`.
+/// `av1an concatenate info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &ConcatenateAction) -> Result<()> {
     edit::<ConcatenateCrud>(config_path, action)
 }

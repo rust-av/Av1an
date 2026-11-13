@@ -1,7 +1,7 @@
 //! Scene-list policy shared by every command that edits saved scenes.
 //!
 //! `condor.scenes` is written by Scene Detector and edited in place by the
-//! Zoner ([`crate::zoner`]) and by *condor scenes*
+//! Zoner ([`crate::zoner`]) and by *av1an scenes*
 //! ([`crate::commands::handlers::scenes`]). Both need the same answers about
 //! the list itself — which scenes an index argument addresses, whether a
 //! frame range is sane, which scenes an edit overlaps, whether sub-scene
@@ -25,7 +25,7 @@ use crate::configuration::{CliSequenceConfig, CliSequenceData};
 /// Every way a scene-list edit can be rejected.
 #[derive(Debug, Error)]
 pub enum ScenesError {
-    #[error("no scenes configured; run `condor detect-scenes` first")]
+    #[error("no scenes configured; run `av1an detect-scenes` first")]
     NoScenes,
     #[error(
         "scene index {index} does not exist; the configuration holds {count} scenes (0..{count})"

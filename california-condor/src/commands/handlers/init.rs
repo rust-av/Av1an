@@ -184,7 +184,7 @@ pub fn init_handler_cancel(
         config_path.display()
     );
     info!(
-        "Run \"condor\" to start, or \"condor init info\" / \"condor init set\" to adjust the \
+        "Run \"av1an\" to start, or \"av1an init info\" / \"av1an init set\" to adjust the \
          top-level settings."
     );
 
@@ -212,7 +212,7 @@ pub enum InitKey {
     Target,
 }
 
-/// Settings `condor init set` can change.
+/// Settings `av1an init set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum InitSet {
     /// Save or revoke consent to replace a distinct final output (true/false).
@@ -279,14 +279,14 @@ pub enum InitSet {
     },
 }
 
-/// The action triple attached to `condor init`.
+/// The action triple attached to `av1an init`.
 pub type InitAction = ConfigAction<InitKey, InitSet>;
 
 /// Everything that can make a top-level setting unusable.
 #[derive(Debug, Error)]
 pub enum InitConfigError {
     #[error(
-        "condor init needs INPUT and OUTPUT to create a configuration, or one of `info`, `set` or \
+        "av1an init needs INPUT and OUTPUT to create a configuration, or one of `info`, `set` or \
          `reset` to edit an existing one"
     )]
     PathsRequired,
@@ -296,11 +296,11 @@ pub enum InitConfigError {
     TargetNotFinite,
     #[error("{0} has no default to reset to; set it instead")]
     NoDefault(&'static str),
-    #[error("provide a property to reset, e.g. `condor init reset encoder`")]
+    #[error("provide a property to reset, e.g. `av1an init reset encoder`")]
     ResetNeedsProperty,
 }
 
-/// The INPUT and OUTPUT a `condor init` run needs.
+/// The INPUT and OUTPUT an `av1an init` run needs.
 ///
 /// They are optional at parse time because `init` also carries the `info`,
 /// `set` and `reset` subcommands, so the check lives here instead of in Clap.
@@ -559,7 +559,7 @@ impl ConfigCommand for InitCrud {
     }
 }
 
-/// `condor init info|set|reset`.
+/// `av1an init info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &InitAction) -> Result<()> {
     edit::<InitCrud>(config_path, action)?;
     if matches!(
@@ -812,7 +812,7 @@ mod tests {
         );
     }
 
-    /// `condor init` with only INPUT parses, because `init` also carries the
+    /// `av1an init` with only INPUT parses, because `init` also carries the
     /// `info`/`set`/`reset` subcommands, so the missing OUTPUT must be caught
     /// before anything is created.
     #[test]

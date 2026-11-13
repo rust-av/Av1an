@@ -38,7 +38,7 @@ pub fn configure_bitrate_optimizer(
     Ok(())
 }
 
-// --- `condor optimize-bitrate info|set|reset` -----------------------------
+// --- `av1an optimize-bitrate info|set|reset` ------------------------------
 
 /// `info` and `reset` keys of `sequence_config.bitrate_optimizer`.
 #[derive(Debug, Clone, Subcommand)]
@@ -47,7 +47,7 @@ pub enum OptimizeBitrateKey {
     SigmaThreshold,
 }
 
-/// Settings `condor optimize-bitrate set` can change.
+/// Settings `av1an optimize-bitrate set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum OptimizeBitrateSet {
     /// Bitrate sigma (σ) distance from the average before a scene is clamped.
@@ -57,10 +57,10 @@ pub enum OptimizeBitrateSet {
     },
 }
 
-/// The action triple attached to `condor optimize-bitrate`.
+/// The action triple attached to `av1an optimize-bitrate`.
 pub type OptimizeBitrateAction = ConfigAction<OptimizeBitrateKey, OptimizeBitrateSet>;
 
-/// The `condor optimize-bitrate` configuration section.
+/// The `av1an optimize-bitrate` configuration section.
 pub struct OptimizeBitrateCrud;
 
 impl ConfigCommand for OptimizeBitrateCrud {
@@ -115,7 +115,7 @@ impl ConfigCommand for OptimizeBitrateCrud {
     }
 }
 
-/// `condor optimize-bitrate info|set|reset`.
+/// `av1an optimize-bitrate info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &OptimizeBitrateAction) -> Result<()> {
     edit::<OptimizeBitrateCrud>(config_path, action)
 }

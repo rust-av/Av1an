@@ -53,5 +53,5 @@ Scene length bounds apply to all methods, including `none` (which cuts purely by
 
 ## Examples
 
-- `> condor detect-scenes --method fast --min-scene-seconds 1 --max-scene-seconds 10`
-- `> condor detect-scenes --method none --max-scene-seconds 5`
+- `> av1an detect-scenes --method fast --min-scene-seconds 1 --max-scene-seconds 10`
+- `> av1an detect-scenes --method none --max-scene-seconds 5`

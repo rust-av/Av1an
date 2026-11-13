@@ -13,16 +13,16 @@ edit option: remove it for `info`, `set` and `reset`.
 ## Shape
 
 ```text
-condor <command> info [KEY]        # pretty JSON of the whole section, or one key
-condor <command> set <PROPERTY> …  # typed property plus its own values and flags
-condor <command> reset [KEY]       # restore one key, or the whole section
+av1an <command> info [KEY]        # pretty JSON of the whole section, or one key
+av1an <command> set <PROPERTY> …  # typed property plus its own values and flags
+av1an <command> reset [KEY]       # restore one key, or the whole section
 ```
 
 Every level of `--help` lists exactly what can be changed and how:
 
 ```bash
-$ condor detect-scenes set --help            # the properties
-$ condor detect-scenes set method --help     # that property's values and flags
+$ av1an detect-scenes set --help            # the properties
+$ av1an detect-scenes set method --help     # that property's values and flags
 ```
 
 ## Semantics
@@ -32,9 +32,9 @@ $ condor detect-scenes set method --help     # that property's values and flags
 | `info` | Prints the section (or one key) as pretty JSON with the same shape as `condor.json`. Read-only; the file is never touched. |
 | `set` | Creates the section when it is optional and currently `null`, applies the typed edit, validates it, saves, then names the property it changed. Values you omit keep their current value. |
 | `reset KEY` | Restores one key to its model default, or clears an optional field, and names it. |
-| `reset` | With no key, restores the whole section: an optional section goes back to `null`, a required one back to its defaults. `condor init reset` needs a property, because the input and output paths it captures have no default. |
+| `reset` | With no key, restores the whole section: an optional section goes back to `null`, a required one back to its defaults. `av1an init reset` needs a property, because the input and output paths it captures have no default. |
 | Validation | Invariants (`min ≤ max` quantizers, positive probes, percentile `0..=100`, …) are checked **before** saving; a violation leaves the file untouched and exits non-zero. |
-| Staleness | After any write a `WARN` states that saved results/files may be stale. Nothing is cleaned or recomputed. `condor clean` is unavailable; [start a separate job](clean.md#start-a-separate-job) with a different `--config-file`, a distinct empty `--temp` directory, and a distinct output. |
+| Staleness | After any write a `WARN` states that saved results/files may be stale. Nothing is cleaned or recomputed. `av1an clean` is unavailable; [start a separate job](clean.md#start-a-separate-job) with a different `--config-file`, a distinct empty `--temp` directory, and a distinct output. |
 | Config path | All operations honour `--config-file`, exactly like the run commands. |
 | `--verbose` | Every write prints a status line naming the property and what happened to it; the value it was left with is printed only under `--verbose`. |
 
@@ -48,8 +48,8 @@ Switches are written as a value, so a setting can be turned in **both**
 directions without a second, negating flag:
 
 ```bash
-$ condor scale-noise set scale-chroma off
-$ condor detect-scenes set method transnetv2 --save-scores off
+$ av1an scale-noise set scale-chroma off
+$ av1an detect-scenes set method transnetv2 --save-scores off
 ```
 
 A switch whose value may be omitted means `on` (`set scale-chroma`), and
@@ -78,11 +78,11 @@ dropped: for example `--vs-args` only reaches a `.vpy`/`.py` input, so every
 | [concatenate](concatenate.md) | `scene_concatenator` | `method`, `output`, `scenes-directory` | no |
 | [quality-check](quality-check.md) | `quality_check` | `metric`, `strategy`, `statistic`, `input` | yes |
 
-`zone` has no editor: `condor zone` / `--zones` replaces the whole `zoner`
+`zone` has no editor: `av1an zone` / `--zones` replaces the whole `zoner`
 section in one go, which is the only shape a zone list takes.
 
 [scenes](scenes.md) edits the saved scene list rather than a step's section, so
-its index comes first: `condor scenes 1 info` addresses one scene, `0-4` a
+its index comes first: `av1an scenes 1 info` addresses one scene, `0-4` a
 range, `1-2,8-10,16` a list, and `-1`/`all`/`every` the whole list. `set`,
 `reset` and `delete` change the addressed scenes in place, `add` inserts a new
 one, and a keyless `reset` clears the list. Reads and writes use the same
@@ -97,11 +97,11 @@ The probing strategy and statistic are the same setting in `target-quality` and
 `quality-check`, so both take the same values:
 
 ```bash
-$ condor quality-check set strategy whole
-$ condor quality-check set strategy skip 12
-$ condor target-quality set strategy subset --position end --length-percent 25
-$ condor quality-check set statistic percentile 10
-$ condor target-quality set statistic standard-deviation-distance 1.5
+$ av1an quality-check set strategy whole
+$ av1an quality-check set strategy skip 12
+$ av1an target-quality set strategy subset --position end --length-percent 25
+$ av1an quality-check set statistic percentile 10
+$ av1an target-quality set statistic standard-deviation-distance 1.5
 ```
 
 Each `set input` property builds its input from the same flags as the owning
@@ -139,33 +139,33 @@ and is accepted even for a populated job. Omitting `--temp` changes nothing.
 Explicit custom scenes directories are preserved with a warning naming each path:
 `--temp` does not move those files. This includes older configurations whose scenes
 directories no longer match their saved temp root; their origin cannot be inferred.
-To change these paths intentionally, use `condor encode set scenes-directory PATH`
-and `condor concatenate set scenes-directory PATH`. These settings do not migrate
+To change these paths intentionally, use `av1an encode set scenes-directory PATH`
+and `av1an concatenate set scenes-directory PATH`. These settings do not migrate
 content either.
 
 ## Examples
 
 ```bash
 # read what is saved
-$ condor target-quality info
-$ condor target-quality info quantizer-range
+$ av1an target-quality info
+$ av1an target-quality info quantizer-range
 
 # change one property; omitted values keep their current value
-$ condor detect-scenes set method avscenechange --minimum-frames 20 --maximum-frames 280
-$ condor scale-noise set threshold 0.002
-$ condor scale-speed set speed-quantizers 20=6 35=4 55=2
-$ condor target-quality set quantizer-range 18-30
-$ condor target-quality set interpolators fritsch-carlson pchip
-$ condor target-quality set target 85
-$ condor quality-check set strategy subset --position end --length-percent 25
-$ condor detect-noise set reference-filters "resize:width=960;" "wnnm:sigma=3.0,0.0,0.0;"
-$ condor detect-noise set reference-filters none
-$ condor init set output final.mkv
+$ av1an detect-scenes set method avscenechange --minimum-frames 20 --maximum-frames 280
+$ av1an scale-noise set threshold 0.002
+$ av1an scale-speed set speed-quantizers 20=6 35=4 55=2
+$ av1an target-quality set quantizer-range 18-30
+$ av1an target-quality set interpolators fritsch-carlson pchip
+$ av1an target-quality set target 85
+$ av1an quality-check set strategy subset --position end --length-percent 25
+$ av1an detect-noise set reference-filters "resize:width=960;" "wnnm:sigma=3.0,0.0,0.0;"
+$ av1an detect-noise set reference-filters none
+$ av1an init set output final.mkv
 
 # restore defaults, or drop an optional section entirely
-$ condor detect-scenes reset method
-$ condor detect-noise reset reference-filters
-$ condor detect-noise reset
+$ av1an detect-scenes reset method
+$ av1an detect-noise reset reference-filters
+$ av1an detect-noise reset
 ```
 
 Every write says what it did. The status line names the property and the verb,
@@ -173,27 +173,27 @@ which is enough to say what changed; the value it was left with is printed only
 under `--verbose`:
 
 ```console
-$ condor benchmark set threshold 8
+$ av1an benchmark set threshold 8
 WARN Benchmark settings changed; saved results/files may be stale. Nothing was cleaned or recomputed.
 Benchmark settings threshold updated
 
-$ condor --verbose benchmark set threshold 8
+$ av1an --verbose benchmark set threshold 8
 WARN Benchmark settings changed; saved results/files may be stale. Nothing was cleaned or recomputed.
 Benchmark settings threshold updated
 8
 
-$ condor detect-noise reset reference-filters
+$ av1an detect-noise reset reference-filters
 WARN Noise detection settings changed; saved results/files may be stale. Nothing was cleaned or recomputed.
 Noise detection settings reference-filters reset to its default
-To clear every reference filter instead, run `condor detect-noise set reference-filters none`.
+To clear every reference filter instead, run `av1an detect-noise set reference-filters none`.
 ```
 
 Invalid input is rejected before anything is written:
 
 ```bash
-$ condor target-quality set quantizer-range 30-10     # rejected: min > max
-$ condor detect-scenes set method none --minimum-frames 0   # rejected: not positive
-$ condor quality-check set statistic percentile --percentile 150  # rejected: out of range
+$ av1an target-quality set quantizer-range 30-10     # rejected: min > max
+$ av1an detect-scenes set method none --minimum-frames 0   # rejected: not positive
+$ av1an quality-check set statistic percentile --percentile 150  # rejected: out of range
 ```
 
 ## Screenshots
@@ -203,22 +203,22 @@ The property list of `set` is the discovery surface — one screenshot per comma
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-detect-scenes-set-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-set-light.avif" alt="condor detect-scenes set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor detect-scenes set --help</p>
+      <a href="../media/tui/help-detect-scenes-set-light.avif"><picture><source srcset="../media/tui/help-detect-scenes-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-detect-scenes-set-light.avif" alt="av1an detect-scenes set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an detect-scenes set --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-target-quality-set-light.avif"><picture><source srcset="../media/tui/help-target-quality-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-set-light.avif" alt="condor target-quality set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor target-quality set --help</p>
+      <a href="../media/tui/help-target-quality-set-light.avif"><picture><source srcset="../media/tui/help-target-quality-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-target-quality-set-light.avif" alt="av1an target-quality set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an target-quality set --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-quality-check-set-light.avif"><picture><source srcset="../media/tui/help-quality-check-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-set-light.avif" alt="condor quality-check set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor quality-check set --help</p>
+      <a href="../media/tui/help-quality-check-set-light.avif"><picture><source srcset="../media/tui/help-quality-check-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-quality-check-set-light.avif" alt="av1an quality-check set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an quality-check set --help</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-scale-speed-set-light.avif"><picture><source srcset="../media/tui/help-scale-speed-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-scale-speed-set-light.avif" alt="condor scale-speed set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor scale-speed set --help</p>
+      <a href="../media/tui/help-scale-speed-set-light.avif"><picture><source srcset="../media/tui/help-scale-speed-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-scale-speed-set-light.avif" alt="av1an scale-speed set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an scale-speed set --help</p>
     </td>
   </tr>
 </table>

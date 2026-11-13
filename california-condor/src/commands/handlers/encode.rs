@@ -86,7 +86,7 @@ pub fn encode_handler(
 pub(super) fn warn_existing_scene_encoders(configuration: &Configuration) {
     if !configuration.condor.scenes.is_empty() {
         tracing::warn!(
-            "Global encoder defaults updated for future scenes. Existing scenes unchanged; to copy the global encoder into them explicitly, run `condor scenes all reset encoder`. Saved results/files are not cleaned or recomputed."
+            "Global encoder defaults updated for future scenes. Existing scenes unchanged; to copy the global encoder into them explicitly, run `av1an scenes all reset encoder`. Saved results/files are not cleaned or recomputed."
         );
     }
 }
@@ -256,7 +256,7 @@ pub enum EncodeKey {
     AppendColorData,
 }
 
-/// Settings `condor encode set` can change.
+/// Settings `av1an encode set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum EncodeSet {
     /// Total attempts per scene including the initial attempt.
@@ -329,13 +329,13 @@ pub enum EncodeSet {
     },
 }
 
-/// The action triple attached to `condor encode`.
+/// The action triple attached to `av1an encode`.
 pub type EncodeAction = ConfigAction<EncodeKey, EncodeSet>;
 
 /// Everything that can make a Parallel Encoder or Encoder setting unusable.
 pub use andean_condor::models::encoder::EncoderSettingsError as EncodeConfigError;
 
-/// The `condor encode` configuration section.
+/// The `av1an encode` configuration section.
 pub struct EncodeCrud;
 
 impl EncodeCrud {
@@ -650,7 +650,7 @@ impl ConfigCommand for EncodeCrud {
     }
 }
 
-/// `condor encode info|set|reset`.
+/// `av1an encode info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &EncodeAction) -> Result<()> {
     edit::<EncodeCrud>(config_path, action)?;
     let encoder_edit = match action {

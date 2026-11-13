@@ -1,6 +1,6 @@
 # Guide
 
-End-to-end workflow for `condor`. For CLI overview see [README](../README.md). For global flags and JSON configuration validation see [configuration](./configuration.md).
+End-to-end workflow for `av1an`. For CLI overview see [README](../README.md). For global flags and JSON configuration validation see [configuration](./configuration.md).
 
 ## Pipeline Order
 
@@ -19,21 +19,21 @@ End-to-end workflow for `condor`. For CLI overview see [README](../README.md). F
 | 11   | [concatenate](./commands/concatenate.md)      | Yes | Join scene encodes into output                       |
 | 12   | [quality-check](./commands/quality-check.md)  | Yes | Score output per scene                               |
 
-Full pipeline without subcommand is documented in [condor](./commands/condor.md). It runs steps 2-12 in order. Use `--skip-scd` to reuse existing scenes.
+Full pipeline without subcommand is documented in [av1an](./commands/condor.md). It runs steps 2-12 in order. Use `--skip-scd` to reuse existing scenes.
 
 ```bash
-$ condor init "input.mp4" "output.mkv"
-$ condor detect-scenes
-$ condor zone '-1 200 svt-av1 "--preset 3"'
-$ condor detect-noise
-$ condor scale-noise --threshold 0.002
-$ condor benchmark
-$ condor target-quality --metric ssimulacra2 --target 85
-$ condor optimize-bitrate
-$ condor scale-speed
-$ condor encode
-$ condor concatenate
-$ condor quality-check
+$ av1an init "input.mp4" "output.mkv"
+$ av1an detect-scenes
+$ av1an zone '-1 200 svt-av1 "--preset 3"'
+$ av1an detect-noise
+$ av1an scale-noise --threshold 0.002
+$ av1an benchmark
+$ av1an target-quality --metric ssimulacra2 --target 85
+$ av1an optimize-bitrate
+$ av1an scale-speed
+$ av1an encode
+$ av1an concatenate
+$ av1an quality-check
 ```
 
 ## Configuration Lifecycle
@@ -42,7 +42,7 @@ $ condor quality-check
 2. Each step loads JSON configuration file, updates its relevant section, and saves on completion.
 3. Resume by rerunning the same command; progress is preserved in the JSON configuration file and `temp` directory.
 4. `clean` is unavailable and returns an error without removing files; see [clean](./commands/clean.md) for the separate-job path.
-5. Between steps, a command's saved section can be read, changed and reset without running it: the commands that expose `info` / `set` / `reset` subcommands (e.g. `condor target-quality set target 85`, `condor detect-noise reset`) are listed in [Editing saved settings](./commands/config-editing.md).
+5. Between steps, a command's saved section can be read, changed and reset without running it: the commands that expose `info` / `set` / `reset` subcommands (e.g. `av1an target-quality set target 85`, `av1an detect-noise reset`) are listed in [Editing saved settings](./commands/config-editing.md).
 
 ## Temp and Logs
 

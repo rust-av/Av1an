@@ -1,6 +1,6 @@
 # Decoder
 
-`DECODER` selects how `condor` decodes input video. Used by `--decoder`, `--scd-decoder`, `--tq-decoder` (see [pipeline](../commands/condor.md), [init]\(../commands/init.md\), [encode]\(../commands/encode.md\), [detect-scenes]\(../commands/detect-scenes.md\), [detect-noise]\(../commands/detect-noise.md\), [target-quality]\(../commands/target-quality.md\), [quality-check]\(../commands/quality-check.md\)).
+`DECODER` selects how `av1an` decodes input video. Used by `--decoder`, `--scd-decoder`, `--tq-decoder` (see [pipeline](../commands/condor.md), [init]\(../commands/init.md\), [encode]\(../commands/encode.md\), [detect-scenes]\(../commands/detect-scenes.md\), [detect-noise]\(../commands/detect-noise.md\), [target-quality]\(../commands/target-quality.md\), [quality-check]\(../commands/quality-check.md\)).
 
 | Value        | Source                              | Notes                                              |
 | ------------ | ----------------------------------- | -------------------------------------------------- |
@@ -16,5 +16,5 @@ If not specified, `bestsource` is used. Stage overrides (`--scd-decoder`, `--tq-
 
 ## Examples
 
-- `> condor -i input.mp4 -o output.mkv --decoder vs-ffms2`
-- `> condor detect-scenes --decoder ffms2`
+- `> av1an -i input.mp4 -o output.mkv --decoder vs-ffms2`
+- `> av1an detect-scenes --decoder ffms2`

@@ -1,4 +1,4 @@
-//! The `condor scenes` command surface: the actions with their keys and
+//! The `av1an scenes` command surface: the actions with their keys and
 //! settings, plus the errors that belong to scene editing itself.
 
 use std::path::PathBuf;
@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::commands::{EncoderMethod, config::Toggle};
 
-/// `condor scenes [INDEX] <action>`.
+/// `av1an scenes [INDEX] <action>`.
 #[derive(Debug, Clone, Subcommand)]
 pub enum ScenesAction {
     /// Print the addressed scenes, or one of their saved settings, as JSON.
@@ -182,18 +182,18 @@ pub enum ScenesSet {
 pub enum ScenesConfigError {
     #[error(
         "`{0}` has no default; it comes from the step that produced it — set `start`/`end` to \
-         change the frame range, or re-detect with `condor detect-scenes`"
+         change the frame range, or re-detect with `av1an detect-scenes`"
     )]
     NoDefault(&'static str),
     #[error("pass at least one START-END range, or `none` to clear the sub-scenes")]
     SubScenesNeedRanges,
     #[error(
-        "which scenes? address them with an index: `condor scenes 0 set start 23`, or `condor \
+        "which scenes? address them with an index: `av1an scenes 0 set start 23`, or `av1an \
          scenes all set start 23`"
     )]
     SetNeedsIndex,
     #[error(
-        "which scenes? address them with an index: `condor scenes 1 delete`, or `condor scenes \
+        "which scenes? address them with an index: `av1an scenes 1 delete`, or `av1an scenes \
          all delete`"
     )]
     DeleteNeedsIndex,
@@ -203,7 +203,7 @@ pub enum ScenesConfigError {
     ChromaIsoNeedsIso,
 }
 
-/// Where `condor scenes add` puts its new scene.
+/// Where `av1an scenes add` puts its new scene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Placement {
     /// Sorted by start frame, so the list keeps ascending starts (the default).

@@ -37,7 +37,7 @@ what Condor encodes with by default.
 
 One knob trades encode time for bitrate: 0 is the slowest and most efficient,
 10 the fastest. Condor encodes with `--speed 8` by default. Speed scaling
-(`condor scale-speed`) writes this same parameter per scene.
+(`av1an scale-speed`) writes this same parameter per scene.
 
 ##### Key frames
 

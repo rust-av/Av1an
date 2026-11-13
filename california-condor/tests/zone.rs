@@ -887,7 +887,7 @@ mod tests {
             "a skipped run saves nothing"
         );
 
-        // Re-applying needs the record cleared, which `condor scenes reset
+        // Re-applying needs the record cleared, which `av1an scenes reset
         // zoner` does; the zones themselves were rewritten in between.
         let (mut reloaded, _) =
             load_configuration(Some(&config_path)).expect("load_configuration should succeed");

@@ -3,9 +3,9 @@
 Create a new `condor.json` configuration, or edit the top-level settings of an existing one. See [guide](../guide.md), [configuration](../configuration.md), and [type reference](../types.md).
 
 ```bash
-$ condor init "input.mp4" "output.mkv"
-$ condor init input.mp4 output.mkv --encoder svt-av1 --target-metric ssimulacra2 --target 85
-$ condor init set output final.mkv
+$ av1an init "input.mp4" "output.mkv"
+$ av1an init input.mp4 output.mkv --encoder svt-av1 --target-metric ssimulacra2 --target 85
+$ av1an init set output final.mkv
 ```
 
 Creating a configuration needs `INPUT` and `OUTPUT`; the `info`, `set` and `reset` subcommands edit an existing one instead. Root input and output settings belong here; step-specific inputs are separate overrides.
@@ -38,11 +38,11 @@ Path to the input file to encode. Can be a video or VapourSynth script (`.py` or
 
 Once a job has saved scenes or files in its encoding/concatenation work directories,
 its source path cannot change, including through root `--input`. Use a new
-`--config-file`, for example `condor --config-file other.json init other.mp4 other.mkv`.
+`--config-file`, for example `av1an --config-file other.json init other.mp4 other.mkv`.
 Equivalent relative, absolute and symlink paths keep existing work; this checks path
 identity, not changes to the contents of a file at the same path.
 
-For an empty job, `condor init set input --path other.mp4` works offline. It updates
+For an empty job, `av1an init set input --path other.mp4` works offline. It updates
 both root input fields, clears root decoder cache/index selections, and rebases
 unset or previously derived `TEMP/scenes` directories; explicit custom scene
 directories stay. An automatically named temp directory gets the new source's
@@ -60,8 +60,8 @@ edits retain it. No old cache file is deleted.
 
 ### Examples
 
-- `> condor init ./video.mp4 ./output.mkv`
-- `> condor init ./script.vpy ./output.mkv`
+- `> av1an init ./video.mp4 ./output.mkv`
+- `> av1an init ./script.vpy ./output.mkv`
 
 ## Output
 
@@ -69,13 +69,13 @@ Path to the output video file. Extension must be supported by `--concat`.
 
 An existing output is refused by default, without a prompt. `--overwrite` explicitly
 saves `output.overwrite: true`; source aliases are still forbidden. Omitting the flag
-on later root or concatenate runs retains saved consent. Use `condor init set overwrite
-false` or `condor init reset overwrite` to revoke it. See [output safety](../configuration/condor/output.md).
+on later root or concatenate runs retains saved consent. Use `av1an init set overwrite
+false` or `av1an init reset overwrite` to revoke it. See [output safety](../configuration/condor/output.md).
 
 ### Examples
 
-- `> condor init input.mp4 ./output.mkv`
-- `> condor init input.mp4 /mnt/encoded/flock.ivf`
+- `> av1an init input.mp4 ./output.mkv`
+- `> av1an init input.mp4 /mnt/encoded/flock.ivf`
 
 ## Decoder `--decoder`
 
@@ -103,8 +103,8 @@ If not specified, `resize:scaler=bicubic;format=yuv420p10le` (YUV 4:2:0 10-bit) 
 
 ### Examples
 
-- `> condor init input.mp4 output.mkv --filters "resize:scaler=bilinear;width=1920;height=1080;format=yuv420p10le"`
-- `> condor init input.mp4 output.mkv --filters "crop:top=140;bottom=140;"`
+- `> av1an init input.mp4 output.mkv --filters "resize:scaler=bilinear;width=1920;height=1080;format=yuv420p10le"`
+- `> av1an init input.mp4 output.mkv --filters "crop:top=140;bottom=140;"`
 
 ## VapourSynth Arguments `--vs-args`
 
@@ -112,7 +112,7 @@ VapourSynth/Python arguments to pass to the input script environment. See [VS Ar
 
 ### Examples
 
-- `> condor init script.vpy output.mkv --vs-args "message=fluffy kittens" --vs-args "head=empty"`
+- `> av1an init script.vpy output.mkv --vs-args "message=fluffy kittens" --vs-args "head=empty"`
 
 ## Concatenation `--concat`
 
@@ -142,8 +142,8 @@ If not specified, every track of the input is copied.
 
 ### Examples
 
-- `> condor init input.mkv output.mkv --discard audio`
-- `> condor init input.mkv output.mkv --concat ffmpeg --discard audio,subtitle`
+- `> av1an init input.mkv output.mkv --discard audio`
+- `> av1an init input.mkv output.mkv --concat ffmpeg --discard audio,subtitle`
 
 ## Workers `-w`, `--workers`
 
@@ -179,8 +179,8 @@ Parameters for the video encoder (`--encoder`). Passed directly to the encoder b
 
 ### Examples
 
-- `> condor init input.mp4 output.mkv --params "--preset 2 --crf 24 --aq-mode 2"`
-- `> condor init input.mp4 output.mkv --params "--cpu-used=3 --cq-level=30 --tune=ssim"`
+- `> av1an init input.mp4 output.mkv --params "--preset 2 --crf 24 --aq-mode 2"`
+- `> av1an init input.mp4 output.mkv --params "--cpu-used=3 --cq-level=30 --tune=ssim"`
 
 ## Photon Noise `--photon-noise`
 
@@ -188,7 +188,7 @@ Generate and apply a photon noise table using Film Grain Synthesis with the spec
 
 ### Examples
 
-- `> condor init input.mp4 output.mkv --photon-noise 800`
+- `> av1an init input.mp4 output.mkv --photon-noise 800`
 
 ## Disable Colour Data `--disable-color-data`
 
@@ -196,7 +196,7 @@ Turns off the colour metadata appending that is on by default: the input's colou
 
 ### Examples
 
-- `> condor init input.mp4 output.mkv --disable-color-data`
+- `> av1an init input.mp4 output.mkv --disable-color-data`
 
 ## Target Metric `--target-metric`
 
@@ -221,7 +221,7 @@ The quality metric score that Target Quality will aim for.
 
 ### Examples
 
-- `> condor init input.mp4 output.mkv --target-metric ssimulacra2 --target 85`
+- `> av1an init input.mp4 output.mkv --target-metric ssimulacra2 --target 85`
 
 ## Edit saved settings
 
@@ -236,11 +236,11 @@ The quality metric score that Target Quality will aim for.
 - `info [KEY]` prints one key as JSON, or the whole top level; `reset KEY` restores one key. A bare `reset` is refused, because the input and output of a pipeline have no default to restore.
 
 ```bash
-$ condor init set output final.mkv
-$ condor init set input --path ./new-input.mp4 --decoder ffms2
-$ condor init set encoder --params "--crf 20 --tune 0"
-$ condor init info encoder
-$ condor init reset encoder
+$ av1an init set output final.mkv
+$ av1an init set input --path ./new-input.mp4 --decoder ffms2
+$ av1an init set encoder --params "--crf 20 --tune 0"
+$ av1an init info encoder
+$ av1an init reset encoder
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -252,19 +252,19 @@ The screenshots below are generated from the live interface. Click any image to 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-init-light.avif"><picture><source srcset="../media/tui/help-init-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-init-light.avif" alt="condor init --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor init --help</p>
+      <a href="../media/tui/help-init-light.avif"><picture><source srcset="../media/tui/help-init-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-init-light.avif" alt="av1an init --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an init --help</p>
     </td>
     <td width="50%" valign="top"></td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-init-verbose-light.avif"><picture><source srcset="../media/tui/help-init-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-init-verbose-light.avif" alt="condor init --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor init --help --verbose</p>
+      <a href="../media/tui/help-init-verbose-light.avif"><picture><source srcset="../media/tui/help-init-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-init-verbose-light.avif" alt="av1an init --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an init --help --verbose</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-init-set-light.avif"><picture><source srcset="../media/tui/help-init-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-init-set-light.avif" alt="condor init set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor init set --help</p>
+      <a href="../media/tui/help-init-set-light.avif"><picture><source srcset="../media/tui/help-init-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-init-set-light.avif" alt="av1an init set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an init set --help</p>
     </td>
   </tr>
 </table>

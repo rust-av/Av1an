@@ -39,7 +39,7 @@ def main() -> None:
     )
     with tempfile.TemporaryDirectory(prefix="m24-archive-") as directory:
         root = Path(directory)
-        probe = root / "condor"
+        probe = root / "av1an"
         probe.write_text(
             f"#!{sys.executable}\n"
             "import json, os, sys\n"

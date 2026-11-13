@@ -23,5 +23,5 @@ track `0`. Audio `1` and attachment `1` remain independent. See the
 
 ## Examples
 
-- `> condor concatenate --method mkvmerge`
-- `> condor -i input.mp4 -o output.mp4 --concat ffmpeg`
+- `> av1an concatenate --method mkvmerge`
+- `> av1an -i input.mp4 -o output.mp4 --concat ffmpeg`

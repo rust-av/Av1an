@@ -133,11 +133,11 @@ fn main() -> Result<(), Box<dyn Error>> {
          json"
     );
 
-    // Embeds `condor.exe.manifest` so the Windows binary declares
+    // Embeds `av1an.exe.manifest` so the Windows binary declares
     // `longPathAware`. Without it, paths longer than MAX_PATH fail inside
     // VapourSynth with "Source path does not exist".
     #[cfg(windows)]
-    embed_resource::compile("condor.exe.rc", embed_resource::NONE)
+    embed_resource::compile("av1an.exe.rc", embed_resource::NONE)
         .manifest_required()
         .unwrap();
 

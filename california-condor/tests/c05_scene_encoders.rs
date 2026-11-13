@@ -155,7 +155,7 @@ mod tests {
         if expected {
             assert!(stderr.contains("future scenes"), "{stderr}");
             assert!(
-                stderr.contains("condor scenes all reset encoder"),
+                stderr.contains("av1an scenes all reset encoder"),
                 "{stderr}"
             );
         }
@@ -346,7 +346,7 @@ mod tests {
             let help = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
             if args[0] == "target-quality" {
                 assert!(
-                    !help.contains("condor scenes all reset encoder"),
+                    !help.contains("av1an scenes all reset encoder"),
                     "probe options apply to existing scenes: {help}"
                 );
                 assert!(!help.contains("future scenes"), "{help}");
@@ -369,7 +369,7 @@ mod tests {
                 );
             } else {
                 assert!(
-                    help.contains("condor scenes all reset encoder"),
+                    help.contains("av1an scenes all reset encoder"),
                     "global encoder guidance must remain: {help}"
                 );
                 assert!(

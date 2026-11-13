@@ -3,7 +3,7 @@
 //! A [`Zone`](zone::Zone) is a frame range plus the encoder settings and scene
 //! length cap its scenes take. Zones reach Condor through
 //! [`ZonerConfig`], written by the *--zones* flag on
-//! [`condor`](../../commands/condor.md) or by the
+//! [`av1an`](../../commands/condor.md) or by the
 //! [`zone`](../../commands/zone.md) command from zone strings, JSON, JSON
 //! lines, or text files.
 //!

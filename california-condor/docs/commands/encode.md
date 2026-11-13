@@ -3,8 +3,8 @@
 Encode scenes in parallel (triggers TUI). See [guide](../guide.md) and [type reference](../types.md).
 
 ```bash
-$ condor encode
-$ condor encode -i input.mp4 -e svt-av1 -w 4 --params "--preset 4" --photon-noise 800
+$ av1an encode
+$ av1an encode -i input.mp4 -e svt-av1 -w 4 --params "--preset 4" --photon-noise 800
 ```
 
 Encoder flags and `encode set`/`reset` edit the global default for future scenes.
@@ -12,11 +12,11 @@ Existing scenes keep their saved encoders, including detection and zone override
 To deliberately replace every saved scene's encoder with the current global default:
 
 ```bash
-condor scenes all reset encoder
+av1an scenes all reset encoder
 ```
 
 This does not delete chunks or clear saved results; review stale results/files before
-reusing them. It does not reapply zones. `condor scenes all info encoder` shows the
+reusing them. It does not reapply zones. `av1an scenes all info encoder` shows the
 actual saved encoders. The parallel and Target Quality TUI headers show the actual
 uniform settings, or **Mixed encoders: per-scene settings** when any settings differ
 (even within one codec). Target Quality shows resolved probe settings, not final
@@ -43,7 +43,7 @@ Path to the input file to encode. Can be a video or VapourSynth script (`.py` or
 
 ### Examples
 
-- `> condor encode -i ./video.mp4`
+- `> av1an encode -i ./video.mp4`
 
 ## Decoder `--decoder`
 
@@ -107,10 +107,10 @@ preserves a saved custom value. Available on root/start, `init`, and `encode`.
 Nonstreaming retries use extra disk space; see [retry and buffering policy](../configuration/condor/sequence-config/parallel-encoder.md).
 
 ```bash
-condor encode --max-tries 2
-condor encode info max-tries
-condor encode set max-tries 5
-condor encode reset max-tries
+av1an encode --max-tries 2
+av1an encode info max-tries
+av1an encode set max-tries 5
+av1an encode reset max-tries
 ```
 
 Resetting this field or the whole encode section restores `3`.
@@ -162,8 +162,8 @@ Parameters for the video encoder (`--encoder`). Passed directly to the encoder b
 
 ### Examples
 
-- `> condor encode --params "--preset 2 --crf 24 --aq-mode 2"`
-- `> condor encode --params "--cpu-used=3 --cq-level=30 --tune=ssim"`
+- `> av1an encode --params "--preset 2 --crf 24 --aq-mode 2"`
+- `> av1an encode --params "--cpu-used=3 --cq-level=30 --tune=ssim"`
 
 ## Photon Noise `--photon-noise`
 
@@ -188,8 +188,8 @@ A picture-altering filter (`crop`, `hflip`, `negate`, ...) changes what gets enc
 
 ### Examples
 
-- `> condor encode --ffmpeg-filter "crop=iw-16:ih-16"`
-- `> condor encode --ffmpeg-filter "eq=brightness=0.05:saturation=1.2"`
+- `> av1an encode --ffmpeg-filter "crop=iw-16:ih-16"`
+- `> av1an encode --ffmpeg-filter "eq=brightness=0.05:saturation=1.2"`
 
 ## Edit saved settings
 
@@ -208,11 +208,11 @@ A picture-altering filter (`crop`, `hflip`, `negate`, ...) changes what gets enc
 - `info [KEY]` prints JSON for one key or both `parallel_encoder` and `encoder`; `reset KEY` resets one key, and a bare `reset` restores both to their defaults (preserving the temp-derived `scenes-directory`).
 
 ```bash
-$ condor encode set workers 4
-$ condor encode set photon-noise 800 --chroma-noise 200
-$ condor encode set append-color-data off
-$ condor encode set ffmpeg-filter "crop=iw-16:ih-16"
-$ condor encode reset photon-noise
+$ av1an encode set workers 4
+$ av1an encode set photon-noise 800 --chroma-noise 200
+$ av1an encode set append-color-data off
+$ av1an encode set ffmpeg-filter "crop=iw-16:ih-16"
+$ av1an encode reset photon-noise
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -228,18 +228,18 @@ The screenshots below are generated from the live interface. Click any image to 
       <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">Parallel encoder</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-encode-light.avif"><picture><source srcset="../media/tui/help-encode-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-encode-light.avif" alt="condor encode --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor encode --help</p>
+      <a href="../media/tui/help-encode-light.avif"><picture><source srcset="../media/tui/help-encode-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-encode-light.avif" alt="av1an encode --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an encode --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-encode-verbose-light.avif"><picture><source srcset="../media/tui/help-encode-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-encode-verbose-light.avif" alt="condor encode --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor encode --help --verbose</p>
+      <a href="../media/tui/help-encode-verbose-light.avif"><picture><source srcset="../media/tui/help-encode-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-encode-verbose-light.avif" alt="av1an encode --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an encode --help --verbose</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-encode-set-light.avif"><picture><source srcset="../media/tui/help-encode-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-encode-set-light.avif" alt="condor encode set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor encode set --help</p>
+      <a href="../media/tui/help-encode-set-light.avif"><picture><source srcset="../media/tui/help-encode-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-encode-set-light.avif" alt="av1an encode set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an encode set --help</p>
     </td>
   </tr>
 </table>

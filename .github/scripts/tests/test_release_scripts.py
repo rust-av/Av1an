@@ -1161,7 +1161,7 @@ foreach ($relative in @('av-metrics-vship/scripts/install-libvship-windows.ps1',
             self.assertNotIn("continue-on-error", steps[stage])
             self.assertNotIn("if", steps[upload])
             self.assertEqual(steps[upload]["with"], {
-                "name": f"condor-{platform}-x64-${{{{ github.sha }}}}-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}",
+                "name": f"av1an-{platform}-x64-${{{{ github.sha }}}}-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}",
                 "path": "dist/", "retention-days": "1", "if-no-files-found": "error",
             })
             if platform == "windows":
@@ -1185,14 +1185,14 @@ foreach ($relative in @('av-metrics-vship/scripts/install-libvship-windows.ps1',
         self.assertEqual(set(release["needs"]), {"linux", "windows"})
         self.assertEqual(release["permissions"], {"contents": "write"})
         self.assertEqual(release["concurrency"], {
-            "group": "condor-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}",
+            "group": "av1an-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}",
             "cancel-in-progress": "false",
         })
         steps = release["steps"]
         self.assertEqual(steps[0]["with"], {"fetch-depth": "0", "ref": "${{ github.sha }}", "persist-credentials": "false"})
         downloads = [s["with"] for s in steps if "actions/download-artifact@" in s.get("uses", "")]
         self.assertEqual(downloads, [{
-            "name": f"condor-{p}-x64-${{{{ github.sha }}}}-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}",
+            "name": f"av1an-{p}-x64-${{{{ github.sha }}}}-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}",
             "path": f"handoff/{p}",
         } for p in ("linux", "windows")])
         publishers = [s for s in steps if "coordinate-release.py publish" in s.get("run", "")]
@@ -1326,9 +1326,9 @@ save()
             schema.parent.mkdir(exist_ok=True)
             schema.write_bytes(b'\xef\xbb\xbf{\r\n  "properties": {}, "type": "object"\r\n}\r\n'
                                if platform == "windows" else b'{"type":"object","properties":{}}\n')
-            with zipfile.ZipFile(repo / f"target/condor-{platform}-x64.zip", "w") as archive:
+            with zipfile.ZipFile(repo / f"target/av1an-{platform}-x64.zip", "w") as archive:
                 archive.writestr("configuration.schema.json", schema.read_bytes())
-                archive.writestr("condor.exe" if platform == "windows" else "condor", platform + env["GITHUB_SHA"])
+                archive.writestr("av1an.exe" if platform == "windows" else "av1an", platform + env["GITHUB_SHA"])
             steps = self._r03_workflow(f"{platform}-build")["jobs"]["build"]["steps"]
             stage = next(s["run"] for s in steps if "coordinate-release.py stage" in s.get("run", ""))
             # Windows uses the same stdlib CLI; PowerShell/native acceptance remains CI-only.
@@ -1369,9 +1369,9 @@ save()
                     self.assertIn("- R03_NEW\n", release["body"])
                     notes = (repo / ".github/scripts/linux-release-notes.md").read_text()
                     self.assertIn(notes, release["body"])
-                    self.assertEqual(set(release["assets"]), {"condor-linux-x64.zip", "condor-windows-x64.zip", "configuration.schema.json"})
+                    self.assertEqual(set(release["assets"]), {"av1an-linux-x64.zip", "av1an-windows-x64.zip", "configuration.schema.json"})
                     for platform in ("linux", "windows"):
-                        name = f"condor-{platform}-x64.zip"
+                        name = f"av1an-{platform}-x64.zip"
                         self.assertEqual(release["assets"][name], (repo / f"handoff/{platform}/{name}").read_bytes().hex())
                     self.assertEqual(state["latest"], env["GITHUB_SHA"])
                     if ref.startswith("refs/tags/"):
@@ -1399,7 +1399,7 @@ save()
             self.assertEqual(state["latest"], env["GITHUB_SHA"])
             self.assertIn(f"Latest build from {env['GITHUB_SHA']}\n", state["releases"]["latest"]["body"])
             for platform in ("linux", "windows"):
-                name = f"condor-{platform}-x64.zip"
+                name = f"av1an-{platform}-x64.zip"
                 self.assertEqual(state["releases"]["latest"]["assets"][name], (repo / f"handoff/{platform}/{name}").read_bytes().hex())
             before = state["releases"]
             state["calls"] = []
@@ -1433,10 +1433,10 @@ save()
                         manifest[key] = "0" * 40 if key == "sha" else "wrong"
                         manifest_path.write_text(json.dumps(manifest))
                     elif case == "missing-platform":
-                        (repo / "handoff/windows/condor-windows-x64.zip").unlink()
+                        (repo / "handoff/windows/av1an-windows-x64.zip").unlink()
                     elif case == "schema-mismatch":
                         (repo / "handoff/windows/configuration.schema.json").write_text('{"type":"string"}')
-                        with zipfile.ZipFile(repo / "handoff/windows/condor-windows-x64.zip", "w") as archive:
+                        with zipfile.ZipFile(repo / "handoff/windows/av1an-windows-x64.zip", "w") as archive:
                             archive.writestr("configuration.schema.json", '{"type":"string"}')
                     elif case == "checkout-sha":
                         env["GITHUB_SHA"] = "0" * 40
@@ -1803,7 +1803,7 @@ save()
         self.assertTrue(helper.is_file(), "missing production archive verifier")
         verify = runpy.run_path(str(helper))["verify_archive"]
         entries = {
-            "condor.exe": b"exe", "ffms2.dll": b"dll", "libvmaf.dll": b"dll",
+            "av1an.exe": b"exe", "ffms2.dll": b"dll", "libvmaf.dll": b"dll",
             "libvship.dll": b"dll", "fmetrics.dll": b"dll",
             "libgcc_s_seh-1.dll": b"dll", "libstdc++-6.dll": b"dll",
             "libwinpthread-1.dll": b"dll", "model/vmaf_v0.6.1.json": b"{}",
@@ -1846,7 +1846,7 @@ save()
         helper = Path(__file__).resolve().parents[1] / "verify-windows-bundle.py"
         self.assertTrue(helper.is_file(), "missing production import verifier")
         module = runpy.run_path(str(helper))
-        output = """File: condor.exe
+        output = """File: av1an.exe
 Format: COFF-x86-64
 Import {
   Name: ffms2.dll
@@ -1860,22 +1860,22 @@ DelayImport {
         self.assertEqual(module["import_names"](output), ["ffms2.dll", "onnxruntime.dll"])
         with self.assertRaises(ValueError):
             module["import_names"]("unrecognized tool output")
-        imports = {"condor.exe": ["ffms2.dll", "onnxruntime.dll", "KERNEL32.dll", "MSVCP140.dll", "VCRUNTIME140_1.dll"],
+        imports = {"av1an.exe": ["ffms2.dll", "onnxruntime.dll", "KERNEL32.dll", "MSVCP140.dll", "VCRUNTIME140_1.dll"],
                    "onnxruntime.dll": ["DirectML.dll"], "DirectML.dll": ["VCRUNTIME140.dll"],
                    "ffms2.dll": ["WS2_32.dll", "ole32.dll", "USER32.dll", "bcrypt.dll",
                                  "CRYPT32.dll", "KERNEL32.dll", "ADVAPI32.dll"],
                    "libvship.dll": ["vulkan-1.dll", "KERNEL32.dll"]}
         check = module["check_imports"]
-        bundled = {"condor.exe", "ffms2.dll", "onnxruntime.dll", "DirectML.dll", "vcruntime140.dll", "libvship.dll", "msvcp140.dll", "vcruntime140_1.dll"}
+        bundled = {"av1an.exe", "ffms2.dll", "onnxruntime.dll", "DirectML.dll", "vcruntime140.dll", "libvship.dll", "msvcp140.dll", "vcruntime140_1.dll"}
         check(imports, bundled)
         for missing in ("ffms2.dll", "onnxruntime.dll", "DirectML.dll", "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"):
             with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "[Mm]issing"):
                 check(imports, bundled - {missing})
         for dependency in ("unknown.dll", "vulkan-1.dll", "avcodec.dll"):
             with self.subTest(dependency=dependency), self.assertRaises(ValueError):
-                check({"condor.exe": [dependency]}, {"condor.exe"})
+                check({"av1an.exe": [dependency]}, {"av1an.exe"})
         try:
-            check({"condor.exe": ["pdh.dll"]}, {"condor.exe"})
+            check({"av1an.exe": ["pdh.dll"]}, {"av1an.exe"})
         except ValueError as error:
             self.fail(f"Windows inbox PDH must be accepted: {error}")
 

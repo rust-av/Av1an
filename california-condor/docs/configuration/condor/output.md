@@ -21,9 +21,9 @@ Example:
 ```
 
 Existing outputs are refused by default, including unattended runs; there is no prompt.
-`condor --overwrite`, `condor init INPUT OUTPUT --overwrite`, and
-`condor concatenate --overwrite` save consent. Omitting the flag keeps saved consent.
-Revoke it with `condor init set overwrite false` or `condor init reset overwrite`.
+`av1an --overwrite`, `av1an init INPUT OUTPUT --overwrite`, and
+`av1an concatenate --overwrite` save consent. Omitting the flag keeps saved consent.
+Revoke it with `av1an init set overwrite false` or `av1an init reset overwrite`.
 Older JSON without this field defaults to `false`.
 
 The output cannot alias any declared root/stage input, mux input, attachment source,

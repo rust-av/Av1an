@@ -545,7 +545,7 @@ mod tests {
         )).expect("bounded native pause");
         let original = std::fs::read(&file).expect("original");
         let mut child = JobChild(
-            std::process::Command::new(env!("CARGO_BIN_EXE_condor"))
+            std::process::Command::new(env!("CARGO_BIN_EXE_av1an"))
                 .current_dir(temp.path())
                 .args(["--config-file", "job.json", "encode", "-w", "2"])
                 .stdout(std::process::Stdio::null())
@@ -700,7 +700,7 @@ mod tests {
                 let expected = if selected.is_some() {
                     "No config file found at:"
                 } else {
-                    "Run 'condor init' to create a configuration."
+                    "Run 'av1an init' to create a configuration."
                 };
                 if result.status.code() != Some(1) || !message.contains(expected) {
                     failures.push(format!(
@@ -869,7 +869,7 @@ mod tests {
         let file = temp.path().join("job.json");
         config.save(&file).expect("job");
         let mut child = JobChild(
-            std::process::Command::new(env!("CARGO_BIN_EXE_condor"))
+            std::process::Command::new(env!("CARGO_BIN_EXE_av1an"))
                 .current_dir(temp.path())
                 .args(["--config-file", "job.json", "--skip-scd", "-w", "2"])
                 .stdout(std::process::Stdio::null())
@@ -1168,7 +1168,7 @@ mod tests {
             assert!(warning.contains(text), "missing {text}: {warning}");
         }
         assert!(
-            !warning.contains("clean and recompute") && !warning.contains("condor clean"),
+            !warning.contains("clean and recompute") && !warning.contains("av1an clean"),
             "{warning}"
         );
         assert!(

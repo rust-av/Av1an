@@ -10,7 +10,7 @@
 
 # Commands
 
-- [condor](commands/condor.md)
+- [av1an](commands/condor.md)
   - [init](commands/init.md)
   - [detect-scenes](commands/detect-scenes.md)
   - [zone](commands/zone.md)

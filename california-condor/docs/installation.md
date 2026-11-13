@@ -1,22 +1,22 @@
 # Installation
 
 The Av1an CLI's Cargo package is **`california-condor`** and its binary is
-**`condor`**. As checked on 2026-11-13, `california-condor` and the library
-`andean-condor` are not published on crates.io; the crate named `condor` is unrelated.
-Use a source checkout containing this workspace. After installing the
+**`av1an`**. As checked on 2026-11-13, `california-condor` and the library
+`andean-condor` are not published on crates.io.
+Use a source checkout of `main` containing this workspace. After installing the
 [build prerequisites](./compiling.md), run from that checkout's root:
 
 ```bash
-cargo install --locked --path california-condor --bin condor
+cargo install --locked --path california-condor --bin av1an
 ```
 
-This installs `condor` into Cargo's binary directory (normally `~/.cargo/bin` or
+This installs `av1an` into Cargo's binary directory (normally `~/.cargo/bin` or
 `%USERPROFILE%\.cargo\bin`); keep it on `PATH`. For a build without installation,
 see [Compiling](./compiling.md).
 
-**Windows: `cargo install` alone is incomplete.** It copies only `condor.exe`,
+**Windows: `cargo install` alone is incomplete.** It copies only `av1an.exe`,
 not the mandatory runtime DLLs. Prefer the [Windows source-build route](./compiling.md#compiling-on-windows)
-and run `target\release\condor.exe` with its runtime files kept beside it:
+and run `target\release\av1an.exe` with its runtime files kept beside it:
 
 - Copy `ffms2.dll` from the selected FFMS2 MSVC x64 installation (`FFMS_LIB_DIR`)
   into `target\release`.
@@ -30,19 +30,19 @@ and run `target\release\condor.exe` with its runtime files kept beside it:
   beside it, or configure their explicit runtime model paths.
 
 If relocating the executable, copy those actual runtime files and the needed
-`model/` directory with it; copying only `condor.exe` is not an installation.
+`model/` directory with it; copying only `av1an.exe` is not an installation.
 Do not rely on temporary `cargo install` build artifacts being retained to obtain
 these DLLs. The [Windows bundle layout](#windows-releases) below describes the
 required files, not an already available download.
 
-The AUR lookup for `condor`, `california-condor`, `av1an` and `av1an-git` found only
-the legacy `av1an-git` package, which provides `av1an`, not this Condor CLI.
-The AUR is separate from Arch's official pacman repositories; it does not establish
-that `pacman -S condor` exists. No Condor Arch package is recommended here.
+As checked on 2026-11-13, the AUR's `av1an-git` package provides legacy Av1an,
+not this Condor rewrite. The shared `av1an` executable name does not establish
+which implementation a package contains. No Arch package for the rewrite is
+recommended here; use the source build above.
 
 The checked [upstream releases](https://github.com/rust-av/Av1an/releases)
 (latest plus the four recent versioned releases, 2026-11-13) do not provide
-`condor-windows-x64.zip` or `condor-linux-x64.zip`; `latest` contains only legacy
+`av1an-windows-x64.zip` or `av1an-linux-x64.zip`; `latest` contains only legacy
 `av1an.exe`, not this CLI. **Use source until a release supplies the Condor archives.**
 The layouts below describe the configured packaging contract, not assets already
 available for download. The release coordinator is configured to publish both ZIPs
@@ -54,13 +54,13 @@ For upstream image policy and local Condor builds, see [Docker](docker.md).
 
 #### Windows releases
 
-When a release provides **`condor-windows-x64.zip`**, download and extract the whole
+When a release provides **`av1an-windows-x64.zip`**, download and extract the whole
 archive into one directory. The layout matters, because Condor finds parts of
 itself by relative path:
 
 ```text
-condor/
-├── condor.exe
+av1an/
+├── av1an.exe
 ├── ffms2.dll              mandatory native decoder/runtime dependency
 ├── vcruntime140.dll       mandatory app-local MSVC C/C++ runtimes
 ├── vcruntime140_1.dll      |
@@ -80,13 +80,13 @@ condor/
 Avoid these incomplete installations:
 
 - **Leaving `model/` out or flattening it.** The VMAF models and the TransNetV2
-  scene detection model must be in a `model` subdirectory beside `condor.exe`.
+  scene detection model must be in a `model` subdirectory beside `av1an.exe`.
   Without the required model, that scoring/detection path is unavailable.
 - **Copying only the executable.** The configured release publishes ZIPs and a
-  schema, not loose `condor.exe` or runtime DLL assets. Keep the bundle together.
+  schema, not loose `av1an.exe` or runtime DLL assets. Keep the bundle together.
 
 **Keep the runtime bundle together.** `ffms2.dll` is dynamically linked and
-mandatory, even for `condor --version`. The pinned FFMS2 5.0 MSVC x64 DLL imports
+mandatory, even for `av1an --version`. The pinned FFMS2 5.0 MSVC x64 DLL imports
 only Windows system DLLs; it does not need separate FFmpeg codec DLLs. Keep the
 mandatory MSVC C/C++ runtimes and their bundled companions together; these are
 app-local files, not a requirement to install the VC++ Redistributable on the
@@ -111,11 +111,11 @@ native Windows run. Use the ZIP, not a loose executable.
 
 #### Linux releases
 
-When a release provides **`condor-linux-x64.zip`**, download and extract the whole
+When a release provides **`av1an-linux-x64.zip`**, download and extract the whole
 archive into one directory — same layout as Windows, with `.so` libraries
 beside the executable and the VMAF and TransNetV2 models in `model/`. The archive keeps the
-executable bit on `condor` and sets an `$ORIGIN` runpath for adjacent metric
-libraries. After satisfying the host dependencies below, check `./condor --version`.
+executable bit on `av1an` and sets an `$ORIGIN` runpath for adjacent metric
+libraries. After satisfying the host dependencies below, check `./av1an --version`.
 
 **x86_64 only.** There is no aarch64 build: on arm64 hosts the executable fails
 with `cannot execute: required file not found`, because the archive ships one
@@ -123,7 +123,7 @@ x86-64 ELF. Build from source on those machines.
 
 The Linux executable is **not** self-sufficient: the host provides
 
-* **`libffms2`**, which `condor` links against directly. Without it the loader
+* **`libffms2`**, which `av1an` links against directly. Without it the loader
   fails before the program starts (`error while loading shared libraries:
   libffms2.so.5`), even for `--version`:
   * Debian / Ubuntu: `apt install libffms2-5`
@@ -142,10 +142,10 @@ The Linux executable is **not** self-sufficient: the host provides
 
 The metric libraries are staged on the same Ubuntu 24.04 runner, but that alone
 does not guarantee every metric, GPU driver or transitive runtime works wherever
-`condor` starts. The Linux archive smoke gate checks CPU metric discovery; GPU and
+`av1an` starts. The Linux archive smoke gate checks CPU metric discovery; GPU and
 other platform acceptance must run in their own environments.
 
-Run without a terminal — a CI job, or output redirected to a file — and `condor`
+Run without a terminal — a CI job, or output redirected to a file — and `av1an`
 skips the TUI on its own, printing JSON progress events on stdout.
 
 For the unpublished Rust library, use the [Andean Condor local path dependency](index.md#library).

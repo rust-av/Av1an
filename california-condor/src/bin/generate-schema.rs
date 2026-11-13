@@ -2,7 +2,7 @@
 //!
 //! Run with `cargo run --release --bin generate-schema` and redirect stdout
 //! to `configuration.schema.json`. The schema is published as a GitHub
-//! release asset alongside the `condor` executable.
+//! release asset alongside the `av1an` executable.
 
 use california_condor::configuration::{CONFIGURATION_SCHEMA_URL, Configuration};
 

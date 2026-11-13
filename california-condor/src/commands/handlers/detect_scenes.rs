@@ -272,7 +272,7 @@ pub enum DetectScenesKey {
     Input,
 }
 
-/// Settings `condor detect-scenes set` can change.
+/// Settings `av1an detect-scenes set` can change.
 #[derive(Debug, Clone, Subcommand)]
 pub enum DetectScenesSet {
     /// Choose the detection algorithm and configure it.
@@ -314,7 +314,7 @@ pub enum DetectScenesSet {
     },
 }
 
-/// The action triple attached to `condor detect-scenes`.
+/// The action triple attached to `av1an detect-scenes`.
 pub type DetectScenesAction = ConfigAction<DetectScenesKey, DetectScenesSet>;
 
 /// Everything that can make a Scene Detector setting unusable.
@@ -328,7 +328,7 @@ pub enum DetectScenesConfigError {
     RangeInverted,
 }
 
-/// The `condor detect-scenes` configuration section.
+/// The `av1an detect-scenes` configuration section.
 pub struct DetectScenesCrud;
 
 impl DetectScenesCrud {
@@ -506,7 +506,7 @@ fn current_scores(current: &CoreSceneDetectionMethod) -> bool {
     }
 }
 
-/// `condor detect-scenes info|set|reset`.
+/// `av1an detect-scenes info|set|reset`.
 pub fn config(config_path: Option<&Path>, action: &DetectScenesAction) -> Result<()> {
     edit::<DetectScenesCrud>(config_path, action)
 }

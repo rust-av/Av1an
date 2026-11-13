@@ -3,9 +3,9 @@
 Concatenate encoded scenes into output video (triggers TUI). See [guide](../guide.md) and [type reference](../types.md).
 
 ```bash
-$ condor concatenate
-$ condor concatenate --method mkvmerge
-$ condor concatenate --method mkvmerge --discard audio,subtitle
+$ av1an concatenate
+$ av1an concatenate --method mkvmerge
+$ av1an concatenate --method mkvmerge --discard audio,subtitle
 ```
 
 | Name                              | Flag       | Type     | Default    |
@@ -15,8 +15,8 @@ $ condor concatenate --method mkvmerge --discard audio,subtitle
 | Overwrite | `--overwrite` | Flag | Keep saved consent (new jobs: false) |
 
 Existing final outputs require explicit saved `output.overwrite` consent; no prompt
-is used. `condor concatenate --overwrite` saves consent, and omission retains it.
-Revoke it with `condor init set overwrite false` or `condor init reset overwrite`.
+is used. `av1an concatenate --overwrite` saves consent, and omission retains it.
+Revoke it with `av1an init set overwrite false` or `av1an init reset overwrite`.
 Source aliases remain forbidden, including disabled extra/attachment inputs and
 encoded chunks. Output admission precedes probing and saving; a missing output
 parent fails without creating it. See [output safety](../configuration/condor/output.md).
@@ -37,8 +37,8 @@ If not specified, `mkvmerge` is used.
 
 ### Examples
 
-- `> condor concatenate --method mkvmerge`
-- `> condor concatenate --method ffmpeg`
+- `> av1an concatenate --method mkvmerge`
+- `> av1an concatenate --method ffmpeg`
 
 ## Discard `--discard`
 
@@ -71,9 +71,9 @@ If not specified, every track of the input is copied, which is the same as leavi
 
 ### Examples
 
-- `> condor concatenate --discard audio`
-- `> condor concatenate --discard audio,subtitle,chapters`
-- `> condor concatenate --discard audio --discard metadata`
+- `> av1an concatenate --discard audio`
+- `> av1an concatenate --discard audio,subtitle,chapters`
+- `> av1an concatenate --discard audio --discard metadata`
 
 ## Edit saved settings
 
@@ -85,9 +85,9 @@ If not specified, every track of the input is copied, which is the same as leavi
 - `info [method|output|scenes-directory]` prints JSON; `reset KEY` resets one of them, and a bare `reset` restores the method and output to their defaults (the temp-derived `scenes-directory` stays).
 
 ```bash
-$ condor concatenate set method ffmpeg
-$ condor concatenate set output final.mkv
-$ condor concatenate reset output
+$ av1an concatenate set method ffmpeg
+$ av1an concatenate set output final.mkv
+$ av1an concatenate reset output
 ```
 
 Shared semantics (validation, staleness warnings): see [Editing saved settings](config-editing.md).
@@ -103,18 +103,18 @@ The screenshots below are generated from the live interface. Click any image to 
       <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">Scene concatenator</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-concatenate-light.avif"><picture><source srcset="../media/tui/help-concatenate-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-concatenate-light.avif" alt="condor concatenate --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor concatenate --help</p>
+      <a href="../media/tui/help-concatenate-light.avif"><picture><source srcset="../media/tui/help-concatenate-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-concatenate-light.avif" alt="av1an concatenate --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an concatenate --help</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-concatenate-verbose-light.avif"><picture><source srcset="../media/tui/help-concatenate-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-concatenate-verbose-light.avif" alt="condor concatenate --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor concatenate --help --verbose</p>
+      <a href="../media/tui/help-concatenate-verbose-light.avif"><picture><source srcset="../media/tui/help-concatenate-verbose-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-concatenate-verbose-light.avif" alt="av1an concatenate --help --verbose" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an concatenate --help --verbose</p>
     </td>
     <td width="50%" valign="top">
-      <a href="../media/tui/help-concatenate-set-light.avif"><picture><source srcset="../media/tui/help-concatenate-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-concatenate-set-light.avif" alt="condor concatenate set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
-      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">condor concatenate set --help</p>
+      <a href="../media/tui/help-concatenate-set-light.avif"><picture><source srcset="../media/tui/help-concatenate-set-dark.avif" media="(prefers-color-scheme: dark)"><img src="../media/tui/help-concatenate-set-light.avif" alt="av1an concatenate set --help" style="width:100%;border-radius:8px;display:block;"></picture></a>
+      <p style="text-align:center;font-size:0.85em;opacity:0.75;margin:0.35em 0 0;">av1an concatenate set --help</p>
     </td>
   </tr>
 </table>
