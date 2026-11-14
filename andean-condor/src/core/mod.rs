@@ -1,5 +1,5 @@
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, atomic::AtomicBool},
 };
 
@@ -22,6 +22,9 @@ use crate::{
         },
     },
 };
+
+#[cfg(test)]
+mod tests;
 
 pub mod encoder;
 pub mod input;
@@ -98,11 +101,7 @@ where
 
     #[inline]
     pub fn save_data(save_file: &Path, data: &CondorModel<Data, Config>) -> Result<()> {
-        let save_file_ext = save_file.extension();
-        let save_file_temp = save_file_ext.map_or_else(
-            || save_file.with_extension("temp"),
-            |extension| save_file.with_extension(format!(".temp.{}", extension.to_string_lossy())),
-        );
+        let save_file_temp = temp_save_path(save_file);
         let mut buffer = vec![];
         let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
         let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
@@ -112,6 +111,20 @@ where
 
         Ok(())
     }
+}
+
+/// The temporary file [`CondorModel::save_data`] writes before renaming onto
+/// `save_file`.
+///
+/// `Path::with_extension` replaces the existing extension rather than appending
+/// to it, so the temp name is `{stem}.temp.{ext}`. A leading dot in the
+/// replacement extension would keep the original dot and produce
+/// `condor..temp.json`.
+fn temp_save_path(save_file: &Path) -> PathBuf {
+    save_file.extension().map_or_else(
+        || save_file.with_extension("temp"),
+        |extension| save_file.with_extension(format!("temp.{}", extension.to_string_lossy())),
+    )
 }
 
 pub trait AndeanCondor<Data = DefaultSequenceData, Config = DefaultSequenceConfig>

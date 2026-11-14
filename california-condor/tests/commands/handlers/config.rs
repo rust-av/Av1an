@@ -1465,19 +1465,9 @@ mod output {
             let disk = std::fs::read(&file).expect("disk snapshot");
             let source = config.input.clone();
             let result = if concat {
-                ConcatenateCrud::apply(
-                    &mut config,
-                    &ConcatenateSet::Output {
-                        path: source.clone(),
-                    },
-                )
+                ConcatenateCrud::apply(&mut config, &ConcatenateSet::Output { path: source })
             } else {
-                InitCrud::apply(
-                    &mut config,
-                    &InitSet::Output {
-                        path: source.clone(),
-                    },
-                )
+                InitCrud::apply(&mut config, &InitSet::Output { path: source })
             };
             assert!(result.is_err(), "output CRUD must refuse source aliases");
             assert_eq!(serde_json::to_value(config).expect("after"), before);

@@ -683,7 +683,7 @@ mod tests {
             }
             let mut config = default_config(&video, &output, &temp.path().join("work"));
             config.condor.input = Input::VapourSynthScript {
-                source: VapourSynthScriptSource::Path(source.clone()),
+                source: VapourSynthScriptSource::Path(source),
                 variables: Default::default(),
                 index: 0,
                 filters: vec![],
