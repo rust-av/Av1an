@@ -652,6 +652,75 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn standard_tq_and_qc_profiles_select_middle_quarter_with_rms() {
+        use crate::{
+            commands::QualityProfile,
+            test_helpers::{TestVideo, default_config},
+        };
+        use andean_condor::models::{
+            input::ImportMethod,
+            sequence::target_quality::{TargetQualityConfig, types::ProbeStatistic},
+        };
+        let root = std::env::temp_dir().join("condor-profile-model-only");
+        let video = TestVideo {
+            path: root.join("must-not-open.mkv"),
+            width: 32,
+            height: 32,
+            frames: 100,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![(0, 50), (50, 100)],
+        };
+        let mut configuration =
+            default_config(&video, &root.join("output.mkv"), &root.join("scratch"));
+        configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+        configuration.condor.input = InputModel::Video {
+            path: video.path,
+            import_method: ImportMethod::FFMS2 {
+                index: Some(0),
+                cache_path: Some(root.join("forbidden.ffindex")),
+            },
+            filters: vec![],
+        };
+        configuration.condor.sequence_config.target_quality = Some(TargetQualityConfig::default());
+        configuration.condor.sequence_config.quality_check = Some(Default::default());
+        target_quality::configure_target_quality(
+            &mut configuration,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&QualityProfile::Standard),
+        )
+        .expect("TQ profile");
+        quality_check::configure_quality_check(
+            &mut configuration,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&QualityProfile::Standard),
+        )
+        .expect("QC profile");
+        let tq = configuration.condor.sequence_config.target_quality.as_ref().expect("TQ");
+        let qc = configuration.condor.sequence_config.quality_check.as_ref().expect("QC");
+        for strategy in [&tq.probing.strategy, &qc.strategy] {
+            assert_eq!(
+                strategy.frame_indices(0, 100).expect("selection"),
+                (38..63).collect::<Vec<_>>()
+            );
+        }
+        assert_eq!(tq.probing.statistic, ProbeStatistic::RootMeanSquare);
+        assert_eq!(qc.statistic, ProbeStatistic::RootMeanSquare);
+    }
+
     fn script_input(stream_concurrently: bool) -> InputModel {
         InputModel::VapourSynthScript {
             source: VapourSynthScriptSource::Path("script.vpy".into()),

@@ -900,6 +900,36 @@ mod tests {
     }
 
     #[test]
+    fn malformed_parameters_leave_configure_encoder_unchanged() {
+        for input in [
+            "--key \"unfinished",
+            "--key value\\",
+            "--crf 20 --crf 21",
+            "--ok=1 --",
+            "--ok=1 trailing",
+        ] {
+            let mut encoder = Encoder::default_from_base(&EncoderBase::AOM, false);
+            let before = encoder.clone();
+            let error = configure_encoder(
+                &mut encoder,
+                Some(&EncoderMethod::X265),
+                Some(1),
+                Some(input),
+                None,
+                None,
+                Some("hflip"),
+                Some(false),
+            )
+            .expect_err("malformed parameters must not commit any edits");
+            assert!(
+                error.to_string().contains("Invalid parameter"),
+                "{input:?}: {error:#}"
+            );
+            assert_eq!(encoder, before, "{input:?}");
+        }
+    }
+
+    #[test]
     fn switch_retains_explicit_controls_and_chroma_updates_luma() {
         let mut encoder = Encoder::default_from_base(&EncoderBase::X264, false);
         configure_encoder(

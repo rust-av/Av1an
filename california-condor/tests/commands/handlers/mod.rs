@@ -447,13 +447,12 @@ mod quality_admission {
             input::{ImportMethod, Input as InputModel, VapourSynthScriptSource},
             sequence::target_quality::{
                 TargetQualityConfig,
-                types::{ProbeStatistic, ProbeStrategy, SubsetProbeLength, SubsetProbePosition},
+                types::{ProbeStrategy, SubsetProbeLength, SubsetProbePosition},
             },
         },
     };
     use california_condor::{
         commands::{
-            QualityProfile,
             config::{ConfigAction, ProbeStrategyKind, StrategyArgs},
             handlers::{quality_check, target_quality},
         },
@@ -514,46 +513,6 @@ mod quality_admission {
         } else {
             Box::new(QualityCheck::new(None))
         }
-    }
-
-    #[test]
-    fn real_standard_profiles_select_middle_quarter() {
-        let temp = tempfile::tempdir().expect("fixture");
-        let mut configuration = fixture(temp.path());
-        target_quality::configure_target_quality(
-            &mut configuration,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(&QualityProfile::Standard),
-        )
-        .expect("TQ profile");
-        quality_check::configure_quality_check(
-            &mut configuration,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(&QualityProfile::Standard),
-        )
-        .expect("QC profile");
-        let tq = configuration.condor.sequence_config.target_quality.as_ref().expect("TQ");
-        let qc = configuration.condor.sequence_config.quality_check.as_ref().expect("QC");
-        for strategy in [&tq.probing.strategy, &qc.strategy] {
-            assert_eq!(
-                strategy.frame_indices(0, 100).expect("selection"),
-                (38..63).collect::<Vec<_>>()
-            );
-        }
-        assert_eq!(tq.probing.statistic, ProbeStatistic::RootMeanSquare);
-        assert_eq!(qc.statistic, ProbeStatistic::RootMeanSquare);
     }
 
     #[test]
