@@ -1,150 +1,49 @@
+#[cfg(target_os = "linux")]
 use super::*;
+#[cfg(target_os = "linux")]
+use crate::{
+    core::input::Input,
+    models::input::{ImportMethod, Input as InputModel},
+};
+#[cfg(target_os = "linux")]
+#[path = "../../../../tests/core/sequence/fixtures/filter_lifecycle.rs"]
+mod lifecycle_fixture;
 
-/// Minimal Y4M stream: header plus `frames` solid-black 8-bit 4:2:0
-/// frames at 8x8.
-fn y4m_stream(frames: usize) -> Vec<u8> {
-    const HEADER: &[u8] = b"YUV4MPEG2 W8 H8 F1:1 Ip A1:1 C420mpeg2\n";
-    const FRAME_HEADER: &[u8] = b"FRAME\n";
-    let mut stream = HEADER.to_vec();
-    for _ in 0..frames {
-        stream.extend_from_slice(FRAME_HEADER);
-        stream.extend_from_slice(&[16_u8; 8 * 8]); // Y
-        stream.extend_from_slice(&[128_u8; 4 * 4]); // U
-        stream.extend_from_slice(&[128_u8; 4 * 4]); // V
-    }
-    stream
-}
-
-/// Feeds `stream` through `graph` and returns all output bytes plus the
-/// stage's `check()` result.
-fn run_filter(graph: &str, stream: Vec<u8>) -> (Vec<u8>, Result<()>) {
-    let (input_tx, input_rx) = crossbeam_channel::bounded(2);
-    let failure = Arc::new(Mutex::new(None));
-    let mut stage =
-        FfmpegFilter::spawn(input_rx, 2, graph, failure).expect("FfmpegFilter should spawn");
-    let output_rx = stage.take_receiver().expect("sole receiver");
-
-    let producer = thread::spawn(move || {
-        // Feed one chunk per frame to mirror window-streamed producers.
-        let split = stream
-            .windows(6)
-            .position(|window| window == b"FRAME\n")
-            .expect("stream should have frames");
-        input_tx.send(Cursor::new(stream[..split].to_vec())).ok();
-        let mut rest = &stream[split..];
-        while !rest.is_empty() {
-            let end = rest[6..]
-                .windows(6)
-                .position(|window| window == b"FRAME\n")
-                .map_or(rest.len(), |offset| offset + 6);
-            input_tx.send(Cursor::new(rest[..end].to_vec())).ok();
-            rest = &rest[end..];
-        }
-    });
-
-    let mut output = Vec::new();
-    for chunk in output_rx {
-        output.extend_from_slice(chunk.get_ref());
-    }
-    producer.join().expect("producer thread should join");
-    (output, stage.check())
-}
-
+#[cfg(target_os = "linux")]
 #[test]
-fn passes_frames_through_unchanged() {
-    if which::which("ffmpeg").is_err() {
-        eprintln!("skipping passes_frames_through_unchanged: ffmpeg not in PATH");
-        return;
-    }
-    let frames = 8;
-    let (output, result) = run_filter("null", y4m_stream(frames));
-    result.expect("the null filter should not fail");
-    let output = String::from_utf8_lossy(&output);
-    assert!(
-        output.starts_with("YUV4MPEG2"),
-        "output starts with a Y4M header"
-    );
-    let frame_count = output.matches("FRAME\n").count();
-    assert_eq!(frame_count, frames, "passthrough preserves the frame count");
-}
-
-#[test]
-fn crop_filter_updates_dimensions() {
-    if which::which("ffmpeg").is_err() {
-        eprintln!("skipping crop_filter_updates_dimensions: ffmpeg not in PATH");
-        return;
-    }
-    let (output, result) = run_filter("crop=6:6", y4m_stream(8));
-    result.expect("the crop filter should not fail");
-    let output = String::from_utf8_lossy(&output);
-    assert!(
-        output.starts_with("YUV4MPEG2"),
-        "output starts with a Y4M header"
+fn thread_census_waits_for_transition() {
+    let mut observations = [3, 3, 2].into_iter();
+    assert_eq!(
+        internal_integration::wait_for_thread_count(2, std::time::Duration::from_secs(5), || {
+            observations.next().expect("census")
+        })
+        .expect("observe teardown after logical join"),
+        2
     );
     assert!(
-        output.contains("W6 H6"),
-        "FFmpeg regenerates the header with the cropped dimensions"
+        observations.next().is_none(),
+        "must observe the transition, not skip the census"
     );
-}
-
-#[test]
-fn reports_invalid_filter_failure() {
-    if which::which("ffmpeg").is_err() {
-        eprintln!("skipping reports_invalid_filter_failure: ffmpeg not in PATH");
-        return;
-    }
-    let (output, result) = run_filter("definitely_not_a_filter", y4m_stream(8));
-    let message = result.expect_err("an invalid filter should fail the stage");
-    assert!(output.is_empty(), "a failed filter produces no frames");
-    let message = message.to_string();
-    assert!(
-        message.contains("definitely_not_a_filter"),
-        "failure message includes FFmpeg's stderr: {message}"
-    );
-}
-
-#[test]
-fn check_reports_missing_ffmpeg() {
-    let (input_tx, input_rx) = crossbeam_channel::bounded(2);
-    drop(input_tx);
-    let result = FfmpegFilter::spawn(input_rx, 2, "null", Arc::new(Mutex::new(None)));
-    match result {
-        Ok(stage) => drop(stage),
-        Err(err) => assert!(
-            err.to_string().contains("not found in PATH"),
-            "spawn error names the PATH lookup: {err}"
-        ),
-    }
 }
 
 #[cfg(target_os = "linux")]
-pub(super) mod runtime {
+mod internal_integration {
     //! Removing sole receiver ownership or encoder-side filter cleanup must hang
     //! these bounded fixtures; the external watchdog reaps even a failing baseline.
     use super::*;
     use crate::{
         core::{
-            Condor,
             encoder::EncoderResult,
-            input::Input,
-            output::Output,
             sequence::{
-                Sequence, SequenceStatus,
-                parallel_encoder::{ParallelEncoder, Task},
+                SequenceStatus,
+                parallel_encoder::Task,
                 zone_encoder::{ZoneEncoder, ZonePlan},
             },
         },
-        models::{
-            encoder::{Encoder, EncoderBase, cli_parameter::CLIParameter},
-            input::{ImportMethod, Input as InputModel},
-            scene::Scene,
-            sequence::{DefaultSequenceConfig, DefaultSequenceData},
-        },
+        models::encoder::{Encoder, EncoderBase, cli_parameter::CLIParameter},
     };
     use std::{
-        collections::HashMap,
         fs,
-        os::unix::fs::PermissionsExt,
         path::Path,
         time::{Duration, Instant},
     };
@@ -155,7 +54,7 @@ pub(super) mod runtime {
 
     // Linux can wake a native join before unlinking the exiting task from /proc.
     // This observation barrier runs after owned joins; it cannot replace them.
-    fn wait_for_thread_count(
+    pub(super) fn wait_for_thread_count(
         before: usize,
         timeout: Duration,
         mut count: impl FnMut() -> usize,
@@ -186,110 +85,68 @@ pub(super) mod runtime {
     }
 
     #[test]
-    fn thread_census_waits_for_transition() {
-        let mut observations = [3, 3, 2].into_iter();
-        assert_eq!(
-            wait_for_thread_count(2, Duration::from_secs(5), || observations
-                .next()
-                .expect("census"))
-            .expect("observe teardown after logical join"),
-            2
-        );
-        assert!(
-            observations.next().is_none(),
-            "must observe the transition, not skip the census"
+    fn dropping_filter_before_input_disconnects_upstream_and_joins_relays() {
+        isolated_cases(
+            "dropping_filter_before_input_disconnects_upstream_and_joins_relays",
+            &["first-drop"],
         );
     }
 
     #[test]
-    fn filter_shutdown_joins_workers_and_preserves_primary_errors() {
-        let temp = tempfile::tempdir().expect("fixture");
-        let root = temp.path();
-        fs::write(
-            root.join("watchdog.rs"),
-            include_str!("../../encoder/tests/fixtures/fake_encoder.rs"),
-        )
-        .expect("watchdog source");
-        let compiled = Command::new("rustc")
-            .arg(root.join("watchdog.rs"))
-            .arg("-o")
-            .arg(root.join("watchdog"))
-            .output()
-            .expect("rustc");
-        assert!(
-            compiled.status.success(),
-            "{}",
-            String::from_utf8_lossy(&compiled.stderr)
+    fn checking_filter_before_input_is_idempotent_and_joins_relays() {
+        isolated_cases(
+            "checking_filter_before_input_is_idempotent_and_joins_relays",
+            &["first-check"],
         );
-        let mut failures = Vec::new();
-        for case in [
-            "first-drop",
-            "first-check",
-            "blocked-output",
-            "late-check",
-            "controls",
-            "relay-faults",
-            "native-invalid",
-            "native-status",
-            "native-preflight",
-            "native-spawn",
-            "native-filter",
-            "zone-invalid",
-            "zone-filter",
-        ] {
-            let job = root.join(case);
-            fs::create_dir_all(&job).expect("job");
-            let log = fs::File::create(job.join("child.log")).expect("log");
-            let status = Command::new(root.join("watchdog"))
-                .arg("--encoder-fixture-watchdog")
-                .arg(std::env::current_exe().expect("test binary"))
-                .arg(&job)
-                .arg(case)
-                .arg("core::sequence::ffmpeg_filter::tests::runtime::filter_lifecycle_child")
-                .stdout(log.try_clone().expect("clone log"))
-                .stderr(log)
-                .status()
-                .expect("watchdog");
-            let log = fs::read_to_string(job.join("child.log")).expect("log");
-            if !status.success()
-                || !job.join("executed").exists()
-                || !job.join("verified").exists()
-                || !log.contains("test result: ok. 1 passed;")
-                || !log
-                    .lines()
-                    .any(|l| l == "encoder fixture watchdog reaped 0 descendants; timeout=false")
-            {
-                failures.push(format!("{case}: {status}\n{log}"));
-            }
-            eprint!("{log}");
-        }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
-    fn native_input(root: &Path) -> Input {
-        let path = root.join("96 frames.y4m");
-        let mut bytes = b"YUV4MPEG2 W128 H128 F24:1 Ip A1:1 C420jpeg\n".to_vec();
-        for _ in 0..96 {
-            bytes.extend_from_slice(b"FRAME\n");
-            bytes.extend(vec![48; 128 * 128]);
-            bytes.extend(vec![128; 128 * 128 / 2]);
-        }
-        fs::write(&path, bytes).expect("finite source larger than the channel window");
-        let mut input = Input::from_video(&InputModel::Video {
-            path,
-            import_method: ImportMethod::FFMS2 {
-                index: None,
-                cache_path: Some(root.join("native.ffindex")),
-            },
-            filters: vec![],
-        })
-        .expect("native FFMS2");
-        assert!(
-            input.streams_concurrently(),
-            "exercise actual streaming path"
+    #[test]
+    fn dropping_filter_with_blocked_output_unblocks_producer() {
+        isolated_cases(
+            "dropping_filter_with_blocked_output_unblocks_producer",
+            &["blocked-output"],
         );
-        assert_eq!(input.clip_info().expect("clip").num_frames, 96);
-        input
+    }
+
+    #[test]
+    fn checking_filter_after_pipe_disconnect_treats_sigpipe_as_intentional_abort() {
+        isolated_cases(
+            "checking_filter_after_pipe_disconnect_treats_sigpipe_as_intentional_abort",
+            &["late-check"],
+        );
+    }
+
+    #[test]
+    fn completed_filters_preserve_y4m_format_and_reap_workers() {
+        isolated_cases(
+            "completed_filters_preserve_y4m_format_and_reap_workers",
+            &["controls"],
+        );
+    }
+
+    #[test]
+    fn filter_check_reports_all_relay_faults_with_bounded_stderr() {
+        isolated_cases(
+            "filter_check_reports_all_relay_faults_with_bounded_stderr",
+            &["relay-faults"],
+        );
+    }
+
+    #[test]
+    fn zone_filter_failures_preserve_primary_diagnostics_and_clear_outputs() {
+        isolated_cases(
+            "zone_filter_failures_preserve_primary_diagnostics_and_clear_outputs",
+            &["zone-invalid", "zone-filter"],
+        );
+    }
+
+    fn isolated_cases(test: &str, cases: &[&str]) {
+        lifecycle_fixture::isolated(module_path!(), test, cases, |root, case| match case {
+            "controls" => controls(),
+            "relay-faults" => relay_faults(),
+            c if c.starts_with("zone") => zone_failure(root, c),
+            c => direct_drop(c),
+        });
     }
 
     fn direct_drop(case: &str) {
@@ -516,8 +373,8 @@ pub(super) mod runtime {
         );
     }
 
-    fn native_failure(root: &Path, case: &str) {
-        let mut input = native_input(root);
+    fn zone_failure(root: &Path, case: &str) {
+        let mut input = lifecycle_fixture::native_input(root);
         let mut encoder = Encoder::default_from_base(&EncoderBase::X264, true);
         encoder.set_append_color_data(false);
         encoder.set_quantizer(23.0);
@@ -535,113 +392,29 @@ pub(super) mod runtime {
                 CLIParameter::new_bool("--", true),
             );
         }
-        if case == "native-status" {
-            let path = root.join("early encoder");
-            fs::write(
-                &path,
-                "#!/bin/sh\nprintf 'filter-lifecycle early encoder diagnostic' >&2\nexit 42\n",
-            )
-            .expect("early status fixture");
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("executable");
-            encoder.set_executable(Some(path));
-        }
         let scenes_dir = root.join("scenes");
         fs::create_dir_all(&scenes_dir).expect("scenes");
         let (progress_tx, progress_rx) = std::sync::mpsc::channel();
         let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let error = if case.starts_with("zone") {
-            let tasks = vec![Task {
-                original_index: 7,
-                index: 0,
-                frame_indices: (0..96).collect(),
-                sub_scenes: None,
-                encoder,
-                output: scenes_dir.join("00007.264"),
-            }];
-            let plan = ZonePlan::try_build(&tasks).expect("native x264 zoning capability");
+        let tasks = vec![Task {
+            original_index: 7,
+            index: 0,
+            frame_indices: (0..96).collect(),
+            sub_scenes: None,
+            encoder,
+            output: scenes_dir.join("00007.264"),
+        }];
+        let plan = ZonePlan::try_build(&tasks).expect("native x264 zoning capability");
+        let error =
             ZoneEncoder::encode_tasks(&mut input, tasks.into(), plan, progress_tx, cancelled)
-                .expect_err("zone filter/encoder failure")
-        } else if matches!(case, "native-preflight" | "native-spawn") {
-            let executable = root.join("unspawnable encoder");
-            if case == "native-spawn" {
-                fs::write(
-                    &executable,
-                    format!("#!{}\n", root.join("missing-interpreter").display()),
-                )
-                .expect("script");
-                fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).expect("mode");
-            }
-            encoder.set_executable(Some(executable));
-            ParallelEncoder::encode_tasks(
-                &mut input,
-                1,
-                [Task {
-                    original_index: 7,
-                    index: 0,
-                    frame_indices: (0..96).collect(),
-                    sub_scenes: None,
-                    encoder,
-                    output: scenes_dir.join("00007.264"),
-                }]
-                .into(),
-                progress_tx,
-                cancelled,
-            )
-            .expect_err("early failure must unblock inline producer")
-        } else {
-            let saved = Arc::new(Mutex::new(0));
-            let observed = Arc::clone(&saved);
-            let mut config = DefaultSequenceConfig::default();
-            config.parallel_encoder.workers = Some(1);
-            config.parallel_encoder.scenes_directory = scenes_dir.clone();
-            let mut condor = Condor::<DefaultSequenceData, DefaultSequenceConfig>::new(
-                input,
-                Output {
-                    path: root.join("unused"),
-                    overwrite: false,
-                    tags: HashMap::new(),
-                    video_tags: HashMap::new(),
-                },
-                encoder.clone(),
-                vec![Scene {
-                    start_frame: 0,
-                    end_frame: 96,
-                    sub_scenes: None,
-                    encoder,
-                    sequence_data: DefaultSequenceData::default(),
-                }],
-                Some(config),
-                Box::new(move |data| {
-                    if data.scenes.iter().any(|s| {
-                        s.sequence_data.parallel_encoder.bytes.is_some()
-                            || s.sequence_data.parallel_encoder.completed_on.is_some()
-                    }) {
-                        *observed.lock().expect("saved") += 1;
-                    }
-                    Ok(())
-                }),
-            );
-            let error = ParallelEncoder::default()
-                .execute(&mut condor, progress_tx, cancelled)
-                .expect_err("filter/encoder failure");
-            assert_eq!(
-                *saved.lock().expect("saved"),
-                0,
-                "no failed completion saved"
-            );
-            assert!(
-                condor.scenes.iter().all(|s| s.sequence_data.parallel_encoder.bytes.is_none()
-                    && s.sequence_data.parallel_encoder.completed_on.is_none())
-            );
-            error
-        };
+                .expect_err("zone filter/encoder failure");
         let diagnostic = format!("{error:#}");
         match case {
-            "native-filter" | "zone-filter" => assert!(
+            "zone-filter" => assert!(
                 diagnostic.contains("lifecycle_missing_filter"),
                 "original FFmpeg stderr: {diagnostic}"
             ),
-            "native-invalid" | "native-status" | "zone-invalid" => {
+            "zone-invalid" => {
                 let result = error.chain().find_map(|e| e.downcast_ref::<EncoderResult>()).or_else(|| {
                 match error.downcast_ref::<crate::core::sequence::parallel_encoder::ParallelEncoderError>() {
                     Some(crate::core::sequence::parallel_encoder::ParallelEncoderError::EncoderFailed { result, .. }) => Some(result),
@@ -649,27 +422,15 @@ pub(super) mod runtime {
                 }
             }).expect("typed original encoder result");
                 assert!(!result.status.success());
-                if case == "native-status" {
-                    assert_eq!(result.status.code(), Some(42));
-                    assert_eq!(
-                        result.stderr.to_string(),
-                        "filter-lifecycle early encoder diagnostic"
-                    );
-                } else {
-                    assert!(
-                        result.stderr.to_string().contains("filter-lifecycle-invalid-option"),
-                        "{}",
-                        result.stderr
-                    );
-                }
+                assert!(
+                    result.stderr.to_string().contains("filter-lifecycle-invalid-option"),
+                    "{}",
+                    result.stderr
+                );
                 assert!(
                     !diagnostic.contains("FFmpeg filter failed"),
                     "intentional abort must not mask encoder: {diagnostic}"
                 );
-            },
-            "native-spawn" => assert!(diagnostic.contains("Could not spawn"), "{diagnostic}"),
-            "native-preflight" => {
-                assert!(diagnostic.contains("unspawnable encoder"), "{diagnostic}");
             },
             _ => unreachable!(),
         }
@@ -690,25 +451,5 @@ pub(super) mod runtime {
         eprintln!(
             "filter-lifecycle {case}: 96 frames/window 8; original diagnostic retained: {diagnostic}"
         );
-    }
-
-    #[test]
-    fn filter_lifecycle_child() {
-        let Some(root) = std::env::var_os("ENCODER_FIXTURE_ROOT") else {
-            return;
-        };
-        let root = std::path::PathBuf::from(root);
-        let case = std::env::var("ENCODER_FIXTURE_CASE").expect("case");
-        fs::write(root.join("executed"), &case).expect("handshake");
-        if case == "controls" {
-            controls();
-        } else if case == "relay-faults" {
-            relay_faults();
-        } else if case.starts_with("native") || case.starts_with("zone") {
-            native_failure(&root, &case);
-        } else {
-            direct_drop(&case);
-        }
-        fs::write(root.join("verified"), "all assertions ran").expect("verification handshake");
     }
 }
