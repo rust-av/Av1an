@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn a_chroma_iso_difference_is_a_difference() {
+    fn photon_noise_equality_includes_chroma_iso() {
         let mut scaled = photon_noise(600);
         scaled.chroma_iso = Some(4000);
         assert_ne!(photon_noise(600), scaled);

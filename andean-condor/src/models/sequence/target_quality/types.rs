@@ -563,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn undefined_and_overflow_statistics_are_errors() {
+    fn probe_statistics_reject_undefined_or_overflowing_results() {
         for (statistic, scores) in [
             (ProbeStatistic::Harmonic, vec![1.0, -1.0]),
             (ProbeStatistic::Harmonic, vec![f64::from_bits(1)]),
@@ -583,6 +583,10 @@ mod tests {
                 "{statistic:?}/{scores:?}"
             );
         }
+    }
+
+    #[test]
+    fn probe_statistic_parameters_reject_nonfinite_or_out_of_range_values() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 101.0] {
             assert!(ProbeStatistic::Percentile(value).calculate(&[1.0]).is_err());
         }
@@ -592,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn finite_statistics_preserve_conventions() {
+    fn probe_statistics_preserve_signed_and_singleton_conventions() {
         for (statistic, expected) in [
             (ProbeStatistic::Mean, 0.5),
             (ProbeStatistic::Median, 0.5),
@@ -636,6 +640,10 @@ mod tests {
             ProbeStatistic::Harmonic.calculate(&[-1.0, 2.0]).expect("signed harmonic"),
             -4.0
         );
+    }
+
+    #[test]
+    fn harmonic_mean_zero_wins_over_signed_reciprocal_cancellation() {
         assert_eq!(
             ProbeStatistic::Harmonic.calculate(&[0.0, 1.0, -1.0]).expect("zero wins"),
             0.0
@@ -724,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn small_numeric_and_boundary_matrix() {
+    fn fractional_probe_selection_clamps_rounding_to_scene_bounds() {
         use SubsetProbeLength::{Frames, Percentage};
         use SubsetProbePosition::{End, Middle, Start};
         for (position, length, start, end, expected) in [
@@ -759,6 +767,10 @@ mod tests {
                 "{strategy:?}/{start}..{end}"
             );
         }
+    }
+
+    #[test]
+    fn skip_probe_selection_uses_absolute_scene_indices() {
         assert_eq!(
             ProbeStrategy::Skip { skip: 3 }.frame_indices(7, 15).expect("skip"),
             vec![7, 10, 13]
@@ -767,6 +779,10 @@ mod tests {
             ProbeStrategy::Skip { skip: 20 }.frame_indices(7, 15).expect("skip"),
             vec![7]
         );
+    }
+
+    #[test]
+    fn whole_probe_selection_includes_every_scene_frame() {
         assert_eq!(
             ProbeStrategy::Whole.frame_indices(7, 10).expect("whole"),
             vec![7, 8, 9]
@@ -810,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn metric_reduction_keeps_prefix_order_and_independent_statistics() {
+    fn temporal_cvvdp_uses_last_prefix_unless_temporal_processing_is_disabled() {
         let scores = [2.0, 9.0, 4.0];
         for disabled in [None, Some(false), Some(true)] {
             let metric = QualityMetric::CVVDP {
@@ -855,7 +871,7 @@ mod tests {
     /// an error unless the field is absent from the struct, so this asserts the
     /// omission is genuinely tolerated rather than assumed to be.
     #[test]
-    fn a_metric_without_a_gpu_id_still_deserializes() {
+    fn ssimulacra2_json_without_gpu_id_defaults_to_unset() {
         let legacy =
             r#"{"SSIMULACRA2":{"target_range":[74.0,76.0],"resolution":null,"threads":null}}"#;
 

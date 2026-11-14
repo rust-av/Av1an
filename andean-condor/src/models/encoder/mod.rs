@@ -974,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn every_base_except_ffmpeg_round_trips_a_filter() {
+    fn non_ffmpeg_encoders_store_and_clear_the_filtergraph() {
         for base in [
             EncoderBase::AOM,
             EncoderBase::RAV1E,
@@ -1019,7 +1019,7 @@ mod tests {
     }
 
     #[test]
-    fn a_config_without_a_filter_deserializes() {
+    fn encoder_json_without_filter_defaults_to_no_filter() {
         let json = r#"{"X264":{"executable":null,"pass":{"All":1},"options":{}}}"#;
         let encoder: Encoder = serde_json::from_str(json).expect("encoder deserializes");
         assert_eq!(encoder.ffmpeg_filter(), None);
@@ -1057,7 +1057,7 @@ mod tests {
     }
 
     #[test]
-    fn the_colour_field_round_trips() {
+    fn encoder_json_preserves_disabled_colour_metadata() {
         for base in [EncoderBase::AOM, EncoderBase::VVenC, EncoderBase::FFmpeg] {
             let mut encoder = Encoder::default_from_base(&base, false);
             encoder.set_append_color_data(false);

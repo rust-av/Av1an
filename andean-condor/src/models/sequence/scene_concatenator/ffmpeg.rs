@@ -401,7 +401,7 @@ mod tests {
 
     /// Stream entries default to copying the stream.
     #[test]
-    fn copy_defaults_to_true() {
+    fn ffmpeg_track_json_defaults_to_copying() {
         let config = config_from(r#"{"tracks":{"1":{"type":"audio"}}}"#);
         let tracks = config.tracks.expect("tracks should be present");
         assert!(tracks[&1].copy());
@@ -409,7 +409,7 @@ mod tests {
 
     /// A parameter that would fight Condor's own arguments is rejected.
     #[test]
-    fn forbidden_parameter_is_rejected() {
+    fn ffmpeg_track_parameters_reject_reserved_output_options() {
         let config = config_from(r#"{"tracks":{"1":{"type":"audio","parameters":{"-map":"0"}}}}"#);
         assert!(config.validate().is_err());
     }

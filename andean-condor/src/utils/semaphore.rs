@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn close_wakes_all_waiters_and_raw_notifications_still_drain() {
+    fn semaphore_close_wakes_all_owned_permit_waiters() {
         let pool = Arc::new(Semaphore::new(0));
         std::thread::scope(|s| {
             let handles: Vec<_> =
@@ -179,6 +179,12 @@ mod tests {
             }
         });
         assert!(pool.acquire_owned().is_none());
+    }
+
+    #[test]
+    fn semaphore_raw_notifications_drain_without_creating_extra_permits() {
+        let pool = Arc::new(Semaphore::new(0));
+        pool.close();
         for _ in 0..3 {
             pool.release();
         }

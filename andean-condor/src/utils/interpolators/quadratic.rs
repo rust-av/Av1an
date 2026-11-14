@@ -37,7 +37,7 @@ mod tests {
     use super::quadratic as interpolate_quadratic;
 
     #[test]
-    fn quadratic() {
+    fn quadratic_interpolation_reproduces_knots_and_intermediate_crfs() {
         // Test with CRF/score data
         // CRF 10 (84.872162), CRF 20 (78.517479), CRF 30 (72.812233)
         let x = [72.812233, 78.517479, 84.872162]; // scores (ascending order)
@@ -102,7 +102,12 @@ mod tests {
         assert!(result.is_some());
         let crf = result.expect("result should exist");
         assert!(crf > 20.0 && crf < 30.0);
+    }
 
+    #[test]
+    fn quadratic_interpolation_rejects_unsorted_or_out_of_range_scores() {
+        let x = [72.812233, 78.517479, 84.872162];
+        let y = [30.0, 20.0, 10.0];
         // Test with non-increasing x values (should return None)
         let x_bad = [84.872162, 78.517479, 80.0]; // Not properly ordered
         let y_bad = [10.0, 20.0, 25.0];

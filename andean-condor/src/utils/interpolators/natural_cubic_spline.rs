@@ -105,7 +105,7 @@ mod tests {
     use super::natural_cubic_spline as interpolate_natural_cubic_spline;
 
     #[test]
-    fn natural_cubic_spline() {
+    fn natural_cubic_spline_reproduces_knots_and_interpolates_between_them() {
         // CRF 10 (84.872162), CRF 20 (78.517479), CRF 30 (72.812233)
         let x = vec![72.812233, 78.517479, 84.872162]; // scores (ascending order)
         let y = vec![30.0, 20.0, 10.0]; // CRFs
@@ -161,7 +161,10 @@ mod tests {
             result.expect("result should exist") > 20.0
                 && result.expect("result should exist") < 30.0
         );
+    }
 
+    #[test]
+    fn natural_cubic_spline_rejects_unsorted_short_or_mismatched_inputs() {
         // Test with non-increasing x values (should return None)
         let x_bad = vec![84.872162, 78.517479, 80.0]; // Not properly ordered
         let y_bad = vec![10.0, 20.0, 25.0];

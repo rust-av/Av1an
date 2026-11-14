@@ -650,7 +650,7 @@ mod tests {
     /// What DGIndexNV actually writes: the percentage as a bare integer on its
     /// own line, under a label. Captured from DGIndexNV indexing real MKVs.
     #[test]
-    fn a_bare_integer_line_is_the_percentage() {
+    fn dgindex_bare_percentage_is_scaled_and_clamped_to_ten_thousand() {
         assert_eq!(parse_progress("100"), Some((10_000, 10_000)));
         assert_eq!(parse_progress("45"), Some((4500, 10_000)));
         assert_eq!(parse_progress(" 100 \n"), Some((10_000, 10_000)));
@@ -661,13 +661,13 @@ mod tests {
     /// A percentage with a sign still reads, scaled onto a 0..=10000 basis so
     /// callers compute the same value out of either form.
     #[test]
-    fn a_signed_percentage_is_scaled_to_a_basis_of_ten_thousand() {
+    fn dgindex_percent_suffixed_decimal_is_scaled_to_ten_thousand() {
         assert_eq!(parse_progress("45.2%"), Some((4520, 10_000)));
     }
 
     /// A `current/total` pair is read as frames when one is present.
     #[test]
-    fn a_frame_pair_is_read_as_frames() {
+    fn dgindex_frame_pair_progress_uses_the_last_record() {
         assert_eq!(parse_progress("Indexing 1234/2468"), Some((1234, 2468)));
         // The last pair on a rewritten line is the newest.
         assert_eq!(

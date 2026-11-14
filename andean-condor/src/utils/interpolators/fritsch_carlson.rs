@@ -74,7 +74,7 @@ mod tests {
     use super::fritsch_carlson as interpolate_fritsch_carlson;
 
     #[test]
-    fn fritsch_carlson() {
+    fn fritsch_carlson_reproduces_knots_without_overshooting_observed_crfs() {
         // Test with CRF/score data
         // CRF 10 (84.872162), CRF 20 (78.517479), CRF 30 (72.812233)
         let x = [72.812233, 78.517479, 84.872162]; // scores (ascending order)
@@ -152,7 +152,12 @@ mod tests {
             (result.expect("result should exist") - 20.0).abs() < 1e-10,
             "the knot value is reproduced exactly"
         );
+    }
 
+    #[test]
+    fn fritsch_carlson_rejects_unsorted_knots_and_out_of_range_scores() {
+        let x = [72.812233, 78.517479, 84.872162];
+        let y = [30.0, 20.0, 10.0];
         // Test with non-increasing x values (should return None)
         let x_bad = [84.872162, 78.517479, 80.0]; // Not properly ordered
         let y_bad = [10.0, 20.0, 25.0];

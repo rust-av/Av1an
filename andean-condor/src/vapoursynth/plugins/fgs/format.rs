@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn original_preset_round_trips_yuv() {
+    fn fgs_original_preset_preserves_yuv_depth_and_sample_type() {
         // The noise generator's 32-bit float source: 12-bit work clip back to
         // the original float preset.
         let yuv420ps = format(ColorFamily::YUV, SampleType::Float, 32, 1, 1);
@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn integer_preset_rounds_unusual_depths() {
+    fn fgs_integer_preset_rounds_depth_up_and_rejects_unsupported_subsampling() {
         assert_eq!(integer_yuv_preset(1, 1, 9), Some(PresetFormat::YUV420P9));
         assert_eq!(integer_yuv_preset(1, 1, 11), Some(PresetFormat::YUV420P12));
         assert_eq!(integer_yuv_preset(1, 1, 13), Some(PresetFormat::YUV420P14));

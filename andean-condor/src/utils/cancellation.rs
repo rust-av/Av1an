@@ -201,7 +201,7 @@ impl Cancellation {
 mod tests {
     use super::*;
     #[test]
-    fn shared_monotonic_state_and_broadcast() {
+    fn graceful_cancellation_rejects_new_admission_but_keeps_active_work() {
         let token = Cancellation::default();
         assert!(!token.is_cancelled());
         let admitted = token.admit().expect("scene admitted while Running");
@@ -209,6 +209,13 @@ mod tests {
         assert!(token.is_cancelled() && !token.is_forced());
         assert!(token.admit().is_err(), "root cannot admit another scene");
         admitted.check_admission().expect("active manual passes still admitted");
+    }
+
+    #[test]
+    fn concurrent_force_requests_wake_every_cancellation_waiter() {
+        let token = Cancellation::default();
+        let admitted = token.admit().expect("scene admitted while Running");
+        token.request().expect("graceful");
         std::thread::scope(|s| {
             let waiters: Vec<_> =
                 std::iter::repeat_with(|| s.spawn(|| token.forced().recv())).take(8).collect();
@@ -231,7 +238,7 @@ mod tests {
         assert!(admitted.check_admission().expect_err("active view forced").is::<Cancelled>());
     }
     #[test]
-    fn legacy_is_graceful_only() {
+    fn legacy_cancellation_flag_is_monotonic_and_never_forces() {
         let flag = Arc::new(AtomicBool::new(false));
         let token = Cancellation::from(Arc::clone(&flag));
         flag.store(true, Ordering::SeqCst);

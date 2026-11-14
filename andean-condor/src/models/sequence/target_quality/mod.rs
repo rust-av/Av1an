@@ -150,7 +150,7 @@ mod tests {
     use types::ProbeStrategy;
 
     #[test]
-    fn known_encoder_endpoints_use_existing_settings_envelopes() {
+    fn target_quality_quantizer_endpoints_match_each_encoder_range() {
         for (base, maximum) in [
             (EncoderBase::AOM, 63),
             (EncoderBase::VPX, 63),
@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn target_range_probe_count_and_strategy_contract() {
+    fn target_quality_rejects_invalid_score_ranges() {
         let encoder = Encoder::default();
         for range in [
             (f64::NAN, 75.0),
@@ -214,8 +214,24 @@ mod tests {
         *config.metric.target_range_mut() = (75.0, 75.0);
         config.quantizer_range = (20, 20);
         config.validate(&encoder).expect("equal bounds");
+    }
+
+    #[test]
+    fn target_quality_rejects_too_few_probes() {
+        let encoder = Encoder::default();
+        let mut config = TargetQualityConfig::default();
+        *config.metric.target_range_mut() = (75.0, 75.0);
+        config.quantizer_range = (20, 20);
         config.maximum_probes = 0;
         assert!(config.validate(&encoder).is_err());
+    }
+
+    #[test]
+    fn target_quality_rejects_invalid_frame_selection() {
+        let encoder = Encoder::default();
+        let mut config = TargetQualityConfig::default();
+        *config.metric.target_range_mut() = (75.0, 75.0);
+        config.quantizer_range = (20, 20);
         config.maximum_probes = 1;
         config.probing.strategy = ProbeStrategy::Skip { skip: 0 };
         assert!(config.validate(&encoder).is_err());

@@ -971,7 +971,7 @@ mod tests {
 
     /// Track entries default to copying the track.
     #[test]
-    fn copy_defaults_to_true() {
+    fn mkvmerge_track_json_defaults_to_copying() {
         let config = config_from(r#"{"tracks":{"1":{"type":"audio"}}}"#);
         let tracks = config.tracks.expect("tracks should be present");
         assert!(tracks[&1].copy(), "a track is copied unless it opts out");
@@ -980,7 +980,7 @@ mod tests {
     /// The configured fields survive a round trip so saving a config does not
     /// silently drop them.
     #[test]
-    fn track_options_round_trip() {
+    fn mkvmerge_track_json_preserves_three_tracks_and_copy_false() {
         let config = config_from(
             r#"{
                 "tracks": {
@@ -1000,7 +1000,7 @@ mod tests {
 
     /// Dropped tracks are turned into mkvmerge's reversed track list.
     #[test]
-    fn exclusion_lists_use_the_reversed_form() {
+    fn mkvmerge_excluded_audio_and_subtitles_use_negated_track_lists() {
         let config = config_from(
             r#"{"tracks":{"0":{"type":"audio","copy":false},"2":{"type":"subtitle","copy":false}}}"#,
         );

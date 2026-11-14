@@ -436,7 +436,7 @@ mod tests {
     /// A native input cannot run a trim, so this is reported rather than
     /// guessed at. Its own filters are left untouched.
     #[test]
-    fn append_to_a_native_input_reports_an_error() {
+    fn appending_time_filters_to_native_input_returns_wrong_kind() {
         let mut native = video_input(Vec::new());
         assert!(matches!(
             native.append_input_filters(&vapoursynth_input(vec![trim()])),

@@ -44,7 +44,7 @@ mod tests {
     use super::cubic_polynomial as interpolate_cubic_polynomial;
 
     #[test]
-    fn cubic_polynomial() {
+    fn cubic_polynomial_reproduces_knots_and_interpolates_observed_scores() {
         // Test with CRF/score data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
         let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
@@ -122,7 +122,12 @@ mod tests {
             result.expect("result should exist") > 30.0
                 && result.expect("result should exist") < 50.0
         );
+    }
 
+    #[test]
+    fn cubic_polynomial_rejects_unsorted_knots_and_out_of_range_scores() {
+        let x = [72.9709, 80.5088, 85.7452, 92.4354];
+        let y = [35.0, 25.0, 15.0, 5.0];
         // Test with non-increasing x values (should return None)
         let x_bad = [72.9709, 88.0, 85.7452, 92.4354]; // Not properly ordered
         let y_bad = [35.0, 12.0, 15.0, 5.0];

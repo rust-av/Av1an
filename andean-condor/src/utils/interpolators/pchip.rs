@@ -98,7 +98,7 @@ mod tests {
     use super::pchip as interpolate_pchip;
 
     #[test]
-    fn pchip() {
+    fn pchip_reproduces_knots_and_interpolates_without_overshooting() {
         // Test with monotonic data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
         let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
@@ -140,11 +140,6 @@ mod tests {
                 && result.expect("result should exist") < 50.0
         );
 
-        // Test with non-increasing x values (should return None)
-        let x_bad = [72.9709, 88.0, 85.7452, 92.4354]; // Not properly ordered
-        let y_bad = [35.0, 12.0, 15.0, 5.0];
-        assert_eq!(interpolate_pchip(&x_bad, &y_bad, 87.0), None);
-
         // Test edge case with nearly flat region
         // CRF 63-66 have very similar scores
         let x_flat = [4.944567, 5.270722, 5.345044, 5.575547]; // scores (ascending order)
@@ -152,7 +147,15 @@ mod tests {
         let result = interpolate_pchip(&x_flat, &y_flat, 5.1);
         assert!(result.is_some());
         // Should handle the nearly flat region gracefully
+    }
 
+    #[test]
+    fn pchip_rejects_unsorted_mismatched_short_or_out_of_range_inputs() {
+        let x = [72.9709, 80.5088, 85.7452, 92.4354];
+        let y = [35.0, 25.0, 15.0, 5.0];
+        let x_bad = [72.9709, 88.0, 85.7452, 92.4354];
+        let y_bad = [35.0, 12.0, 15.0, 5.0];
+        assert_eq!(interpolate_pchip(&x_bad, &y_bad, 87.0), None);
         // Test with mismatched lengths (should return None)
         let x_short = [72.9709, 80.5088];
         let y_long = [35.0, 25.0, 15.0, 5.0];
@@ -169,7 +172,7 @@ mod tests {
     /// The generalized signature serves the 6th-and-later probes, which hand it
     /// more than four points.
     #[test]
-    fn pchip_accepts_more_than_four_points() {
+    fn pchip_six_knots_reproduce_values_and_bound_intermediate_predictions() {
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35
         // (72.9709), CRF 45 (57.916622), CRF 55 (37.303120)
         let x = [37.303120, 57.916622, 72.9709, 80.5088, 85.7452, 92.4354];

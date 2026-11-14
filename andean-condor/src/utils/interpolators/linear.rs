@@ -15,7 +15,7 @@ mod tests {
     use super::linear as interpolate_linear;
 
     #[test]
-    fn linear() {
+    fn linear_interpolation_reproduces_endpoints_and_intermediate_crfs() {
         // Test basic linear interpolation using real CRF/score data
         let x = [82.502861, 87.600777]; // scores (ascending order)
         let y = [20.0, 10.0]; // CRFs
@@ -44,7 +44,11 @@ mod tests {
             (interpolate_linear(&x2, &y2, 83.958794).expect("result should exist") - 10.0).abs()
                 < 0.1
         );
+    }
 
+    #[test]
+    fn linear_interpolation_rejects_unsorted_or_equal_score_knots() {
+        let y = [20.0, 10.0];
         // Test non-increasing x values (should return None)
         let x_bad = [87.600777, 82.502861]; // Not ascending
         let y_bad = [10.0, 20.0];

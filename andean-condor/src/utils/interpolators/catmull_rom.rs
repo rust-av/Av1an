@@ -55,7 +55,7 @@ mod tests {
     use super::catmull_rom as interpolate_catmull_rom;
 
     #[test]
-    fn catmull_rom() {
+    fn catmull_rom_interpolates_between_the_middle_knots() {
         // Test with CRF/score data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
         let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
@@ -128,7 +128,12 @@ mod tests {
         assert!(result.is_some());
         let crf = result.expect("result should exist");
         assert!(crf > 20.0 && crf < 22.0);
+    }
 
+    #[test]
+    fn catmull_rom_rejects_unsorted_knots_and_scores_outside_the_middle_interval() {
+        let x = [72.9709, 80.5088, 85.7452, 92.4354];
+        let y = [35.0, 25.0, 15.0, 5.0];
         // Test with non-increasing x values (should return None)
         let x_bad = [72.9709, 88.0, 85.7452, 92.4354]; // Not properly ordered
         let y_bad = [35.0, 12.0, 15.0, 5.0];

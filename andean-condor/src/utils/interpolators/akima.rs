@@ -84,7 +84,7 @@ pub fn akima(x: &[f64; 4], y: &[f64; 4], xi: f64) -> Option<f64> {
 mod tests {
     use super::akima as interpolate_akima;
     #[test]
-    fn akima() {
+    fn akima_reproduces_knots_and_interpolates_between_observed_scores() {
         // Test with CRF/score data
         // CRF 5 (92.4354), CRF 15 (85.7452), CRF 25 (80.5088), CRF 35 (72.9709)
         let x = [72.9709, 80.5088, 85.7452, 92.4354]; // scores (ascending order)
@@ -140,7 +140,12 @@ mod tests {
         // Should handle the flat region gracefully
         let result = interpolate_akima(&x3, &y3, 82.5);
         assert!(result.is_some());
+    }
 
+    #[test]
+    fn akima_rejects_unsorted_knots_and_out_of_range_scores() {
+        let x = [72.9709, 80.5088, 85.7452, 92.4354];
+        let y = [35.0, 25.0, 15.0, 5.0];
         // Test with non-increasing x values (should return None)
         let x_bad = [72.9709, 88.0, 85.7452, 92.4354]; // Not properly ordered
         let y_bad = [35.0, 12.0, 15.0, 5.0];

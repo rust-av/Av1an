@@ -462,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn original_preset_round_trips_family_and_depth() {
+    fn wnnm_original_preset_preserves_colour_family_depth_and_sample_type() {
         // 12-bit integer YUV source: back to the same 12-bit preset.
         let yuv420_p12 = format(ColorFamily::YUV, SampleType::Integer, 12, 1, 1);
         assert_eq!(yuv420_p12.original_preset(), Some(PresetFormat::YUV420P12));
