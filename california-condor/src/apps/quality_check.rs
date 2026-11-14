@@ -871,6 +871,94 @@ mod tests {
             assert_eq!(stats.std_dev, 3333.25_f64.sqrt());
             println!("QC_RESUMED_INTERNAL_ASSERTIONS_COMPLETED");
         }
+
+        fn check_prefix_report(independent: bool, test: &str) {
+            if let Ok(selected) = std::env::var("QC_PREFIX_REPORT_CHILD") {
+                assert_eq!(selected, test);
+                crate::test_helpers::quality_scenes::prefix_report_app(independent)
+                    .print_report()
+                    .expect("report");
+                println!("QC_PREFIX_INTERNAL_ASSERTIONS_COMPLETED");
+                return;
+            }
+            let output = Command::new(std::env::current_exe().expect("test executable"))
+                .args(["--exact", test, "--nocapture"])
+                .env("QC_PREFIX_REPORT_CHILD", test)
+                .output()
+                .expect("report child");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(output.status.success(), "{stdout}");
+            assert!(
+                stdout.contains("1 passed; 0 failed;")
+                    && stdout.contains("QC_PREFIX_INTERNAL_ASSERTIONS_COMPLETED")
+            );
+            eprintln!("{stdout}");
+        }
+
+        #[test]
+        fn temporal_report_accepts_cumulative_prefix_history() {
+            check_prefix_report(
+                false,
+                "apps::quality_check::tests::internal_integration::temporal_report_accepts_cumulative_prefix_history",
+            );
+        }
+
+        #[test]
+        fn independent_report_accepts_frame_history() {
+            check_prefix_report(
+                true,
+                "apps::quality_check::tests::internal_integration::independent_report_accepts_frame_history",
+            );
+        }
+
+        fn check_submission_progress(through_final_scores: bool, test: &str) {
+            if let Ok(selected) = std::env::var("QC_SUBMISSION_PROGRESS_CHILD") {
+                assert_eq!(selected, test);
+                crate::test_helpers::quality_scenes::map_submission_progress(
+                    through_final_scores,
+                    |app, state, final_scores| {
+                        if final_scores {
+                            assert_eq!(*app.frame_scores.lock().unwrap(), [90.0, 91.0, 92.0]);
+                            assert!(state.scene_scores.is_empty());
+                        } else {
+                            assert!(
+                                app.frame_scores.lock().unwrap().is_empty()
+                                    && state.scene_scores.is_empty(),
+                                "submission progress must not fabricate scores"
+                            );
+                        }
+                    },
+                );
+                println!("QC_SUBMISSION_INTERNAL_ASSERTIONS_COMPLETED");
+                return;
+            }
+            let output = crate::test_helpers::quality_scenes::submission_output(test);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("QC submission progress mapper/console:\n{stdout}\n{stderr}");
+            assert!(output.status.success(), "{stdout}\n{stderr}");
+            assert!(
+                stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
+                "exact child filter must execute one test"
+            );
+            assert!(stdout.contains("QC_SUBMISSION_INTERNAL_ASSERTIONS_COMPLETED"));
+        }
+
+        #[test]
+        fn qc_submission_progress_updates_ui_without_fabricating_scores() {
+            check_submission_progress(
+                false,
+                "apps::quality_check::tests::internal_integration::qc_submission_progress_updates_ui_without_fabricating_scores",
+            );
+        }
+
+        #[test]
+        fn qc_final_scores_keep_submission_total_and_raw_scores() {
+            check_submission_progress(
+                true,
+                "apps::quality_check::tests::internal_integration::qc_final_scores_keep_submission_total_and_raw_scores",
+            );
+        }
     }
 
     #[test]
@@ -951,10 +1039,7 @@ mod tests {
             app.cached_state.scene_scores.is_empty() && app.frame_scores.lock().unwrap().is_empty()
         );
     }
-    use std::{
-        process::{Command, Stdio},
-        time::{Duration, Instant},
-    };
+    use std::{process::Command, time::Duration};
 
     use super::*;
 
@@ -1054,174 +1139,6 @@ mod tests {
         assert_eq!(
             scenes[0].sequence_data.quality_check.quality.scores,
             [2.0, 9.0, 4.0]
-        );
-    }
-
-    #[test]
-    fn report_does_not_summarize_prefixes_as_independent_frames() {
-        if let Ok(mode) = std::env::var("QC_PREFIX_REPORT_CHILD") {
-            let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
-            let metric = QualityMetric::CVVDP {
-                target_range: (3.9, 4.1),
-                resolution: None,
-                display_model: None,
-                resize_to_display: None,
-                disable_temporal: Some(mode == "independent"),
-                gpu_id: None,
-            };
-            QualityCheckApp::new(
-                clip,
-                &scenes,
-                metric,
-                ProbeStatistic::Mean,
-                &ProbeStrategy::Whole,
-            )
-            .expect("app")
-            .print_report()
-            .expect("report");
-            return;
-        }
-        for mode in ["temporal", "independent"] {
-            let output = Command::new(std::env::current_exe().expect("test executable"))
-                .args(["--exact", "apps::quality_check::tests::report_does_not_summarize_prefixes_as_independent_frames", "--nocapture"])
-                .env("QC_PREFIX_REPORT_CHILD", mode).output().expect("report child");
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            assert!(output.status.success(), "{stdout}");
-            assert!(
-                stdout.contains("Per-Scene") && stdout.contains("5.0000"),
-                "{stdout}"
-            );
-            assert_eq!(
-                stdout.contains("Per-Frame"),
-                mode == "independent",
-                "{stdout}"
-            );
-        }
-    }
-
-    #[test]
-    fn submission_progress_reaches_ui_and_console() {
-        if std::env::var_os("QC_SUBMISSION_PROGRESS_CHILD").is_some() {
-            let (clip, _) = crate::test_helpers::quality_scene_fixture();
-            let app = QualityCheckApp::new(
-                clip,
-                &[],
-                QualityMetric::default(),
-                ProbeStatistic::Mean,
-                &ProbeStrategy::Whole,
-            )
-            .unwrap();
-            let mut mapper = app.progress_mapper();
-            let mut state = app.cached_state.clone();
-            // Replay initialization, then the exact Whole/Custom submission shape.
-            for (completed, total) in [(0, 1), (1, 3), (2, 3), (3, 3)] {
-                let redraw = mapper(
-                    SequenceStatus::Whole(Status::Processing {
-                        id: "Quality Check".to_owned(),
-                        completion: SequenceCompletion::Custom {
-                            name: "Quality Check".to_owned(),
-                            completed: completed as f64,
-                            total: total as f64,
-                        },
-                    }),
-                    &mut state,
-                );
-                assert!(
-                    redraw,
-                    "submission {completed}/{total} must reach the real UI mapper"
-                );
-                assert_eq!(
-                    (state.frames_compared, state.total_frames),
-                    (completed, total)
-                );
-                assert!(
-                    app.frame_scores.lock().unwrap().is_empty() && state.scene_scores.is_empty(),
-                    "submission progress must not fabricate scores"
-                );
-            }
-            for (frame, score) in [(4, 90.0), (7, 91.0), (9, 92.0)] {
-                assert!(
-                    mapper(
-                        SequenceStatus::Subprocess {
-                            parent: Status::Processing {
-                                id: "Quality Check".to_owned(),
-                                completion: SequenceCompletion::Custom {
-                                    name: "Quality Check".to_owned(),
-                                    completed: 3.0,
-                                    total: 3.0,
-                                },
-                            },
-                            child: Status::Processing {
-                                id: "Quality".to_owned(),
-                                completion: SequenceCompletion::FrameScore { frame, score },
-                            },
-                        },
-                        &mut state,
-                    ),
-                    "final real scores still redraw"
-                );
-                assert_eq!(
-                    (state.frames_compared, state.total_frames),
-                    (3, 3),
-                    "final scores must not restart or double-count submission progress"
-                );
-            }
-            assert_eq!(*app.frame_scores.lock().unwrap(), [90.0, 91.0, 92.0]);
-            assert!(state.scene_scores.is_empty());
-            return;
-        }
-
-        // A piped child exercises actual console output without terminal setup or
-        // process-global stdout redirection in the parallel test runner.
-        let mut child = Command::new(std::env::current_exe().expect("test executable"))
-            .args([
-                "--exact",
-                "apps::quality_check::tests::submission_progress_reaches_ui_and_console",
-                "--nocapture",
-            ])
-            .env("QC_SUBMISSION_PROGRESS_CHILD", "1")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("mapper child");
-        let start = Instant::now();
-        while child.try_wait().expect("child status").is_none() {
-            if start.elapsed() > Duration::from_secs(30) {
-                child.kill().expect("kill timed out child");
-                child.wait().expect("reap timed out child");
-                panic!("mapper child exceeded 30s");
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let output = child.wait_with_output().expect("mapper output");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("QC submission progress mapper/console:\n{stdout}\n{stderr}");
-        assert!(output.status.success(), "{stdout}\n{stderr}");
-        assert!(
-            stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
-            "exact child filter must execute one test"
-        );
-        let events: Vec<serde_json::Value> = stdout
-            .lines()
-            .filter_map(|line| {
-                line.strip_prefix("[Quality Check][Compare] ")
-                    .or_else(|| line.strip_prefix("[Quality Check][Frame] "))
-                    .map(|json| serde_json::from_str(json).expect("actual console JSON"))
-            })
-            .collect();
-        assert_eq!(
-            events,
-            [
-                serde_json::json!({"CompareProgress":{"current_frame":0,"total_frames":1}}),
-                serde_json::json!({"CompareProgress":{"current_frame":1,"total_frames":3}}),
-                serde_json::json!({"CompareProgress":{"current_frame":2,"total_frames":3}}),
-                serde_json::json!({"CompareProgress":{"current_frame":3,"total_frames":3}}),
-                serde_json::json!({"FrameScore":{"frame":4,"score":90.0}}),
-                serde_json::json!({"FrameScore":{"frame":7,"score":91.0}}),
-                serde_json::json!({"FrameScore":{"frame":9,"score":92.0}}),
-            ],
-            "accepted progress precedes real source-indexed final scores without extra progress events"
         );
     }
 }

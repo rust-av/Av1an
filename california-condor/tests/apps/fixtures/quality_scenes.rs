@@ -137,3 +137,132 @@ pub(crate) fn run_resumed_quality_report() -> california::apps::quality_check::Q
     .unwrap();
     app
 }
+
+pub(crate) fn prefix_report_app(
+    independent: bool,
+) -> california::apps::quality_check::QualityCheckApp {
+    use andean_condor::models::sequence::target_quality::types::{
+        ProbeStatistic, ProbeStrategy, QualityMetric,
+    };
+    let (clip, scenes) = quality_scene_fixture();
+    let metric = QualityMetric::CVVDP {
+        target_range: (3.9, 4.1),
+        resolution: None,
+        display_model: None,
+        resize_to_display: None,
+        disable_temporal: Some(independent),
+        gpu_id: None,
+    };
+    california::apps::quality_check::QualityCheckApp::new(
+        clip,
+        &scenes,
+        metric,
+        ProbeStatistic::Mean,
+        &ProbeStrategy::Whole,
+    )
+    .expect("app")
+}
+
+pub(crate) fn map_submission_progress(
+    through_final_scores: bool,
+    mut inspect_scores: impl FnMut(
+        &california::apps::quality_check::QualityCheckApp,
+        &california::apps::quality_check::QualityCheckState,
+        bool,
+    ),
+) {
+    use andean_condor::{
+        core::sequence::{SequenceCompletion, SequenceStatus, Status},
+        models::sequence::target_quality::types::{ProbeStatistic, ProbeStrategy, QualityMetric},
+    };
+    use california::apps::{TuiApp, quality_check::QualityCheckApp};
+
+    let (clip, _) = quality_scene_fixture();
+    let app = QualityCheckApp::new(
+        clip,
+        &[],
+        QualityMetric::default(),
+        ProbeStatistic::Mean,
+        &ProbeStrategy::Whole,
+    )
+    .unwrap();
+    let mut mapper = app.progress_mapper();
+    let mut state = app.cached_state().clone();
+    for (completed, total) in [(0, 1), (1, 3), (2, 3), (3, 3)] {
+        let redraw = mapper(
+            SequenceStatus::Whole(Status::Processing {
+                id: "Quality Check".to_owned(),
+                completion: SequenceCompletion::Custom {
+                    name: "Quality Check".to_owned(),
+                    completed: completed as f64,
+                    total: total as f64,
+                },
+            }),
+            &mut state,
+        );
+        assert!(
+            redraw,
+            "submission {completed}/{total} must reach the real UI mapper"
+        );
+        assert_eq!(
+            (state.frames_compared, state.total_frames),
+            (completed, total)
+        );
+        inspect_scores(&app, &state, false);
+    }
+    if !through_final_scores {
+        return;
+    }
+    for (frame, score) in [(4, 90.0), (7, 91.0), (9, 92.0)] {
+        assert!(
+            mapper(
+                SequenceStatus::Subprocess {
+                    parent: Status::Processing {
+                        id: "Quality Check".to_owned(),
+                        completion: SequenceCompletion::Custom {
+                            name: "Quality Check".to_owned(),
+                            completed: 3.0,
+                            total: 3.0,
+                        },
+                    },
+                    child: Status::Processing {
+                        id: "Quality".to_owned(),
+                        completion: SequenceCompletion::FrameScore { frame, score },
+                    },
+                },
+                &mut state,
+            ),
+            "final real scores still redraw"
+        );
+        assert_eq!(
+            (state.frames_compared, state.total_frames),
+            (3, 3),
+            "final scores must not restart or double-count submission progress"
+        );
+    }
+    inspect_scores(&app, &state, true);
+}
+
+pub(crate) fn submission_output(test: &str) -> std::process::Output {
+    use std::{
+        process::{Command, Stdio},
+        time::{Duration, Instant},
+    };
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", test, "--nocapture"])
+        .env("QC_SUBMISSION_PROGRESS_CHILD", test)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("mapper child");
+    let start = Instant::now();
+    while child.try_wait().expect("child status").is_none() {
+        if start.elapsed() > Duration::from_secs(30) {
+            child.kill().expect("kill timed out child");
+            child.wait().expect("reap timed out child");
+            panic!("mapper child exceeded 30s");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.wait_with_output().expect("mapper output")
+}
