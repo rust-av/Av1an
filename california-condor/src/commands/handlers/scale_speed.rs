@@ -200,6 +200,62 @@ mod tests {
         utils::hash_path::hash_path,
     };
 
+    fn loaded_knots_configuration() -> Configuration {
+        let temp = std::env::temp_dir().join("condor-speed-knots-model-only");
+        let video = crate::test_helpers::TestVideo {
+            path: temp.join("must-not-open.mkv"),
+            width: 2,
+            height: 2,
+            frames: 2,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![(0, 2)],
+        };
+        let mut configuration =
+            default_config(&video, &temp.join("output.mkv"), &temp.join("scratch"));
+        configuration.condor.encoder.set_executable(Some(temp.join("must-not-run")));
+        configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+        configuration.condor.sequence_config.speed_scaler.speed_quantizers =
+            vec![(4, 20.25), (8, 40.75)];
+        configuration
+    }
+
+    fn check_loaded_knots(repair: bool) {
+        let mut failures = vec![];
+        for q in [20.25, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut config = loaded_knots_configuration();
+            config.condor.sequence_config.speed_scaler.speed_quantizers[1].1 = q;
+            let before = serde_json::to_vec(&config).expect("snapshot");
+            let result = configure_scale_speed(&mut config, None, None);
+            if result.is_ok() || serde_json::to_vec(&config).expect("config") != before {
+                failures.push(format!("q={q}: {result:?}"));
+            }
+            if !repair {
+                continue;
+            }
+            configure_scale_speed(&mut config, Some(&[20, 40]), Some(&[4, 8]))
+                .expect("complete replacement repairs bad loaded knots");
+            assert_eq!(
+                config.condor.sequence_config.speed_scaler.speed_quantizers,
+                vec![(4, 20.0), (8, 40.0)]
+            );
+        }
+        assert!(
+            failures.is_empty(),
+            "loaded knots accepted or mutated: {failures:?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_or_nonfinite_loaded_speed_knots_refuse_without_mutation() {
+        check_loaded_knots(false);
+    }
+
+    #[test]
+    fn complete_speed_knot_replacement_repairs_invalid_loaded_values() {
+        check_loaded_knots(true);
+    }
+
     #[test]
     fn scale_speed_default_config() {
         let test_video = get_test_video();

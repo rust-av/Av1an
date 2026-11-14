@@ -87,8 +87,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn rebuild_explicit_filters_replace_obsolete_inherited_filters_atomically() {
+    fn check_filter_conversion(reject_invalid: bool) {
         use andean_condor::models::input::{ChromaSampling, Ffms2Filter, ImportMethod};
         use california_condor::commands::{
             DecoderMethod, handlers::encode::configure_parallel_encoder,
@@ -145,6 +144,9 @@ mod tests {
                     .expect("only override and execution settings change")
             );
 
+            if !reject_invalid {
+                continue;
+            }
             let invalid = [VapourSynthFilter::Resize {
                 scaler: None,
                 width: None,
@@ -175,6 +177,16 @@ mod tests {
             std::fs::read_dir(temp.path()).expect("no offline source/index work").count(),
             0
         );
+    }
+
+    #[test]
+    fn explicit_native_filters_replace_obsolete_inheritance_without_source_or_index_files() {
+        check_filter_conversion(false);
+    }
+
+    #[test]
+    fn invalid_or_omitted_native_filter_conversion_is_atomic_and_creates_no_files() {
+        check_filter_conversion(true);
     }
 
     #[test]
@@ -357,8 +369,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn new_override_inherits_effective_filters_and_main_only_stays_main() {
+    fn check_input_override(phase: u8) {
+        assert!((1..=4).contains(&phase));
         use andean_condor::models::input::{Ffms2Filter, ImportMethod};
         use california_condor::commands::{
             DecoderMethod, handlers::encode::configure_parallel_encoder,
@@ -406,6 +418,9 @@ mod tests {
                 serde_json::to_value(&configuration).expect("settings only"),
                 serde_json::to_value(&expected).expect("inputs unchanged")
             );
+            if phase == 1 {
+                continue;
+            }
             let mut inherited = if with_override {
                 expected
                     .condor
@@ -435,6 +450,9 @@ mod tests {
                 serde_json::to_value(&configuration).expect("inherited"),
                 serde_json::to_value(&expected).expect("root and metric inputs unchanged")
             );
+            if phase == 2 {
+                continue;
+            }
             configure_parallel_encoder(
                 &mut configuration,
                 None,
@@ -468,41 +486,63 @@ mod tests {
                 serde_json::to_value(expected).expect("inherited conversions retained")
             );
         }
-        let mut configuration = original.clone();
-        let filters = [VapourSynthFilter::Resize {
-            scaler: None,
-            width: Some(16),
-            height: Some(8),
-            format: Some(FFPixelFormat::YUV420P),
-        }];
-        let mut expected = original;
-        if let Input::Video { filters, .. } = &mut expected.condor.input {
-            *filters = vec![Ffms2Filter::OutputFormat {
-                bit_depth: Some(8),
-                chroma: Some(andean_condor::models::input::ChromaSampling::Yuv420),
+        if phase == 4 {
+            let mut configuration = original.clone();
+            let filters = [VapourSynthFilter::Resize {
+                scaler: None,
                 width: Some(16),
                 height: Some(8),
+                format: Some(FFPixelFormat::YUV420P),
             }];
+            let mut expected = original;
+            if let Input::Video { filters, .. } = &mut expected.condor.input {
+                *filters = vec![Ffms2Filter::OutputFormat {
+                    bit_depth: Some(8),
+                    chroma: Some(andean_condor::models::input::ChromaSampling::Yuv420),
+                    width: Some(16),
+                    height: Some(8),
+                }];
+            }
+            configure_parallel_encoder(
+                &mut configuration,
+                None,
+                None,
+                Some(&filters),
+                None,
+                None,
+                None,
+            )
+            .expect("main-only edit");
+            assert_eq!(
+                serde_json::to_value(configuration).expect("main only"),
+                serde_json::to_value(expected)
+                    .expect("no override created; separate metric inputs unchanged")
+            );
         }
-        configure_parallel_encoder(
-            &mut configuration,
-            None,
-            None,
-            Some(&filters),
-            None,
-            None,
-            None,
-        )
-        .expect("main-only edit");
-        assert_eq!(
-            serde_json::to_value(configuration).expect("main only"),
-            serde_json::to_value(expected)
-                .expect("no override created; separate metric inputs unchanged")
-        );
         assert_eq!(
             std::fs::read_dir(temp.path()).expect("offline edits").count(),
             0
         );
+    }
+
+    #[test]
+    fn no_input_flags_preserve_models_without_creating_source_or_index_files() {
+        check_input_override(1);
+    }
+
+    #[test]
+    fn new_input_override_inherits_effective_filters_without_creating_files() {
+        check_input_override(2);
+    }
+
+    #[test]
+    fn decoder_roundtrip_preserves_filters_drops_native_cache_and_creates_no_files() {
+        check_input_override(3);
+    }
+
+    #[test]
+    fn filters_only_edit_changes_main_input_without_creating_override_or_files() {
+        check_input_override(4);
     }
 
     #[test]

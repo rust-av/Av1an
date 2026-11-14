@@ -63,32 +63,6 @@ mod tests {
     }
 
     #[test]
-    fn flags_reject_loaded_duplicate_and_nonfinite_knots_before_mutation() {
-        use california_condor::commands::handlers::scale_speed::configure_scale_speed;
-        let temp = tempfile::tempdir().expect("fixture");
-        let mut failures = vec![];
-        for q in [20.25, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let mut config = speed_scaler_configuration(temp.path());
-            config.condor.sequence_config.speed_scaler.speed_quantizers[1].1 = q;
-            let before = serde_json::to_vec(&config).expect("snapshot");
-            let result = configure_scale_speed(&mut config, None, None);
-            if result.is_ok() || serde_json::to_vec(&config).expect("config") != before {
-                failures.push(format!("q={q}: {result:?}"));
-            }
-            configure_scale_speed(&mut config, Some(&[20, 40]), Some(&[4, 8]))
-                .expect("complete replacement repairs bad loaded knots");
-            assert_eq!(
-                config.condor.sequence_config.speed_scaler.speed_quantizers,
-                vec![(4, 20.0), (8, 40.0)]
-            );
-        }
-        assert!(
-            failures.is_empty(),
-            "loaded knots accepted or mutated: {failures:?}"
-        );
-    }
-
-    #[test]
     fn flags_and_crud_numeric_errors_preserve_memory_and_saved_bytes_offline() {
         use andean_condor::models::encoder::{Encoder, EncoderBase};
         use california_condor::commands::{

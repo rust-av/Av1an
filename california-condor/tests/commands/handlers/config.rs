@@ -2883,39 +2883,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn empty_script_to_video_does_not_reuse_script_output_index() {
-        use andean_condor::models::input::ImportMethod;
-        use california_condor::commands::{
-            DecoderMethod,
-            config::ConfigCommand,
-            handlers::init::{InitCrud, InitSet},
-        };
-        let temp = tempfile::tempdir().expect("fixture");
-        let mut configuration = root_edit_fixture(temp.path());
-        configuration.condor.scenes.clear();
-        if let Input::VapourSynthScript { index, .. } = &mut configuration.condor.input {
-            *index = 7;
-        }
-        let mut args = root_edit_args(temp.path().join("offline.mkv"));
-        args.decoder = Some(DecoderMethod::FFMS2);
-        InitCrud::apply(&mut configuration, &InitSet::Input { args })
-            .expect("empty cross-kind edit");
-        assert!(
-            matches!(
-                configuration.condor.input,
-                Input::Video {
-                    import_method: ImportMethod::FFMS2 {
-                        index: None,
-                        cache_path: None
-                    },
-                    ..
-                }
-            ),
-            "new source must not inherit output 7 or default script output 0 as a video track index"
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn cli_path_name_edits_are_offline_and_not_reported_as_missing_paths() {

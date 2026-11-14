@@ -565,38 +565,6 @@ pub(super) mod validation {
     }
 
     #[test]
-    fn configure_rejects_default_rav1e_maximum_and_nonfinite_targets_atomically() {
-        let temp = tempfile::tempdir().expect("fixture");
-        for target in [75.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let mut configuration = fixture(temp.path());
-            configuration.condor.encoder = Encoder::default_from_base(&EncoderBase::RAV1E, false);
-            configuration.condor.sequence_config.target_quality = None;
-            let before = serde_json::to_value(&configuration).expect("snapshot");
-            let result = target_quality::configure_target_quality(
-                &mut configuration,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(target),
-                None,
-                Some(if target == 75.0 { 40 } else { 140 }),
-                None,
-            );
-            assert!(
-                result.is_err(),
-                "accepted target {target} and rav1e default minimum 50 / maximum 40"
-            );
-            assert_eq!(
-                serde_json::to_value(&configuration).expect("unchanged"),
-                before
-            );
-        }
-    }
-
-    #[test]
     fn actual_flags_reject_before_save_or_input() {
         let temp = tempfile::tempdir().expect("fixture");
         let mut configuration = fixture(temp.path());
@@ -825,8 +793,8 @@ pub(super) mod validation {
         assert!(!temp.path().join("forbidden.ffindex").exists());
     }
 
-    #[test]
-    fn direct_crud_is_atomic_and_all_edits_validate_the_section() {
+    fn check_crud_validation(phase: u8) {
+        assert!((1..=3).contains(&phase));
         use california_condor::commands::{
             QualityMetric,
             config::ConfigCommand,
@@ -848,6 +816,10 @@ pub(super) mod validation {
                 serde_json::to_value(&configuration).expect("unchanged"),
                 before
             );
+        }
+        if phase == 1 {
+            assert!(!temp.path().join("scratch").exists());
+            return;
         }
         let mut configuration = fixture(temp.path());
         configuration
@@ -881,6 +853,10 @@ pub(super) mod validation {
             serde_json::to_value(&configuration).expect("unchanged"),
             before
         );
+        if phase == 2 {
+            assert!(!configuration.temp.exists());
+            return;
+        }
         TargetQualityCrud::restore(&mut configuration, Some(&TargetQualityKey::QuantizerRange))
             .expect("reset invalid bounds");
         let quality = configuration.condor.sequence_config.target_quality.as_mut().expect("TQ");
@@ -904,6 +880,21 @@ pub(super) mod validation {
         )
         .expect("metric repairs invalid target");
         assert!(!configuration.temp.exists());
+    }
+
+    #[test]
+    fn invalid_tq_crud_candidates_preserve_configuration_without_creating_scratch() {
+        check_crud_validation(1);
+    }
+
+    #[test]
+    fn unrelated_tq_crud_edits_refuse_invalid_section_without_mutation_or_scratch() {
+        check_crud_validation(2);
+    }
+
+    #[test]
+    fn tq_crud_reset_or_metric_switch_repairs_invalid_fields_without_creating_scratch() {
+        check_crud_validation(3);
     }
 
     #[test]

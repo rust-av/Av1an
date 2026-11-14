@@ -849,6 +849,74 @@ mod tests {
     }
 
     #[test]
+    fn empty_script_to_video_edit_does_not_reuse_script_output_index() {
+        use crate::commands::{
+            config::{ConfigCommand, InputOverride},
+            handlers::init::{InitCrud, InitSet},
+        };
+        use crate::test_helpers::TestVideo;
+        use andean_condor::models::input::{ImportMethod, VapourSynthScriptSource};
+
+        let directory = std::env::temp_dir().join("condor-empty-source-edit-model-only");
+        let source = directory.join("a.vpy");
+        let video = TestVideo {
+            path: source.clone(),
+            width: 32,
+            height: 16,
+            frames: 12,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![(0, 12)],
+        };
+        let mut configuration = default_config(
+            &video,
+            &directory.join("out.mkv"),
+            &directory.join(hash_path(&source)),
+        );
+        configuration.condor.input = Input::VapourSynthScript {
+            source: VapourSynthScriptSource::Path(source),
+            variables: [("keep".into(), "yes".into())].into(),
+            index: 0,
+            filters: vec![],
+            stream_concurrently: false,
+        };
+        configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+        let data = &mut configuration.condor.scenes[0].sequence_data;
+        data.parallel_encoder.started_on = Some(10);
+        data.parallel_encoder.completed_on = Some(20);
+        data.parallel_encoder.bytes = Some(1234);
+        data.quality_check.quality.scores = vec![91.5, 92.5];
+        data.target_quality.passes.push(data.quality_check.quality.clone());
+        configuration.condor.scenes.clear();
+        if let Input::VapourSynthScript { index, .. } = &mut configuration.condor.input {
+            *index = 7;
+        }
+        let mut args = InputOverride {
+            path: Some(directory.join("offline.mkv")),
+            decoder: None,
+            filters: None,
+            vs_args: None,
+            stream_concurrently: None,
+        };
+        args.decoder = Some(DecoderMethod::FFMS2);
+        InitCrud::apply(&mut configuration, &InitSet::Input { args })
+            .expect("empty cross-kind edit");
+        assert!(
+            matches!(
+                configuration.condor.input,
+                Input::Video {
+                    import_method: ImportMethod::FFMS2 {
+                        index: None,
+                        cache_path: None
+                    },
+                    ..
+                }
+            ),
+            "new source must not inherit output 7 or default script output 0 as a video track index"
+        );
+    }
+
+    #[test]
     fn init_input_not_found() {
         let test_video = std::env::temp_dir().join("not_found.mkv");
         let input_abs = path_abs::PathAbs::new(&test_video)

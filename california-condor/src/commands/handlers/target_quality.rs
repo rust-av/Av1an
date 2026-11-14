@@ -771,7 +771,7 @@ pub fn config(config_path: Option<&Path>, action: &TargetQualityAction) -> Resul
 #[cfg(test)]
 mod tests {
     use andean_condor::models::{
-        encoder::{EncoderBase, cli_parameter::CLIParameter},
+        encoder::{Encoder, EncoderBase, cli_parameter::CLIParameter},
         input::{Input, VapourSynthImportMethod},
         sequence::target_quality::types::{InterpolationMethod, TargetQualityProbing},
     };
@@ -833,6 +833,72 @@ mod tests {
         configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
         configuration.condor.scenes[0].sequence_data.parallel_encoder.bytes = Some(1234);
         configuration
+    }
+
+    fn check_invalid_rav1e_target(targets: &[f64]) {
+        use andean_condor::models::input::{ImportMethod, Input as InputModel};
+        let temp = std::env::temp_dir().join("condor-rav1e-target-model-only");
+        for &target in targets {
+            let video = crate::test_helpers::TestVideo {
+                path: temp.join("must-not-open.mkv"),
+                width: 32,
+                height: 32,
+                frames: 100,
+                fps_rational: (24, 1),
+                format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+                scenes: vec![(0, 50), (50, 100)],
+            };
+            let mut configuration =
+                default_config(&video, &temp.join("output.mkv"), &temp.join("scratch"));
+            configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+            configuration.condor.input = InputModel::Video {
+                path: video.path,
+                import_method: ImportMethod::FFMS2 {
+                    index: Some(0),
+                    cache_path: Some(temp.join("forbidden.ffindex")),
+                },
+                filters: vec![],
+            };
+            configuration.condor.encoder.set_executable(Some(temp.join("must-not-run")));
+            configuration.condor.sequence_config.target_quality = Some(TargetQualityConfig {
+                input: Some(configuration.condor.input.clone()),
+                ..Default::default()
+            });
+            configuration.condor.encoder = Encoder::default_from_base(&EncoderBase::RAV1E, false);
+            configuration.condor.sequence_config.target_quality = None;
+            let before = serde_json::to_value(&configuration).expect("snapshot");
+            let result = configure_target_quality(
+                &mut configuration,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(target),
+                None,
+                Some(if target == 75.0 { 40 } else { 140 }),
+                None,
+            );
+            assert!(
+                result.is_err(),
+                "accepted target {target} and rav1e default minimum 50 / maximum 40"
+            );
+            assert_eq!(
+                serde_json::to_value(&configuration).expect("unchanged"),
+                before
+            );
+        }
+    }
+
+    #[test]
+    fn rav1e_maximum_below_default_minimum_is_an_atomic_error() {
+        check_invalid_rav1e_target(&[75.0]);
+    }
+
+    #[test]
+    fn nonfinite_target_is_an_atomic_error() {
+        check_invalid_rav1e_target(&[f64::NAN, f64::INFINITY, f64::NEG_INFINITY]);
     }
 
     #[test]
