@@ -695,6 +695,7 @@ pub const fn matrix_for_resolution(height: usize) -> VshipYuvMatrix {
     reason = "a failing assertion should panic loudly, which is what a unit test wants"
 )]
 mod tests {
+    mod public_contracts;
     use av_decoders::Rational32;
 
     use super::*;

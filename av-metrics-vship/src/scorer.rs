@@ -1482,6 +1482,7 @@ fn default_gpu_full_check(api: &VshipApi, gpu_id: u32) -> Result<(), VshipError>
     reason = "a failing assertion should panic loudly, which is what a unit test wants"
 )]
 mod tests {
+    mod public_contracts;
     use super::*;
 
     #[test]

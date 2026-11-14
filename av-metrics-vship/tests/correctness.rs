@@ -12,15 +12,10 @@
 
 mod common;
 
-use std::mem::{align_of, size_of};
-
 use av_decoders::VideoDetails;
 use av_metrics_vship::{
-    FrameScore, PlaneSet, PlaneSource, PoolMethod, VideoFormat, VshipBackend, VshipChromaLocation,
-    VshipChromaSubsample, VshipColorFamily, VshipColorspace, VshipConfig, VshipCropRectangle,
-    VshipError, VshipMetric, VshipPrimaries, VshipRange, VshipSample, VshipScorer,
-    VshipTransferFunction, VshipYuvMatrix, colorspace_from_details, device_name, is_available,
-    libvship_version, sample_for_bit_depth, subsample_for_chroma,
+    PlaneSet, PlaneSource, PoolMethod, VideoFormat, VshipBackend, VshipConfig, VshipError,
+    VshipMetric, VshipScorer, device_name, is_available, libvship_version,
 };
 use common::{Distortion, SyntheticClip, SyntheticPair};
 use v_frame::chroma::ChromaSubsampling;
@@ -138,66 +133,57 @@ fn upload_fixture(padded: bool, distorted: bool) -> [Vec<u16>; 3] {
     })
 }
 
-#[test]
-fn gpu_fixture_detects_ignored_stride_without_a_gpu() {
-    for distorted in [false, true] {
-        let packed = upload_fixture(false, distorted);
-        let padded = upload_fixture(true, distorted);
-        assert_eq!(packed.each_ref().map(Vec::len), [3185, 825, 825]);
-        assert_eq!(padded.each_ref().map(Vec::len), [3329, 897, 897]);
-        for (plane, (width, height, pitch, sentinel)) in
-            [(65, 49, 68, 1000), (33, 25, 36, 1002), (33, 25, 36, 1004)]
-                .into_iter()
-                .enumerate()
-        {
-            for row in 0..height {
-                assert_eq!(
-                    &packed[plane][row * width..(row + 1) * width],
-                    &padded[plane][row * pitch..row * pitch + width]
+mod fixture_unit {
+    use super::*;
+
+    #[test]
+    fn gpu_fixture_detects_ignored_stride_without_a_gpu() {
+        for distorted in [false, true] {
+            let packed = upload_fixture(false, distorted);
+            let padded = upload_fixture(true, distorted);
+            assert_eq!(packed.each_ref().map(Vec::len), [3185, 825, 825]);
+            assert_eq!(padded.each_ref().map(Vec::len), [3329, 897, 897]);
+            for (plane, (width, height, pitch, sentinel)) in
+                [(65, 49, 68, 1000), (33, 25, 36, 1002), (33, 25, 36, 1004)]
+                    .into_iter()
+                    .enumerate()
+            {
+                for row in 0..height {
+                    assert_eq!(
+                        &packed[plane][row * width..(row + 1) * width],
+                        &padded[plane][row * pitch..row * pitch + width]
+                    );
+                }
+                assert_eq!(padded[plane][width], sentinel + u16::from(distorted));
+                assert_ne!(
+                    padded[plane][width], packed[plane][width],
+                    "ignored pitch must read padding"
+                );
+                assert_ne!(&padded[plane][..width * height], packed[plane].as_slice());
+                assert_ne!(
+                    packed[plane][0], packed[plane][1],
+                    "visible pixels must not be flat"
                 );
             }
-            assert_eq!(padded[plane][width], sentinel + u16::from(distorted));
-            assert_ne!(
-                padded[plane][width], packed[plane][width],
-                "ignored pitch must read padding"
-            );
-            assert_ne!(&padded[plane][..width * height], packed[plane].as_slice());
-            assert_ne!(
-                packed[plane][0], packed[plane][1],
-                "visible pixels must not be flat"
-            );
         }
-    }
-    let reference = upload_fixture(false, false);
-    let distorted = upload_fixture(false, true);
-    assert_eq!(reference.each_ref().map(|p| p[0]), [128, 229, 330]);
-    assert_eq!(distorted.each_ref().map(|p| p[0]), [129, 237, 345]);
-    for plane in 0..3 {
-        assert_ne!(reference[plane], distorted[plane]);
+        let reference = upload_fixture(false, false);
+        let distorted = upload_fixture(false, true);
+        assert_eq!(reference.each_ref().map(|p| p[0]), [128, 229, 330]);
+        assert_eq!(distorted.each_ref().map(|p| p[0]), [129, 237, 345]);
+        for plane in 0..3 {
+            assert_ne!(reference[plane], distorted[plane]);
+        }
     }
 }
 
 /// Hardware gate: ABI sinks cannot prove backend upload completion or accuracy.
 #[test]
-fn gpu_padded_uploads_and_typed_mismatch() {
-    if !is_available() {
-        assert!(
-            std::env::var_os("AV_METRICS_REQUIRE_GPU").is_none(),
-            "required upload GPU gate needs libvship and a supported device"
-        );
-        eprintln!("unexecuted upload hardware gate: no supported libvship/GPU runtime");
+fn gpu_ten_bit_scorer_rejects_u8_frame_without_submitting() {
+    if !upload_gpu_available() {
         return;
     }
     let format = VideoFormat::from_details(&details(64, 48, 10, ChromaSubsampling::Yuv420));
-    let mut scorer =
-        VshipScorer::new(config_for(VshipMetric::Ssimulacra2), format, format, None).unwrap();
-    assert!(
-        matches!(
-            scorer.backend(),
-            VshipBackend::Hip | VshipBackend::Cuda | VshipBackend::Vulkan
-        ),
-        "upload gate requires a supported GPU backend, not a CPU/sink"
-    );
+    let mut scorer = upload_gpu_scorer(format);
     let byte_frame = v_frame::frame::FrameBuilder::new(64, 48, ChromaSubsampling::Yuv420, 8)
         .build::<u8>()
         .unwrap();
@@ -206,9 +192,49 @@ fn gpu_padded_uploads_and_typed_mismatch() {
         Err(VshipError::InputMismatch { .. })
     ));
     assert_eq!(scorer.submitted().unwrap(), 0);
-    let format = VideoFormat::from_details(&details(65, 49, 10, ChromaSubsampling::Yuv420));
-    let mut scorer =
+}
+
+#[test]
+fn gpu_padded_reference_upload_matches_packed_score() {
+    padded_upload_case(true);
+}
+
+#[test]
+fn gpu_padded_distorted_upload_matches_packed_score() {
+    padded_upload_case(false);
+}
+
+fn upload_gpu_available() -> bool {
+    if !is_available() {
+        assert!(
+            std::env::var_os("AV_METRICS_REQUIRE_GPU").is_none(),
+            "required upload GPU gate needs libvship and a supported device"
+        );
+        eprintln!("unexecuted upload hardware gate: no supported libvship/GPU runtime");
+        return false;
+    }
+    true
+}
+
+fn upload_gpu_scorer(format: VideoFormat) -> VshipScorer {
+    let scorer =
         VshipScorer::new(config_for(VshipMetric::Ssimulacra2), format, format, None).unwrap();
+    assert!(
+        matches!(
+            scorer.backend(),
+            VshipBackend::Hip | VshipBackend::Cuda | VshipBackend::Vulkan
+        ),
+        "upload gate requires a supported GPU backend, not a CPU/sink"
+    );
+    scorer
+}
+
+fn padded_upload_case(pad_reference: bool) {
+    if !upload_gpu_available() {
+        return;
+    }
+    let format = VideoFormat::from_details(&details(65, 49, 10, ChromaSubsampling::Yuv420));
+    let mut scorer = upload_gpu_scorer(format);
     let reference = upload_fixture(false, false);
     let distorted = upload_fixture(false, true);
     let padded_reference = upload_fixture(true, false);
@@ -225,27 +251,33 @@ fn gpu_padded_uploads_and_typed_mismatch() {
         .unwrap()
         .score
         .unwrap();
-    assert!(baseline.is_finite());
+    assert!(
+        baseline.is_finite(),
+        "packed baseline must yield a finite GPU score"
+    );
     // Change only ONE side's layout at a time so wrong reads cannot cancel.
-    for (side, a, b) in [
+    let (side, a, b) = if pad_reference {
         (
             "reference",
             planes(&padded_reference, true),
             planes(&distorted, false),
-        ),
+        )
+    } else {
         (
             "distorted",
             planes(&reference, false),
             planes(&padded_distorted, true),
-        ),
-    ] {
-        let score = scorer.submit_pair_raw(a, b).unwrap().score.unwrap();
-        assert!(score.is_finite());
-        assert!(
-            (score - baseline).abs() <= 1e-6,
-            "{side} padded={score}, packed={baseline}"
-        );
-    }
+        )
+    };
+    let score = scorer.submit_pair_raw(a, b).unwrap().score.unwrap();
+    assert!(
+        score.is_finite(),
+        "padded {side} must yield a finite GPU score"
+    );
+    assert!(
+        (score - baseline).abs() <= 1e-6,
+        "{side} padded={score}, packed={baseline}"
+    );
 }
 
 /// Constructing a scorer must never panic, whether or not libvship is present.
@@ -264,7 +296,7 @@ fn construction_fails_cleanly_without_vship() {
 
 /// Every metric must fail with a reported error rather than a panic.
 #[test]
-fn every_metric_reports_rather_than_panics() {
+fn all_metric_constructors_complete_without_panicking() {
     let format = VideoFormat::from_details(&details(64, 48, 8, ChromaSubsampling::Yuv420));
 
     for metric in VshipMetric::all() {
@@ -329,188 +361,10 @@ fn a_temporal_metric_builds_exactly_one_handler() {
     assert_eq!(scorer.handler_count(), 1);
 }
 
-// --- Struct layout ----------------------------------------------------------
-
-/// Mirrors `typedef struct Vship_Colorspace_t` in VshipColor.h. A wrong field
-/// order still compiles, and surfaces only as an opaque status from libvship at
-/// runtime.
-#[test]
-fn colorspace_layout_matches_the_c_header() {
-    #[repr(C)]
-    struct Expected {
-        width: i64,
-        height: i64,
-        target_width: i64,
-        target_height: i64,
-        sample: VshipSample,
-        range: VshipRange,
-        subsampling: VshipChromaSubsample,
-        chroma_location: VshipChromaLocation,
-        color_family: VshipColorFamily,
-        yuv_matrix: VshipYuvMatrix,
-        transfer_function: VshipTransferFunction,
-        primaries: VshipPrimaries,
-        crop: VshipCropRectangle,
-    }
-
-    assert_eq!(size_of::<VshipColorspace>(), size_of::<Expected>());
-    assert_eq!(align_of::<VshipColorspace>(), align_of::<Expected>());
-}
-
-/// `Vship_Sample_t` skips values, so a sequential conversion would reinterpret
-/// every pixel buffer.
-#[test]
-fn sample_discriminants_are_non_contiguous_and_explicit() {
-    assert_eq!(VshipSample::Float as i32, 0);
-    assert_eq!(VshipSample::Half as i32, 1);
-    assert_eq!(VshipSample::Uint8 as i32, 2);
-    assert_eq!(VshipSample::Uint9 as i32, 3);
-    assert_eq!(VshipSample::Uint10 as i32, 5);
-    assert_eq!(VshipSample::Uint12 as i32, 7);
-    assert_eq!(VshipSample::Uint14 as i32, 9);
-    assert_eq!(VshipSample::Uint16 as i32, 11);
-}
-
-/// Four int64 fields precede the first enum, so the enums begin at offset 32.
-#[test]
-fn colorspace_field_offsets_match_the_c_header() {
-    let colorspace = VshipColorspace::bt709_default(1920, 1080);
-    let base = std::ptr::from_ref(&colorspace).cast::<u8>() as usize;
-    let offset = |field: *const u8| field as usize - base;
-
-    assert_eq!(
-        offset(std::ptr::from_ref(&colorspace.width).cast::<u8>()),
-        0
-    );
-    assert_eq!(
-        offset(std::ptr::from_ref(&colorspace.height).cast::<u8>()),
-        8
-    );
-    assert_eq!(
-        offset(std::ptr::from_ref(&colorspace.target_width).cast::<u8>()),
-        16
-    );
-    assert_eq!(
-        offset(std::ptr::from_ref(&colorspace.target_height).cast::<u8>()),
-        24
-    );
-    assert_eq!(
-        offset(std::ptr::from_ref(&colorspace.sample).cast::<u8>()),
-        32
-    );
-}
-
-// --- Colorspace mapping -----------------------------------------------------
-
-#[test]
-fn bit_depths_map_to_the_vship_sample_enum() {
-    assert_eq!(sample_for_bit_depth(8), Some(VshipSample::Uint8));
-    assert_eq!(sample_for_bit_depth(9), Some(VshipSample::Uint9));
-    assert_eq!(sample_for_bit_depth(10), Some(VshipSample::Uint10));
-    assert_eq!(sample_for_bit_depth(12), Some(VshipSample::Uint12));
-    assert_eq!(sample_for_bit_depth(14), Some(VshipSample::Uint14));
-    assert_eq!(sample_for_bit_depth(16), Some(VshipSample::Uint16));
-    // The C enum has no value for these, so no guess may be made.
-    assert_eq!(sample_for_bit_depth(11), None);
-    assert_eq!(sample_for_bit_depth(13), None);
-}
-
-#[test]
-fn chroma_sampling_maps_to_the_vship_subsampling() {
-    assert_eq!(
-        subsample_for_chroma(ChromaSubsampling::Yuv420),
-        Some(VshipChromaSubsample::yuv420())
-    );
-    assert_eq!(
-        subsample_for_chroma(ChromaSubsampling::Yuv422),
-        Some(VshipChromaSubsample::yuv422())
-    );
-    assert_eq!(
-        subsample_for_chroma(ChromaSubsampling::Yuv444),
-        Some(VshipChromaSubsample::yuv444())
-    );
-    assert_eq!(subsample_for_chroma(ChromaSubsampling::Monochrome), None);
-}
-
-#[test]
-fn colorspace_mapping_uses_limited_range_and_bt709() {
-    let colorspace =
-        colorspace_from_details(&details(1920, 1080, 10, ChromaSubsampling::Yuv420), None)
-            .expect("10-bit 4:2:0 is supported");
-
-    assert_eq!(colorspace.width, 1920);
-    assert_eq!(colorspace.height, 1080);
-    assert_eq!(colorspace.sample, VshipSample::Uint10);
-    assert_eq!(colorspace.range, VshipRange::Limited);
-    assert_eq!(colorspace.color_family, VshipColorFamily::YUV);
-    assert_eq!(colorspace.yuv_matrix, VshipYuvMatrix::Bt709);
-    assert_eq!(colorspace.transfer_function, VshipTransferFunction::Bt709);
-    assert_eq!(colorspace.primaries, VshipPrimaries::Bt709);
-}
-
-/// Av1an's encode resolution becomes libvship's `target_width` and
-/// `target_height`, and the input planes themselves are untouched.
-#[test]
-fn target_resolution_maps_to_the_colorspace_target() {
-    let colorspace = colorspace_from_details(
-        &details(1920, 1080, 8, ChromaSubsampling::Yuv420),
-        Some((1280, 720)),
-    )
-    .expect("8-bit 4:2:0 is supported");
-
-    assert_eq!(colorspace.width, 1920, "the input geometry is unchanged");
-    assert_eq!(colorspace.target_width, 1280);
-    assert_eq!(colorspace.target_height, 720);
-}
-
-#[test]
-fn an_absent_target_resolution_means_no_scaling() {
-    let colorspace =
-        colorspace_from_details(&details(640, 480, 8, ChromaSubsampling::Yuv420), None)
-            .expect("8-bit 4:2:0 is supported");
-
-    assert_eq!(colorspace.target_width, -1);
-    assert_eq!(colorspace.target_height, -1);
-}
-
-#[test]
-fn unsupported_formats_are_reported_rather_than_guessed() {
-    assert!(matches!(
-        colorspace_from_details(&details(1920, 1080, 11, ChromaSubsampling::Yuv420), None),
-        Err(VshipError::UnsupportedFormat { .. })
-    ));
-    assert!(matches!(
-        colorspace_from_details(&details(1920, 1080, 8, ChromaSubsampling::Monochrome), None),
-        Err(VshipError::UnsupportedFormat { .. })
-    ));
-}
-
-/// The reference and the encode are described separately, so they need not
-/// match in size or depth.
-#[test]
-fn differing_inputs_produce_independent_colorspaces() {
-    let reference = colorspace_from_details(
-        &details(1920, 1080, 8, ChromaSubsampling::Yuv420),
-        Some((1280, 720)),
-    )
-    .unwrap();
-    let encode = colorspace_from_details(
-        &details(1280, 720, 10, ChromaSubsampling::Yuv422),
-        Some((1280, 720)),
-    )
-    .unwrap();
-
-    assert_eq!(reference.sample, VshipSample::Uint8);
-    assert_eq!(encode.sample, VshipSample::Uint10);
-    assert_eq!(reference.width, 1920);
-    assert_eq!(encode.width, 1280);
-    assert_eq!(reference.target_width, encode.target_width);
-}
-
 // --- Scoring ----------------------------------------------------------------
 
 #[test]
-fn identical_clips_score_at_the_metrics_ideal() {
+fn identical_clips_have_ssimulacra2_scores_above_point_nine_nine() {
     require_vship!();
 
     let pair = small_pair(Distortion::None);
@@ -537,7 +391,7 @@ fn identical_clips_score_at_the_metrics_ideal() {
 
 /// A score arrives for every pair, with no flush step in between.
 #[test]
-fn every_pair_yields_a_score_immediately() {
+fn decoder_scoring_returns_twelve_scores_callbacks_and_submissions_without_flush() {
     require_vship!();
 
     let pair = small_pair(Distortion::Mild);
@@ -560,7 +414,7 @@ fn every_pair_yields_a_score_immediately() {
 }
 
 #[test]
-fn heavier_distortion_scores_lower() {
+fn ssimulacra2_pooled_score_does_not_increase_with_distortion() {
     require_vship!();
 
     let format = format_for(&small_pair(Distortion::Mild).reference);
@@ -620,7 +474,7 @@ fn butteraugli_reports_all_three_norms() {
 /// `norm_q` silently reports a different quantity from the plugin it replaces.
 /// Both selections must come from the same pair and must differ.
 #[test]
-fn butteraugli_selects_its_norm_from_the_configuration() {
+fn butteraugli_headline_and_pool_select_distinct_q_or_infinity_norms() {
     require_vship!();
 
     let pair = small_pair(Distortion::Moderate);
@@ -702,7 +556,7 @@ fn butteraugli_q_norm_changes_the_score() {
 }
 
 #[test]
-fn cvvdp_accumulates_across_frames() {
+fn cvvdp_first_and_last_scores_differ_on_varying_clip() {
     require_vship!();
 
     let pair = small_pair(Distortion::Mild);
@@ -730,7 +584,7 @@ fn cvvdp_accumulates_across_frames() {
 }
 
 #[test]
-fn a_temporal_reset_starts_a_fresh_sequence() {
+fn cvvdp_accepts_temporal_and_score_resets_after_a_submission() {
     require_vship!();
 
     let pair = small_pair(Distortion::Mild);
@@ -821,7 +675,7 @@ fn a_lower_resolution_encode_can_be_scored_against_a_larger_reference() {
 /// adopted instead, matching what FFVship does by always scaling the encode to
 /// the source.
 #[test]
-fn a_mismatched_pair_adopts_the_reference_size_when_no_target_is_given() {
+fn mismatched_resolutions_score_eight_pairs_without_explicit_target() {
     require_vship!();
 
     let reference_clip =
@@ -853,7 +707,7 @@ fn a_mismatched_pair_adopts_the_reference_size_when_no_target_is_given() {
 /// Matching sizes must be left alone when no target is given, or every ordinary
 /// pass would pay for a rescale it does not need.
 #[test]
-fn a_matching_pair_is_not_rescaled_when_no_target_is_given() {
+fn matching_pair_scores_agree_with_absent_or_identity_target() {
     require_vship!();
 
     let reference_clip =
@@ -924,7 +778,7 @@ fn a_plane_whose_geometry_disagrees_is_rejected() {
 }
 
 #[test]
-fn submit_pair_raw_accepts_correctly_typed_planes() {
+fn repeated_identical_raw_ssimulacra2_pairs_return_equal_values() {
     require_vship!();
 
     let format = VideoFormat::from_details(&details(64, 48, 8, ChromaSubsampling::Yuv420));
@@ -947,38 +801,4 @@ fn submit_pair_raw_accepts_correctly_typed_planes() {
         first.expect("geometry is correct").value(VshipMetric::Ssimulacra2),
         second.expect("geometry is correct").value(VshipMetric::Ssimulacra2)
     );
-}
-
-// --- Pooling ----------------------------------------------------------------
-
-#[test]
-fn pooling_picks_the_requested_extreme_or_the_mean() {
-    let scores = [
-        FrameScore {
-            score: Some(0.8),
-            ..FrameScore::default()
-        },
-        FrameScore {
-            score: Some(0.4),
-            ..FrameScore::default()
-        },
-        FrameScore {
-            score: Some(0.6),
-            ..FrameScore::default()
-        },
-    ];
-
-    // The mean is compared with a tolerance, because summing three binary
-    // fractions rarely lands exactly on 0.6.
-    let mean = VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean).unwrap();
-    assert!((mean - 0.6).abs() < 1e-12, "mean was {mean}, expected 0.6");
-    assert_eq!(
-        VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Max).unwrap(),
-        0.8
-    );
-    assert_eq!(
-        VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Min).unwrap(),
-        0.4
-    );
-    assert!(VshipScorer::pool(&[], VshipMetric::Ssimulacra2, PoolMethod::Mean).is_err());
 }

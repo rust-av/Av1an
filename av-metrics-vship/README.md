@@ -114,9 +114,11 @@ Wide odd pitches are therefore conservatively rejected until a corrected Vulkan
 dispatch is the supported minimum and odd-pitch uploads pass the real GPU gate.
 Pure checks and C ABI sinks run without a GPU; they do not prove GPU upload
 completion or metric accuracy. On a supported GPU host, run `just test-gpu`;
-`gpu_padded_uploads_and_typed_mismatch` compares packed uploads against each
-side padded separately, using nonflat Y/U/V patterns and distinct padding sentinels,
-and fails, rather than skipping, when required mode has no working runtime.
+`gpu_ten_bit_scorer_rejects_u8_frame_without_submitting` checks typed rejection;
+`gpu_padded_reference_upload_matches_packed_score` and
+`gpu_padded_distorted_upload_matches_packed_score` compare each padded side with
+packed uploads, using nonflat Y/U/V patterns and distinct padding sentinels.
+All three fail, rather than skip, when required mode has no working runtime.
 
 Check availability before constructing one, if the outcome is not already known:
 

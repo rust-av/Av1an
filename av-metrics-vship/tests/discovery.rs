@@ -1,5 +1,5 @@
 //! Runtime availability smoke check; deterministic candidate tables live beside
-//! the private production candidate builder in `src/discovery.rs`.
+//! the private production candidate builder in `src/ffi/tests/discovery.rs`.
 
 use av_metrics_vship::ffi::VshipApi;
 
