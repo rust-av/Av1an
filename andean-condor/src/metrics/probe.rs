@@ -872,7 +872,7 @@ mod tests {
     /// position within the selection while the reference is read by source
     /// frame number.
     #[test]
-    fn the_compacted_output_is_read_by_position_and_the_reference_by_source_frame() {
+    fn compacted_output_index_uses_selection_position() {
         // A `Subset{Middle, 11}` probe of a scene starting at frame 500.
         let selected: Vec<usize> = (500..511).collect();
 
@@ -886,7 +886,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sparse_selection_never_seeks_the_compacted_output_past_its_own_length() {
+    fn sparse_compacted_output_indices_stay_within_selection_length() {
         // A compacted output holds exactly `selected.len()` frames, so every
         // output index must be below that. Seeking by source index would exceed
         // it and fail outright.
@@ -903,7 +903,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unsorted_selection_still_never_seeks_the_compacted_output_out_of_range() {
+    fn unsorted_compacted_output_indices_follow_selection_position() {
         let selected = [7usize, 3, 900, 12];
 
         for (position, &source_index) in selected.iter().enumerate() {
@@ -953,7 +953,7 @@ mod tests {
     }
 
     #[test]
-    fn a_single_frame_selection_reads_the_first_frame_of_each_side() {
+    fn single_frame_output_index_is_zero_when_compacted_and_source_index_when_aligned() {
         // A compacted output holds one frame, so it is position zero.
         assert_eq!(output_index(0, 42, OutputIndexing::Compacted), 0);
         // An aligned output sits at the source index instead.
@@ -965,7 +965,7 @@ mod tests {
     /// Checking this up front turns a mid-pass failure into an error beside
     /// the configuration.
     #[test]
-    fn a_non_seekable_side_rejects_a_selection_that_steps_backwards() {
+    fn backwards_step_detection_rejects_descending_frame_indices() {
         // An ascending run from a nonzero start is servable: the frames before
         // it are decoded and discarded, which is exactly what `advance` does.
         assert!(!steps_backwards([500usize, 501, 502].iter().copied()));

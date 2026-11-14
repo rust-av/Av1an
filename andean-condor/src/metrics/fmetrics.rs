@@ -351,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_config_rejects_infinity_actionably() {
+    fn fmetrics_infinite_butteraugli_norm_reports_the_finite_plugin_alternative() {
         let metric = QualityMetric::BUTTERAUGLI {
             target_range: (1.0, 3.0),
             resolution: None,
@@ -609,7 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn the_three_shared_metrics_map_and_the_others_do_not() {
+    fn fmetrics_maps_ssimulacra2_butteraugli_and_cvvdp_only() {
         assert_eq!(
             fmetrics_metric_for(&ssimulacra2(None)),
             Some(FmetricsMetric::Ssimulacra2)
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn the_thread_count_reaches_the_config() {
+    fn fmetrics_config_preserves_explicit_threads_or_uses_the_default() {
         assert_eq!(
             scorer_config(&ssimulacra2(Some(3)), 0.0).unwrap().threads(),
             3
@@ -725,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn a_display_model_reaches_the_config() {
+    fn fmetrics_config_preserves_the_hdr_pq_display_model() {
         let config = scorer_config(
             &QualityMetric::CVVDP {
                 target_range: (40.0, 50.0),
@@ -754,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn cvvdp_is_temporal_so_the_submit_loop_uses_the_context_entry_point() {
+    fn fmetrics_cvvdp_config_is_temporal_while_pair_metrics_are_not() {
         // The submit loop branches on this, and the branch is otherwise
         // unreachable from a unit test.
         assert!(FmetricsMetric::Cvvdp.is_temporal());

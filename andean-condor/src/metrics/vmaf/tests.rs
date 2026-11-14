@@ -162,7 +162,7 @@ fn the_default_metric_selects_the_default_model() {
 /// The test helper configures a single thread, which must be honoured
 /// verbatim so a capped pool stays capped.
 #[test]
-fn an_explicit_thread_count_is_passed_through() {
+fn vmaf_config_preserves_explicit_thread_count() {
     let config = scorer_config(&metric(Vec::new())).expect("config should build");
     assert_eq!(config.n_threads, 1);
 }

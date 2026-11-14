@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn the_supported_metrics_map_to_their_libvship_counterparts() {
+    fn vship_maps_ssimulacra2_butteraugli_and_cvvdp() {
         let butteraugli = QualityMetric::BUTTERAUGLI {
             target_range: (1.0, 3.0),
             resolution: None,
@@ -557,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn an_explicit_thread_count_is_passed_through() {
+    fn vship_config_preserves_explicit_handler_threads() {
         let config = scorer_config(&ssimulacra2(Some(2)), 24.0).expect("config should build");
         assert_eq!(config.handler_threads(), 2);
     }
@@ -657,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn butteraugli_reports_the_norm_the_plugin_would() {
+    fn vship_butteraugli_uses_q_norm_only_when_explicitly_configured() {
         // No norm requested: the plugin reads `BUTTERAUGLI_INFNorm`.
         let default = QualityMetric::BUTTERAUGLI {
             target_range: (0.8, 1.2),

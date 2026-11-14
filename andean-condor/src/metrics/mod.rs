@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn butteraugli_norm_capability_over_all_availability_and_inputs() {
+    fn butteraugli_engine_selection_respects_norm_and_input_capabilities() {
         // Rows: vship, fmetrics, plugin, infinity VS/FFMS2, finite VS/FFMS2.
         let cases = [
             (false, false, false, [None, None], [None, None]),
@@ -371,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn the_ordering_is_exhaustive_over_every_availability_combination() {
+    fn metric_engine_priority_covers_both_input_kinds_and_available_backends() {
         // Stated as a table so every combination is visibly covered, including
         // the one with nothing available. The row that differs by input is the
         // reason the input kind is a parameter at all.
@@ -422,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn fmetrics_is_reachable_only_where_it_is_actually_cheaper() {
+    fn fmetrics_is_preferred_for_native_inputs_unless_a_vapoursynth_plugin_is_needed() {
         let both = Availability {
             vship: false,
             fmetrics: true,
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_availability_matches_the_branches_this_crate_implements() {
+    fn plugin_availability_recognizes_supported_metrics_but_not_vmaf() {
         assert!(plugin_available(&ssimulacra2()));
         assert!(plugin_available(&butteraugli()));
         assert!(plugin_available(&xpsnr()));
