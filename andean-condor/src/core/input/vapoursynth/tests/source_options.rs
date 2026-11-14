@@ -3,127 +3,11 @@
 use std::{fs, path::Path, process::Command};
 
 use super::*;
-use crate::{
-    core::input::Ffms2Filter, models::input::ImportMethod,
-    vapoursynth::script_builder::script::Lines,
-};
+use crate::vapoursynth::script_builder::script::Lines;
 
-fn run(command: &mut Command) -> Vec<u8> {
-    // File-backed output plus timeout keeps fixture creation bounded without pipe deadlocks.
-    let stdout = tempfile::NamedTempFile::new().expect("stdout");
-    let stderr = tempfile::NamedTempFile::new().expect("stderr");
-    let status = command
-        .stdin(std::process::Stdio::null())
-        .stdout(stdout.reopen().expect("stdout handle"))
-        .stderr(stderr.reopen().expect("stderr handle"))
-        .status()
-        .expect("source-options requires ffmpeg, python3 and timeout on PATH");
-    assert!(
-        status.success(),
-        "{command:?}: {}",
-        fs::read_to_string(stderr.path()).expect("diagnostic")
-    );
-    fs::read(stdout.path()).expect("output")
-}
-
-struct Fixture {
-    directory: tempfile::TempDir,
-    source: std::path::PathBuf,
-    original: Vec<u8>,
-}
-
-impl Fixture {
-    fn new() -> Self {
-        Self::with_source_name("two tracks.mkv")
-    }
-
-    fn with_source_name(name: &str) -> Self {
-        let directory = tempfile::tempdir().expect("source-options fixture");
-        let parent = directory.path().join("read only 映像");
-        fs::create_dir_all(&parent).expect("source directory");
-        let source = parent.join(name);
-        run(Command::new("timeout")
-            .args(["30s", "ffmpeg", "-nostdin", "-v", "error", "-y"])
-            .args(["-f", "lavfi", "-i", "nullsrc=s=32x16:r=24,geq=lum=37:cb=83:cr=201"])
-            .args(["-f", "lavfi", "-i", "nullsrc=s=32x16:r=24,geq=lum=219:cb=41:cr=159"])
-            .args([
-                "-map",
-                "0:v",
-                "-map",
-                "1:v",
-                "-frames:v",
-                "100",
-                "-c:v",
-                "ffv1",
-                "-threads",
-                "1",
-            ])
-            .arg(&source));
-        let original = fs::read(&source).expect("source bytes");
-        let fixture = Self {
-            directory,
-            source,
-            original,
-        };
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&fixture.source, fs::Permissions::from_mode(0o444))
-                .expect("read-only file");
-            fs::set_permissions(&parent, fs::Permissions::from_mode(0o555))
-                .expect("read-only parent");
-            let probe = parent.join("write probe");
-            match fs::write(&probe, b"permission probe") {
-                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-                    eprintln!("source-options readonly enforced: PermissionDenied ({parent:?})");
-                },
-                Ok(()) => {
-                    fs::remove_file(&probe).expect("remove exact permission probe");
-                    eprintln!(
-                        "source-options readonly not-enforced/root capability: removed {probe:?}; continuing full assertions"
-                    );
-                },
-                Err(error) => {
-                    panic!("source-options permission probe {probe:?} failed unexpectedly: {error}")
-                },
-            }
-        }
-        fixture
-    }
-
-    fn cache(&self, name: &str) -> std::path::PathBuf {
-        let directory = self.directory.path().join(name);
-        fs::create_dir_all(&directory).expect("writable cache directory");
-        directory.join("explicit cache 索引")
-    }
-
-    fn unchanged(&self) {
-        assert_eq!(fs::read(&self.source).expect("source bytes"), self.original);
-        assert_eq!(
-            fs::read_dir(self.source.parent().expect("parent"))
-                .expect("source listing")
-                .count(),
-            1,
-            "no indexes beside read-only source"
-        );
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(
-                self.source.parent().expect("parent"),
-                fs::Permissions::from_mode(0o755),
-            )
-            .expect("restore parent for cleanup");
-            fs::set_permissions(&self.source, fs::Permissions::from_mode(0o644))
-                .expect("restore source for cleanup");
-        }
-    }
-}
+#[path = "../../../../../tests/core/input/vapoursynth/fixtures/source_options_support.rs"]
+mod fixture;
+use fixture::{Fixture, expected_frame, run};
 
 fn files(path: &Path) -> Vec<std::path::PathBuf> {
     if path.is_file() {
@@ -136,15 +20,6 @@ fn files(path: &Path) -> Vec<std::path::PathBuf> {
         .expect("cache listing")
         .flat_map(|entry| files(&entry.expect("cache entry").path()))
         .collect()
-}
-
-fn expected_frame(track: Option<u8>, width: usize) -> Vec<u8> {
-    let [y, u, v] = if track == Some(1) {
-        [219, 41, 159]
-    } else {
-        [37, 83, 201]
-    };
-    [b"FRAME\n".to_vec(), vec![y; width * 16], vec![u; width * 4], vec![v; width * 4]].concat()
 }
 
 fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod) {
@@ -235,54 +110,6 @@ fn bestsource_direct_and_scripted_track_cache() {
 #[test]
 fn lsmash_direct_and_scripted_track_cache() {
     routes(|index| VapourSynthImportMethod::LSMASHWorks { index });
-}
-
-#[test]
-fn native_metric_reference_preserves_track_cache_and_filter_baseline() {
-    let fixture = Fixture::new();
-    let cache = fixture.cache("native shared index");
-    for track in [Some(1), Some(0), None] {
-        let mut native = Input::from_data(&InputModel::Video {
-            path: fixture.source.clone(),
-            import_method: ImportMethod::FFMS2 {
-                index: track,
-                cache_path: Some(cache.clone()),
-            },
-            filters: vec![Ffms2Filter::OutputFormat {
-                bit_depth: None,
-                chroma: None,
-                width: Some(16),
-                height: None,
-            }],
-        })
-        .expect("native FFMS2 input");
-        let native_image = native.y4m_frame(0).expect("encode feed").into_inner();
-        assert_eq!(native_image, expected_frame(track, 16));
-        let original_index = fs::read(&cache).expect("native index");
-        let mut reference = native
-            .as_vapoursynth_script()
-            .expect("metric reference")
-            .expect("native becomes VS");
-        assert_eq!(
-            reference.y4m_frame(0).expect("reference image").into_inner(),
-            native_image,
-            "requested {track:?} must be the metric reference"
-        );
-        assert_eq!(
-            reference.clip_info().expect("metadata").resolution,
-            (16, 16)
-        );
-        let Input::Video { source_details, .. } = native else {
-            panic!("native source");
-        };
-        assert_eq!(source_details.width, 32, "filter baseline stays unfiltered");
-        assert_eq!(
-            fs::read(&cache).expect("shared index"),
-            original_index,
-            "VS must read the native FFMS2 index without replacing it"
-        );
-        fixture.unchanged();
-    }
 }
 
 pub(super) fn recorded(lines: Lines) -> serde_json::Value {
@@ -653,85 +480,4 @@ fn other_string_filters_preserve_data_without_execution() {
         cases.push(case(&cvvdp, "vship.CVVDP", &serde_json::json!({"reference": "node", "distorted": "node", "model_config_json": value})));
     }
     check_cases(&cases);
-}
-
-#[cfg(unix)]
-fn special_filename_routes(method: &VapourSynthImportMethod) {
-    let fixture =
-        Fixture::with_source_name("both'\"\\\n映像🦀\"+str(marker.append('executed'))+\".mkv");
-    for scripted in [false, true] {
-        let cache = fixture
-            .cache(&format!("special-{scripted}"))
-            .with_file_name("cache'\"\\\n索引🦀");
-        let data = InputModel::VapourSynth {
-            path: fixture.source.clone(),
-            import_method: method.clone(),
-            cache_path: Some(cache.clone()),
-            filters: Vec::new(),
-        };
-        let mut input = if scripted {
-            Input::from_vapoursynth_scripted(&data)
-        } else {
-            Input::from_data(&data)
-        }
-        .expect("real plugin must open special filename and explicit cache");
-        assert_eq!(
-            input.y4m_frame(0).expect("frame").into_inner(),
-            expected_frame(Some(1), 32)
-        );
-        assert_eq!(input.clip_info().expect("metadata").num_frames, 100);
-        drop(input);
-        let caches = files(cache.parent().expect("cache parent"));
-        assert!(!caches.is_empty(), "explicit special cache created");
-        if matches!(method, VapourSynthImportMethod::BestSource { .. }) {
-            assert!(caches.iter().all(|path| path.starts_with(&cache)));
-        } else {
-            assert_eq!(caches, [cache]);
-        }
-        eprintln!(
-            "python-literal {method:?} scripted={scripted}: {caches:?}; 100 frames, YUV=219/41/159"
-        );
-        fixture.unchanged();
-    }
-    if matches!(method, VapourSynthImportMethod::FFMS2 { .. }) {
-        let cache = fixture.cache("native gateway").with_file_name("native'\"\\\n索引🦀");
-        let mut native = Input::from_data(&InputModel::Video {
-            path: fixture.source.clone(),
-            import_method: ImportMethod::FFMS2 {
-                index: Some(1),
-                cache_path: Some(cache.clone()),
-            },
-            filters: Vec::new(),
-        })
-        .expect("native special filename");
-        let expected = native.y4m_frame(0).expect("native frame").into_inner();
-        assert_eq!(expected, expected_frame(Some(1), 32));
-        let original_index = fs::read(&cache).expect("native cache");
-        let mut reference = native.as_vapoursynth_script().expect("VS gateway").expect("VS input");
-        assert_eq!(
-            reference.y4m_frame(0).expect("VS frame").into_inner(),
-            expected
-        );
-        assert_eq!(reference.clip_info().expect("metadata").num_frames, 100);
-        assert_eq!(fs::read(&cache).expect("shared cache"), original_index);
-        fixture.unchanged();
-    }
-}
-
-#[test]
-#[cfg(unix)]
-fn ffms2_special_filename_native_and_scripted() {
-    special_filename_routes(&VapourSynthImportMethod::FFMS2 { index: Some(1) });
-}
-
-#[test]
-#[cfg(unix)]
-fn bestsource_special_filename_direct_and_scripted() {
-    special_filename_routes(&VapourSynthImportMethod::BestSource { index: Some(1) });
-}
-
-#[test]
-#[cfg(unix)]
-fn lsmash_special_filename_direct_and_scripted() {
-    special_filename_routes(&VapourSynthImportMethod::LSMASHWorks { index: Some(1) });
 }

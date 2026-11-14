@@ -1,6 +1,7 @@
 mod format_conversion;
 #[cfg(target_os = "linux")]
 mod indexing;
+mod source_options;
 
 use super::*;
 use andean_condor::vapoursynth::get_api;
