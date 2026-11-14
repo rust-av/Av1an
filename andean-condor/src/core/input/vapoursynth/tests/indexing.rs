@@ -93,8 +93,17 @@ fn direct_project_guidance_selects_valid_input_not_ignored_cache_override() {
     assert!(!guidance.contains("remove"), "{guidance}");
 }
 
-#[test]
-fn index_publication_validates_artifacts_and_cleans_owned_processes() {
+fn run_index_cases(test: &str, cases: &[&str]) {
+    if std::env::var_os("VS_INDEX_ROOT").is_some() {
+        let case = std::env::var("VS_INDEX_CASE").expect("case");
+        assert!(
+            cases.contains(&case.as_str()),
+            "selected indexing case belongs to this contract"
+        );
+        assert_index_publication_case();
+        println!("dg-index {case}: assertions completed");
+        return;
+    }
     let dir = tempfile::tempdir().expect("fixture");
     fs::write(
         dir.path().join("fake.rs"),
@@ -108,27 +117,7 @@ fn index_publication_validates_artifacts_and_cleans_owned_processes() {
         .status()
         .expect("rustc");
     assert!(status.success());
-    for case in [
-        "failure-retry",
-        "missing",
-        "zero",
-        "garbage",
-        "truncated",
-        "directory",
-        "symlink",
-        "existing",
-        "force-retry",
-        "graceful",
-        "publish-pre",
-        "publish-post",
-        "publish-sentinel",
-        "publish-valid",
-        "concurrent",
-        "observer-panic",
-        "read-error",
-        "join-panic",
-        "spawn",
-    ] {
+    for case in cases {
         let root = dir.path().join(case);
         fs::create_dir_all(&root).expect("case");
         fs::write(root.join("sample.dgi"), SAMPLE).expect("sample");
@@ -138,6 +127,9 @@ fn index_publication_validates_artifacts_and_cleans_owned_processes() {
             .arg(std::env::current_exe().expect("test binary"))
             .arg(&root)
             .arg(case)
+            .arg(format!(
+                "core::input::vapoursynth::tests::indexing::internal_integration::{test}"
+            ))
             .output()
             .expect("supervisor");
         let log = format!(
@@ -145,7 +137,16 @@ fn index_publication_validates_artifacts_and_cleans_owned_processes() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        eprintln!("{log}");
         assert!(output.status.success(), "{case}: {log}");
+        assert!(
+            log.contains("test result: ok. 1 passed;"),
+            "exact child selected: {log}"
+        );
+        assert!(
+            log.contains(&format!("dg-index {case}: assertions completed")),
+            "index assertions executed: {log}"
+        );
         assert!(
             log.contains(&format!(
                 "process lifecycle case={case} selected=true rescued=0"
@@ -236,8 +237,7 @@ fn assert_argv(root: &Path, source: &Path, cache: &Path) {
     }
 }
 
-#[test]
-fn index_publication_child() {
+fn assert_index_publication_case() {
     let Some(root) = std::env::var_os("VS_INDEX_ROOT") else {
         return;
     };
@@ -545,4 +545,53 @@ fn index_publication_child() {
     );
     assert_argv(&root, &source, &cache);
     assert_clean(&root);
+}
+
+mod internal_integration {
+    use super::*;
+
+    macro_rules! index_cases {
+        ($name:ident, [$($case:literal),+ $(,)?]) => {
+            #[test]
+            fn $name() { run_index_cases(stringify!($name), &[$($case),+]); }
+        };
+    }
+
+    index_cases!(
+        dg_index_failure_is_retryable_without_publishing_partial_files,
+        ["failure-retry"]
+    );
+    index_cases!(
+        dg_index_candidates_are_validated_before_publication,
+        [
+            "missing",
+            "zero",
+            "garbage",
+            "truncated",
+            "directory",
+            "symlink",
+            "existing",
+            "spawn"
+        ]
+    );
+    index_cases!(
+        dg_index_force_reaps_owned_processes_before_cleanup,
+        ["force-retry"]
+    );
+    index_cases!(
+        dg_index_graceful_cancellation_finishes_admitted_work,
+        ["graceful"]
+    );
+    index_cases!(
+        dg_index_publication_preserves_concurrent_winners,
+        ["publish-sentinel", "publish-valid", "concurrent"]
+    );
+    index_cases!(
+        dg_index_reader_and_observer_failures_join_before_return,
+        ["observer-panic", "read-error", "join-panic"]
+    );
+    index_cases!(
+        dg_index_force_at_publication_preserves_only_committed_files,
+        ["publish-pre", "publish-post"]
+    );
 }
