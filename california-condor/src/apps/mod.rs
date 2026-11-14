@@ -737,135 +737,144 @@ mod tests {
         pub(super) static HEADLESS_TICK: std::cell::RefCell<Option<Box<dyn FnMut()>>> = const { std::cell::RefCell::new(None) };
     }
 
-    #[test]
-    fn headless_maps_every_event_without_tick_clones() {
-        if std::env::var_os("HEADLESS_EVENT_MAPPING_CHILD").is_none() {
-            let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "apps::tests::headless_maps_every_event_without_tick_clones",
-                    "--nocapture",
-                ])
-                .env("HEADLESS_EVENT_MAPPING_CHILD", "1")
-                .env("CONDOR_TEST_MODE", "1")
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert!(
-                String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
-                "headless event-mapping child did not execute: {output:?}"
-            );
-            return;
-        }
-        use std::sync::atomic::AtomicUsize;
-        struct Counted {
-            clones: Arc<AtomicUsize>,
-            events: Vec<String>,
-            ack: mpsc::SyncSender<()>,
-        }
-        impl Clone for Counted {
-            fn clone(&self) -> Self {
-                self.clones.fetch_add(1, Ordering::SeqCst);
-                Self {
-                    clones: Arc::clone(&self.clones),
-                    events: self.events.clone(),
-                    ack: self.ack.clone(),
-                }
+    mod internal_integration {
+        use super::*;
+
+        #[test]
+        fn headless_applies_every_event_and_clones_only_the_final_state() {
+            const TEST: &str = "apps::tests::internal_integration::headless_applies_every_event_and_clones_only_the_final_state";
+            if std::env::var_os("HEADLESS_EVENT_MAPPING_CHILD").is_none() {
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", TEST, "--nocapture"])
+                    .env("HEADLESS_EVENT_MAPPING_CHILD", TEST)
+                    .env("CONDOR_TEST_MODE", "1")
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                    "headless event-mapping child did not execute: {output:?}"
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stdout)
+                        .contains("HEADLESS_EVENT_MAPPING_ASSERTIONS_COMPLETED")
+                );
+                eprintln!("{}", String::from_utf8_lossy(&output.stdout));
+                return;
             }
-        }
-        struct App {
-            progress: SharedProgress<Counted>,
-            cached: Counted,
-            cancel: bool,
-            reported: bool,
-        }
-        impl TuiApp for App {
-            type State = Counted;
-            fn shared_progress(&self) -> &SharedProgress<Counted> {
-                &self.progress
+            assert_eq!(std::env::var("HEADLESS_EVENT_MAPPING_CHILD").unwrap(), TEST);
+            use std::sync::atomic::AtomicUsize;
+            struct Counted {
+                clones: Arc<AtomicUsize>,
+                events: Vec<String>,
+                ack: mpsc::SyncSender<()>,
             }
-            fn cached_state(&self) -> &Counted {
-                &self.cached
-            }
-            fn cached_state_mut(&mut self) -> &mut Counted {
-                &mut self.cached
-            }
-            fn attempted_cancel(&self) -> bool {
-                self.cancel
-            }
-            fn attempted_cancel_mut(&mut self) -> &mut bool {
-                &mut self.cancel
-            }
-            fn cancel_message(&self) -> &'static str {
-                "cancel"
-            }
-            fn map_progress(status: SequenceStatus, state: &mut Counted) -> bool {
-                let SequenceStatus::Whole(andean_condor::core::sequence::Status::Completed { id }) =
-                    status
-                else {
-                    panic!("event")
-                };
-                state.events.push(id);
-                state.ack.send(()).unwrap();
-                true
-            }
-            fn after_loop(&mut self) {
-                self.reported = true;
-                assert_eq!(self.cached.events, ["0", "1", "2", "3"]);
-            }
-            fn render(&self, _: &mut Frame) {
-                panic!("headless render");
-            }
-        }
-        let clones = Arc::new(AtomicUsize::new(0));
-        let (ack, ack_rx) = mpsc::sync_channel(0);
-        let state = Counted {
-            clones: Arc::clone(&clones),
-            events: vec![],
-            ack,
-        };
-        let mut app = App {
-            progress: SharedProgress::new(state.clone()),
-            cached: state,
-            cancel: false,
-            reported: false,
-        };
-        clones.store(0, Ordering::SeqCst);
-        let (tx, rx) = mpsc::channel();
-        let mut tx = Some(tx);
-        let mut index = 0;
-        HEADLESS_TICK.with_borrow_mut(|slot| {
-            *slot = Some(Box::new(move || {
-                if let Some(sender) = tx.as_ref() {
-                    sender
-                        .send(SequenceStatus::Whole(
-                            andean_condor::core::sequence::Status::Completed {
-                                id: index.to_string(),
-                            },
-                        ))
-                        .unwrap();
-                    ack_rx.recv_timeout(Duration::from_secs(10)).unwrap();
-                    index += 1;
-                    if index == 4 {
-                        tx.take();
+            impl Clone for Counted {
+                fn clone(&self) -> Self {
+                    self.clones.fetch_add(1, Ordering::SeqCst);
+                    Self {
+                        clones: Arc::clone(&self.clones),
+                        events: self.events.clone(),
+                        ack: self.ack.clone(),
                     }
                 }
-            }));
-        });
-        let result = app.run(rx, Arc::new(AtomicBool::new(false)));
-        HEADLESS_TICK.with_borrow_mut(|slot| slot.take());
-        result.unwrap();
-        assert!(app.reported);
-        assert_eq!(
-            clones.load(Ordering::SeqCst),
-            1,
-            "only the final complete state is needed headlessly"
-        );
+            }
+            struct App {
+                progress: SharedProgress<Counted>,
+                cached: Counted,
+                cancel: bool,
+                reported: bool,
+            }
+            impl TuiApp for App {
+                type State = Counted;
+                fn shared_progress(&self) -> &SharedProgress<Counted> {
+                    &self.progress
+                }
+                fn cached_state(&self) -> &Counted {
+                    &self.cached
+                }
+                fn cached_state_mut(&mut self) -> &mut Counted {
+                    &mut self.cached
+                }
+                fn attempted_cancel(&self) -> bool {
+                    self.cancel
+                }
+                fn attempted_cancel_mut(&mut self) -> &mut bool {
+                    &mut self.cancel
+                }
+                fn cancel_message(&self) -> &'static str {
+                    "cancel"
+                }
+                fn map_progress(status: SequenceStatus, state: &mut Counted) -> bool {
+                    let SequenceStatus::Whole(andean_condor::core::sequence::Status::Completed {
+                        id,
+                    }) = status
+                    else {
+                        panic!("event")
+                    };
+                    state.events.push(id);
+                    state.ack.send(()).unwrap();
+                    true
+                }
+                fn after_loop(&mut self) {
+                    self.reported = true;
+                    assert_eq!(self.cached.events, ["0", "1", "2", "3"]);
+                }
+                fn render(&self, _: &mut Frame) {
+                    panic!("headless render");
+                }
+            }
+            let clones = Arc::new(AtomicUsize::new(0));
+            let (ack, ack_rx) = mpsc::sync_channel(0);
+            let state = Counted {
+                clones: Arc::clone(&clones),
+                events: vec![],
+                ack,
+            };
+            let mut app = App {
+                progress: SharedProgress::new(state.clone()),
+                cached: state,
+                cancel: false,
+                reported: false,
+            };
+            clones.store(0, Ordering::SeqCst);
+            let (tx, rx) = mpsc::channel();
+            let mut tx = Some(tx);
+            let mut index = 0;
+            HEADLESS_TICK.with_borrow_mut(|slot| {
+                *slot = Some(Box::new(move || {
+                    if let Some(sender) = tx.as_ref() {
+                        sender
+                            .send(SequenceStatus::Whole(
+                                andean_condor::core::sequence::Status::Completed {
+                                    id: index.to_string(),
+                                },
+                            ))
+                            .unwrap();
+                        ack_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                        index += 1;
+                        if index == 4 {
+                            tx.take();
+                        }
+                    }
+                }));
+            });
+            let result = app.run(rx, Arc::new(AtomicBool::new(false)));
+            HEADLESS_TICK.with_borrow_mut(|slot| slot.take());
+            result.unwrap();
+            assert!(app.reported);
+            assert_eq!(
+                clones.load(Ordering::SeqCst),
+                1,
+                "only the final complete state is needed headlessly"
+            );
+            println!("HEADLESS_EVENT_MAPPING_ASSERTIONS_COMPLETED");
+        }
     }
 
     struct RenderFailureWriter {
