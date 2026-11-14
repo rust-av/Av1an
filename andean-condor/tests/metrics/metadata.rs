@@ -12,48 +12,135 @@ mod tests {
     };
 
     #[test]
-    fn native_driver_metadata_transport() {
+    fn metric_drivers_preserve_independent_reference_and_distorted_colour_metadata() {
+        driver_case(
+            "metrics::metadata::tests::metric_drivers_preserve_independent_reference_and_distorted_colour_metadata",
+            "metadata",
+        );
+    }
+
+    #[test]
+    fn fmetrics_driver_converts_sdr_planes_to_expected_rgb_samples() {
+        driver_case(
+            "metrics::metadata::tests::fmetrics_driver_converts_sdr_planes_to_expected_rgb_samples",
+            "rgb",
+        );
+    }
+
+    fn driver_case(test: &str, phase: &str) {
         if std::env::var_os("METADATA_FIXTURE_NATIVE_CHILD").is_some() {
-            check_drivers();
+            assert_eq!(
+                std::env::var("METADATA_FIXTURE_PHASE").expect("phase"),
+                phase
+            );
+            check_drivers(phase);
+            println!("metadata phase={phase}: assertions completed");
             return;
         }
         run_sink(
-            "metrics::metadata::tests::native_driver_metadata_transport",
+            test,
             "METADATA_FIXTURE_NATIVE_CHILD",
             false,
             "/tests/fixtures/metadata.c",
+            phase,
         );
     }
 
     #[test]
-    fn native_upload_storage_boundary() {
+    fn vship_storage_mismatch_is_rejected_before_compute_or_reset() {
+        upload_case(
+            "metrics::metadata::tests::vship_storage_mismatch_is_rejected_before_compute_or_reset",
+            "invalid",
+        );
+    }
+
+    #[test]
+    fn vship_raw_upload_reads_only_visible_last_row_bytes() {
+        upload_case(
+            "metrics::metadata::tests::vship_raw_upload_reads_only_visible_last_row_bytes",
+            "raw",
+        );
+    }
+
+    #[test]
+    fn vship_typed_upload_preserves_padding_and_plane_origins() {
+        upload_case(
+            "metrics::metadata::tests::vship_typed_upload_preserves_padding_and_plane_origins",
+            "typed",
+        );
+    }
+
+    #[test]
+    fn metric_drivers_preserve_bit_depth_and_reset_history_at_source_gaps() {
+        upload_case(
+            "metrics::metadata::tests::metric_drivers_preserve_bit_depth_and_reset_history_at_source_gaps",
+            "drivers",
+        );
+    }
+
+    fn upload_case(test: &str, phase: &str) {
         if std::env::var_os("UPLOAD_FIXTURE_NATIVE_CHILD").is_some() {
-            check_uploads();
+            assert_eq!(
+                std::env::var("METADATA_FIXTURE_PHASE").expect("phase"),
+                phase
+            );
+            check_uploads(phase);
+            println!("metadata phase={phase}: assertions completed");
             return;
         }
         run_sink(
-            "metrics::metadata::tests::native_upload_storage_boundary",
+            test,
             "UPLOAD_FIXTURE_NATIVE_CHILD",
             true,
             "/tests/fixtures/metadata.c",
+            phase,
         );
     }
 
     #[test]
-    fn butteraugli_production_entry_rejects_infinity_and_nonfinite_results() {
-        if std::env::var_os("BUTTERAUGLI_FIXTURE_NATIVE_CHILD").is_some() {
-            check_butteraugli();
-            return;
-        }
-        run_sink(
-            "metrics::metadata::tests::butteraugli_production_entry_rejects_infinity_and_nonfinite_results",
-            "BUTTERAUGLI_FIXTURE_NATIVE_CHILD",
-            false,
-            "/../av-metrics-fmetrics/tests/fixtures/boundary.c",
+    fn fmetrics_infinite_butteraugli_norm_is_rejected_before_workspace_creation() {
+        butteraugli_case(
+            "metrics::metadata::tests::fmetrics_infinite_butteraugli_norm_is_rejected_before_workspace_creation",
+            "infinity",
         );
     }
 
-    fn run_sink(test: &str, marker: &str, upload: bool, source: &str) {
+    #[test]
+    fn fmetrics_finite_butteraugli_norm_and_intensity_reach_native_scoring() {
+        butteraugli_case(
+            "metrics::metadata::tests::fmetrics_finite_butteraugli_norm_and_intensity_reach_native_scoring",
+            "finite",
+        );
+    }
+
+    #[test]
+    fn fmetrics_nonfinite_butteraugli_scores_never_reach_callbacks() {
+        butteraugli_case(
+            "metrics::metadata::tests::fmetrics_nonfinite_butteraugli_scores_never_reach_callbacks",
+            "nonfinite",
+        );
+    }
+
+    fn butteraugli_case(test: &str, phase: &str) {
+        if std::env::var_os("BUTTERAUGLI_FIXTURE_NATIVE_CHILD").is_some() {
+            assert_eq!(
+                std::env::var("METADATA_FIXTURE_PHASE").expect("phase"),
+                phase
+            );
+            check_butteraugli(phase);
+            println!("metadata phase={phase}: assertions completed");
+            return;
+        }
+        run_sink(
+            test,
+            "BUTTERAUGLI_FIXTURE_NATIVE_CHILD",
+            false,
+            "/../av-metrics-fmetrics/tests/fixtures/boundary.c",
+            phase,
+        );
+    }
+
+    fn run_sink(test: &str, marker: &str, upload: bool, source: &str, phase: &str) {
         let directory = tempfile::tempdir().expect("temporary native ABI sink");
         let library = directory.path().join(if cfg!(target_os = "macos") {
             "libfmetrics.dylib"
@@ -103,6 +190,7 @@ mod tests {
         let output = child
             .args(["--exact", test, "--nocapture"])
             .env(marker, "1")
+            .env("METADATA_FIXTURE_PHASE", phase)
             .env("FMETRICS_LIB_PATH", directory.path())
             .env("VSHIP_PLUGIN_PATH", directory.path())
             .output()
@@ -114,13 +202,20 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("metadata phase={phase}: assertions completed")),
+            "selected metadata assertions completed"
+        );
+        println!("metadata phase={phase}: assertions completed");
         if marker == "BUTTERAUGLI_FIXTURE_NATIVE_CHILD" {
             eprint!("{}", String::from_utf8_lossy(&output.stderr));
         }
     }
 
     #[expect(clippy::unwrap_used, reason = "fixture assertions should fail loudly")]
-    fn check_uploads() {
+    fn check_uploads(phase: &str) {
+        assert!(["invalid", "raw", "typed", "drivers"].contains(&phase));
         use av_decoders::v_frame::{chroma::ChromaSubsampling, frame::FrameBuilder};
         use av_metrics_vship::{PlaneSource, VideoFormat, VshipConfig, VshipScorer};
         let log = std::env::var_os("UPLOAD_FIXTURE_ABI_LOG").expect("ABI log");
@@ -223,6 +318,9 @@ mod tests {
                 );
             }
         }
+        if phase == "invalid" {
+            return;
+        }
         assert_eq!(
             scorer.submit_pair_raw(planes, planes).unwrap().score,
             Some(42.0)
@@ -239,6 +337,9 @@ mod tests {
             "stateless raw submissions never reset native handlers"
         );
 
+        if phase == "raw" {
+            return;
+        }
         // The real typed adapter also preserves padded u16 strides.
         let mut frame = FrameBuilder::new(4, 4, ChromaSubsampling::Yuv420, 10)
             .luma_padding_left(2)
@@ -281,6 +382,9 @@ mod tests {
             calls()
         );
 
+        if phase == "typed" {
+            return;
+        }
         // No GPU double above the ABI: actual VS frames -> shared probe -> metric
         // adapter -> submit_pair_raw. Retain integer 8/10/12 metadata support.
         for (depth, sample) in [(8, 2), (10, 5), (12, 7)] {
@@ -343,7 +447,8 @@ mod tests {
     ), Default::default()).expect("open color-tagged fixture")
     }
 
-    fn check_butteraugli() {
+    fn check_butteraugli(phase: &str) {
+        assert!(["infinity", "finite", "nonfinite"].contains(&phase));
         let log = std::env::var_os("FMETRICS_RESULT_FIXTURE_ABI_LOG").expect("ABI log");
         let result_file =
             std::env::var_os("FMETRICS_RESULT_FIXTURE_RESULT_FILE").expect("ABI result");
@@ -384,6 +489,9 @@ mod tests {
         );
         assert_eq!(calls(), "", "reject before workspace/scoring");
         assert!(!fmetrics::native_supported(&metric));
+        if phase == "infinity" {
+            return;
+        }
         if let QualityMetric::BUTTERAUGLI { norm, .. } = &mut metric {
             *norm = Some(3);
         }
@@ -393,6 +501,9 @@ mod tests {
         );
         assert_eq!(score(&metric).expect("explicit finite norm"), [42.0]);
         assert_eq!(calls(), "create\ncreate\nscore 3 150\ndestroy\ndestroy\n");
+        if phase == "finite" {
+            return;
+        }
         if let QualityMetric::BUTTERAUGLI { norm, .. } = &mut metric {
             *norm = Some(u8::MAX);
         }
@@ -418,7 +529,8 @@ mod tests {
         );
     }
 
-    fn check_drivers() {
+    fn check_drivers(phase: &str) {
+        assert!(["metadata", "rgb"].contains(&phase));
         let ssimulacra2 = QualityMetric::SSIMULACRA2 {
             target_range: (74.0, 76.0),
             resolution: None,
@@ -433,56 +545,77 @@ mod tests {
             disable_temporal: None,
             gpu_id: None,
         };
-        for metric in [&ssimulacra2, &cvvdp] {
-            let mut reference = decoder("_Range=1, _Matrix=6, _Primaries=1, _Transfer=8");
-            let mut distorted = decoder("_Range=0, _Matrix=9, _Primaries=1, _Transfer=13");
-            let scores = fmetrics::score_probed_frames(
-                &mut reference,
-                &mut distorted,
-                metric,
-                &[0],
-                OutputIndexing::Aligned,
-                None,
-                |_, _| {},
-            )
-            .expect("independent RGB metadata reaches fmetrics ABI");
-            assert_eq!(scores, [42.0]);
+        if phase == "metadata" {
+            for metric in [&ssimulacra2, &cvvdp] {
+                let mut reference = decoder("_Range=1, _Matrix=6, _Primaries=1, _Transfer=8");
+                let mut distorted = decoder("_Range=0, _Matrix=9, _Primaries=1, _Transfer=13");
+                let scores = fmetrics::score_probed_frames(
+                    &mut reference,
+                    &mut distorted,
+                    metric,
+                    &[0],
+                    OutputIndexing::Aligned,
+                    None,
+                    |_, _| {},
+                )
+                .expect("independent RGB metadata reaches fmetrics ABI");
+                assert_eq!(scores, [42.0]);
+            }
         }
-        // M05: exercise native frame allocation spans, not only VS pointers.
-        // Untagged Y4M retains the approved sRGB fallback:
-        // limited Y=29 -> round((29-16)*255/219) = 15, with no transfer conversion.
-        let fixture = tempfile::Builder::new().suffix(".y4m").tempfile().expect("fresh Y4M");
-        let mut y4m = b"YUV4MPEG2 W34 H32 F24:1 Ip A1:1 C420jpeg\nFRAME\n".to_vec();
-        y4m.extend_from_slice(&[29; 34 * 32]);
-        y4m.extend_from_slice(&[128; 2 * 17 * 16]);
-        std::fs::write(fixture.path(), y4m).expect("write native frame fixture");
-        for metric in [&ssimulacra2, &cvvdp] {
+        if phase == "rgb" {
+            // M05: exercise native frame allocation spans, not only VS pointers.
+            // Untagged Y4M retains the approved sRGB fallback:
+            // limited Y=29 -> round((29-16)*255/219) = 15, with no transfer conversion.
+            let fixture = tempfile::Builder::new().suffix(".y4m").tempfile().expect("fresh Y4M");
+            let mut y4m = b"YUV4MPEG2 W34 H32 F24:1 Ip A1:1 C420jpeg\nFRAME\n".to_vec();
+            y4m.extend_from_slice(&[29; 34 * 32]);
+            y4m.extend_from_slice(&[128; 2 * 17 * 16]);
+            std::fs::write(fixture.path(), y4m).expect("write native frame fixture");
+            for metric in [&ssimulacra2, &cvvdp] {
+                let mut reference =
+                    av_decoders::Decoder::from_file(fixture.path()).expect("native reference");
+                let mut distorted =
+                    av_decoders::Decoder::from_file(fixture.path()).expect("native distorted");
+                let scores = fmetrics::score_probed_frames(
+                    &mut reference,
+                    &mut distorted,
+                    metric,
+                    &[0],
+                    OutputIndexing::Aligned,
+                    None,
+                    |_, _| {},
+                )
+                .expect("native spans reach fmetrics ABI");
+                assert_eq!(scores, [42.0]);
+            }
+            for transfer in [1, 6, 14, 15] {
+                let properties = format!("_Range=1, _Matrix=1, _Primaries=1, _Transfer={transfer}");
+                let script = format!(
+                    "import vapoursynth as vs\nvs.core.std.BlankClip(width=32, height=32, length=1, format=vs.YUV420P8, color=[16,128,128]).std.SetFrameProps({properties}).set_output()"
+                );
+                let mut reference = av_decoders::Decoder::from_script(&script, Default::default())
+                    .expect("tagged SDR reference");
+                let mut distorted = av_decoders::Decoder::from_script(&script, Default::default())
+                    .expect("tagged SDR distorted");
+                let scores = fmetrics::score_probed_frames(
+                    &mut reference,
+                    &mut distorted,
+                    &ssimulacra2,
+                    &[0],
+                    OutputIndexing::Aligned,
+                    None,
+                    |_, _| {},
+                )
+                .expect("tagged SDR reaches native scoring");
+                assert_eq!(scores, [42.0]);
+            }
+        }
+        if phase == "metadata" {
             let mut reference =
-                av_decoders::Decoder::from_file(fixture.path()).expect("native reference");
+                decoder("_Range=1, _Matrix=6, _Primaries=1, _Transfer=13, _ChromaLocation=1");
             let mut distorted =
-                av_decoders::Decoder::from_file(fixture.path()).expect("native distorted");
-            let scores = fmetrics::score_probed_frames(
-                &mut reference,
-                &mut distorted,
-                metric,
-                &[0],
-                OutputIndexing::Aligned,
-                None,
-                |_, _| {},
-            )
-            .expect("native spans reach fmetrics ABI");
-            assert_eq!(scores, [42.0]);
-        }
-        for transfer in [1, 6, 14, 15] {
-            let properties = format!("_Range=1, _Matrix=1, _Primaries=1, _Transfer={transfer}");
-            let script = format!(
-                "import vapoursynth as vs\nvs.core.std.BlankClip(width=32, height=32, length=1, format=vs.YUV420P8, color=[16,128,128]).std.SetFrameProps({properties}).set_output()"
-            );
-            let mut reference = av_decoders::Decoder::from_script(&script, Default::default())
-                .expect("tagged SDR reference");
-            let mut distorted = av_decoders::Decoder::from_script(&script, Default::default())
-                .expect("tagged SDR distorted");
-            let scores = fmetrics::score_probed_frames(
+                decoder("_Range=0, _Matrix=9, _Primaries=9, _Transfer=16, _ChromaLocation=2");
+            let scores = vship::score_probed_frames(
                 &mut reference,
                 &mut distorted,
                 &ssimulacra2,
@@ -491,23 +624,8 @@ mod tests {
                 None,
                 |_, _| {},
             )
-            .expect("tagged SDR reaches native scoring");
+            .expect("independent HDR/SDR metadata reaches libvship ABI");
             assert_eq!(scores, [42.0]);
         }
-        let mut reference =
-            decoder("_Range=1, _Matrix=6, _Primaries=1, _Transfer=13, _ChromaLocation=1");
-        let mut distorted =
-            decoder("_Range=0, _Matrix=9, _Primaries=9, _Transfer=16, _ChromaLocation=2");
-        let scores = vship::score_probed_frames(
-            &mut reference,
-            &mut distorted,
-            &ssimulacra2,
-            &[0],
-            OutputIndexing::Aligned,
-            None,
-            |_, _| {},
-        )
-        .expect("independent HDR/SDR metadata reaches libvship ABI");
-        assert_eq!(scores, [42.0]);
     }
 }
