@@ -4,3 +4,5 @@ mod parallel_encoder;
 mod scene_concatenator;
 #[cfg(target_os = "linux")]
 mod serial_encoder;
+#[cfg(target_os = "linux")]
+mod zone_encoder;
