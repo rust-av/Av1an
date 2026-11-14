@@ -1,27 +1,11 @@
-mod discovery;
-mod transactions;
+mod internal_integration;
 
 use std::mem::{align_of, size_of};
 
 use super::*;
 
 #[test]
-fn bare_vsscript_does_not_select_media_cwd() {
-    assert_eq!(
-        windows_script_directory(Path::new("vsscript.dll")).expect("bare script"),
-        None
-    );
-    let directory = windows_script_directory(Path::new("./runtime/vsscript.dll"))
-        .expect("relative script")
-        .expect("intentional directory");
-    assert!(
-        directory.is_absolute(),
-        "an intentional runtime directory must be qualified"
-    );
-}
-
-#[test]
-fn c_written_fields_accept_raw_integers() {
+fn version_backend_and_score_tag_fields_preserve_unknown_integers() {
     let version = VshipVersion {
         major: 5,
         minor: 1,
@@ -37,12 +21,16 @@ fn c_written_fields_accept_raw_integers() {
 }
 
 #[test]
-fn checked_backend_names_and_unknown_diagnostics() {
+fn known_backend_integers_roundtrip_to_names() {
     for (raw, name) in ["HIP", "CUDA", "Vulkan", "CPU"].into_iter().enumerate() {
         let backend = VshipBackend::try_from(raw as c_int).expect("known backend");
         assert_eq!(backend as c_int, raw as c_int);
         assert_eq!(backend.as_str(), name);
     }
+}
+
+#[test]
+fn unknown_backend_errors_retain_raw_integer() {
     for raw in [777, -123] {
         assert!(
             VshipBackend::try_from(raw)
@@ -58,7 +46,7 @@ fn checked_backend_names_and_unknown_diagnostics() {
 /// libvship at runtime, which is exactly the bug these tests exist to
 /// prevent.
 #[test]
-fn colorspace_layout_matches_the_c_header() {
+fn colorspace_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_Colorspace_t` in VshipColor.h.
     #[repr(C)]
     struct Expected {
@@ -82,7 +70,7 @@ fn colorspace_layout_matches_the_c_header() {
 }
 
 #[test]
-fn colorspace_field_offsets_match_the_c_header() {
+fn colorspace_leading_fields_have_expected_literal_offsets() {
     let colorspace = VshipColorspace::bt709_default(1920, 1080);
     let base = std::ptr::from_ref(&colorspace).cast::<u8>() as usize;
     let offset = |field: *const u8| field as usize - base;
@@ -110,33 +98,8 @@ fn colorspace_field_offsets_match_the_c_header() {
     );
 }
 
-/// `Vship_Sample_t` is the one enum whose values are not contiguous, so a
-/// wrong transcription would silently reinterpret every pixel buffer.
 #[test]
-fn system_directories_are_real_and_not_assumed_to_be_on_c() {
-    // Windows can be installed to another drive or relocated, so the system
-    // directory has to come from the OS. A hardcoded `C:\Windows` silently
-    // names a directory that does not exist there, and the failure looks
-    // like "libvship is not installed" rather than "the search path
-    // was wrong".
-    for directory in system_directories() {
-        assert!(directory.is_absolute(), "{directory:?} should be absolute");
-        assert!(
-            directory.is_dir(),
-            "the reported system directory {directory:?} does not exist"
-        );
-    }
-
-    // Whatever the OS says, a candidate that does not exist only costs a
-    // failed `dlopen` attempt, so the set must be small and free of blanks.
-    assert!(
-        system_directories().iter().all(|directory| !directory.as_os_str().is_empty()),
-        "an empty system directory would produce a candidate of just the file name"
-    );
-}
-
-#[test]
-fn sample_discriminants_match_the_c_header() {
+fn sample_discriminants_match_documented_literal_values() {
     assert_eq!(VshipSample::Float as c_int, 0);
     assert_eq!(VshipSample::Half as c_int, 1);
     assert_eq!(VshipSample::Uint8 as c_int, 2);
@@ -148,7 +111,7 @@ fn sample_discriminants_match_the_c_header() {
 }
 
 #[test]
-fn enum_discriminants_match_the_c_header() {
+fn backend_and_color_enums_match_documented_literal_discriminants() {
     assert_eq!(VshipBackend::Hip as c_int, 0);
     assert_eq!(VshipBackend::Cuda as c_int, 1);
     assert_eq!(VshipBackend::Vulkan as c_int, 2);
@@ -188,7 +151,7 @@ fn enum_discriminants_match_the_c_header() {
 }
 
 #[test]
-fn exception_discriminants_match_the_c_header() {
+fn exception_discriminants_and_success_flag_match_documented_values() {
     assert_eq!(VshipException::NoError as c_int, 0);
     assert_eq!(VshipException::OutOfVram as c_int, 1);
     assert_eq!(VshipException::OutOfRam as c_int, 2);
@@ -213,7 +176,7 @@ fn exception_discriminants_match_the_c_header() {
 }
 
 #[test]
-fn struct_type_discriminants_match_the_c_header() {
+fn struct_type_discriminants_match_documented_literal_values() {
     assert_eq!(VshipStructType::Null as c_int, 0);
     assert_eq!(VshipStructType::InitSsimulacra2 as c_int, 1);
     assert_eq!(VshipStructType::InitButteraugli as c_int, 2);
@@ -224,7 +187,7 @@ fn struct_type_discriminants_match_the_c_header() {
 }
 
 #[test]
-fn init_ssimulacra2_layout_matches_the_c_header() {
+fn ssimulacra2_init_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_InitSSIMULACRA2_1` in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -239,7 +202,7 @@ fn init_ssimulacra2_layout_matches_the_c_header() {
 }
 
 #[test]
-fn init_butteraugli_layout_matches_the_c_header() {
+fn butteraugli_init_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_InitButteraugli_1` in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -256,7 +219,7 @@ fn init_butteraugli_layout_matches_the_c_header() {
 }
 
 #[test]
-fn init_cvvdp_layout_matches_the_c_header() {
+fn cvvdp_init_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_InitCVVDP_1` in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -275,7 +238,7 @@ fn init_cvvdp_layout_matches_the_c_header() {
 }
 
 #[test]
-fn score_ssimulacra2_layout_matches_the_c_header() {
+fn ssimulacra2_score_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_ScoreSSIMULACRA2` in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -288,7 +251,7 @@ fn score_ssimulacra2_layout_matches_the_c_header() {
 }
 
 #[test]
-fn score_butteraugli_layout_matches_the_c_header() {
+fn butteraugli_score_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_ScoreButteraugli` in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -305,7 +268,7 @@ fn score_butteraugli_layout_matches_the_c_header() {
 }
 
 #[test]
-fn score_cvvdp_layout_matches_the_c_header() {
+fn cvvdp_score_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_ScoreCVVDP` in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -320,7 +283,7 @@ fn score_cvvdp_layout_matches_the_c_header() {
 }
 
 #[test]
-fn version_layout_matches_the_c_header() {
+fn version_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors the anonymous `Vship_Version` struct in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -335,7 +298,7 @@ fn version_layout_matches_the_c_header() {
 }
 
 #[test]
-fn device_info_layout_matches_the_c_header() {
+fn device_info_size_and_alignment_match_rust_c_layout_mirror() {
     // Mirrors `typedef struct Vship_DeviceInfo` in VshipAPI.h.
     #[repr(C)]
     struct Expected {
@@ -362,28 +325,4 @@ fn device_info_name_stops_at_the_nul() {
     }
     assert_eq!(info.name(), "GeFoo");
     assert_eq!(VshipDeviceInfo::default().name(), "");
-}
-
-/// A machine without libvship must be reported as unavailable rather than
-/// panicking, which is what keeps CI green with no GPU and no binary.
-#[test]
-fn loading_is_total_and_never_panics() {
-    let outcome = VshipApi::load();
-    match outcome {
-        Ok(api) => assert!(!api.version_string().is_empty()),
-        Err(error) => assert!(!error.to_string().is_empty()),
-    }
-}
-
-#[test]
-fn check_accepts_no_error_and_rejects_the_rest() {
-    assert!(check(VshipException::NoError as c_int, "Vship_InitHandler").is_ok());
-    assert!(matches!(
-        check(VshipException::BadHandler as c_int, "Vship_InitHandler"),
-        Err(VshipError::CallFailed {
-            function: "Vship_InitHandler",
-            status: 10,
-            ..
-        })
-    ));
 }

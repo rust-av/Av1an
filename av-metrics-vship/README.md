@@ -501,7 +501,16 @@ cached availability, and do not invalidate a successful capability check.
 cargo test -p av-metrics-vship
 ```
 
-Everything that does not need libvship always runs: struct-layout assertions against the `VshipAPI.h` and `VshipColor.h` declarations, colourspace-mapping unit tests, and exact discovery tables over explicit inputs. Discovery tests run distinct owned candidate inputs concurrently without changing the test runner's environment or working directory. Native ABI fixtures retain child-only environment settings to exercise the production loader.
+Everything that does not need libvship always runs: Rust layout mirrors and literal
+discriminant checks, colourspace-mapping units, and compiler-backed pinned-header
+checks. Filesystem discovery and private native-call transaction checks live under
+`ffi::tests::internal_integration`; discovery uses owned inputs without changing
+the runner's environment or working directory. Native ABI fixtures retain
+child-only environment settings to exercise the production loader.
+
+The `support` test target registers shared fixture self-checks once, separating
+pure generator rules from Y4M decoder integrations. Other consumers retain the
+same generator without registering those checks again.
 
 Tests that need libvship are **skipped cleanly** when `is_available()` is false. CI has no GPU and no libvship binary, so the skip is the expected outcome there rather than a failure.
 

@@ -14,14 +14,136 @@ use v_frame::{chroma::ChromaSubsampling, frame::FrameBuilder};
 #[path = "../../../tests/common/mod.rs"]
 mod common;
 
-const TEST: &str = "ffi::tests::transactions::native_call_transactions";
+#[test]
+fn device_count_failure_holds_native_transaction_through_short_diagnostic() {
+    transaction_cases(
+        "device_count_failure_holds_native_transaction_through_short_diagnostic",
+        0,
+    );
+}
 
 #[test]
-fn native_call_transactions() {
+fn device_info_failure_holds_native_transaction_through_short_diagnostic() {
+    transaction_cases(
+        "device_info_failure_holds_native_transaction_through_short_diagnostic",
+        1,
+    );
+}
+
+#[test]
+fn gpu_admission_failure_holds_native_transaction_through_short_diagnostic() {
+    transaction_cases(
+        "gpu_admission_failure_holds_native_transaction_through_short_diagnostic",
+        2,
+    );
+}
+
+#[test]
+fn handler_init_failure_holds_native_transaction_without_adopting_output() {
+    transaction_cases(
+        "handler_init_failure_holds_native_transaction_without_adopting_output",
+        3,
+    );
+}
+
+#[test]
+fn metric_compute_failure_holds_native_transaction_and_frees_owned_handler() {
+    transaction_cases(
+        "metric_compute_failure_holds_native_transaction_and_frees_owned_handler",
+        4,
+    );
+}
+
+#[test]
+fn history_reset_failure_holds_native_transaction_and_frees_handler() {
+    transaction_cases(
+        "history_reset_failure_holds_native_transaction_and_frees_handler",
+        5,
+    );
+}
+
+#[test]
+fn score_reset_failure_holds_native_transaction_and_frees_handler() {
+    transaction_cases(
+        "score_reset_failure_holds_native_transaction_and_frees_handler",
+        6,
+    );
+}
+
+#[test]
+fn handler_free_failure_is_serialized_and_frees_exact_handle_once() {
+    transaction_cases(
+        "handler_free_failure_is_serialized_and_frees_exact_handle_once",
+        7,
+    );
+}
+
+#[test]
+fn short_error_translation_itself_holds_the_native_transaction() {
+    isolated(
+        "short_error_translation_itself_holds_the_native_transaction",
+        &["8/17/2".into()],
+    );
+}
+
+#[test]
+fn concurrent_thread_local_scorers_share_one_default_probe_and_free_distinct_handles() {
+    isolated(
+        "concurrent_thread_local_scorers_share_one_default_probe_and_free_distinct_handles",
+        &["lifecycle-concurrent".into()],
+    );
+}
+
+#[test]
+fn score_callback_reenters_public_api_outside_native_lock() {
+    isolated(
+        "score_callback_reenters_public_api_outside_native_lock",
+        &["lifecycle-callback".into()],
+    );
+}
+
+#[test]
+fn poisoned_native_call_lock_still_allows_drop_and_later_calls() {
+    isolated(
+        "poisoned_native_call_lock_still_allows_drop_and_later_calls",
+        &["lifecycle-poison".into()],
+    );
+}
+
+#[test]
+fn explicit_init_and_first_default_lookup_complete_without_lock_inversion() {
+    isolated(
+        "explicit_init_and_first_default_lookup_complete_without_lock_inversion",
+        &["order".into()],
+    );
+}
+
+fn transaction_cases(test: &str, kind: u32) {
+    let mut scenarios = Vec::new();
+    for status in [17, 777, -123] {
+        for metric in if matches!(kind, 3 | 4 | 7) {
+            0..3
+        } else {
+            2..3
+        } {
+            scenarios.push(format!("{kind}/{status}/{metric}"));
+        }
+    }
+    isolated(test, &scenarios);
+}
+
+fn isolated(test: &str, scenarios: &[String]) {
     if let Ok(scenario) = std::env::var("VSHIP_TRANSACTION_FIXTURE_CHILD") {
+        assert!(
+            scenarios.contains(&scenario),
+            "case belongs to this contract"
+        );
         child(&scenario);
+        println!("native transaction {scenario}: assertions completed");
         return;
     }
+    let module = module_path!().split_once("::").expect("test crate prefix").1;
+    let exact = format!("{module}::{test}");
     let dir = tempfile::tempdir().expect("fixture directory");
     let library = dir.path().join(if cfg!(target_os = "macos") {
         "libvship.dylib"
@@ -43,19 +165,6 @@ fn native_call_transactions() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let mut scenarios = vec!["lifecycle".to_owned(), "order".to_owned()];
-    for kind in 0..8 {
-        for status in [17, 777, -123] {
-            for metric in if matches!(kind, 3 | 4 | 7) {
-                0..3
-            } else {
-                2..3
-            } {
-                scenarios.push(format!("{kind}/{status}/{metric}"));
-            }
-        }
-    }
-    scenarios.push("8/17/2".to_owned());
     let mut failures = Vec::new();
     for (i, scenario) in scenarios.iter().enumerate() {
         // File-backed output cannot fill a pipe while the watchdog waits.
@@ -63,7 +172,7 @@ fn native_call_transactions() {
         let stdout = File::create(&output).expect("output file");
         let stderr = stdout.try_clone().expect("stderr");
         let mut process = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", TEST, "--nocapture"])
+            .args(["--exact", &exact, "--nocapture"])
             .env("VSHIP_TRANSACTION_FIXTURE_CHILD", scenario)
             .env("VSHIP_TRANSACTION_FIXTURE_LIBRARY", &library)
             .env("VSHIP_PLUGIN_PATH", dir.path())
@@ -84,7 +193,12 @@ fn native_call_transactions() {
             std::thread::sleep(Duration::from_millis(10));
         };
         let text = std::fs::read_to_string(output).expect("child output");
-        if status.is_some_and(|s| s.success()) && text.contains("1 passed; 0 failed") {
+        if status.is_some_and(|s| s.success())
+            && text.contains("1 passed; 0 failed")
+            && text.contains(&format!(
+                "native transaction {scenario}: assertions completed"
+            ))
+        {
             print!("{text}");
         } else {
             failures.push(format!("{scenario}: {status:?}\n{text}"));
@@ -173,8 +287,8 @@ fn child(scenario: &str) {
     // SAFETY: controls are atomic, with indices bounded below.
     let set = |i, value| unsafe { set(i, value) };
     let api = VshipApi::load().expect("production API");
-    if scenario == "lifecycle" {
-        lifecycle(api, count, set);
+    if scenario.starts_with("lifecycle-") {
+        lifecycle(api, count, set, scenario);
         return;
     }
     if scenario == "order" {
@@ -308,7 +422,12 @@ fn child(scenario: &str) {
     );
 }
 
-fn lifecycle(api: &'static VshipApi, count: impl Fn(u32) -> u32, _set: impl Fn(u32, i32)) {
+fn lifecycle(
+    api: &'static VshipApi,
+    count: impl Fn(u32) -> u32,
+    _set: impl Fn(u32, i32),
+    scenario: &str,
+) {
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(6));
     let workers = (0..6)
         .map(|i| {
@@ -350,6 +469,9 @@ fn lifecycle(api: &'static VshipApi, count: impl Fn(u32) -> u32, _set: impl Fn(u
     println!(
         "native transaction lifecycle: six thread-local scorers, markers=42, init/compute/free=6/6/6, default count/info/probe=1/2/1"
     );
+    if scenario == "lifecycle-concurrent" {
+        return;
+    }
 
     let clip = common::SyntheticClip::generate(
         32,
@@ -375,6 +497,9 @@ fn lifecycle(api: &'static VshipApi, count: impl Fn(u32) -> u32, _set: impl Fn(u
         })
         .expect("decoder scoring");
     assert_eq!((callbacks, scores.len()), (1, 1));
+    if scenario == "lifecycle-callback" {
+        return;
+    }
 
     // Test-only panic inside the SAME production transaction used by the safe
     // APIs; no user callbacks are accepted there. The actual C call completes.

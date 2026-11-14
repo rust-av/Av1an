@@ -1,5 +1,38 @@
 //! Real-header ABI sinks; CPU backend is a valid tag, not a GPU accuracy claim.
 use av_metrics_vship::ffi::*;
+
+/// A machine without libvship must be reported as unavailable rather than
+/// panicking, which is what keeps CI green with no GPU and no binary.
+#[test]
+fn loading_is_total_and_never_panics() {
+    let outcome = VshipApi::load();
+    match outcome {
+        Ok(api) => assert!(!api.version_string().is_empty()),
+        Err(error) => assert!(!error.to_string().is_empty()),
+    }
+}
+
+#[test]
+fn status_check_accepts_zero_and_preserves_bad_handler_failure() {
+    assert!(
+        check(
+            VshipException::NoError as std::ffi::c_int,
+            "Vship_InitHandler"
+        )
+        .is_ok()
+    );
+    assert!(matches!(
+        check(
+            VshipException::BadHandler as std::ffi::c_int,
+            "Vship_InitHandler"
+        ),
+        Err(av_metrics_vship::VshipError::CallFailed {
+            function: "Vship_InitHandler",
+            status: 10,
+            ..
+        })
+    ));
+}
 #[cfg(unix)]
 use av_metrics_vship::{VideoFormat, VshipConfig, VshipError, VshipMetric, VshipScorer};
 use std::{

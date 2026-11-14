@@ -69,7 +69,7 @@ fn cases(root: &Path) -> Vec<(&'static str, CandidateDirectories, Vec<PathBuf>)>
         cases.push((label, inputs, expected(&ordered)));
     }
     // Non-Windows preserves intentionally qualified relative path semantics.
-    // Windows normalization is covered by the existing M22 boundary tests.
+    // Windows normalization is covered by the script-directory integration tests.
     #[cfg(not(target_os = "windows"))]
     cases.push((
         "qualified relative script",
@@ -152,20 +152,68 @@ fn fixture() -> tempfile::TempDir {
     root
 }
 
-#[test]
-fn exact_candidate_table() {
+macro_rules! discovery_case {
+    ($name:ident, $label:literal) => {
+        #[test]
+        fn $name() {
+            assert_candidate_order($label);
+        }
+    };
+}
+
+discovery_case!(
+    absent_overrides_use_system_directories_then_bare_names,
+    "absent"
+);
+discovery_case!(
+    plugin_override_precedes_system_candidates,
+    "plugin override"
+);
+discovery_case!(
+    library_override_precedes_system_candidates,
+    "library override"
+);
+discovery_case!(plugin_override_precedes_library_override, "both overrides");
+discovery_case!(empty_overrides_are_ignored, "empty overrides");
+discovery_case!(
+    qualified_script_adds_plugins_then_runtime_directory,
+    "qualified script"
+);
+discovery_case!(empty_script_adds_no_runtime_directory, "empty script");
+discovery_case!(bare_script_adds_no_media_directory, "bare script");
+#[cfg(not(target_os = "windows"))]
+discovery_case!(
+    qualified_relative_script_retains_intentional_path_on_unix,
+    "qualified relative script"
+);
+discovery_case!(
+    extra_plugin_list_ignores_empty_entries_and_preserves_order,
+    "extra list"
+);
+discovery_case!(
+    candidate_sources_follow_override_runtime_extra_system_bare_order,
+    "all sources in order"
+);
+discovery_case!(
+    empty_candidate_inputs_offer_only_bare_names,
+    "bare fallback only"
+);
+
+fn assert_candidate_order(label: &str) {
     let root = fixture();
-    for (label, inputs, want) in cases(root.path()) {
-        assert_eq!(
-            library_candidates_from_directories(&inputs),
-            want,
-            "{label}"
-        );
-    }
+    let (_, inputs, want) = cases(root.path())
+        .into_iter()
+        .find(|(name, _, _)| *name == label)
+        .expect("registered discovery case");
+    assert_eq!(
+        library_candidates_from_directories(&inputs),
+        want,
+        "{label}"
+    );
 }
 
 #[test]
-fn parallel_owned_inputs() {
+fn concurrent_candidate_builds_preserve_each_threads_owned_inputs() {
     let root = fixture();
     let cases = cases(root.path());
     let start = std::sync::Arc::new(std::sync::Barrier::new(cases.len()));

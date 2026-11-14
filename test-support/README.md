@@ -12,7 +12,7 @@ From the repository root in PowerShell:
 
 ```powershell
 $env:AV_METRICS_WINDOWS_CC = 'C:\msys64\mingw64\bin\gcc.exe'
-cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics -- loader_policy_tests bare_vsscript_does_not_select_media_cwd --include-ignored --nocapture
+cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics -- loader_policy_tests bare_vsscript_does_not_select_media_cwd qualified_relative_vsscript_directory_becomes_absolute --include-ignored --nocapture
 ```
 
 Each wrapper tests its **actual production load helper** against freshly built
