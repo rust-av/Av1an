@@ -81,7 +81,9 @@ pub(super) fn finalize_scene(
         super::artifact::protect_existing(output)?;
         fs::rename(outcome.temp_output, output)?;
         #[cfg(all(test, target_os = "linux"))]
-        super::tests::artifact_validation::resume_policy::after_rename(output);
+        super::tests::artifact_validation::resume_policy::internal_integration::after_rename(
+            output,
+        );
         progress.commit(outcome.bytes);
     } else {
         let _ = fs::remove_file(&outcome.temp_output);

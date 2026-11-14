@@ -16,7 +16,7 @@ mod fixture;
 #[path = "fixtures/probe_rate_support.rs"]
 mod rate_fixture;
 
-fn input(root: &std::path::Path, native: bool) -> Input {
+pub(super) fn input(root: &std::path::Path, native: bool) -> Input {
     if native {
         super::stream_errors::native_input(root)
     } else {

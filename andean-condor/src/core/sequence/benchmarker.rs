@@ -137,7 +137,7 @@ where
         let (batch_scenes, batch_frames) = (BENCHMARK_SCENES, BENCHMARK_SCENE_FRAMES);
         #[cfg(all(test, target_os = "linux"))]
         let (batch_scenes, batch_frames) =
-            super::parallel_encoder::tests::artifact_validation::resume_policy::fixed_batch()
+            super::parallel_encoder::tests::artifact_validation::resume_policy::internal_integration::fixed_batch()
                 .unwrap_or((batch_scenes, batch_frames));
         let mut warnings = vec![];
         let parallel_encoder_config = condor.sequence_config.parallel_encoder()?;
@@ -192,7 +192,7 @@ where
             },
         )?;
         #[cfg(all(test, target_os = "linux"))]
-        super::parallel_encoder::tests::artifact_validation::resume_policy::finish_fixed_batch(
+        super::parallel_encoder::tests::artifact_validation::resume_policy::internal_integration::finish_fixed_batch(
             &cancelled,
         );
 
