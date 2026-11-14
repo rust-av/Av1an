@@ -237,7 +237,7 @@ where
                     .name("serial-relay".into())
                     .spawn(move || -> Result<()> {
                         #[cfg(all(test, target_os = "linux"))]
-                        tests::runtime::worker("relay");
+                        tests::internal_integration::worker("relay");
                         relay_progress(scene_progress_rx, progress_tx_clone);
                         Ok(())
                     })
@@ -247,7 +247,7 @@ where
                 let encoder_thread =
                     thread::Builder::new().name("serial-encoder".into()).spawn(move || {
                         #[cfg(all(test, target_os = "linux"))]
-                        tests::runtime::worker("encoder");
+                        tests::internal_integration::worker("encoder");
                         scene_encoder.encode_owned_with_stream_cancel(
                             frames_rx,
                             &private_output,
@@ -272,7 +272,7 @@ where
 
                 let feed = serial_catch(|| -> Result<()> {
                     #[cfg(all(test, target_os = "linux"))]
-                    tests::runtime::worker("feed");
+                    tests::internal_integration::worker("feed");
                     frames_tx.send(Cursor::new(Vec::from(y4m_header.as_bytes())))?;
                     let frame_indices = (scene.start_frame..scene.end_frame).collect::<Vec<_>>();
                     input.y4m_frames_cancel(frames_tx, &frame_indices, &active)
