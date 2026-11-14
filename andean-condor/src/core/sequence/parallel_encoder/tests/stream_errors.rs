@@ -361,7 +361,7 @@ fn public_stream_child() {
 }
 
 #[test]
-fn joined_priority_retains_primary_types_and_returned_secondary_context() {
+fn joined_stream_errors_keep_forced_or_decoder_priority_and_typed_codec_diagnostics() {
     use crate::utils::cancellation::Cancelled;
     use std::{io, os::unix::process::ExitStatusExt};
     let codec = || EncoderResult {
@@ -454,7 +454,7 @@ fn joined_priority_retains_primary_types_and_returned_secondary_context() {
 }
 
 #[test]
-fn fallout_keeps_anyhow_alternate_and_debug_consumer_baseline() {
+fn induced_send_and_cancel_fallout_does_not_duplicate_consumer_error_rendering() {
     use crate::utils::cancellation::Cancelled;
     use std::{io, os::unix::process::ExitStatusExt};
     let mut differences = Vec::new();
@@ -525,7 +525,7 @@ fn fallout_keeps_anyhow_alternate_and_debug_consumer_baseline() {
 }
 
 #[test]
-fn genuine_secondary_keeps_nested_primary_cause_once_in_anyhow_rendering() {
+fn genuine_codec_failure_is_attached_once_without_duplicating_the_decoder_root_cause() {
     use std::{io, os::unix::process::ExitStatusExt};
     let producer = anyhow::Error::from(io::Error::new(
         io::ErrorKind::InvalidData,

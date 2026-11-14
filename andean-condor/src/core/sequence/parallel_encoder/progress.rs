@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn sparse_absolute_relay() {
+    fn sparse_progress_clamps_duplicate_and_regressing_frames_to_the_high_water_mark() {
         let (tx, rx) = channel();
         let (status_tx, status_rx) = channel();
         let total = Progress::new(status_tx, 30, 0);
@@ -428,8 +428,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn two_scenes_passes_retry_commit_and_zero() {
+    fn check_attempt_credit(phase: &str) {
+        assert!(["rollback", "commit", "zero"].contains(&phase));
         let (tx, rx) = channel();
         let total = Progress::new(tx, 60, 0);
         let mut peer = AttemptProgress::new(&total, 8, 30, EncoderPasses::All(2));
@@ -458,6 +458,9 @@ mod tests {
             10,
             "only failed credit removed"
         );
+        if phase == "rollback" {
+            return;
+        }
         let mut retry = AttemptProgress::new(&total, 7, 30, EncoderPasses::All(2));
         report(&retry, (2, 2), 1);
         assert_eq!(*total.completed.lock().expect("total"), 11);
@@ -465,6 +468,9 @@ mod tests {
         retry.commit(42);
         retry.commit(42);
         assert_eq!(*total.completed.lock().expect("total"), 60);
+        if phase == "commit" {
+            return;
+        }
         let mut zero = AttemptProgress::new(&total, 9, 0, EncoderPasses::All(1));
         report(&zero, (1, 1), usize::MAX);
         zero.commit(1);
@@ -481,6 +487,21 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    #[test]
+    fn failed_attempt_rolls_back_only_its_own_final_pass_credit() {
+        check_attempt_credit("rollback");
+    }
+
+    #[test]
+    fn retry_commit_reconciles_missing_frames() {
+        check_attempt_credit("commit");
+    }
+
+    #[test]
+    fn zero_frame_attempt_commit_does_not_inflate_total_progress() {
+        check_attempt_credit("zero");
     }
 
     /// Concurrent workers must not lose a count.

@@ -547,7 +547,7 @@ esac
     }
 
     #[test]
-    fn old_json_is_strict_and_optout_roundtrips_with_schema_default() {
+    fn missing_frame_count_policy_defaults_to_strict_and_explicit_optout_roundtrips() {
         use crate::models::sequence::parallel_encoder::ParallelEncoderConfig;
         let old = r#"{"workers":1,"scenes_directory":"scenes","input":null}"#;
         let mut config: ParallelEncoderConfig = serde_json::from_str(old).expect("old config");

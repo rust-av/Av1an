@@ -292,7 +292,7 @@ fn x264_options_carry_zones_and_keyframes() {
 }
 
 #[test]
-fn x265_options_write_one_zonefile_line_per_scene() {
+fn x265_zone_options_format_one_line_per_scene() {
     let zones = ZonePlan::from_tasks(&[task(0, 5, x264(20.0)), task(1, 3, x264(30.0))])
         .expect("zones built");
     let (zone_option, qpfile_content, config_content) =
@@ -305,7 +305,7 @@ fn x265_options_write_one_zonefile_line_per_scene() {
 /// SVT-AV1 carries its zones and keyframes in a config file, keyed on the
 /// option's descriptive name.
 #[test]
-fn svt_options_write_a_config_file_keyed_by_option_name() {
+fn svt_zone_options_format_config_lines_keyed_by_option_name() {
     let zones = ZonePlan::from_tasks(&[task(0, 5, x264(20.0)), task(1, 3, x264(30.0))])
         .expect("zones built");
     let (zone_option, qpfile_content, config_content) =

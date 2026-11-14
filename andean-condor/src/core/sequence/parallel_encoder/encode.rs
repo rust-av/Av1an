@@ -767,39 +767,42 @@ impl ParallelEncoder {
 mod tests {
     use super::*;
 
-    /// A usable scene reports its size on the progress channel — the event the
-    /// interface turns into the finished-scene counter and the size estimate —
-    /// and is renamed to its final output.
-    #[test]
-    fn a_usable_scene_reports_its_size() {
-        let dir = std::env::temp_dir().join(format!("cc-finalize-scene-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("temp dir should be created");
-        let temp_output = dir.join("0.temp.ivf");
-        let output = dir.join("0.ivf");
-        std::fs::write(&temp_output, vec![7_u8; 42]).expect("temp file should be written");
-        let (tx, rx) = std::sync::mpsc::channel();
-        let errored = AtomicBool::new(false);
-        let progress = Progress::new(tx, 3, 0);
-        let mut attempt = AttemptProgress::new(
-            &progress,
-            3,
-            3,
-            crate::models::encoder::EncoderPasses::All(1),
-        );
+    mod internal_integration {
+        use super::*;
 
-        finalize_scene(
-            SceneOutcome {
-                temp_output: temp_output.clone(),
-                bytes: 42,
-                usable: true,
-            },
-            &output,
-            &mut attempt,
-            &errored,
-        )
-        .expect("finalize should succeed");
+        /// A usable scene reports its size on the progress channel — the event the
+        /// interface turns into the finished-scene counter and the size estimate —
+        /// and is renamed to its final output.
+        #[test]
+        fn finalizing_a_usable_scene_publishes_output_and_reports_its_size() {
+            let directory = tempfile::tempdir().expect("scene finalization fixture");
+            let dir = directory.path();
+            let temp_output = dir.join("0.temp.ivf");
+            let output = dir.join("0.ivf");
+            std::fs::write(&temp_output, vec![7_u8; 42]).expect("temp file should be written");
+            let (tx, rx) = std::sync::mpsc::channel();
+            let errored = AtomicBool::new(false);
+            let progress = Progress::new(tx, 3, 0);
+            let mut attempt = AttemptProgress::new(
+                &progress,
+                3,
+                3,
+                crate::models::encoder::EncoderPasses::All(1),
+            );
 
-        match rx.try_iter().find(|event| matches!(event, SequenceStatus::Whole(Status::Processing { completion: crate::core::sequence::SequenceCompletion::Custom { name, .. }, .. }) if name == "size")).expect("the size event is sent") {
+            finalize_scene(
+                SceneOutcome {
+                    temp_output: temp_output.clone(),
+                    bytes: 42,
+                    usable: true,
+                },
+                &output,
+                &mut attempt,
+                &errored,
+            )
+            .expect("finalize should succeed");
+
+            match rx.try_iter().find(|event| matches!(event, SequenceStatus::Whole(Status::Processing { completion: crate::core::sequence::SequenceCompletion::Custom { name, .. }, .. }) if name == "size")).expect("the size event is sent") {
             SequenceStatus::Whole(Status::Processing {
                 id,
                 completion:
@@ -816,48 +819,47 @@ mod tests {
             },
             other => panic!("unexpected status: {other:?}"),
         }
-        assert!(output.exists(), "the encode is renamed to its final output");
-        assert!(!temp_output.exists(), "the temp file is gone");
-        assert!(!errored.load(Ordering::Relaxed));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
+            assert!(output.exists(), "the encode is renamed to its final output");
+            assert!(!temp_output.exists(), "the temp file is gone");
+            assert!(!errored.load(Ordering::Relaxed));
+        }
 
-    /// An unusable encode is discarded without reporting a size — an estimate
-    /// built on it would claim bytes that do not exist — and flags the error.
-    #[test]
-    fn an_unusable_scene_is_discarded_without_a_size() {
-        let dir = std::env::temp_dir().join(format!("cc-finalize-drop-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("temp dir should be created");
-        let temp_output = dir.join("1.temp.ivf");
-        let output = dir.join("1.ivf");
-        std::fs::write(&temp_output, vec![7_u8; 42]).expect("temp file should be written");
-        let (tx, rx) = std::sync::mpsc::channel();
-        let errored = AtomicBool::new(false);
-        let progress = Progress::new(tx, 1, 0);
-        let mut attempt = AttemptProgress::new(
-            &progress,
-            1,
-            1,
-            crate::models::encoder::EncoderPasses::All(1),
-        );
-        let _ = rx.try_iter().count();
+        /// An unusable encode is discarded without reporting a size — an estimate
+        /// built on it would claim bytes that do not exist — and flags the error.
+        #[test]
+        fn an_unusable_scene_is_discarded_without_a_size() {
+            let directory = tempfile::tempdir().expect("scene finalization fixture");
+            let dir = directory.path();
+            let temp_output = dir.join("1.temp.ivf");
+            let output = dir.join("1.ivf");
+            std::fs::write(&temp_output, vec![7_u8; 42]).expect("temp file should be written");
+            let (tx, rx) = std::sync::mpsc::channel();
+            let errored = AtomicBool::new(false);
+            let progress = Progress::new(tx, 1, 0);
+            let mut attempt = AttemptProgress::new(
+                &progress,
+                1,
+                1,
+                crate::models::encoder::EncoderPasses::All(1),
+            );
+            let _ = rx.try_iter().count();
 
-        finalize_scene(
-            SceneOutcome {
-                temp_output: temp_output.clone(),
-                bytes: 42,
-                usable: false,
-            },
-            &output,
-            &mut attempt,
-            &errored,
-        )
-        .expect("finalize should succeed");
+            finalize_scene(
+                SceneOutcome {
+                    temp_output: temp_output.clone(),
+                    bytes: 42,
+                    usable: false,
+                },
+                &output,
+                &mut attempt,
+                &errored,
+            )
+            .expect("finalize should succeed");
 
-        assert!(rx.try_recv().is_err(), "a discarded scene reports no size");
-        assert!(!output.exists(), "a discarded scene produces no output");
-        assert!(!temp_output.exists(), "the temp output is removed");
-        assert!(errored.load(Ordering::Relaxed), "the error is flagged");
-        let _ = std::fs::remove_dir_all(&dir);
+            assert!(rx.try_recv().is_err(), "a discarded scene reports no size");
+            assert!(!output.exists(), "a discarded scene produces no output");
+            assert!(!temp_output.exists(), "the temp output is removed");
+            assert!(errored.load(Ordering::Relaxed), "the error is flagged");
+        }
     }
 }

@@ -574,7 +574,7 @@ mod bitrate_tests {
     use super::checked_bitrate;
 
     #[test]
-    fn checked_bitrate_numeric_contract() {
+    fn checked_bitrate_converts_bytes_and_frame_duration_to_bits_per_second() {
         for (bytes, frames, fps, expected) in [
             (1000, 240, 24.0, 800.0),
             (1000, 240, 24000.0 / 1001.0, 800000.0 / 1001.0),
@@ -588,6 +588,10 @@ mod bitrate_tests {
                 "{actual} != {expected}"
             );
         }
+    }
+
+    #[test]
+    fn checked_bitrate_rejects_invalid_duration_and_nonfinite_results() {
         for (bytes, frames, fps) in [
             (1000, 0, 24.0),
             (1000, 240, 0.0),

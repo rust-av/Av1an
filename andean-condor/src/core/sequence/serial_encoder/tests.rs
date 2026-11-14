@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn serial_relay_drains_zero_few_many_and_multipass_reports_after_disconnect() {
+fn serial_relay_keeps_draining_after_progress_receiver_disconnects() {
     for count in [0, 1, 9, 18] {
         let (source, rx) = sync::mpsc::sync_channel(0);
         let (sink, disconnected) = sync::mpsc::channel();

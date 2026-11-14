@@ -522,7 +522,7 @@ fn actual_rate_child() {
 }
 
 #[test]
-fn saved_budget_and_schema() {
+fn max_tries_defaults_to_three_and_schema_requires_at_least_one_attempt() {
     use crate::models::sequence::parallel_encoder::ParallelEncoderConfig;
     let config: ParallelEncoderConfig =
         serde_json::from_str(r#"{"workers":1,"scenes_directory":"scenes","input":null}"#)
