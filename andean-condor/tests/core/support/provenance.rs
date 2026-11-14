@@ -70,3 +70,59 @@ pub(in crate::core) fn current_quality_fixture(
         }
     }
 }
+
+// Synthetic saved records exercise consumer admission, not owning-producer certification.
+pub(in crate::core) fn current_target_fixture<D, C>(job: &mut Condor<D, C>)
+where
+    D: andean_condor::models::sequence::SequenceDataHandler
+        + andean_condor::models::sequence::target_quality::TargetQualityDataHandler,
+    C: andean_condor::models::sequence::SequenceConfigHandler
+        + andean_condor::models::sequence::target_quality::TargetQualityConfigHandler
+        + andean_condor::models::sequence::parallel_encoder::ParallelEncoderConfigHandler,
+{
+    use andean_condor::models::input::Input as InputModel;
+    use andean_condor::models::sequence::provenance::{self, ResultProvenance};
+    let root = job.input.as_data();
+    let pe = job.sequence_config.parallel_encoder().expect("PE");
+    let tq = job
+        .sequence_config
+        .target_quality()
+        .expect("TQ")
+        .as_ref()
+        .expect("configured TQ");
+    let input = provenance::probe_input(&root, pe, Some(tq));
+    for scene in &mut job.scenes {
+        let mut passes = scene.sequence_data.get_target_quality().expect("data").passes.clone();
+        for pass in &mut passes {
+            pass.backend.get_or_insert_with(|| {
+                let engine = if matches!(
+                    tq.metric,
+                    andean_condor::models::sequence::target_quality::types::QualityMetric::VMAF { .. }
+                ) {
+                    andean_condor::metrics::Engine::Vmaf
+                } else {
+                    andean_condor::metrics::engine(&tq.metric, !matches!(input, InputModel::Video { .. }))
+                        .unwrap_or(andean_condor::metrics::Engine::VapourSynth)
+                };
+                if engine == andean_condor::metrics::Engine::VapourSynth {
+                    provenance::MetricBackend::available_plugin(&tq.metric)
+                        .expect("actual plugin fixture")
+                } else {
+                    provenance::MetricBackend::current(engine)
+                }
+            });
+            pass.provenance = Some(ResultProvenance::new(
+                provenance::target_context(input, tq.metric_input.as_ref(), scene, tq, pass)
+                    .expect("explicit current fixture context"),
+            ));
+        }
+        scene.sequence_data.get_target_quality_mut().expect("data").passes = passes;
+        if !scene.sequence_data.get_target_quality().expect("data").passes.is_empty() {
+            let selection = ResultProvenance::new(
+                provenance::selection_context(scene, tq)
+                    .expect("explicit current selection fixture"),
+            );
+            scene.sequence_data.get_target_quality_mut().expect("data").selection = Some(selection);
+        }
+    }
+}
