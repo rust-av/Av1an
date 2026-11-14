@@ -308,18 +308,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn t05_filters_and_file_guard() -> anyhow::Result<()> {
-        if let Some(root) = env::var_os("T05_LOGGING_FILTER_CHILD") {
+    fn logging_filters_preserve_console_policy_and_flush_file_guard() -> anyhow::Result<()> {
+        if let Some(root) = env::var_os("LOGGING_FILTER_CHILD") {
             let root = std::path::PathBuf::from(root);
             let _guard = init_logging(
                 LevelFilter::INFO,
                 &root.join("events.log"),
                 LevelFilter::DEBUG,
             )?;
-            tracing::debug!(target: "california_condor", "T05-debug-policy");
-            tracing::info!(target: "andean_condor", "T05-info-policy");
-            tracing::warn!(target: "andean_condor", "T05-warn-policy");
-            tracing::info!(target: "foreign_target", "T05-foreign-policy");
+            tracing::debug!(target: "california_condor", "TUI_LOGGING-debug-policy");
+            tracing::info!(target: "andean_condor", "TUI_LOGGING-info-policy");
+            tracing::warn!(target: "andean_condor", "TUI_LOGGING-warn-policy");
+            tracing::info!(target: "foreign_target", "TUI_LOGGING-foreign-policy");
             #[cfg(target_os = "linux")]
             let threads = std::fs::read_dir("/proc/self/task")?.count();
             for _ in 0..3 {
@@ -346,7 +346,7 @@ mod tests {
                     std::thread::yield_now();
                 }
             }
-            tracing::error!(target: "california_condor", "T05-policy-final");
+            tracing::error!(target: "california_condor", "TUI_LOGGING-policy-final");
             return Ok(());
         }
         for overrides in [false, true] {
@@ -355,11 +355,11 @@ mod tests {
             child
                 .args([
                     "--exact",
-                    "logging::tests::t05_filters_and_file_guard",
+                    "logging::tests::logging_filters_preserve_console_policy_and_flush_file_guard",
                     "--nocapture",
                     "--quiet",
                 ])
-                .env("T05_LOGGING_FILTER_CHILD", root.path())
+                .env("LOGGING_FILTER_CHILD", root.path())
                 .env_remove("RUST_LOG");
             if overrides {
                 child.env("RUST_LOG", "andean_condor=warn,california_condor=debug");
@@ -369,15 +369,23 @@ mod tests {
             let console = String::from_utf8(output.stderr)?;
             let stdout = String::from_utf8(output.stdout)?;
             let file = std::fs::read_to_string(root.path().join("events.log"))?;
-            assert!(!stdout.contains("T05-"), "logs must never use stdout");
+            assert!(
+                !stdout.contains("TUI_LOGGING-"),
+                "logs must never use stdout"
+            );
             assert!(!console.contains('\x1b') && !file.contains('\x1b'));
-            assert_eq!(console.contains("T05-debug-policy"), overrides);
-            assert_eq!(console.contains("T05-info-policy"), !overrides);
-            assert_eq!(file.contains("T05-info-policy"), !overrides);
-            assert!(file.contains("T05-debug-policy") && file.contains("california_condor"));
+            assert_eq!(console.contains("TUI_LOGGING-debug-policy"), overrides);
+            assert_eq!(console.contains("TUI_LOGGING-info-policy"), !overrides);
+            assert_eq!(file.contains("TUI_LOGGING-info-policy"), !overrides);
+            assert!(
+                file.contains("TUI_LOGGING-debug-policy") && file.contains("california_condor")
+            );
             for log in [&console, &file] {
-                assert!(log.contains("T05-warn-policy") && log.contains("T05-policy-final"));
-                assert!(!log.contains("T05-foreign-policy"));
+                assert!(
+                    log.contains("TUI_LOGGING-warn-policy")
+                        && log.contains("TUI_LOGGING-policy-final")
+                );
+                assert!(!log.contains("TUI_LOGGING-foreign-policy"));
             }
         }
         Ok(())

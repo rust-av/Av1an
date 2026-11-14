@@ -53,7 +53,7 @@ fn x265() -> EncoderMethod {
 }
 
 #[test]
-fn z02_failed_edit_save_keeps_original_json_files_and_caller_state() {
+fn failed_edit_save_keeps_original_json_files_and_caller_state() {
     let temp = tempfile::tempdir().expect("fixture");
     let path = temp.path().join("condor.json");
     let mut config = configuration(temp.path());
@@ -90,7 +90,7 @@ fn z02_failed_edit_save_keeps_original_json_files_and_caller_state() {
 }
 
 #[test]
-fn z02_f1_f2_failed_publication_preserves_anchor_and_scaled_iso_proofs() {
+fn failed_publication_preserves_anchor_and_scaled_iso_proofs() {
     use crate::zoner::{Zoner, ZonerConfig, parse_zone};
     use andean_condor::{
         core::sequence::{Sequence, noise_scaler::NoiseScaler},
@@ -178,7 +178,7 @@ fn z02_f1_f2_failed_publication_preserves_anchor_and_scaled_iso_proofs() {
 }
 
 #[test]
-fn e06_offline_encoder_edits_save_and_report_requested_identity() {
+fn offline_encoder_edits_save_and_report_requested_identity() {
     use crate::commands::{
         config::ConfigCommand,
         handlers::encode::{EncodeCrud, EncodeKey, EncodeSet},
@@ -186,7 +186,7 @@ fn e06_offline_encoder_edits_save_and_report_requested_identity() {
 
     let temp = tempfile::tempdir().expect("fixture");
     let mut configuration = configuration(temp.path());
-    let requested = PathBuf::from("e06-missing-custom");
+    let requested = PathBuf::from("missing-custom-encoder");
     EncodeCrud::apply(
         &mut configuration,
         &EncodeSet::Executable {
@@ -196,7 +196,7 @@ fn e06_offline_encoder_edits_save_and_report_requested_identity() {
     .expect("offline global edit");
     assert_eq!(
         EncodeCrud::render(&configuration, Some(&EncodeKey::Executable)).expect("info"),
-        json!("e06-missing-custom")
+        json!("missing-custom-encoder")
     );
     apply_set(
         &mut configuration,

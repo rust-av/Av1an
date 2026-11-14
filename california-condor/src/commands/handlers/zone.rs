@@ -127,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn e06_configure_zoner_preserves_requested_executable() {
+    fn configure_zoner_preserves_requested_executable() {
         let test_video = get_test_video();
         let temp = tempfile::tempdir().expect("temp directory");
         let temp_abs = path_abs::PathAbs::new(temp.path())
@@ -136,7 +136,7 @@ mod tests {
             .to_path_buf();
         let mut configuration =
             default_config(&test_video, &temp.path().join("out.mkv"), &temp_abs);
-        let binary = PathBuf::from("e06-missing-zone-encoder");
+        let binary = PathBuf::from("missing-zone-encoder");
 
         configure_zoner(
             &mut configuration,

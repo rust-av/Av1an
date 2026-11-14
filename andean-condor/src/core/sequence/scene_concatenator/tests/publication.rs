@@ -184,7 +184,7 @@ fn cancellation_before_lock_withdraws_but_after_commit_does_not() {
 
 #[test]
 fn native_all_three_final_backends_exact_order_and_publication() {
-    scene_list::native_complete_lists_keep_exact_order_count_and();
+    scene_list::native_complete_lists_keep_order_and_frame_count_and_require_current_provenance();
 }
 
 #[cfg(target_os = "linux")]

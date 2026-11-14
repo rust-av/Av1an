@@ -783,7 +783,7 @@ mod tests {
         utils::hash_path::hash_path,
     };
 
-    fn c09_apply_flags(configuration: &mut Configuration, flags: &[&str]) -> Result<()> {
+    fn apply_target_quality_flags(configuration: &mut Configuration, flags: &[&str]) -> Result<()> {
         use crate::commands::{Commands, CondorCli};
         use clap::Parser;
         let cli = CondorCli::try_parse_from([&["condor", "target-quality"][..], flags].concat())?;
@@ -818,7 +818,7 @@ mod tests {
         )
     }
 
-    fn c09_offline_configuration(directory: &Path) -> Configuration {
+    fn offline_target_quality_configuration(directory: &Path) -> Configuration {
         let video = crate::test_helpers::TestVideo {
             path: directory.join("must-not-open.vpy"),
             width: 32,
@@ -836,9 +836,9 @@ mod tests {
     }
 
     #[test]
-    fn c09_missing_target_refuses_every_option_family_atomically() {
+    fn missing_target_refuses_every_option_family_atomically() {
         let temp = tempfile::tempdir().expect("fixture");
-        let mut configuration = c09_offline_configuration(temp.path());
+        let mut configuration = offline_target_quality_configuration(temp.path());
         let before = serde_json::to_value(&configuration).expect("complete snapshot");
         let mut failures = vec![];
         for flags in [
@@ -852,7 +852,7 @@ mod tests {
             vec!["--max-q", "40"],
             vec!["--profile", "fast"],
         ] {
-            match c09_apply_flags(&mut configuration, &flags) {
+            match apply_target_quality_flags(&mut configuration, &flags) {
                 Ok(()) => failures.push(format!("silently ignored {flags:?}")),
                 Err(error) => {
                     assert!(
@@ -879,16 +879,18 @@ mod tests {
     }
 
     #[test]
-    fn c09_noop_creation_and_configured_targetless_edits_preserve_contracts() {
+    fn noop_creation_and_configured_targetless_edits_preserve_contracts() {
         let temp = tempfile::tempdir().expect("fixture");
-        let mut configuration = c09_offline_configuration(temp.path());
+        let mut configuration = offline_target_quality_configuration(temp.path());
         let before = serde_json::to_value(&configuration).expect("snapshot");
-        c09_apply_flags(&mut configuration, &[]).expect("intentional absent/allNone no-op");
+        apply_target_quality_flags(&mut configuration, &[])
+            .expect("intentional absent/allNone no-op");
         assert_eq!(
             serde_json::to_value(&configuration).expect("unchanged"),
             before
         );
-        c09_apply_flags(&mut configuration, &["--target", "75"]).expect("explicit creation");
+        apply_target_quality_flags(&mut configuration, &["--target", "75"])
+            .expect("explicit creation");
         let quality =
             configuration.condor.sequence_config.target_quality.as_ref().expect("created");
         assert_eq!(quality.metric.target_range(), (74.0, 76.0));
@@ -901,7 +903,7 @@ mod tests {
             serde_json::to_value(TargetQualityConfig::default().probing).expect("defaults")
         );
         let untouched = configuration.clone();
-        c09_apply_flags(
+        apply_target_quality_flags(
             &mut configuration,
             &[
                 "--metric",
@@ -933,7 +935,7 @@ mod tests {
             quality.probing.encoder_options.as_ref().expect("params").get("preset"),
             Some(&CLIParameter::new_number("--", "=", 8.0))
         );
-        c09_apply_flags(
+        apply_target_quality_flags(
             &mut configuration,
             &["--input", "other.vpy", "--vs-args", "keep=yes"],
         )
@@ -959,7 +961,7 @@ mod tests {
     }
 
     #[test]
-    fn q08_cli_interpolators_roundtrip_all_names_and_positions() {
+    fn cli_interpolators_roundtrip_all_names_and_positions() {
         use crate::commands::{Commands, CondorCli};
         use clap::Parser;
         let temp = tempfile::tempdir().expect("config scratch");
@@ -1024,7 +1026,7 @@ mod tests {
     }
 
     #[test]
-    fn q08_cli_help_explains_phase_and_fallback_instead_of_score_direction() {
+    fn cli_help_explains_phase_and_fallback_instead_of_score_direction() {
         use clap::Parser;
         let help = crate::commands::CondorCli::try_parse_from([
             "condor",

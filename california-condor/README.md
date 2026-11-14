@@ -155,6 +155,26 @@ config.save(&save_file)?;
 // Keep guard alive if calling run_encoder(&config, &save_file), too.
 ```
 
+## Testing
+
+From the repository root, with the [build/runtime prerequisites](docs/compiling.md)
+installed:
+
+```sh
+cargo +stable test --profile ci -p california-condor
+cargo +stable test --profile ci -p california-condor --test interrupt -- --nocapture
+cargo +stable test --profile ci -p california-condor --features screenshots --test screenshots
+python3 -B california-condor/tests/build/schema.py
+```
+
+The interruption cases require Linux and Python's PTY support. The standalone
+schema acceptance check requires Git, VapourSynth, cached Cargo dependencies and
+a matching installed or cached native ONNX Runtime. Before running it, set
+`ORT_LIB_PATH` to that runtime's library directory unless pkg-config already finds
+it; the offline Cargo build cannot download the runtime. The check builds an
+isolated Git fixture and is not part of unittest discovery. Its scratch directory
+uses Python's default temporary-directory selection, including `TMPDIR`.
+
 ## Gallery
 
 ![[av1an](./media/condor.avif)](./media/condor-small.avif) | ![detect-scenes](./media/detect-scenes-small.avif) |

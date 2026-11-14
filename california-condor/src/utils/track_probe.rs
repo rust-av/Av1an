@@ -391,7 +391,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         // Only shell builtins: an isolated PATH cannot accidentally run a native tool.
         let script = format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$C07_CALLS\"\nprintf '%s\\n' '{json}'\nprintf '%s\\n' 'native diagnostic' >&2\n{status}\n"
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$TRACK_PROBE_CALLS\"\nprintf '%s\\n' '{json}'\nprintf '%s\\n' 'native diagnostic' >&2\n{status}\n"
         );
         let path = directory.join(name);
         std::fs::write(&path, script).expect("fake probe");
@@ -402,7 +402,7 @@ mod tests {
     /// Re-exec keeps PATH local to a bounded child, never a process-global mutation.
     #[cfg(unix)]
     #[test]
-    fn c07_identification_admission_and_ffmpeg_fallback() {
+    fn identification_admission_and_ffmpeg_fallback() {
         let valid = r#"{"container":{"recognized":true,"supported":true},"errors":[],"warnings":["recoverable warning"],"tracks":[{"id":0,"type":"video"},{"id":3,"type":"audio"}]}"#;
         let cases = [
             ("ok", valid, "exit 0", "accept"),
@@ -510,13 +510,13 @@ mod tests {
             );
             let mut child = assert_cmd::Command::new(std::env::current_exe().expect("test binary"));
             let assertion = child
-                .args(["--exact", "utils::track_probe::tests::c07_process_child", "--nocapture"])
+                .args(["--exact", "utils::track_probe::tests::track_probe_admission_child", "--nocapture"])
                 // Other legacy tests change the parent's process-wide CWD.
                 .current_dir(directory.path())
                 .env("PATH", directory.path())
-                .env("C07_EXPECTED", expected)
-                .env("C07_CALLS", directory.path().join("calls"))
-                .env("C07_SOURCE", directory.path().join("source.mkv"))
+                .env("TRACK_PROBE_EXPECTED", expected)
+                .env("TRACK_PROBE_CALLS", directory.path().join("calls"))
+                .env("TRACK_PROBE_SOURCE", directory.path().join("source.mkv"))
                 .timeout(std::time::Duration::from_secs(20))
                 .assert();
             let output = assertion.get_output();
@@ -525,28 +525,31 @@ mod tests {
             {
                 failures.push(case);
                 eprintln!(
-                    "C07 {case}: {} {}",
+                    "track probe {case}: {} {}",
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 );
             }
-            eprintln!("C07 {case}: {expected}");
+            eprintln!("track probe {case}: {expected}");
         }
-        assert!(failures.is_empty(), "C07 admission failures: {failures:?}");
+        assert!(
+            failures.is_empty(),
+            "track probe admission failures: {failures:?}"
+        );
     }
 
     #[cfg(unix)]
     #[test]
-    fn c07_process_child() {
+    fn track_probe_admission_child() {
         use crate::{
             commands::{DiscardCategory, handlers::concatenate::apply_discard},
             test_helpers::{TestVideo, default_config},
         };
         use andean_condor::models::sequence::scene_concatenator::ConcatMethod;
-        let Ok(expected) = std::env::var("C07_EXPECTED") else {
+        let Ok(expected) = std::env::var("TRACK_PROBE_EXPECTED") else {
             return;
         };
-        let path = PathBuf::from(std::env::var_os("C07_SOURCE").expect("source path"));
+        let path = PathBuf::from(std::env::var_os("TRACK_PROBE_SOURCE").expect("source path"));
         std::fs::write(&path, b"source sentinel").expect("source");
         let with_ffmpeg = matches!(expected.as_str(), "fallback" | "ffprobe-parse");
         let result = probe(&path, with_ffmpeg);
@@ -563,8 +566,9 @@ mod tests {
             let source = result.expect("recognized status 0/1 admitted");
             assert_eq!(source.mkvmerge_ids(TrackKind::Video), [0]);
             assert_eq!(source.mkvmerge_ids(TrackKind::Audio), [3]);
-            let calls = std::fs::read_to_string(std::env::var_os("C07_CALLS").expect("calls"))
-                .expect("probe invoked");
+            let calls =
+                std::fs::read_to_string(std::env::var_os("TRACK_PROBE_CALLS").expect("calls"))
+                    .expect("probe invoked");
             assert_eq!(
                 calls,
                 format!(
@@ -701,7 +705,7 @@ mod tests {
     }
 
     #[test]
-    fn c07_native_y4m_rejects_mkvmerge_and_uses_ffmpeg() {
+    fn native_y4m_rejects_mkvmerge_and_uses_ffmpeg() {
         let temp = tempfile::tempdir().expect("native fixture");
         let path = temp.path().join("one-frame.y4m");
         let mut data = b"YUV4MPEG2 W2 H2 F24:1 Ip A1:1 C420jpeg\nFRAME\n".to_vec();
@@ -713,7 +717,7 @@ mod tests {
             .output()
             .expect("installed mkvmerge is required");
         eprintln!(
-            "C07 native Y4M: {} {}",
+            "track probe native Y4M: {} {}",
             native.status,
             String::from_utf8_lossy(&native.stdout)
         );
@@ -732,7 +736,7 @@ mod tests {
     }
 
     #[test]
-    fn c07_native_multitrack_and_video_only_controls() {
+    fn native_multitrack_and_video_only_controls() {
         let path = crate::test_helpers::get_test_multitrack_video();
         let source = probe(&path, true).expect("native multitrack identification");
         assert_eq!(source.mkvmerge_ids(TrackKind::Video), [0]);

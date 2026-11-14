@@ -875,22 +875,22 @@ mod tests {
         while !ready() {
             assert!(
                 Instant::now() < deadline,
-                "C11 child coordination timed out"
+                "job lock child coordination timed out"
             );
             std::thread::sleep(Duration::from_millis(10));
         }
     }
 
     #[test]
-    fn c11_callback_child() {
-        let Some(directory) = std::env::var_os("CONDOR_C11_CHILD") else {
+    fn job_lock_callback_child() {
+        let Some(directory) = std::env::var_os("CONDOR_JOB_LOCK_CALLBACK_CHILD") else {
             return;
         };
         let directory = PathBuf::from(directory);
         let guard =
             JobLock::acquire(&directory.join("job.json")).expect("caller-held guard before load");
         let mut config = Configuration::load(guard.path()).expect("load").expect("config");
-        config.schema = "C11 callback snapshot".into();
+        config.schema = "job lock callback snapshot".into();
         let path = guard.path().to_path_buf();
         // Native state is created and dropped on its worker, never shared across threads.
         let worker = std::thread::spawn(move || {
@@ -906,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn c11_direct_guard_covers_real_callback_and_join() {
+    fn direct_guard_covers_real_callback_and_join() {
         let temp = tempfile::tempdir().expect("fixture");
         let config = fixture(temp.path());
         let file = temp.path().join("job.json");
@@ -919,8 +919,8 @@ mod tests {
         let mut child = Reap(
             Command::new(std::env::current_exe().expect("test executable"))
                 .current_dir(temp.path())
-                .args(["--exact", "configuration::tests::c11_callback_child", "--nocapture"])
-                .env("CONDOR_C11_CHILD", temp.path())
+                .args(["--exact", "configuration::tests::job_lock_callback_child", "--nocapture"])
+                .env("CONDOR_JOB_LOCK_CALLBACK_CHILD", temp.path())
                 .stdout(Stdio::null())
                 .stderr(File::create(temp.path().join("child.log")).expect("log"))
                 .spawn()
@@ -940,7 +940,7 @@ mod tests {
         }
         assert_eq!(
             Configuration::load(&file).expect("snapshot").expect("saved").schema,
-            "C11 callback snapshot"
+            "job lock callback snapshot"
         );
         let error = JobLock::acquire(&file).expect_err("busy after callback while joining");
         assert!(error.to_string().contains("another process"), "{error:#}");
@@ -953,12 +953,12 @@ mod tests {
         let guard = JobLock::acquire(&file).expect("normal return releases persistent sidecar");
         assert_eq!(
             Configuration::load(guard.path()).expect("snapshot").expect("saved").schema,
-            "C11 callback snapshot"
+            "job lock callback snapshot"
         );
     }
 
     #[test]
-    fn c11_unique_staging_and_failed_publication_preserve_original_bytes() {
+    fn unique_staging_and_failed_publication_preserve_original_bytes() {
         let temp = tempfile::tempdir().expect("fixture");
         let config = fixture(temp.path());
         let file = temp.path().join("job.json");
@@ -1011,7 +1011,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn c11_symlink_admission_stays_coherent_after_saves_and_for_new_configs() {
+    fn symlink_admission_stays_coherent_after_saves_and_for_new_configs() {
         use std::os::unix::fs::symlink;
         let temp = tempfile::tempdir().expect("fixture");
         let base = fs::canonicalize(temp.path()).expect("base");
@@ -1048,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn c11_lock_open_errors_fail_closed_with_context() {
+    fn lock_open_errors_fail_closed_with_context() {
         let temp = tempfile::tempdir().expect("fixture");
         let file = temp.path().join("job.json");
         fs::create_dir_all(temp.path().join("job.json.lock"))
@@ -1065,7 +1065,7 @@ mod tests {
     }
 
     #[test]
-    fn c11_direct_guard_does_not_prepare_missing_parents() {
+    fn direct_guard_does_not_prepare_missing_parents() {
         let temp = tempfile::tempdir().expect("fixture");
         let file = temp.path().join("missing/deep/job.json");
         let result = JobLock::acquire(&file);
@@ -1089,7 +1089,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn c11_lock_permission_errors_use_actual_open_probe() {
+    fn lock_permission_errors_use_actual_open_probe() {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().expect("fixture");
         let file = temp.path().join("job.json");
@@ -1114,12 +1114,12 @@ mod tests {
                         .downcast_ref::<io::Error>()
                         .is_some_and(|error| error.kind() == io::ErrorKind::PermissionDenied)
                 }));
-                eprintln!("C11 actual sidecar open denied; contextual refusal proved");
+                eprintln!("job lock actual sidecar open denied; contextual refusal proved");
             },
             Ok(_) => {
                 drop(result.expect("actual open allowed; kernel locking still required"));
                 eprintln!(
-                    "C11 chmod did not deny actual sidecar open; permission-denial proof unavailable on this host"
+                    "job lock chmod did not deny actual sidecar open; permission-denial proof unavailable on this host"
                 );
             },
         }
@@ -1127,7 +1127,7 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    mod c11a {
+    mod lock_inheritance {
         use super::*;
         use std::{
             io::Read,
@@ -1138,8 +1138,10 @@ mod tests {
             thread::{self, JoinHandle},
         };
 
-        const TEST: &str = "configuration::tests::c11a::c11a_drop_unlocks_inherited_description";
-        const PASSED: &str = "C11a production inheritance/successor/crash controls passed";
+        const TEST: &str =
+            "configuration::tests::lock_inheritance::drop_unlocks_inherited_description";
+        const PASSED: &str =
+            "lock inheritance production inheritance/successor/crash controls passed";
 
         unsafe extern "C" {
             fn getpid() -> i32;
@@ -1152,8 +1154,8 @@ mod tests {
             let mut command = Command::new(std::env::current_exe().expect("test executable"));
             command
                 .args(["--exact", TEST, "--nocapture"])
-                .env("CONDOR_C11A_MODE", mode)
-                .env("CONDOR_C11A_DIRECTORY", directory)
+                .env("CONDOR_LOCK_INHERITANCE_MODE", mode)
+                .env("CONDOR_LOCK_INHERITANCE_DIRECTORY", directory)
                 .stdout(Stdio::null());
             command
         }
@@ -1273,7 +1275,7 @@ mod tests {
             .expect("octal flags");
             assert_ne!(flags & 0o2000000, 0, "CLOEXEC closes at exec, not fork");
             println!(
-                "C11a parent={} child={pid} fd={fd} dev={} inode={} flags={flags:o}; {lock}",
+                "lock inheritance parent={} child={pid} fd={fd} dev={} inode={} flags={flags:o}; {lock}",
                 std::process::id(),
                 identity.dev(),
                 identity.ino()
@@ -1348,10 +1350,11 @@ mod tests {
         }
 
         #[test]
-        fn c11a_drop_unlocks_inherited_description() {
-            if let Ok(mode) = std::env::var("CONDOR_C11A_MODE") {
+        fn drop_unlocks_inherited_description() {
+            if let Ok(mode) = std::env::var("CONDOR_LOCK_INHERITANCE_MODE") {
                 let directory = PathBuf::from(
-                    std::env::var_os("CONDOR_C11A_DIRECTORY").expect("owned child directory"),
+                    std::env::var_os("CONDOR_LOCK_INHERITANCE_DIRECTORY")
+                        .expect("owned child directory"),
                 );
                 match mode.as_str() {
                     "probe" => probe(&directory),
@@ -1365,7 +1368,7 @@ mod tests {
                         fs::write(directory.join("holder-ready"), b"ready").expect("holder marker");
                         wait_until(|| directory.join("holder-release").exists());
                     },
-                    _ => panic!("unknown C11a child mode"),
+                    _ => panic!("unknown lock inheritance child mode"),
                 }
                 return;
             }

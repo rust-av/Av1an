@@ -193,7 +193,7 @@ mod tests {
     pub(super) mod windows;
 
     #[test]
-    fn t06_internal_stop_is_not_user_interrupt() {
+    fn internal_stop_is_not_user_interrupt() {
         let cancellation = Interrupt::default();
         cancellation.token.legacy_flag().store(true, Ordering::SeqCst);
         let error = cancellation
@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn t06_first_cause_and_typed_cleanup_failure() {
+    fn first_cause_and_typed_cleanup_failure() {
         let cancellation = Interrupt::default();
         cancellation.request(143).unwrap();
         assert!(!cancellation.token.is_forced());

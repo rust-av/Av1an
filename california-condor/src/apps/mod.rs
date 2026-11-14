@@ -738,15 +738,15 @@ mod tests {
     }
 
     #[test]
-    fn t07_headless_maps_every_event_without_tick_clones() {
-        if std::env::var_os("T07_HEADLESS_CHILD").is_none() {
+    fn headless_maps_every_event_without_tick_clones() {
+        if std::env::var_os("HEADLESS_EVENT_MAPPING_CHILD").is_none() {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "apps::tests::t07_headless_maps_every_event_without_tick_clones",
+                    "apps::tests::headless_maps_every_event_without_tick_clones",
                     "--nocapture",
                 ])
-                .env("T07_HEADLESS_CHILD", "1")
+                .env("HEADLESS_EVENT_MAPPING_CHILD", "1")
                 .env("CONDOR_TEST_MODE", "1")
                 .output()
                 .unwrap();
@@ -755,6 +755,10 @@ mod tests {
                 "{}\n{}",
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                "headless event-mapping child did not execute: {output:?}"
             );
             return;
         }
@@ -876,14 +880,16 @@ mod tests {
                 self.failed = true;
                 return Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
-                    "T03 render failure",
+                    "TERMINAL_OWNERSHIP render failure",
                 ));
             }
             self.writer.write(bytes)
         }
         fn flush(&mut self) -> io::Result<()> {
             if self.failed {
-                return Err(io::Error::other("T03 secondary cleanup failure"));
+                return Err(io::Error::other(
+                    "TERMINAL_OWNERSHIP secondary cleanup failure",
+                ));
             }
             self.writer.flush()
         }
@@ -985,31 +991,37 @@ mod tests {
             "cancelled"
         }
         fn map_progress(_: SequenceStatus, _: &mut ()) -> bool {
-            if std::env::var_os("T05_ROOT").is_some() {
-                t05_emit();
+            if std::env::var_os("TUI_LOGGING_ROOT").is_some() {
+                emit_console_diagnostics();
             }
             assert!(
-                !std::env::var("T04_CASE").is_ok_and(|case| case == "progress"),
-                "T04-progress-payload"
+                !std::env::var("TUI_PANIC_CASE").is_ok_and(|case| case == "progress"),
+                "TUI_PANIC-progress-payload"
             );
             false
         }
         fn render(&self, frame: &mut Frame) {
-            assert!(self.panic_case.as_deref() != Some("ui"), "T04-ui-payload");
+            assert!(
+                self.panic_case.as_deref() != Some("ui"),
+                "TUI_PANIC-ui-payload"
+            );
             if let Some(armed) = &self.render_failure {
                 armed.store(true, Ordering::SeqCst);
             }
-            frame.render_widget("T01-final-render", frame.area());
+            frame.render_widget("SELECTED_STREAM-final-render", frame.area());
         }
     }
 
     #[cfg(unix)]
     #[test]
-    fn t05_isolated_logging_lifecycle() {
+    fn console_logging_preserves_terminal_and_output_lifecycle() {
         let output = std::process::Command::new("python3")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/src/apps/t01_pty.py"))
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/apps/pty_test_support.py"
+            ))
             .arg(std::env::current_exe().unwrap())
-            .arg("t05")
+            .arg("logging")
             .output()
             .expect("python3 is required for the Unix PTY regression test");
         assert!(
@@ -1022,12 +1034,12 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn t06_sequential_registration() -> Result<()> {
+    fn interrupt_listener_registration_survives_sequential_stages() -> Result<()> {
         let root = tempfile::tempdir()?;
         let output = std::process::Command::new("python3")
             .arg(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/tests/t06_interrupts.py"
+                "/tests/interrupt/pty.py"
             ))
             .arg(std::env::current_exe()?)
             .arg(root.path())
@@ -1045,8 +1057,8 @@ mod tests {
     // Isolated child only: never changes libtest parent's signal dispositions.
     #[cfg(target_os = "linux")]
     #[test]
-    fn t06_registration_child() -> Result<()> {
-        let Some(root) = std::env::var_os("T06_LISTENER_ROOT") else {
+    fn interrupt_listener_registration_child() -> Result<()> {
+        let Some(root) = std::env::var_os("INTERRUPT_LISTENER_ROOT") else {
             return Ok(());
         };
         let root = std::path::PathBuf::from(root);
@@ -1061,7 +1073,9 @@ mod tests {
                 let display = thread::spawn(move || TestApp::new().run(rx, display_cancel));
                 if stage == 0 {
                     tx.send(SequenceStatus::Whole(
-                        andean_condor::core::sequence::Status::Completed { id: "t06".into() },
+                        andean_condor::core::sequence::Status::Completed {
+                            id: "interrupt-listener".into(),
+                        },
                     ))?;
                 } else {
                     assert!(
@@ -1131,47 +1145,47 @@ mod tests {
         Ok(())
     }
 
-    fn t05_emit() {
+    fn emit_console_diagnostics() {
         static STAGE: AtomicU64 = AtomicU64::new(0);
         let stage = STAGE.fetch_add(1, Ordering::SeqCst) + 1;
-        tracing::info!(target: "andean_condor::core::sequence::scene_detector", "T05-scene-model-{stage}");
-        tracing::error!(target: "andean_condor::core::sequence::quality_check", "T05-metric-fallback-{stage}");
-        tracing::warn!(target: "andean_condor::core::encoder", "T05-retry-{stage}");
-        tracing::error!(target: "andean_condor::core::encoder", "T05-encoder-failure-{stage}");
-        if std::env::var("T05_CASE").unwrap() == "overflow" {
+        tracing::info!(target: "andean_condor::core::sequence::scene_detector", "TUI_LOGGING-scene-model-{stage}");
+        tracing::error!(target: "andean_condor::core::sequence::quality_check", "TUI_LOGGING-metric-fallback-{stage}");
+        tracing::warn!(target: "andean_condor::core::encoder", "TUI_LOGGING-retry-{stage}");
+        tracing::error!(target: "andean_condor::core::encoder", "TUI_LOGGING-encoder-failure-{stage}");
+        if std::env::var("TUI_LOGGING_CASE").unwrap() == "overflow" {
             let long = "🦜".repeat(3000);
             for index in 0..20 {
-                tracing::warn!(target: "andean_condor::core::encoder", "T05-overflow-{index:02}-{long}");
+                tracing::warn!(target: "andean_condor::core::encoder", "TUI_LOGGING-overflow-{index:02}-{long}");
             }
         }
-        let root = std::path::PathBuf::from(std::env::var_os("T05_ROOT").unwrap());
+        let root = std::path::PathBuf::from(std::env::var_os("TUI_LOGGING_ROOT").unwrap());
         std::fs::write(root.join(format!("produced-{stage}")), b"ready").unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while !root.join(format!("release-{stage}")).exists() {
             assert!(
                 std::time::Instant::now() < deadline,
-                "T05 producer not released"
+                "TUI_LOGGING producer not released"
             );
             thread::yield_now();
         }
     }
 
-    struct T05FailureWriter {
+    struct ConsoleFailureWriter {
         writer: Box<dyn Write + Send>,
         fail_write: Arc<AtomicBool>,
         fail_flush: Arc<AtomicBool>,
     }
 
-    impl Write for T05FailureWriter {
+    impl Write for ConsoleFailureWriter {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
             if self.fail_write.swap(false, Ordering::SeqCst) {
                 return Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
-                    "T05 draw failure",
+                    "TUI_LOGGING draw failure",
                 ));
             }
             if bytes.windows(6).any(|part| part == b"\x1b[?25h") {
-                tracing::warn!(target: "california_condor", "T05-final-control-warning");
+                tracing::warn!(target: "california_condor", "TUI_LOGGING-final-control-warning");
             }
             self.writer.write(bytes)
         }
@@ -1180,7 +1194,7 @@ mod tests {
             if self.fail_flush.swap(false, Ordering::SeqCst) {
                 return Err(io::Error::new(
                     io::ErrorKind::NotFound,
-                    "T05 restore failure",
+                    "TUI_LOGGING restore failure",
                 ));
             }
             Ok(())
@@ -1191,17 +1205,17 @@ mod tests {
     // a test-only pause switch. Removing owner integration must fail the driver.
     #[cfg(unix)]
     #[test]
-    fn t05_logging_child() -> Result<()> {
-        let Ok(case) = std::env::var("T05_CASE") else {
+    fn console_logging_child() -> Result<()> {
+        let Ok(case) = std::env::var("TUI_LOGGING_CASE") else {
             return Ok(());
         };
-        let root = std::path::PathBuf::from(std::env::var_os("T05_ROOT").unwrap());
+        let root = std::path::PathBuf::from(std::env::var_os("TUI_LOGGING_ROOT").unwrap());
         let log = root.join("events.log");
-        println!("T05_BEGIN\nsource-output-sentinel\nT05_END");
+        println!("TUI_LOGGING_BEGIN\nsource-output-sentinel\nTUI_LOGGING_END");
         stdout().flush()?;
         std::panic::set_hook(Box::new(|_| {
             assert!(!crossterm::terminal::is_raw_mode_enabled().unwrap());
-            tracing::warn!(target: "california_condor", "T05-prior-hook");
+            tracing::warn!(target: "california_condor", "TUI_LOGGING-prior-hook");
         }));
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
             let _logging_guard = crate::logging::init_logging(
@@ -1216,19 +1230,21 @@ mod tests {
                 for stage in 1..=2 {
                     let (tx, rx) = mpsc::channel();
                     tx.send(SequenceStatus::Whole(
-                        andean_condor::core::sequence::Status::Completed { id: "t05".into() },
+                        andean_condor::core::sequence::Status::Completed {
+                            id: "logging".into(),
+                        },
                     ))?;
                     drop(tx);
                     TestApp::new().run(rx, Arc::new(AtomicBool::new(false)))?;
-                    tracing::info!(target: "california_condor", "T05-between-stages-{stage}");
-                    tracing::warn!(target: "california_condor", "T05-returned-stage-warning-{stage}");
+                    tracing::info!(target: "california_condor", "TUI_LOGGING-between-stages-{stage}");
+                    tracing::warn!(target: "california_condor", "TUI_LOGGING-returned-stage-warning-{stage}");
                 }
             } else {
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let fail_write = Arc::new(AtomicBool::new(false));
                 let fail_flush = Arc::new(AtomicBool::new(false));
                 let mut owner = TerminalOwner::new(
-                    Box::new(T05FailureWriter {
+                    Box::new(ConsoleFailureWriter {
                         writer: selected_writer(stdout().is_terminal()),
                         fail_write: Arc::clone(&fail_write),
                         fail_flush: Arc::clone(&fail_flush),
@@ -1238,10 +1254,10 @@ mod tests {
                 if case == "raw" {
                     owner.raw_mode = |enabled| {
                         assert!(enabled);
-                        thread::spawn(t05_emit).join().unwrap();
+                        thread::spawn(emit_console_diagnostics).join().unwrap();
                         Err(io::Error::new(
                             io::ErrorKind::PermissionDenied,
-                            "T05 raw failure",
+                            "TUI_LOGGING raw failure",
                         ))
                     };
                 }
@@ -1250,8 +1266,8 @@ mod tests {
                         *slot = Some(Box::new(|| {
                             assert!(
                                 thread::spawn(|| {
-                                    t05_emit();
-                                    panic!("T05 startup panic");
+                                    emit_console_diagnostics();
+                                    panic!("TUI_LOGGING startup panic");
                                 })
                                 .join()
                                 .is_err()
@@ -1261,10 +1277,10 @@ mod tests {
                 }
                 let initialized = init_terminal(owner, true, |backend| {
                     if case == "construct" {
-                        thread::spawn(t05_emit).join().unwrap();
+                        thread::spawn(emit_console_diagnostics).join().unwrap();
                         return Err(io::Error::new(
                             io::ErrorKind::NotFound,
-                            "T05 construct failure",
+                            "TUI_LOGGING construct failure",
                         ));
                     }
                     Terminal::new(backend)
@@ -1272,10 +1288,10 @@ mod tests {
                 let error = match initialized {
                     Err(error) => error,
                     Ok(mut terminal) => {
-                        thread::spawn(t05_emit).join().unwrap();
+                        thread::spawn(emit_console_diagnostics).join().unwrap();
                         if case == "panic" {
-                            tracing::debug!(target: "california_condor", "T05-final-flush-marker");
-                            panic!("T05 owner unwind");
+                            tracing::debug!(target: "california_condor", "TUI_LOGGING-final-flush-marker");
+                            panic!("TUI_LOGGING owner unwind");
                         }
                         let mut app = TestApp::new();
                         if case == "draw" {
@@ -1298,16 +1314,16 @@ mod tests {
                 };
                 assert_eq!(error.downcast_ref::<io::Error>().unwrap().kind(), expected);
                 assert!(cancelled.load(Ordering::SeqCst));
-                tracing::warn!(target: "california_condor", "T05-after-error");
+                tracing::warn!(target: "california_condor", "TUI_LOGGING-after-error");
             }
             // Backlog plus a final marker, checked immediately after this owner
             // returns. No polling/sleep may hide a missing WorkerGuard drop.
             for index in 0..1024 {
-                tracing::debug!(target: "california_condor", "T05-shutdown-{index:04}");
+                tracing::debug!(target: "california_condor", "TUI_LOGGING-shutdown-{index:04}");
             }
-            tracing::debug!(target: "california_condor", "T05-final-flush-marker");
+            tracing::debug!(target: "california_condor", "TUI_LOGGING-final-flush-marker");
             if case == "restore" {
-                anyhow::bail!("T05 early error return");
+                anyhow::bail!("TUI_LOGGING early error return");
             }
             Ok(())
         }));
@@ -1316,13 +1332,13 @@ mod tests {
         } else if case == "restore" {
             assert_eq!(
                 outcome.unwrap().unwrap_err().to_string(),
-                "T05 early error return"
+                "TUI_LOGGING early error return"
             );
         } else {
             outcome.unwrap()?;
         }
         assert!(
-            std::fs::read_to_string(&log)?.contains("T05-final-flush-marker"),
+            std::fs::read_to_string(&log)?.contains("TUI_LOGGING-final-flush-marker"),
             "logging owner did not flush"
         );
         assert!(
@@ -1339,11 +1355,14 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn t04_isolated_panic_lifecycle() {
+    fn application_panics_restore_terminal_and_report_once() {
         let output = std::process::Command::new("python3")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/src/apps/t01_pty.py"))
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/apps/pty_test_support.py"
+            ))
             .arg(std::env::current_exe().unwrap())
-            .arg("t04")
+            .arg("panic")
             .output()
             .expect("python3 is required for the Unix PTY regression test");
         assert!(
@@ -1395,9 +1414,9 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn t04_startup_child() -> Result<()> {
+    fn startup_panic_child() -> Result<()> {
         use std::sync::atomic::AtomicUsize;
-        let Some(root) = std::env::var_os("T04_ROOT") else {
+        let Some(root) = std::env::var_os("TUI_PANIC_ROOT") else {
             return Ok(());
         };
         static RAW_ON: AtomicUsize = AtomicUsize::new(0);
@@ -1411,11 +1430,11 @@ mod tests {
             set_raw_mode(enabled)
         }
         let root = std::path::PathBuf::from(root);
-        println!("T04_BEGIN\nsource-output-sentinel\nT04_END");
+        println!("TUI_PANIC_BEGIN\nsource-output-sentinel\nTUI_PANIC_END");
         let owned = owned_fixture(&root)?;
         BEFORE_RAW.with_borrow_mut(|slot| {
             *slot = Some(Box::new(|| {
-                assert!(thread::spawn(|| panic!("T04-startup-payload")).join().is_err());
+                assert!(thread::spawn(|| panic!("TUI_PANIC-startup-payload")).join().is_err());
             }));
         });
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -1455,20 +1474,20 @@ mod tests {
         assert!(!crossterm::terminal::is_raw_mode_enabled()?);
         drop(owned);
         record_reaped(&root)?;
-        println!("T04_STARTUP_RETIRED_RAW_OFF");
+        println!("TUI_PANIC_STARTUP_RETIRED_RAW_OFF");
         Err(error)
     }
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn t04_cli_child() -> std::process::ExitCode {
-        let Ok(case) = std::env::var("T04_CASE") else {
+    fn cli_panic_child() -> std::process::ExitCode {
+        let Ok(case) = std::env::var("TUI_PANIC_CASE") else {
             return std::process::ExitCode::SUCCESS;
         };
         crate::TEST_ENTRY_RUN.with_borrow_mut(|slot| {
             *slot = Some(Box::new(move || {
-                let root = std::path::PathBuf::from(std::env::var_os("T04_ROOT").unwrap());
-                println!("T04_BEGIN\nsource-output-sentinel\nT04_END");
+                let root = std::path::PathBuf::from(std::env::var_os("TUI_PANIC_ROOT").unwrap());
+                println!("TUI_PANIC_BEGIN\nsource-output-sentinel\nTUI_PANIC_END");
                 let mut owned = Some(owned_fixture(&root)?);
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let mut app = TestApp::new();
@@ -1500,23 +1519,23 @@ mod tests {
                                     thread::yield_now();
                                 }
                             }
-                            panic!("T04-worker-payload");
+                            panic!("TUI_PANIC-worker-payload");
                         }),
-                        "T04 library worker join",
+                        "TUI_PANIC library worker join",
                     )
                     .map(|()| ((), Vec::new()))
                 } else if case == "cli-unreported" {
                     Err(andean_condor::utils::CaughtPanic {
                         operation: "unreported fixture".into(),
-                        message: "T04-unreported-payload".into(),
+                        message: "TUI_PANIC-unreported-payload".into(),
                     }
                     .into())
                 } else if matches!(case.as_str(), "cli-mixed" | "cli-error") {
                     Err(anyhow::Error::from(io::Error::new(
                         io::ErrorKind::PermissionDenied,
-                        "T04-nonpanic-error",
+                        "TUI_PANIC-nonpanic-error",
                     ))
-                    .context("T04 primary context"))
+                    .context("TUI_PANIC primary context"))
                 } else {
                     Ok(((), Vec::new()))
                 };
@@ -1529,8 +1548,11 @@ mod tests {
                         stderr: String::from("codec-stderr-sentinel").into(),
                         failures: vec![
                             panic,
-                            io::Error::new(io::ErrorKind::PermissionDenied, "T04-nonpanic-error")
-                                .into(),
+                            io::Error::new(
+                                io::ErrorKind::PermissionDenied,
+                                "TUI_PANIC-nonpanic-error",
+                            )
+                            .into(),
                         ],
                     }
                     .into())
@@ -1540,13 +1562,13 @@ mod tests {
                 if matches!(case.as_str(), "cli-error" | "cli-unreported") {
                     drop(tx);
                 }
-                let result = crate::tui::finish_stage("T04", executed, || display.join());
+                let result = crate::tui::finish_stage("TUI_PANIC", executed, || display.join());
                 let error = result.expect_err("fixture stage must fail");
                 if matches!(case.as_str(), "cli-ui" | "cli-worker") {
                     let payload = if case == "cli-ui" {
-                        "T04-ui-payload"
+                        "TUI_PANIC-ui-payload"
                     } else {
-                        "T04-worker-payload"
+                        "TUI_PANIC-worker-payload"
                     };
                     assert!(
                         format!("{error:#}").contains(payload),
@@ -1559,7 +1581,7 @@ mod tests {
                         error.downcast_ref::<io::Error>().unwrap().kind(),
                         io::ErrorKind::PermissionDenied
                     );
-                    assert!(format!("{error:#}").contains("T04-nonpanic-error"));
+                    assert!(format!("{error:#}").contains("TUI_PANIC-nonpanic-error"));
                 }
                 if case == "cli-aggregate" {
                     let aggregate = error
@@ -1574,7 +1596,7 @@ mod tests {
                         aggregate.failures[1].downcast_ref::<io::Error>().unwrap().kind(),
                         io::ErrorKind::PermissionDenied
                     );
-                    assert!(format!("{error:#}").contains("T04-worker-payload"));
+                    assert!(format!("{error:#}").contains("TUI_PANIC-worker-payload"));
                 }
                 std::fs::write(
                     root.join("library-error"),
@@ -1591,12 +1613,12 @@ mod tests {
     // Exact-name subprocess protocol: no hook mutation in the parent libtest.
     #[cfg(target_os = "linux")]
     #[test]
-    fn t04_panic_child() -> Result<()> {
+    fn application_panic_child() -> Result<()> {
         use std::sync::atomic::AtomicUsize;
-        let Ok(case) = std::env::var("T04_CASE") else {
+        let Ok(case) = std::env::var("TUI_PANIC_CASE") else {
             return Ok(());
         };
-        let root = std::path::PathBuf::from(std::env::var_os("T04_ROOT").unwrap());
+        let root = std::path::PathBuf::from(std::env::var_os("TUI_PANIC_ROOT").unwrap());
         let custom = case == "subsequent";
         let calls = Arc::new(AtomicUsize::new(0));
         if custom {
@@ -1604,10 +1626,10 @@ mod tests {
             std::panic::set_hook(Box::new(move |info| {
                 calls.fetch_add(1, Ordering::SeqCst);
                 assert!(!crossterm::terminal::is_raw_mode_enabled().unwrap());
-                eprintln!("T04_PRIOR: {info}");
+                eprintln!("TUI_PANIC_PRIOR: {info}");
             }));
         }
-        println!("T04_BEGIN\nsource-output-sentinel\nT04_END");
+        println!("TUI_PANIC_BEGIN\nsource-output-sentinel\nTUI_PANIC_END");
         stdout().flush()?;
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
             let mut owned = Some(owned_fixture(&root)?);
@@ -1623,7 +1645,7 @@ mod tests {
                         } else {
                             None
                         };
-                        panic!("T04-main-payload");
+                        panic!("TUI_PANIC-main-payload");
                     }));
                 });
                 return crate::entry_point();
@@ -1639,12 +1661,12 @@ mod tests {
                         assert!(std::time::Instant::now() < deadline, "UI never initialized");
                         thread::yield_now();
                     }
-                    panic!("T04-worker-payload");
+                    panic!("TUI_PANIC-worker-payload");
                 })
             });
             if case == "progress" {
                 tx.send(SequenceStatus::Whole(
-                    andean_condor::core::sequence::Status::Completed { id: "t04".into() },
+                    andean_condor::core::sequence::Status::Completed { id: "panic".into() },
                 ))?;
             }
             let display_cancelled = Arc::clone(&cancelled);
@@ -1677,19 +1699,19 @@ mod tests {
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             let mut app = TestApp::new();
             let mut terminal = app.init(Arc::new(AtomicBool::new(false)))?;
-            assert!(std::panic::catch_unwind(|| panic!("T04-second-payload")).is_err());
+            assert!(std::panic::catch_unwind(|| panic!("TUI_PANIC-second-payload")).is_err());
             app.restore(&mut terminal)?;
             drop(terminal);
-            assert!(std::panic::catch_unwind(|| panic!("T04-third-payload")).is_err());
+            assert!(std::panic::catch_unwind(|| panic!("TUI_PANIC-third-payload")).is_err());
             assert_eq!(calls.load(Ordering::SeqCst), 3);
-            eprintln!("T04_PRIOR_COUNT=3");
+            eprintln!("TUI_PANIC_PRIOR_COUNT=3");
         }
         // Return an error only after real unwind/join cleanup; no exit simulation.
-        anyhow::bail!("T04 failed application outcome")
+        anyhow::bail!("TUI_PANIC failed application outcome")
     }
 
     #[test]
-    fn t01_selected_writer_receives_commands_render_and_flush() {
+    fn selected_writer_receives_commands_render_and_flush() {
         let recorder = Recorder::default();
         let writer: Box<dyn Write + Send> = Box::new(recorder.clone());
         let mut writer = BufWriter::new(writer);
@@ -1719,13 +1741,13 @@ mod tests {
             bytes.starts_with("\x1b[?1049h\x1b[?1049l\n\n\n"),
             "{bytes:?}"
         );
-        assert!(bytes.contains("T01-final-render"), "{bytes:?}");
+        assert!(bytes.contains("SELECTED_STREAM-final-render"), "{bytes:?}");
         assert!(bytes.ends_with("\x1b[?25h"), "{bytes:?}");
         assert_eq!(flushes.last(), Some(&recorded_bytes.len()));
     }
 
     #[test]
-    fn t01_selected_writer_errors_are_not_retried_on_another_stream() {
+    fn selected_writer_errors_are_not_retried_on_another_stream() {
         for finish in [false, true] {
             for fail_flush in [false, true] {
                 let mut recorder = Recorder::default();
@@ -1755,9 +1777,12 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn t01_real_pty_restores_selected_stream() {
+    fn real_pty_restores_selected_stream() {
         let output = std::process::Command::new("python3")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/src/apps/t01_pty.py"))
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/apps/pty_test_support.py"
+            ))
             .arg(std::env::current_exe().unwrap())
             .output()
             .expect("python3 is required for the Unix PTY regression test");
@@ -1771,31 +1796,34 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[ignore = "runs in an isolated controlling PTY via t01_real_pty_restores_selected_stream"]
-    fn t01_pty_child() -> Result<()> {
-        if std::env::var_os("T01_PTY_STREAM").is_none() {
+    #[ignore = "runs in an isolated controlling PTY via real_pty_restores_selected_stream"]
+    fn selected_stream_pty_child() -> Result<()> {
+        if std::env::var_os("TUI_PTY_STREAM").is_none() {
             return Ok(());
         }
         assert!(std::env::var_os("CONDOR_TEST_MODE").is_none());
-        let use_stdout = std::env::var("T01_PTY_STREAM")? == "stdout";
+        let use_stdout = std::env::var("TUI_PTY_STREAM")? == "stdout";
         assert_eq!(stdout().is_terminal(), use_stdout);
         assert_eq!(stderr().is_terminal(), !use_stdout);
-        println!("T01_BEGIN\npayload");
+        println!("SELECTED_STREAM_BEGIN\npayload");
         let mut app = TestApp::new();
         let mut terminal = app.init(Arc::new(AtomicBool::new(false)))?;
         terminal.terminal.draw(|frame| app.render(frame))?;
         app.restore(&mut terminal)?;
-        println!("T01_END");
+        println!("SELECTED_STREAM_END");
         Ok(())
     }
 
     #[cfg(unix)]
     #[test]
-    fn t03_real_pty_render_failure_restores_and_cancels() {
+    fn real_pty_render_failure_restores_and_cancels() {
         let output = std::process::Command::new("python3")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/src/apps/t01_pty.py"))
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/apps/pty_test_support.py"
+            ))
             .arg(std::env::current_exe().unwrap())
-            .arg("t03")
+            .arg("render-failure")
             .output()
             .expect("python3 is required for the Unix PTY regression test");
         assert!(
@@ -1808,9 +1836,12 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn t03_partial_init_releases_acquired_resources() {
+    fn partial_init_releases_acquired_resources() {
         let output = std::process::Command::new("python3")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/src/apps/t01_pty.py"))
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/apps/pty_test_support.py"
+            ))
             .arg(std::env::current_exe().unwrap())
             .arg("matrix")
             .output()
@@ -1826,8 +1857,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     #[ignore = "isolated PTY ownership matrix"]
-    fn t03_ownership_child() -> Result<()> {
-        if std::env::var_os("T01_PTY_STREAM").is_none() {
+    fn terminal_ownership_child() -> Result<()> {
+        if std::env::var_os("TUI_PTY_STREAM").is_none() {
             return Ok(());
         }
         use std::sync::atomic::AtomicUsize;
@@ -1839,14 +1870,14 @@ mod tests {
             if enabled {
                 RAW_ON.fetch_add(1, Ordering::SeqCst);
                 if RAW_FAIL_ON.load(Ordering::SeqCst) {
-                    return Err(io::Error::other("T03 raw enable failure"));
+                    return Err(io::Error::other("TERMINAL_OWNERSHIP raw enable failure"));
                 }
                 enable_raw_mode()
             } else {
                 RAW_OFF.fetch_add(1, Ordering::SeqCst);
                 disable_raw_mode()?;
                 if RAW_FAIL_OFF.load(Ordering::SeqCst) {
-                    return Err(io::Error::other("T03 raw disable failure"));
+                    return Err(io::Error::other("TERMINAL_OWNERSHIP raw disable failure"));
                 }
                 Ok(())
             }
@@ -1895,7 +1926,7 @@ mod tests {
                 if case == "construct" {
                     return Err(io::Error::new(
                         io::ErrorKind::NotFound,
-                        "T03 terminal size failure",
+                        "TERMINAL_OWNERSHIP terminal size failure",
                     ));
                 }
                 Terminal::new(backend)
@@ -1908,7 +1939,7 @@ mod tests {
                         let mut recording = recorder.0.lock().unwrap();
                         recording.fail_bytes = match case {
                             "resize" => Some(b"\x1b[2J".to_vec()),
-                            "final_draw" => Some(b"T01-final-render".to_vec()),
+                            "final_draw" => Some(b"SELECTED_STREAM-final-render".to_vec()),
                             "leave_cleanup" => Some(b"\x1b[?1049l".to_vec()),
                             "show_cleanup" => Some(b"\x1b[?25h".to_vec()),
                             _ => None,
@@ -1921,7 +1952,7 @@ mod tests {
                         assert!(
                             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 let _terminal = terminal;
-                                panic!("T03 unwind");
+                                panic!("TERMINAL_OWNERSHIP unwind");
                             }))
                             .is_err()
                         );
@@ -1976,9 +2007,18 @@ mod tests {
             if let Err(error) = result {
                 let error = error.downcast_ref::<io::Error>().expect("typed I/O cause retained");
                 let (kind, message) = match case {
-                    "raw" => (io::ErrorKind::Other, "T03 raw enable failure"),
-                    "construct" => (io::ErrorKind::NotFound, "T03 terminal size failure"),
-                    "raw_cleanup" => (io::ErrorKind::Other, "T03 raw disable failure"),
+                    "raw" => (
+                        io::ErrorKind::Other,
+                        "TERMINAL_OWNERSHIP raw enable failure",
+                    ),
+                    "construct" => (
+                        io::ErrorKind::NotFound,
+                        "TERMINAL_OWNERSHIP terminal size failure",
+                    ),
+                    "raw_cleanup" => (
+                        io::ErrorKind::Other,
+                        "TERMINAL_OWNERSHIP raw disable failure",
+                    ),
                     "enter_flush" | "flush_cleanup" | "restore_flush" => {
                         (io::ErrorKind::Other, "selected writer flush failure")
                     },
@@ -2021,24 +2061,26 @@ mod tests {
             }
             drop(recording);
             let before = hook_calls.load(Ordering::SeqCst);
-            assert!(std::panic::catch_unwind(|| panic!("T03 hook sentinel")).is_err());
+            assert!(
+                std::panic::catch_unwind(|| panic!("TERMINAL_OWNERSHIP hook sentinel")).is_err()
+            );
             assert_eq!(
                 hook_calls.load(Ordering::SeqCst),
                 before + 1,
                 "{case}: hook not restored"
             );
-            println!("T03_CASE_{case}_PASSED");
+            println!("TERMINAL_OWNERSHIP_CASE_{case}_PASSED");
         }
         std::panic::set_hook(previous);
-        println!("T03_MATRIX_PASSED");
+        println!("TERMINAL_OWNERSHIP_MATRIX_PASSED");
         Ok(())
     }
 
     #[cfg(unix)]
     #[test]
-    #[ignore = "runs in an isolated controlling PTY via t03_real_pty_render_failure_restores_and_cancels"]
-    fn t03_pty_child() -> Result<()> {
-        let Ok(stream) = std::env::var("T01_PTY_STREAM") else {
+    #[ignore = "runs in an isolated controlling PTY via real_pty_render_failure_restores_and_cancels"]
+    fn render_failure_pty_child() -> Result<()> {
+        let Ok(stream) = std::env::var("TUI_PTY_STREAM") else {
             return Ok(());
         };
         assert!(std::env::var_os("CONDOR_TEST_MODE").is_none());
@@ -2066,12 +2108,12 @@ mod tests {
             error.downcast_ref::<io::Error>().unwrap().kind(),
             io::ErrorKind::BrokenPipe
         );
-        assert_eq!(error.to_string(), "T03 render failure");
+        assert_eq!(error.to_string(), "TERMINAL_OWNERSHIP render failure");
         assert!(
             cancelled.load(Ordering::SeqCst),
             "display failure must cancel before returning"
         );
-        println!("T03_ERROR_RETURNED_CANCEL_TRUE");
+        println!("TERMINAL_OWNERSHIP_ERROR_RETURNED_CANCEL_TRUE");
         Ok(())
     }
 

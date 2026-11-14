@@ -487,7 +487,7 @@ mod tests {
     const FRAMES: usize = 400;
 
     #[test]
-    fn t07_parallel_snapshot_drops_raw_scene_payloads() {
+    fn parallel_snapshot_drops_raw_scene_payloads() {
         let mut input = scenes();
         let (_, quality) = crate::test_helpers::quality_scene_fixture();
         for (_, scene) in input.values_mut() {
@@ -621,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn c05_parallel_header_uses_actual_uniform_or_mixed_scene_settings() {
+    fn parallel_header_uses_actual_uniform_or_mixed_scene_settings() {
         let global = Encoder::default_from_base(&EncoderBase::AOM, false);
         let uniform = app(2, global.clone(), scenes(), clip_info());
         let header = screen(&uniform).lines().take(8).collect::<Vec<_>>().join("\n");
@@ -657,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn c05_active_worker_panels_name_actual_codecs_and_keep_cross_codec_parameters() {
+    fn active_worker_panels_name_actual_codecs_and_keep_cross_codec_parameters() {
         let mut scene_map = scenes();
         for (index, base) in [(0, EncoderBase::X264), (1, EncoderBase::X265)] {
             scene_map.get_mut(&index).unwrap().1.encoder = Encoder::default_from_base(&base, false);
@@ -679,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn c05_m1_mixed_same_codec_workers_show_full_parameters_without_a_visible_reference() {
+    fn mixed_same_codec_workers_show_full_parameters_without_a_visible_reference() {
         use andean_condor::models::encoder::cli_parameter::CLIParameter;
 
         let mut global = encoder();
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn c05_m1_uniform_workers_diff_only_against_the_visible_actual_header() {
+    fn uniform_workers_diff_only_against_the_visible_actual_header() {
         use andean_condor::models::encoder::cli_parameter::CLIParameter;
 
         let global = encoder();
@@ -766,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn q15_backwards_saved_timestamps_preserve_metadata_not_live_progress_time() {
+    fn backwards_saved_timestamps_preserve_metadata_not_live_progress_time() {
         use std::time::{Duration, Instant};
 
         use andean_condor::models::sequence::parallel_encoder::ParallelEncoderData;
@@ -840,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn e16_first_event_pass_order_and_retry_reset() {
+    fn first_event_pass_order_and_retry_reset() {
         let mut scenes = scenes();
         *scenes.get_mut(&1).expect("scene").1.encoder.passes_mut().expect("passes") =
             andean_condor::models::encoder::EncoderPasses::All(2);
@@ -865,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn e16_specific_pass_ui_uses_the_scene_model_and_preserves_native_panel() {
+    fn specific_pass_ui_uses_the_scene_model_and_preserves_native_panel() {
         use andean_condor::models::encoder::EncoderPasses;
 
         for (passes, native_pass, credited) in [
@@ -907,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn e16_final_native_frame_is_not_a_completion_title() {
+    fn final_native_frame_is_not_a_completion_title() {
         let mut app = app(2, encoder(), scenes(), clip_info());
         for scene in 0..4 {
             ParallelEncoderApp::map_progress(progress(scene, (1, 1), 100), app.cached_state_mut());
@@ -920,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn e16_validated_resume_has_no_new_work_fps() {
+    fn validated_resume_has_no_new_work_fps() {
         let mut app = app(2, encoder(), scenes(), clip_info());
         for scene in 0..4 {
             for _ in 0..2 {
@@ -948,7 +948,7 @@ mod tests {
     }
 
     #[test]
-    fn e16_failure_cleanup_and_publication_do_not_inflate_resume_baseline() {
+    fn failure_cleanup_and_publication_do_not_inflate_resume_baseline() {
         let mut app = app(2, encoder(), scenes(), clip_info());
         let state = app.cached_state_mut();
         ParallelEncoderApp::map_progress(custom(0, "resumed-size", 1000.0), state);
@@ -988,7 +988,7 @@ mod tests {
     }
 
     #[test]
-    fn e16_zero_length_scene_render_is_finite() {
+    fn zero_length_scene_render_is_finite() {
         let mut scenes = scenes();
         scenes.retain(|id, _| *id == 0);
         scenes.get_mut(&0).expect("scene").1.end_frame = 0;
@@ -1054,7 +1054,7 @@ mod tests {
     }
 
     #[test]
-    fn e14_saved_metadata_is_not_eligible_until_runtime_size_validation() {
+    fn saved_metadata_is_not_eligible_until_runtime_size_validation() {
         let mut scenes = scenes();
         for (completed, scene) in scenes.values_mut() {
             *completed = 100;
@@ -1091,7 +1091,7 @@ mod tests {
     }
 
     #[test]
-    fn e14_r1_validation_progress_renders_without_completing_scenes() {
+    fn validation_progress_renders_without_completing_scenes() {
         let mut app = app(2, encoder(), scenes(), clip_info());
         let event = SequenceStatus::Whole(Status::Processing {
             id: "Parallel Encoder".into(),

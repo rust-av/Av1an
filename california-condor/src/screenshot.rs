@@ -1305,7 +1305,7 @@ mod tests {
     use crate::apps::TuiApp;
 
     #[test]
-    fn e16a_parallel_fixture_preserves_validated_resume_progress() {
+    fn parallel_fixture_preserves_validated_resume_progress() {
         let app = super::parallel_encoder_fixture(super::clip_info());
         let state = app.cached_state();
         assert_eq!(state.initial_frames, 2054, "four validated resume scenes");

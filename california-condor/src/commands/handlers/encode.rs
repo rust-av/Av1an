@@ -699,11 +699,11 @@ mod tests {
     };
 
     #[test]
-    fn e19_avm_explicit_noise_edits_fail_atomically_offline() {
+    fn avm_explicit_noise_edits_fail_atomically_offline() {
         for method in [None, Some(EncoderMethod::AVM)] {
             for (noise, chroma) in [(Some(800), None), (None, Some(400)), (Some(800), Some(400))] {
                 let mut encoder = Encoder::default_from_base(&EncoderBase::AVM, false);
-                encoder.set_executable(Some("/missing/e19-avmenc".into()));
+                encoder.set_executable(Some("/missing/avmenc".into()));
                 let before = encoder.clone();
                 let error = configure_encoder(
                     &mut encoder,
@@ -728,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn e19_avm_crud_preserves_saved_config_and_repairs_legacy_noise_offline() {
+    fn avm_crud_preserves_saved_config_and_repairs_legacy_noise_offline() {
         use crate::test_helpers::TestVideo;
         let temp = tempfile::tempdir().expect("configuration fixture");
         let video = TestVideo {
@@ -854,7 +854,7 @@ mod tests {
     }
 
     #[test]
-    fn c04_invalid_edits_are_atomic() {
+    fn invalid_edits_are_atomic() {
         for (method, passes, params, noise, chroma, filter) in [
             (Some(EncoderMethod::X264), None, None, Some(100), None, None),
             (Some(EncoderMethod::FFmpeg), Some(1), None, None, None, None),
@@ -900,7 +900,7 @@ mod tests {
     }
 
     #[test]
-    fn c04_switch_retains_explicit_controls_and_chroma_updates_luma() {
+    fn switch_retains_explicit_controls_and_chroma_updates_luma() {
         let mut encoder = Encoder::default_from_base(&EncoderBase::X264, false);
         configure_encoder(
             &mut encoder,
@@ -935,7 +935,7 @@ mod tests {
     }
 
     #[test]
-    fn c04_explicit_svt_mode_change_replaces_only_stock_crf() {
+    fn explicit_svt_mode_change_replaces_only_stock_crf() {
         for params in
             ["--rc 1 --tbr 1000 --keyint 48", "--rc vbr --tbr 1M --keyint 2s", "--cqp 25.25"]
         {
@@ -973,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn c04_f6_explicit_quality_choices_replace_stock_not_custom_crf() {
+    fn explicit_quality_choices_replace_stock_not_custom_crf() {
         for params in [
             "--qp 32",
             "-q 32 --aq-mode 0",
@@ -1260,7 +1260,7 @@ mod tests {
 
     /// Filter-only edits reach the saved override without replacing the root reference.
     #[test]
-    fn c08_encode_handler_filters_target_existing_override() {
+    fn encode_handler_filters_target_existing_override() {
         let test_video = get_test_video();
         let input_abs = path_abs::PathAbs::new(&test_video.path)
             .expect("path_abs should succeed")

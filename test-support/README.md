@@ -58,10 +58,24 @@ clears native-library, model, and loader-path overrides locally before invoking
 This removes runner-path overrides, not the platform's system-library fallback.
 
 ```sh
-python3 test-support/m24_archive_smoke.py
+python3 -B -m unittest discover -s .github/workflows/tests -p 'test_linux_build.py' -v
 ```
 
 This offline regression executes the actual workflow version command and its
 environment setup against an environment-reporting probe. Eleven poisoned
 overrides must be absent while unrelated environment survives. It verifies that
 command boundary, not archive contents or a hosted Actions run.
+
+## Complete Python suite
+
+Run both discovery roots from the repository root on Linux with Python 3, Bash,
+Git and the existing PyYAML dependency available:
+
+```sh
+python3 -B -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v
+python3 -B -m unittest discover -s .github/workflows/tests -p 'test_*.py' -v
+```
+
+Native-Windows installer cases are skipped on Linux. Run the Windows CI selections
+on native Windows and the separate Windows DLL gate above before claiming Windows
+acceptance; these discovery commands do not replace those gates.

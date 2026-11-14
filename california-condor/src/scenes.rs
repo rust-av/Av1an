@@ -706,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn z02_mapping_noise_and_empty_result_reset_controls() {
+    fn mapping_noise_and_empty_result_reset_controls() {
         use andean_condor::models::sequence::noise_detector::NoiseDetectorData;
         let temp = tempfile::tempdir().expect("fixture");
         let mut config = CliSequenceConfig::default();
@@ -771,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn z02_file_only_shift_blocks_both_occupied_filename_and_moved_source() {
+    fn file_only_shift_blocks_both_occupied_filename_and_moved_source() {
         let temp = tempfile::tempdir().expect("fixture");
         let mut config = CliSequenceConfig::default();
         config.parallel_encoder.scenes_directory = temp.path().to_path_buf();
@@ -798,7 +798,7 @@ mod tests {
     }
 
     #[test]
-    fn z02_new_index_claim_is_not_misattributed_to_clean_old_range() {
+    fn new_index_claim_is_not_misattributed_to_clean_old_range() {
         let temp = tempfile::tempdir().expect("fixture");
         let mut config = CliSequenceConfig::default();
         config.parallel_encoder.scenes_directory = temp.path().join("scenes");

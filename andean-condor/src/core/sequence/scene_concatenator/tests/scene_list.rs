@@ -448,7 +448,7 @@ fn decoded(path: &Path) -> Vec<u8> {
 }
 
 #[test]
-pub(super) fn native_complete_lists_keep_exact_order_count_and() {
+pub(super) fn native_complete_lists_keep_order_and_frame_count_and_require_current_provenance() {
     let dir = tempfile::tempdir().expect("native fixture");
     let mut job = job(dir.path(), &dir.path().join("final.ivf"), 3);
     let paths = (0..3).map(|i| dir.path().join(format!("{i:05}.ivf"))).collect::<Vec<_>>();

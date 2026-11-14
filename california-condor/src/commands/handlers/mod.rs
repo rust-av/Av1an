@@ -674,7 +674,7 @@ mod tests {
     }
 
     #[test]
-    fn i06_configure_and_apply_filters_are_atomic_without_source_indexing() {
+    fn configure_and_apply_filters_are_atomic_without_source_indexing() {
         use andean_condor::{ffmpeg::FFPixelFormat, models::input::Ffms2Filter};
         let temp = tempfile::tempdir().expect("CLI fixture");
         let script = temp.path().join("blank.vpy");

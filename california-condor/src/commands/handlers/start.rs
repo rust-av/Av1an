@@ -414,9 +414,9 @@ mod tests {
     };
 
     #[test]
-    fn i09a_start_creates_default_config() {
+    fn start_without_config_creates_defaults_in_isolated_child() {
         isolated_default_path_test(
-            "commands::handlers::start::tests::i09a_start_creates_default_config",
+            "commands::handlers::start::tests::start_without_config_creates_defaults_in_isolated_child",
             start_creates_default_config,
         );
     }

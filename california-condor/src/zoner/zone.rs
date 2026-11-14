@@ -617,14 +617,14 @@ mod tests {
     }
 
     #[test]
-    fn e06_a_merge_zone_patches_requested_executable_and_filter_offline() {
+    fn merge_zone_patches_requested_executable_and_filter_offline() {
         let mut scene = scene(0, 100);
         scene.encoder.set_photon_noise(Some(photon_noise(400)));
         scene.encoder.parameters_mut().insert(
             "film-grain".to_owned(),
             CLIParameter::new_number("--", " ", 10.0),
         );
-        let binary = PathBuf::from("e06-missing-zone-encoder");
+        let binary = PathBuf::from("missing-zone-encoder");
         let zone = merge(ZoneEncoderMerge {
             base: Some(EncoderBase::SVTAV1),
             executable: Some(binary.clone()),

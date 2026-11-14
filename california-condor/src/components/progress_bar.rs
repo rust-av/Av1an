@@ -148,7 +148,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn t08_progress_rates_reject_nonfinite_intervals_and_overflow() {
+    fn progress_rates_reject_nonfinite_intervals_and_overflow() {
         let bar = ProgressBar {
             completed: 1,
             total: u64::MAX,
@@ -172,7 +172,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn t08_progress_empty_overcomplete_reversed_and_narrow_unicode_are_finite() {
+    fn progress_empty_overcomplete_reversed_and_narrow_unicode_are_finite() {
         for (initial, completed, total, ratio) in
             [(0, 0, 0, 0.0), (0, 101, 100, 1.0), (100, 90, 100, 0.9), (0, u64::MAX, 1, 1.0)]
         {
@@ -222,7 +222,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn e16_resume_rate_formula_excludes_validated_baseline() {
+    fn resume_rate_formula_excludes_validated_baseline() {
         let mut bar = ProgressBar {
             initial_completed: 100,
             completed: 150,

@@ -311,9 +311,9 @@ impl Drop for CwdGuard {
 pub(crate) fn isolated_default_path_test(test_name: &str, body: impl FnOnce(&Path)) {
     use std::{env, fs, process, time::Duration};
 
-    const CHILD: &str = "CONDOR_I09A_CHILD";
-    const FIXTURE: &str = "CONDOR_I09A_FIXTURE";
-    const PARENT_PID: &str = "CONDOR_I09A_PARENT_PID";
+    const CHILD: &str = "CONDOR_DEFAULT_PATH_CHILD";
+    const FIXTURE: &str = "CONDOR_DEFAULT_PATH_FIXTURE";
+    const PARENT_PID: &str = "CONDOR_DEFAULT_PATH_PARENT_PID";
 
     if let Some(marker) = env::var_os(CHILD) {
         assert_eq!(marker, test_name, "exact default-path child marker");
@@ -333,7 +333,7 @@ pub(crate) fn isolated_default_path_test(test_name: &str, body: impl FnOnce(&Pat
         body(&cwd);
         fs::File::create_new(cwd.join("completed")).expect("child completed marker");
         println!(
-            "I09a default body completed: {test_name}; parent_pid={parent_pid}; child_pid={child_pid}"
+            "default configuration body completed: {test_name}; parent_pid={parent_pid}; child_pid={child_pid}"
         );
         return;
     }
@@ -369,8 +369,9 @@ pub(crate) fn isolated_default_path_test(test_name: &str, body: impl FnOnce(&Pat
             && stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
         "child must execute exactly the named body: {output:?}"
     );
-    let completion =
-        format!("I09a default body completed: {test_name}; parent_pid={parent_pid}; child_pid=");
+    let completion = format!(
+        "default configuration body completed: {test_name}; parent_pid={parent_pid}; child_pid="
+    );
     let child_pid: u32 = stdout
         .split_once(&completion)
         .expect("named child body completed for this parent")

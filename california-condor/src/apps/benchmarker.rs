@@ -295,7 +295,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn t08_benchmark_throttled_first_event_is_observed_baseline() {
+    fn benchmark_throttled_first_event_is_observed_baseline() {
         let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
         let mut app = BenchmarkerApp::new(scenes[0].encoder.clone(), clip);
         let mut mapper = app.progress_mapper();
@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn t08_benchmark_zero_future_reversed_and_short_intervals_are_finite() {
+    fn benchmark_zero_future_reversed_and_short_intervals_are_finite() {
         let now = std::time::Instant::now();
         let mut status = WorkerStatus {
             started: now,

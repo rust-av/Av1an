@@ -252,7 +252,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn t08_noise_restored_scenes_are_not_new_work() {
+    fn noise_restored_scenes_are_not_new_work() {
         let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
         let scenes: Vec<_> = (0..100)
             .map(|index| {
@@ -347,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn t07_noise_frame_snapshots_share_exact_chart_points() {
+    fn noise_frame_snapshots_share_exact_chart_points() {
         let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
         let scenes: Vec<_> = (0..1024)
             .map(|index| {

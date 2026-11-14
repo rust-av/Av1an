@@ -73,7 +73,7 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
-    fn c05_parameter_diff_only_hides_equal_options_for_the_same_codec() {
+    fn parameter_diff_only_hides_equal_options_for_the_same_codec() {
         let parent = Encoder::default_from_base(&EncoderBase::X264, false);
         for base in [EncoderBase::X264, EncoderBase::X265] {
             let actual = Encoder::default_from_base(&base, false);

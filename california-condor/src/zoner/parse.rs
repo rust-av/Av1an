@@ -861,7 +861,7 @@ mod tests {
     }
 
     #[test]
-    fn z03_load_rejects_unknown_json_keys_with_file_and_cause() {
+    fn load_rejects_unknown_json_keys_with_file_and_cause() {
         let directory = tempfile::tempdir().expect("a temp directory");
         let path = directory.path().join("typo.json");
         for (contents, key) in [
@@ -885,7 +885,7 @@ mod tests {
     }
 
     #[test]
-    fn z03_parse_rejects_bad_json_after_valid_inline_zone() {
+    fn parse_rejects_bad_json_after_valid_inline_zone() {
         let directory = tempfile::tempdir().expect("a temp directory");
         let path = directory.path().join("typo.json");
         write(&path, r#"{"zone": [{"end_frame": 200}]}"#);
@@ -897,7 +897,7 @@ mod tests {
     }
 
     #[test]
-    fn z03_json_keeps_empty_shapes_optional_fields_and_serde_errors() {
+    fn json_keeps_empty_shapes_optional_fields_and_serde_errors() {
         let directory = tempfile::tempdir().expect("a temp directory");
         let path = directory.path().join("zones.json");
         for contents in ["{}", r#"{"zones": []}"#, "[]"] {

@@ -27,6 +27,9 @@ av1an/95
 # Distribution / packaging
 .Python
 build/
+# Source-owned standalone build acceptance check, not generated build output.
+!/california-condor/tests/build/
+!/california-condor/tests/build/schema.py
 develop-eggs/
 dist/
 downloads/

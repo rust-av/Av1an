@@ -42,9 +42,9 @@ pub(in crate::interrupt) fn observe_received(count: usize) {
 fn command(root: &Path, role: &str) -> Result<Command> {
     let mut command = Command::new(std::env::current_exe()?);
     command
-        .args(["--exact", "interrupt::tests::windows::t06_windows_console_child", "--nocapture"])
-        .env("T06_WINDOWS_ROOT", root)
-        .env("T06_WINDOWS_ROLE", role)
+        .args(["--exact", "interrupt::tests::windows::windows_console_child", "--nocapture"])
+        .env("WINDOWS_INTERRUPT_ROOT", root)
+        .env("WINDOWS_INTERRUPT_ROLE", role)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -86,7 +86,7 @@ fn wait_status(handle: &impl AsRawHandle, milliseconds: u32) -> u32 {
 }
 
 #[test]
-fn t06_windows_console_break_lifecycle() -> Result<()> {
+fn windows_console_break_lifecycle() -> Result<()> {
     let root = tempfile::tempdir()?;
     let mut output = tempfile::tempfile()?;
     let mut command = command(root.path(), "supervisor")?;
@@ -119,12 +119,12 @@ fn t06_windows_console_break_lifecycle() -> Result<()> {
 }
 
 #[test]
-fn t06_windows_console_child() -> Result<()> {
-    let Some(root) = std::env::var_os("T06_WINDOWS_ROOT") else {
+fn windows_console_child() -> Result<()> {
+    let Some(root) = std::env::var_os("WINDOWS_INTERRUPT_ROOT") else {
         return Ok(());
     };
     let root = Path::new(&root);
-    match std::env::var("T06_WINDOWS_ROLE")?.as_str() {
+    match std::env::var("WINDOWS_INTERRUPT_ROLE")?.as_str() {
         "supervisor" => supervise(root),
         "listener" => listen(root),
         "fixture" => {

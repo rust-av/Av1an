@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn z01_exact_boundary_partition_table() {
+    fn exact_boundary_partition_table() {
         use EncoderBase::{SVTAV1 as S, X265 as X};
         // Literal oracles catch whole-scene overrides, lost cuts/gaps and inclusive ends.
         let cases = [
@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn z01_caps_follow_boundaries_and_clip_crossing_subscenes() {
+    fn caps_follow_boundaries_and_clip_crossing_subscenes() {
         let mut original = scene(0, 100);
         original.sub_scenes = Some(vec![SubScene {
             start_frame: 20,

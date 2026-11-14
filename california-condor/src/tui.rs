@@ -749,7 +749,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn t09_frame_mismatch_displays_both_counts_and_filter_hint() {
+    fn frame_mismatch_displays_both_counts_and_filter_hint() {
         for (error, suffix) in [
             (TUIError::FramesMismatch(100, 120), "100 != 120"),
             (
@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn c05_stage_tq_summary_uses_resolved_scene_probe_encoders() {
+    fn stage_tq_summary_uses_resolved_scene_probe_encoders() {
         use andean_condor::models::encoder::{
             EncoderBase, EncoderPasses, cli_parameter::CLIParameter,
         };
@@ -1035,12 +1035,12 @@ mod tests {
     }
 
     #[test]
-    fn t02_shared_lifecycle() -> Result<()> {
+    fn tui_stages_share_cancellation_and_restore_terminal() -> Result<()> {
         // File-backed output cannot fill a pipe if a regressed join hangs. The
         // watchdog only bounds failures; timing is not the ordering assertion.
         let mut output = tempfile::tempfile()?;
         let mut child = Command::new(std::env::current_exe()?)
-            .args(["--exact", "tui::tests::t02_lifecycle_child", "--ignored", "--nocapture"])
+            .args(["--exact", "tui::tests::tui_stage_lifecycle_child", "--ignored", "--nocapture"])
             .stdout(Stdio::from(output.try_clone()?))
             .stderr(Stdio::from(output.try_clone()?))
             .spawn()?;
@@ -1072,8 +1072,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "bounded child of t02_shared_lifecycle, not a standalone test"]
-    fn t02_lifecycle_child() -> Result<()> {
+    #[ignore = "bounded child of tui_stages_share_cancellation_and_restore_terminal, not a standalone test"]
+    fn tui_stage_lifecycle_child() -> Result<()> {
         let mut failures = Vec::new();
         // These are the seven production finish_stage call-site identities.
         // Runtime coverage is the common lifecycle, not native encoder jobs.

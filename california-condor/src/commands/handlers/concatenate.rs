@@ -480,7 +480,7 @@ mod tests {
     };
 
     #[test]
-    fn c07_native_zero_ancillary_tracks_leave_the_map_absent() {
+    fn native_zero_ancillary_tracks_leave_the_map_absent() {
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("native fixture");
         let output = temp.path().join("out.mkv");
@@ -746,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn x08_discard_preserves_attachment_options_and_refuses_wrong_kinds() {
+    fn discard_preserves_attachment_options_and_refuses_wrong_kinds() {
         let source = probed_source();
         let mut settings: MkvmergeConfig = serde_json::from_str(r#"{"tracks":{"1":{"type":"audio","language":"jpn"}},"attachments":{"1":{"attachment_name":"kept name","attachment_description":"kept description","attachment_mime_type":"text/plain"}}}"#).expect("settings");
         let before = settings.clone();

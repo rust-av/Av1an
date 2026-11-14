@@ -577,7 +577,7 @@ pub enum QualityCheckConsoleEvent {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn t08_qc_resume_counts_selected_work_not_current_run_throughput() {
+    fn qc_resume_counts_selected_work_not_current_run_throughput() {
         let (clip, mut scenes) = crate::test_helpers::quality_scene_fixture();
         scenes.truncate(2);
         scenes[0].start_frame = 0;
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn t08_qc_cumulative_resume_matches_selected_prefix_count_not_scene_length() {
+    fn qc_cumulative_resume_matches_selected_prefix_count_not_scene_length() {
         let (clip, mut scenes) = crate::test_helpers::quality_scene_fixture();
         scenes.truncate(2);
         scenes[0].start_frame = 10;
@@ -753,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn t07_qc_snapshot_excludes_final_raw_scores() {
+    fn qc_snapshot_excludes_final_raw_scores() {
         let (clip, mut scenes) = crate::test_helpers::quality_scene_fixture();
         scenes[0].sequence_data.quality_check.quality.scores = vec![73.125; 8192];
         scenes[0].sequence_data.quality_check.quality.scores[0] = 1.0;
@@ -817,11 +817,11 @@ mod tests {
     }
 
     #[test]
-    fn t07_qc_headless_report_keeps_resumed_and_last_live_scores() {
-        if std::env::var_os("T07_QC_REPORT_CHILD").is_none() {
+    fn qc_headless_report_keeps_resumed_and_last_live_scores() {
+        if std::env::var_os("QC_RESUMED_REPORT_CHILD").is_none() {
             let output = Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "apps::quality_check::tests::t07_qc_headless_report_keeps_resumed_and_last_live_scores", "--nocapture"])
-                .env("T07_QC_REPORT_CHILD", "1").env("CONDOR_TEST_MODE", "1").output().unwrap();
+                .args(["--exact", "apps::quality_check::tests::qc_headless_report_keeps_resumed_and_last_live_scores", "--nocapture"])
+                .env("QC_RESUMED_REPORT_CHILD", "1").env("CONDOR_TEST_MODE", "1").output().unwrap();
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(
                 output.status.success(),
@@ -949,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn q05_qc_report_rejects_nonfinite_and_overflow_instead_of_printing_fake_stats() {
+    fn qc_report_rejects_nonfinite_and_overflow_instead_of_printing_fake_stats() {
         assert!(QualityCheckApp::compute_stats(&[], false).expect("no measurement").is_none());
         for scores in [
             vec![f64::NAN],
@@ -972,7 +972,7 @@ mod tests {
         );
     }
     #[test]
-    fn q05_saved_qc_rejects_corrupt_measurements_but_preserves_unmeasured_screens() {
+    fn saved_qc_rejects_corrupt_measurements_but_preserves_unmeasured_screens() {
         let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
         for scores in
             [vec![f64::NAN], vec![f64::INFINITY], vec![f64::NEG_INFINITY], vec![1.0, -1.0]]
@@ -1026,7 +1026,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn m27_saved_qc_constructor_and_live_mapper_keep_scene_finals_and_prefixes() {
+    fn saved_qc_constructor_and_live_mapper_keep_scene_finals_and_prefixes() {
         let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
         for disabled in [None, Some(false), Some(true)] {
             let metric = QualityMetric::CVVDP {
@@ -1125,8 +1125,8 @@ mod tests {
     }
 
     #[test]
-    fn m27_report_does_not_summarize_prefixes_as_independent_frames() {
-        if let Ok(mode) = std::env::var("M27_QC_REPORT_CHILD") {
+    fn report_does_not_summarize_prefixes_as_independent_frames() {
+        if let Ok(mode) = std::env::var("QC_PREFIX_REPORT_CHILD") {
             let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
             let metric = QualityMetric::CVVDP {
                 target_range: (3.9, 4.1),
@@ -1150,8 +1150,8 @@ mod tests {
         }
         for mode in ["temporal", "independent"] {
             let output = Command::new(std::env::current_exe().expect("test executable"))
-                .args(["--exact", "apps::quality_check::tests::m27_report_does_not_summarize_prefixes_as_independent_frames", "--nocapture"])
-                .env("M27_QC_REPORT_CHILD", mode).output().expect("report child");
+                .args(["--exact", "apps::quality_check::tests::report_does_not_summarize_prefixes_as_independent_frames", "--nocapture"])
+                .env("QC_PREFIX_REPORT_CHILD", mode).output().expect("report child");
             let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(output.status.success(), "{stdout}");
             assert!(
@@ -1167,8 +1167,8 @@ mod tests {
     }
 
     #[test]
-    fn m18_submission_progress_reaches_ui_and_console() {
-        if std::env::var_os("M18_QC_UI_CHILD").is_some() {
+    fn submission_progress_reaches_ui_and_console() {
+        if std::env::var_os("QC_SUBMISSION_PROGRESS_CHILD").is_some() {
             let (clip, _) = crate::test_helpers::quality_scene_fixture();
             let app = QualityCheckApp::new(
                 clip,
@@ -1243,10 +1243,10 @@ mod tests {
         let mut child = Command::new(std::env::current_exe().expect("test executable"))
             .args([
                 "--exact",
-                "apps::quality_check::tests::m18_submission_progress_reaches_ui_and_console",
+                "apps::quality_check::tests::submission_progress_reaches_ui_and_console",
                 "--nocapture",
             ])
-            .env("M18_QC_UI_CHILD", "1")
+            .env("QC_SUBMISSION_PROGRESS_CHILD", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -1263,7 +1263,7 @@ mod tests {
         let output = child.wait_with_output().expect("mapper output");
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("M18 actual QC mapper/console:\n{stdout}\n{stderr}");
+        eprintln!("QC submission progress mapper/console:\n{stdout}\n{stderr}");
         assert!(output.status.success(), "{stdout}\n{stderr}");
         assert!(
             stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),

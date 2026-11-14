@@ -94,7 +94,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn c01_consecutive_flags_do_not_become_values() {
+    fn consecutive_flags_do_not_become_values() {
         for (input, flags, numbers) in [
             ("--no-sao --crf 20", vec!["no-sao"], vec![("crf", 20.0)]),
             (
@@ -121,7 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn c01_rejects_malformed_or_duplicate_parameters_without_partial_success() {
+    fn rejects_malformed_or_duplicate_parameters_without_partial_success() {
         for (input, context) in [
             ("--ok=1 --key \"unfinished", "quot"),
             ("--ok=1 --key 'unfinished", "quot"),

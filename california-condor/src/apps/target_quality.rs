@@ -491,7 +491,7 @@ pub struct QualityPass {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn t07_tq_frame_snapshots_share_all_display_history() {
+    fn tq_frame_snapshots_share_all_display_history() {
         use crate::apps::TuiApp;
         use andean_condor::{
             core::sequence::{SequenceCompletion, SequenceStatus, Status},
@@ -605,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn c05_tq_header_uses_actual_uniform_or_mixed_scene_settings() {
+    fn tq_header_uses_actual_uniform_or_mixed_scene_settings() {
         use crate::apps::TuiApp;
         use andean_condor::models::{
             encoder::{Encoder, EncoderBase},
@@ -657,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn q05_saved_tq_rejects_corrupt_claimed_passes() {
+    fn saved_tq_rejects_corrupt_claimed_passes() {
         use andean_condor::models::sequence::target_quality::types::{
             ProbeStatistic, QualityMetric,
         };
@@ -699,7 +699,7 @@ mod tests {
     use super::{TargetQualityApp, TargetQualityState};
 
     #[test]
-    fn q15_backwards_recorded_pass_timestamps_do_not_supply_live_progress_time() {
+    fn backwards_recorded_pass_timestamps_do_not_supply_live_progress_time() {
         use std::time::{Duration, Instant};
 
         use andean_condor::{
@@ -799,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn m27_saved_tq_constructor_and_live_mapper_use_actual_metric() {
+    fn saved_tq_constructor_and_live_mapper_use_actual_metric() {
         use crate::apps::TuiApp;
         use andean_condor::{
             core::sequence::{SequenceCompletion, SequenceStatus, Status},
