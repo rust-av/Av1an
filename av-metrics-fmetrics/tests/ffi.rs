@@ -6,8 +6,33 @@ use av_metrics_fmetrics::{
 };
 use std::{
     mem::{align_of, offset_of, size_of},
+    path::{Path, PathBuf},
     process::Command,
 };
+
+#[test]
+fn all_bare_fmetrics_names_are_the_final_discovery_candidates() {
+    let candidates = library_candidates();
+    assert!(!candidates.is_empty());
+    for name in library_names() {
+        assert!(
+            candidates.iter().any(|candidate| candidate == Path::new(name)),
+            "{name} must be among the candidates"
+        );
+    }
+    // An override or executable sibling must precede the loader's bare-name search.
+    let is_bare =
+        |candidate: &PathBuf| candidate.parent().is_none_or(|parent| parent.as_os_str().is_empty());
+    let first_bare = candidates
+        .iter()
+        .position(is_bare)
+        .unwrap_or_else(|| panic!("bare names must be among the candidates"));
+    assert_eq!(
+        first_bare,
+        candidates.len() - library_names().len(),
+        "bare names must be the final candidates"
+    );
+}
 #[cfg(unix)]
 use std::{
     process::Stdio,

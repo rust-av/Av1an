@@ -1078,7 +1078,7 @@ mod tests {
     }
 
     #[test]
-    fn pixel_format_discriminants_match_the_header() {
+    fn pixel_format_discriminants_match_documented_literal_values() {
         // Non-contiguous by design: RgbFloat is 2, RgbUint16 is 3.
         assert_eq!(FmetricsPixFmt::RgbUint8 as c_int, 1);
         assert_eq!(FmetricsPixFmt::RgbFloat as c_int, 2);
@@ -1086,7 +1086,7 @@ mod tests {
     }
 
     #[test]
-    fn display_models_match_the_header() {
+    fn display_model_discriminants_match_documented_literal_values() {
         assert_eq!(FmetricsCvvdpDisplayModel::StandardFhd as c_int, 0);
         assert_eq!(FmetricsCvvdpDisplayModel::Standard4K as c_int, 1);
         assert_eq!(FmetricsCvvdpDisplayModel::StandardHdrPq as c_int, 2);
@@ -1124,7 +1124,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_and_config_defaults_are_finite_three() {
+    fn raw_and_config_butteraugli_defaults_use_pnorm_three_and_intensity_two_hundred_three() {
         let options = FmetricsButteraugliOptions::default();
         assert_eq!(options.pnorm, 3);
         assert!((options.intensity_target - 203.0).abs() < f32::EPSILON);
@@ -1134,91 +1134,65 @@ mod tests {
         assert!((configured.intensity_target - 203.0).abs() < f32::EPSILON);
     }
 
-    #[test]
-    fn system_directories_are_real_and_not_assumed_to_be_on_c() {
-        // Windows can be installed to another drive or relocated, so the system
-        // directory has to come from the OS. A hardcoded `C:\Windows` silently
-        // names a directory that does not exist there, and the failure looks
-        // like "fmetrics is not installed" rather than "the search path
-        // was wrong".
-        let directories = system_directories();
+    mod internal_integration {
+        use super::*;
 
-        if cfg!(target_os = "windows") {
-            let system =
-                windows_system_directory(true).expect("Windows reports a system directory");
-            assert!(system.is_absolute(), "{system:?} should be absolute");
-            assert!(
-                system.components().count() > 1,
-                "{system:?} should name a drive and a directory, not a bare name"
-            );
+        #[test]
+        fn reported_system_paths_are_absolute_and_windows_system_directory_exists() {
+            // Windows can be installed to another drive or relocated, so the system
+            // directory has to come from the OS. A hardcoded `C:\Windows` silently
+            // names a directory that does not exist there, and the failure looks
+            // like "fmetrics is not installed" rather than "the search path
+            // was wrong".
+            let directories = system_directories();
 
-            // Whatever it is, it must exist: a path the OS invented would be
-            // worse than the hardcoded one it replaced.
-            assert!(
-                system.is_dir(),
-                "the reported system directory {system:?} does not exist"
-            );
+            if cfg!(target_os = "windows") {
+                let system =
+                    windows_system_directory(true).expect("Windows reports a system directory");
+                assert!(system.is_absolute(), "{system:?} should be absolute");
+                assert!(
+                    system.components().count() > 1,
+                    "{system:?} should name a drive and a directory, not a bare name"
+                );
+
+                // Whatever it is, it must exist: a path the OS invented would be
+                // worse than the hardcoded one it replaced.
+                assert!(
+                    system.is_dir(),
+                    "the reported system directory {system:?} does not exist"
+                );
+            }
+
+            // No platform should contribute a path that does not exist, since every
+            // entry here costs a failed `dlopen` attempt.
+            for directory in &directories {
+                assert!(directory.is_absolute(), "{directory:?} should be absolute");
+            }
         }
 
-        // No platform should contribute a path that does not exist, since every
-        // entry here costs a failed `dlopen` attempt.
-        for directory in &directories {
-            assert!(directory.is_absolute(), "{directory:?} should be absolute");
+        #[test]
+        fn the_wow64_directory_is_offered_when_it_exists() {
+            if !cfg!(target_os = "windows") {
+                return;
+            }
+
+            // A 64-bit process cannot load from SysWOW64, so this only matters on a
+            // 32-bit one -- but asking costs nothing and the answer is
+            // authoritative.
+            let directories = system_directories();
+            if let Some(wow64) = windows_directory("SysWOW64")
+                && wow64.is_dir()
+            {
+                assert!(
+                    directories.contains(&wow64),
+                    "an existing WOW64 directory must be among the candidates"
+                );
+            }
         }
     }
 
     #[test]
-    fn the_wow64_directory_is_offered_when_it_exists() {
-        if !cfg!(target_os = "windows") {
-            return;
-        }
-
-        // A 64-bit process cannot load from SysWOW64, so this only matters on a
-        // 32-bit one -- but asking costs nothing and the answer is
-        // authoritative.
-        let directories = system_directories();
-        if let Some(wow64) = windows_directory("SysWOW64")
-            && wow64.is_dir()
-        {
-            assert!(
-                directories.contains(&wow64),
-                "an existing WOW64 directory must be among the candidates"
-            );
-        }
-    }
-
-    #[test]
-    fn candidate_order_puts_overrides_first() {
-        let candidates = library_candidates();
-        assert!(!candidates.is_empty());
-
-        for name in library_names() {
-            assert!(
-                candidates.iter().any(|candidate| candidate == Path::new(name)),
-                "{name} must be among the candidates"
-            );
-        }
-
-        // The bare names must come last, so an explicit override or a staged
-        // library beside the executable is preferred over the loader's search
-        // path. A bare name has no separator in it, which is how one is
-        // detected: `Path::parent` yields an empty path rather than `None`.
-        let is_bare = |candidate: &PathBuf| {
-            candidate.parent().is_none_or(|parent| parent.as_os_str().is_empty())
-        };
-        let first_bare = candidates
-            .iter()
-            .position(is_bare)
-            .unwrap_or_else(|| panic!("bare names must be among the candidates"));
-        assert_eq!(
-            first_bare,
-            candidates.len() - library_names().len(),
-            "bare names must be the final candidates"
-        );
-    }
-
-    #[test]
-    fn names_include_both_prefix_conventions() {
+    fn library_names_offers_two_platform_aliases() {
         // A build may emit either `fmetrics.dll` or `libfmetrics.dll` on
         // Windows, depending on how the linker was invoked.
         let names = library_names();

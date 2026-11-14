@@ -909,7 +909,7 @@ mod tests {
     }
 
     #[test]
-    fn owned_wide_rgb_alignment_and_native_byte_roundtrip() {
+    fn owned_wide_rgb_is_aligned_and_preserves_native_endian_bytes_when_borrowed() {
         for (depth, midpoint, gray) in [(10, 512u16, 32800u16), (12, 2048, 32776)] {
             let image =
                 convert_integer_pixel([midpoint; 3], depth, YuvMatrix::Bt709, SampleRange::Full);
@@ -944,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    fn plane_layout_rejects_invalid_readable_spans() {
+    fn plane_layout_rejects_invalid_geometry_pitch_origin_span_and_sample_width() {
         let bytes = [0; 16];
         for (len, width, height, stride, origin, sample) in [
             (16, 0, 2, 2, 0, 1),
@@ -1036,7 +1036,7 @@ mod tests {
     }
 
     #[test]
-    fn rgb_checked_native_geometry_and_depth() {
+    fn rgb_view_rejects_zero_short_overflowing_and_nonnative_geometry() {
         for (width, height, wide) in [
             (0, 2, false),
             (2, 0, true),
@@ -1050,13 +1050,21 @@ mod tests {
                 Err(FmetricsError::MalformedFrame { .. })
             ));
         }
-        let aligned = AlignedRgbBytes([0; 24]);
-        assert!(RgbView::new(&aligned.0, 2, 2, true).is_ok());
         // A short slice must not hide native narrowing behind the buffer check.
         if usize::BITS > 32 {
             assert!(matches!(RgbView::new(&[], u32::MAX as usize, 1, false),
                 Err(FmetricsError::MalformedFrame { reason }) if reason.contains("native")));
         }
+    }
+
+    #[test]
+    fn aligned_wide_rgb_view_accepts_complete_buffer() {
+        let aligned = AlignedRgbBytes([0; 24]);
+        assert!(RgbView::new(&aligned.0, 2, 2, true).is_ok());
+    }
+
+    #[test]
+    fn ten_bit_conversion_rejects_byte_storage() {
         let plane = PlaneSource::from_bytes(&[0; 4], 2, 2, 2, 0, 1).unwrap();
         let info = ColorInfo {
             bit_depth: 10,
@@ -1374,7 +1382,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_reference_vectors() {
+    fn yuv_matrix_and_range_conversion_matches_independent_literal_rgb_vectors() {
         let samples = [[128, 144, 128], [128, 128, 144], [96, 112, 152], [160, 152, 112]];
         // Independent inverse-luma reference: R=Y+2(1-Kr)Cr, B=Y+2(1-Kb)Cb,
         // G=(Y-Kr*R-Kb*B)/(1-Kr-Kb), rounded once. Limited Y uses 255/219,
@@ -1707,36 +1715,45 @@ mod tests {
     }
 
     #[test]
-    fn inconsistent_peak_and_unsupported_depth_are_rejected() {
-        let samples = [512u16; 3];
-        for (depth, peak) in [(8, 1023), (10, 255), (10, 4095), (12, 1023), (16, 65535)] {
-            let planes = PlaneSet {
-                planes: samples.each_ref().map(|sample| {
-                    // SAFETY: a live u16 supplies both initialized bytes.
-                    unsafe {
-                        PlaneSource::from_raw_parts(
-                            std::ptr::from_ref(sample).cast(),
-                            2,
-                            1,
-                            1,
-                            2,
-                            0,
-                            if depth == 8 { 1 } else { 2 },
-                        )
-                        .unwrap()
-                    }
-                }),
-            };
-            let info = ColorInfo {
-                bit_depth: depth,
-                ..full_range(YuvMatrix::Bt709)
-            };
-            let result = yuv_to_rgb(&planes, &info, peak);
-            assert!(
-                matches!(result, Err(FmetricsError::UnsupportedFormat { .. })),
-                "{depth}-bit peak {peak} must fail: {result:?}"
-            );
+    fn conversion_rejects_peak_inconsistent_with_declared_bit_depth() {
+        for (depth, peak) in [(8, 1023), (10, 255), (10, 4095), (12, 1023)] {
+            assert_rejected_depth_peak(depth, peak);
         }
+    }
+
+    #[test]
+    fn conversion_rejects_unsupported_sixteen_bit_depth() {
+        assert_rejected_depth_peak(16, 65535);
+    }
+
+    fn assert_rejected_depth_peak(depth: usize, peak: u32) {
+        let samples = [512u16; 3];
+        let planes = PlaneSet {
+            planes: samples.each_ref().map(|sample| {
+                // SAFETY: a live u16 supplies both initialized bytes.
+                unsafe {
+                    PlaneSource::from_raw_parts(
+                        std::ptr::from_ref(sample).cast(),
+                        2,
+                        1,
+                        1,
+                        2,
+                        0,
+                        if depth == 8 { 1 } else { 2 },
+                    )
+                    .unwrap()
+                }
+            }),
+        };
+        let info = ColorInfo {
+            bit_depth: depth,
+            ..full_range(YuvMatrix::Bt709)
+        };
+        let result = yuv_to_rgb(&planes, &info, peak);
+        assert!(
+            matches!(result, Err(FmetricsError::UnsupportedFormat { .. })),
+            "{depth}-bit peak {peak} must fail: {result:?}"
+        );
     }
 
     #[test]
@@ -2075,7 +2092,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr_flag_is_carried_rather_than_linearised() {
+    fn rgb_descriptor_uses_explicit_hdr_flag_and_colorspace_arguments() {
         // The flag does not decode transfer functions; from_details rejects PQ/HLG.
         let info = ColorInfo {
             matrix: YuvMatrix::Bt2020,
@@ -2098,7 +2115,7 @@ mod tests {
     }
 
     #[test]
-    fn a_degenerate_frame_is_rejected() {
+    fn zero_size_empty_plane_is_rejected() {
         let result = PlaneSource::from_bytes(&[], 0, 0, 0, 0, 1);
         assert!(matches!(result, Err(FmetricsError::MalformedFrame { .. })));
     }

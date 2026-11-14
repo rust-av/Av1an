@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn sdr_source_transfer_and_output_encoding_are_distinct() {
+    fn tagged_sdr_transfer_maps_source_curve_and_output_encoding_independently() {
         use TransferCharacteristic as Source;
         use yuvxyb::TransferCharacteristic as Target;
         for (source, target, output) in [
@@ -563,6 +563,11 @@ mod tests {
             assert_eq!(source_transfer(info.transfer).unwrap(), target);
             assert_eq!(info.colorspace, output);
         }
+    }
+
+    #[test]
+    fn absent_or_unspecified_transfer_defaults_to_srgb() {
+        use TransferCharacteristic as Source;
         for source in [None, Some(Source::Unspecified)] {
             let mut details = details(1920, 1080, 8);
             details.color_transfer_characteristic = source;
@@ -590,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn only_unknown_metadata_uses_defaults() {
+    fn unspecified_color_metadata_matches_absent_defaults() {
         let mut source = details(1920, 1080, 8);
         let absent = ColorInfo::from_details(&source).unwrap();
         source.color_range = Some(av_decoders::ColorRange::Unspecified);
@@ -599,6 +604,15 @@ mod tests {
         source.color_transfer_characteristic =
             Some(av_decoders::TransferCharacteristic::Unspecified);
         assert_eq!(ColorInfo::from_details(&source).unwrap(), absent);
+    }
+
+    #[test]
+    fn reserved_matrix_metadata_is_rejected() {
+        let mut source = details(1920, 1080, 8);
+        source.color_range = Some(av_decoders::ColorRange::Unspecified);
+        source.color_primaries = Some(av_decoders::ColorPrimaries::Unspecified);
+        source.color_transfer_characteristic =
+            Some(av_decoders::TransferCharacteristic::Unspecified);
         source.color_space = Some(av_decoders::ColorSpace::Reserved);
         assert!(matches!(
             ColorInfo::from_details(&source),
@@ -607,8 +621,8 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_transfer_and_gamut_do_not_become_srgb() {
-        use av_decoders::{ColorPrimaries, TransferCharacteristic as Transfer};
+    fn unsupported_hdr_reserved_and_vlog_transfers_name_transfer_error() {
+        use av_decoders::TransferCharacteristic as Transfer;
         for transfer in
             [Transfer::SMPTE2084, Transfer::ARIB_STD_B67, Transfer::Reserved, Transfer::VLog]
         {
@@ -618,6 +632,11 @@ mod tests {
             assert!(matches!(error, FmetricsError::UnsupportedFormat { .. }));
             assert!(error.to_string().contains("transfer"), "{error}");
         }
+    }
+
+    #[test]
+    fn unsupported_primaries_name_primaries_error() {
+        use av_decoders::ColorPrimaries;
         for primaries in
             [ColorPrimaries::BT2020, ColorPrimaries::SMPTE432, ColorPrimaries::Reserved]
         {
@@ -629,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_pnorm_stays_inside_the_range_the_library_can_compute() {
+    fn default_butteraugli_pnorm_is_bounded_positive_and_explicit_norm_is_retained() {
         // The library computes `pow(d, pnorm)` and reads `pnorm <= 0` as 3.0.
         // An earlier default of `i32::MAX` -- intended as an "infinity norm" --
         // overflowed that exponentiation and returned non-finite scores on
@@ -651,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn matrix_follows_the_same_height_threshold_as_the_gpu_path() {
+    fn matrix_defaults_to_bt709_above_height_six_hundred_fifty() {
         assert_eq!(matrix_for_resolution(1080), YuvMatrix::Bt709);
         assert_eq!(matrix_for_resolution(651), YuvMatrix::Bt709);
         assert_eq!(matrix_for_resolution(650), YuvMatrix::Bt601);
@@ -659,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn color_info_matches_what_the_gpu_path_declares() {
+    fn untagged_hd_defaults_to_limited_bt709_and_sd_to_bt601() {
         // Both engines must declare the same clip identically, or their scores
         // differ for reasons that have nothing to do with the metric.
         let hd = ColorInfo::from_details(&details(1920, 1080, 8)).unwrap();
@@ -716,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn absent_norm_selects_the_library_default() {
+    fn absent_pnorm_selects_documented_default_exponent() {
         // Previously `i32::MAX`, on the theory that an infinity norm needs a
         // large exponent. The library evaluates `pow(d, pnorm)`, so
         // that overflowed and returned non-finite scores for every
@@ -741,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn default_threads_matches_the_plugin_path() {
+    fn default_config_uses_four_threads() {
         assert_eq!(DEFAULT_THREADS, 4);
         assert_eq!(FmetricsConfig::new(FmetricsMetric::Ssimulacra2).threads, 4);
     }
