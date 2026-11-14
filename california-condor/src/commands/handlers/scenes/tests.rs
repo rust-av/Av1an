@@ -39,6 +39,15 @@ fn configuration(temp: &Path) -> Configuration {
     configuration
 }
 
+fn model_configuration() -> Configuration {
+    let root = std::env::temp_dir().join("condor-scene-model-only");
+    let mut video = test_video();
+    video.path = root.join("video.mkv");
+    let mut configuration = default_config(&video, &root.join("out.mkv"), &root);
+    configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+    configuration
+}
+
 fn ranges(configuration: &Configuration) -> Vec<(usize, usize)> {
     configuration
         .condor
@@ -240,8 +249,7 @@ fn offline_encoder_edits_save_and_report_requested_identity() {
 
 #[test]
 fn setting_frames_moves_the_range_and_keeps_the_neighbours() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+    let mut configuration = model_configuration();
 
     let (name, value) = apply_set(&mut configuration, 0, &ScenesSet::Start { frame: 23 })
         .expect("the start frame moves");
@@ -259,9 +267,8 @@ fn setting_frames_moves_the_range_and_keeps_the_neighbours() {
 }
 
 #[test]
-fn setting_a_frame_into_a_neighbour_reports_the_overlap() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+fn scene_start_edit_accepts_overlap_and_names_the_neighbor() {
+    let mut configuration = model_configuration();
 
     let (_, _) = apply_set(&mut configuration, 1, &ScenesSet::Start { frame: 50 })
         .expect("the start frame moves");
@@ -280,8 +287,7 @@ fn setting_a_frame_into_a_neighbour_reports_the_overlap() {
 
 #[test]
 fn a_frame_edit_that_would_empty_a_scene_is_rejected() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+    let mut configuration = model_configuration();
 
     let error = apply_set(&mut configuration, 1, &ScenesSet::Start { frame: 240 })
         .expect_err("the scene would be empty");
@@ -298,8 +304,7 @@ fn a_frame_edit_that_would_empty_a_scene_is_rejected() {
 
 #[test]
 fn encoder_edits_touch_only_their_scene() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+    let mut configuration = model_configuration();
     let global = configuration.condor.encoder.clone();
 
     apply_set(
@@ -352,9 +357,8 @@ fn encoder_edits_touch_only_their_scene() {
 }
 
 #[test]
-fn one_set_encoder_line_applies_every_flag() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+fn scene_encoder_edit_applies_codec_passes_parameters_noise_and_filter_together() {
+    let mut configuration = model_configuration();
 
     let (name, value) = apply_set(
         &mut configuration,
@@ -389,8 +393,7 @@ fn one_set_encoder_line_applies_every_flag() {
 
 #[test]
 fn encoder_capability_rules_apply_to_the_new_encoder() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+    let mut configuration = model_configuration();
 
     let photon_noise = apply_set(
         &mut configuration,
@@ -456,9 +459,8 @@ fn encoder_capability_rules_apply_to_the_new_encoder() {
 }
 
 #[test]
-fn the_standalone_overrides_keep_working() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+fn scene_standalone_passes_filter_and_noise_edits_apply_with_vbr_pass_validation() {
+    let mut configuration = model_configuration();
 
     apply_set(&mut configuration, 3, &ScenesSet::Passes { value: 2 })
         .expect_err("CRF cannot become two-pass");
@@ -507,10 +509,9 @@ fn the_standalone_overrides_keep_working() {
     );
 }
 
-#[test]
-fn sub_scenes_are_validated_against_their_scene() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+fn check_subscene_edit(phase: u8) {
+    assert!((1..=3).contains(&phase));
+    let mut configuration = model_configuration();
 
     apply_set(
         &mut configuration,
@@ -534,6 +535,9 @@ fn sub_scenes_are_validated_against_their_scene() {
         ])
     );
 
+    if phase == 1 {
+        return;
+    }
     let outside = apply_set(
         &mut configuration,
         1,
@@ -547,6 +551,9 @@ fn sub_scenes_are_validated_against_their_scene() {
         "{outside}"
     );
 
+    if phase == 2 {
+        return;
+    }
     apply_set(
         &mut configuration,
         1,
@@ -559,9 +566,23 @@ fn sub_scenes_are_validated_against_their_scene() {
 }
 
 #[test]
+fn scene_subscene_edit_replaces_ranges_inside_the_scene() {
+    check_subscene_edit(1);
+}
+
+#[test]
+fn scene_subscene_edit_rejects_ranges_outside_the_scene() {
+    check_subscene_edit(2);
+}
+
+#[test]
+fn scene_subscene_none_edit_clears_existing_ranges() {
+    check_subscene_edit(3);
+}
+
+#[test]
 fn frame_edits_clip_sub_scenes() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+    let mut configuration = model_configuration();
     apply_set(
         &mut configuration,
         1,
@@ -585,9 +606,8 @@ fn frame_edits_clip_sub_scenes() {
 }
 
 #[test]
-fn resets_restore_what_a_detection_would_have_written() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+fn scene_reset_restores_global_encoder_clears_subscenes_and_keeps_frame_range() {
+    let mut configuration = model_configuration();
     let global = configuration.condor.encoder.clone();
 
     apply_set(
@@ -655,9 +675,8 @@ fn resets_restore_what_a_detection_would_have_written() {
 }
 
 #[test]
-fn sequence_data_resets_clear_the_saved_results() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+fn scene_result_resets_clear_measurements_but_preserve_zoning_proof_and_encoder() {
+    let mut configuration = model_configuration();
     let global = configuration.condor.encoder.clone();
     let scene = &mut configuration.condor.scenes[0];
     scene.sequence_data.noise_detection = Some(NoiseDetectorData {
@@ -710,8 +729,7 @@ fn sequence_data_resets_clear_the_saved_results() {
 
 #[test]
 fn info_renders_the_selection_and_every_scene_part() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+    let mut configuration = model_configuration();
     configuration.condor.scenes[2].sequence_data.parallel_encoder.bytes = Some(9);
 
     let scenes = &configuration.condor.scenes;
@@ -760,8 +778,7 @@ fn info_renders_the_selection_and_every_scene_part() {
 
 #[test]
 fn deleting_scenes_reports_what_went_and_keeps_the_rest() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+    let mut configuration = model_configuration();
 
     let removed = remove_scenes(&mut configuration, &[0, 2]).expect("the scenes go");
     assert_eq!(removed.len(), 2, "both addressed scenes are reported");
@@ -774,10 +791,9 @@ fn deleting_scenes_reports_what_went_and_keeps_the_rest() {
     );
 }
 
-#[test]
-fn adding_scenes_places_them_by_start_frame() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let mut configuration = configuration(temp.path());
+fn check_scene_insertion(phase: u8) {
+    assert!((1..=3).contains(&phase));
+    let mut configuration = model_configuration();
     let global = configuration.condor.encoder.clone();
 
     let position =
@@ -793,6 +809,9 @@ fn adding_scenes_places_them_by_start_frame() {
         "a new scene starts from the configuration's encoder"
     );
 
+    if phase == 1 {
+        return;
+    }
     assert_eq!(
         add_scene(&mut configuration, 900, 1000, Placement::Append).expect("appended"),
         6
@@ -821,6 +840,9 @@ fn adding_scenes_places_them_by_start_frame() {
         "every placement landed where it was asked to"
     );
 
+    if phase == 2 {
+        return;
+    }
     let empty = add_scene(&mut configuration, 10, 10, Placement::Sorted)
         .expect_err("an empty range is rejected");
     assert!(empty.to_string().contains("is empty"), "{empty}");
@@ -833,10 +855,26 @@ fn adding_scenes_places_them_by_start_frame() {
 }
 
 #[test]
+fn scene_sorted_insert_precedes_equal_start_and_uses_global_encoder() {
+    check_scene_insertion(1);
+}
+
+#[test]
+fn scene_explicit_append_prepend_and_after_placements_are_honored() {
+    check_scene_insertion(2);
+}
+
+#[test]
+fn scene_add_empty_range_or_missing_after_index_returns_error() {
+    check_scene_insertion(3);
+}
+
+#[test]
 fn an_edit_without_scenes_names_the_missing_index() {
-    let temp = tempfile::tempdir().expect("temp directory");
-    let video = test_video();
-    let mut configuration = default_config(&video, &temp.path().join("out.mkv"), temp.path());
+    let root = std::env::temp_dir().join("condor-empty-scenes-model-only");
+    let mut video = test_video();
+    video.path = root.join("video.mkv");
+    let mut configuration = default_config(&video, &root.join("out.mkv"), &root);
 
     let error = apply_set(&mut configuration, 0, &ScenesSet::Start { frame: 5 })
         .expect_err("there are no scenes yet");

@@ -837,8 +837,8 @@ mod tests {
 
     #[test]
     fn missing_target_refuses_every_option_family_atomically() {
-        let temp = tempfile::tempdir().expect("fixture");
-        let mut configuration = offline_target_quality_configuration(temp.path());
+        let root = std::env::temp_dir().join("condor-missing-target-model-only");
+        let mut configuration = offline_target_quality_configuration(&root);
         let before = serde_json::to_value(&configuration).expect("complete snapshot");
         let mut failures = vec![];
         for flags in [
@@ -964,9 +964,9 @@ mod tests {
     fn cli_interpolators_roundtrip_all_names_and_positions() {
         use crate::commands::{Commands, CondorCli};
         use clap::Parser;
-        let temp = tempfile::tempdir().expect("config scratch");
+        let root = std::env::temp_dir().join("condor-interpolators-model-only");
         let video = crate::test_helpers::TestVideo {
-            path: temp.path().join("must-not-open.mkv"),
+            path: root.join("must-not-open.mkv"),
             width: 32,
             height: 32,
             frames: 2,
@@ -974,7 +974,7 @@ mod tests {
             format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
             scenes: vec![(0, 2)],
         };
-        let mut configuration = default_config(&video, &temp.path().join("out.mkv"), temp.path());
+        let mut configuration = default_config(&video, &root.join("out.mkv"), &root);
         let names = [
             ("linear", "Linear"),
             ("quadratic", "Quadratic"),

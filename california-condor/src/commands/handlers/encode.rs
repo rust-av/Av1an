@@ -854,7 +854,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_edits_are_atomic() {
+    fn configure_encoder_invalid_controls_leave_the_original_encoder_unchanged() {
         for (method, passes, params, noise, chroma, filter) in [
             (Some(EncoderMethod::X264), None, None, Some(100), None, None),
             (Some(EncoderMethod::FFmpeg), Some(1), None, None, None, None),
@@ -929,8 +929,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn switch_retains_explicit_controls_and_chroma_updates_luma() {
+    fn check_encoder_switch(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let mut encoder = Encoder::default_from_base(&EncoderBase::X264, false);
         configure_encoder(
             &mut encoder,
@@ -948,6 +948,9 @@ mod tests {
         assert_eq!(encoder.speed().as_deref(), Some("10"));
         assert_eq!(encoder.ffmpeg_filter(), Some("hflip"));
         assert!(!encoder.append_color_data());
+        if phase == 1 {
+            return;
+        }
         let mut noise = encoder.photon_noise().expect("luma").clone();
         noise.c_y = Some(vec![1, 2, 3, 4]);
         noise.ccb = Some(vec![5; 5]);
@@ -958,6 +961,9 @@ mod tests {
             .expect("chroma update");
         noise.chroma_iso = Some(0);
         assert_eq!(encoder.photon_noise(), Some(&noise));
+        if phase == 2 {
+            return;
+        }
         let before = encoder.clone();
         configure_encoder(&mut encoder, None, None, None, None, Some(70), None, None)
             .expect_err("independent chroma ISO is unsupported");
@@ -965,7 +971,22 @@ mod tests {
     }
 
     #[test]
-    fn explicit_svt_mode_change_replaces_only_stock_crf() {
+    fn encoder_switch_retains_requested_passes_speed_filter_and_color_policy() {
+        check_encoder_switch(1);
+    }
+
+    #[test]
+    fn chroma_noise_edit_preserves_other_grain_fields() {
+        check_encoder_switch(2);
+    }
+
+    #[test]
+    fn invalid_chroma_noise_edit_leaves_encoder_unchanged() {
+        check_encoder_switch(3);
+    }
+
+    #[test]
+    fn explicit_svt_mode_change_replaces_stock_crf() {
         for params in
             ["--rc 1 --tbr 1000 --keyint 48", "--rc vbr --tbr 1M --keyint 2s", "--cqp 25.25"]
         {
@@ -983,6 +1004,10 @@ mod tests {
             .expect("supported explicit mode");
             assert!(!encoder.parameters().contains_key("crf"));
         }
+    }
+
+    #[test]
+    fn conflicting_explicit_svt_modes_leave_encoder_unchanged() {
         for params in ["--rc 1 --crf 25", "--crf 25 --rc 1", "--rc 2 --cqp 25", "--crf 25 --cqp 25"]
         {
             let mut encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, false);
@@ -1002,8 +1027,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn explicit_quality_choices_replace_stock_not_custom_crf() {
+    fn check_quality_choices(phase: u8) {
+        assert!((1..=4).contains(&phase));
         for params in [
             "--qp 32",
             "-q 32 --aq-mode 0",
@@ -1030,6 +1055,9 @@ mod tests {
                 !encoder.parameters().contains_key("crf"),
                 "stock CRF overrides {params}"
             );
+        }
+        if phase == 1 {
+            return;
         }
         for params in [
             "--crf 25 --aq-mode 0",
@@ -1063,6 +1091,9 @@ mod tests {
             );
             assert_eq!(encoder, before);
         }
+        if phase == 2 {
+            return;
+        }
         let mut encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, false);
         encoder.set_quantizer(20.0);
         let before = encoder.clone();
@@ -1085,6 +1116,9 @@ mod tests {
             "{error:#}"
         );
         assert_eq!(encoder, before);
+        if phase == 3 {
+            return;
+        }
         configure_encoder(
             &mut encoder,
             None,
@@ -1097,6 +1131,26 @@ mod tests {
         )
         .expect("compatible explicit controls");
         assert_eq!(encoder.quantizer(), Some(20.0));
+    }
+
+    #[test]
+    fn explicit_svt_quality_choices_remove_stock_crf() {
+        check_quality_choices(1);
+    }
+
+    #[test]
+    fn conflicting_svt_quality_controls_return_typed_error_without_mutation() {
+        check_quality_choices(2);
+    }
+
+    #[test]
+    fn explicit_svt_quality_choice_cannot_discard_custom_crf() {
+        check_quality_choices(3);
+    }
+
+    #[test]
+    fn compatible_svt_quality_controls_preserve_custom_quantizer() {
+        check_quality_choices(4);
     }
 
     #[test]

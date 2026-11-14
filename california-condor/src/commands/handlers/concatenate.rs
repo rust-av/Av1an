@@ -746,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn discard_preserves_attachment_options_and_refuses_wrong_kinds() {
+    fn mkvmerge_attachment_discard_preserves_name_description_and_mime_type() {
         let source = probed_source();
         let mut settings: MkvmergeConfig = serde_json::from_str(r#"{"tracks":{"1":{"type":"audio","language":"jpn"}},"attachments":{"1":{"attachment_name":"kept name","attachment_description":"kept description","attachment_mime_type":"text/plain"}}}"#).expect("settings");
         let before = settings.clone();
@@ -763,6 +763,11 @@ mod tests {
             attachment.attachment_mime_type.as_deref(),
             Some("text/plain")
         );
+    }
+
+    #[test]
+    fn mkvmerge_discard_wrong_track_kind_or_new_attachment_refuses_without_mutation() {
+        let source = probed_source();
         let mut wrong: MkvmergeConfig =
             serde_json::from_str(r#"{"tracks":{"1":{"type":"subtitle","language":"eng"}}}"#)
                 .expect("wrong kind");
@@ -824,7 +829,7 @@ mod tests {
     /// FFmpeg's map is a selection map, so dropping a stream from an unset map
     /// has to keep every other stream mapped.
     #[test]
-    fn discard_audio_fills_the_ffmpeg_selection() {
+    fn ffmpeg_audio_discard_keeps_ancillary_streams_but_omits_encoded_video() {
         let source = probed_source();
         let mut config = FfmpegConfig::default();
         discard_ffmpeg(&mut config, &source, &[DiscardCategory::Audio]);
