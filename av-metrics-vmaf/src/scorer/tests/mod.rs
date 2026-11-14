@@ -77,7 +77,7 @@ fn bottom_up_rows_use_signed_byte_offsets() {
 }
 
 #[test]
-fn fill_padded_and_bottom_up_all_widths_and_storage_depths() {
+fn fill_preserves_visible_rows_and_padding_across_widths_depths_and_row_directions() {
     for width in [1usize, 2, 7, 15, 16, 17, 64] {
         for (depth, sample) in [(8, 1), (10, 2), (12, 2), (16, 2)] {
             let first = if sample == 1 {
@@ -131,7 +131,7 @@ fn fill_padded_and_bottom_up_all_widths_and_storage_depths() {
 }
 
 #[test]
-fn layout_rejects_short_spans_strides_and_signed_overflow() {
+fn plane_layout_rejects_invalid_spans_strides_origins_dimensions_and_sample_sizes() {
     let bytes = [0u8; 16];
     for (len, width, height, stride, origin, sample) in [
         (5, 2, 2, -4, 4, 1),  // visible extent is 6, not the full padded 8
@@ -161,8 +161,18 @@ fn layout_rejects_short_spans_strides_and_signed_overflow() {
             "layout {len}/{width}/{height}/{stride}/{origin}/{sample}"
         );
     }
+}
+
+#[test]
+fn bottom_up_layout_accepts_exact_visible_extent() {
+    let bytes = [0u8; 16];
     assert!(PlaneSource::from_bytes(&bytes[..6], 2, 2, -4, 4, 1).is_ok());
     assert!(PlaneSource::from_bytes(&bytes[..12], 2, 2, -8, 8, 2).is_ok());
+}
+
+#[test]
+fn raw_plane_rejects_null_and_unrepresentable_spans() {
+    let bytes = [0u8; 16];
     // SAFETY: these invalid declarations must be rejected without any dereference.
     unsafe {
         assert!(PlaneSource::from_raw_parts(std::ptr::null(), 4, 2, 2, 2, 0, 1).is_err());
@@ -321,7 +331,7 @@ fn padded_u16_frame_scales_nonzero_origin_and_copies_visible_rows() {
 }
 
 #[test]
-fn u16_bottom_up_and_uninitialized_foreign_padding() {
+fn bottom_up_u16_fill_reverses_visible_rows_and_preserves_padding() {
     let words = [1u16, 2, 0, 0, 3, 4, 0, 0];
     let source = PlaneSource::from_u16(&words, 2, 2, -8, 8).unwrap();
     let mut buffers = std::array::from_fn(|_| vec![0xa5; 16]);
@@ -341,7 +351,10 @@ fn u16_bottom_up_and_uninitialized_foreign_padding() {
         assert_eq!(&buffer[4..8], &[0xa5; 4]);
         assert_eq!(&buffer[12..], &[0xa5; 4]);
     }
+}
 
+#[test]
+fn foreign_plane_fill_reads_only_initialized_visible_bytes() {
     let mut foreign = [std::mem::MaybeUninit::<u8>::uninit(); 8];
     for (offset, byte) in [(0, 1), (1, 2), (4, 3), (5, 4)] {
         foreign[offset].write(byte);

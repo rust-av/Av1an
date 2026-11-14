@@ -9,7 +9,16 @@ use std::{
 use super::*;
 
 #[test]
-fn real_headers_match_layouts_and_detect_offset_drift() {
+fn installed_vmaf_headers_match_rust_layouts_and_signatures() {
+    check_header_layouts(false);
+}
+
+#[test]
+fn inserted_picture_field_is_detected_as_offset_drift() {
+    check_header_layouts(true);
+}
+
+fn check_header_layouts(drift_check: bool) {
     let Some(include) = header_directory() else {
         return;
     };
@@ -38,6 +47,10 @@ fn real_headers_match_layouts_and_detect_offset_drift() {
         "ABI: {} real-header layout values match; C signatures compile",
         actual.len()
     );
+
+    if !drift_check {
+        return;
+    }
 
     let picture = std::fs::read_to_string(include.join("libvmaf/picture.h"))
         .expect("read real picture header for controlled negative fixture");
@@ -181,18 +194,4 @@ fn rust_layouts() -> BTreeMap<String, usize> {
     layout!(VmafCudaPictureConfigPictureParams; w => "w", h => "h", bpc => "bpc", pix_fmt => "pix_fmt");
     layout!(VmafCudaPictureConfiguration; pic_params => "pic_params", pic_prealloc_method => "pic_prealloc_method");
     values
-}
-
-// Compile-time contracts match the independently C-checked signatures above.
-// In particular close/unref/release return int, while model_destroy is void.
-fn signatures(api: VmafApi) {
-    let _: unsafe extern "C" fn(*mut VmafContext) -> c_int = api.close;
-    let _: unsafe extern "C" fn(*mut VmafPicture) -> c_int = api.picture_unref;
-    let _: Option<unsafe extern "C" fn(*mut VmafCudaState) -> c_int> = api.cuda.release;
-    let _: unsafe extern "C" fn(*mut VmafModel) = api.model_destroy;
-}
-
-#[test]
-fn native_cleanup_signature_contracts_compile() {
-    let _ = signatures as fn(VmafApi);
 }

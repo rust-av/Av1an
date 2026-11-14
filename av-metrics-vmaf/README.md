@@ -548,10 +548,10 @@ versions and each same-version new-ABI marker must reach **zero** init, pool, or
 fetch calls. The verified runtime still constructs and scores a marker pair.
 Those runtime fixtures run on Unix and require `cc`; they do not execute real CUDA.
 
-The test-only `ffi::tests::abi::real_headers_match_layouts_and_detect_offset_drift` compiles and
+The test-only checks under `ffi::tests::internal_integration::abi` compile and
 executes `tests/fixtures/headers.c` with a C11 GCC/Clang compiler (`CC`, default
-`cc`). It compares all shared struct sizes, alignments, field offsets and widths,
-including both nested geometries, against **actual public headers**, and compiles
+`cc`). They compare all shared struct sizes, alignments, field offsets and widths,
+including both nested geometries, against **actual public headers**, and compile
 function signature checks. A temporary changed real picture header must fail the
 same comparison. Installed CPU headers are selected by `VMAF_INCLUDE_DIR` (parent
 of `libvmaf/`) or Unix pkg-config's include directory. CPU packages omitting the
@@ -564,7 +564,7 @@ not silently pass. Explicit invalid `VMAF_INCLUDE_DIR` also fails. Normal crate
 builds never compile the probe or download headers.
 
 ```bash
-AV_METRICS_REQUIRE_CPU=1 cargo +stable test --profile ci -p av-metrics-vmaf --lib ffi::tests::abi -- --nocapture
+AV_METRICS_REQUIRE_CPU=1 cargo +stable test --profile ci -p av-metrics-vmaf --lib ffi::tests::internal_integration::abi -- --nocapture
 AV_METRICS_REQUIRE_CPU=1 cargo +stable test --profile ci -p av-metrics-vmaf --test ffi -- --nocapture
 ```
 
@@ -577,7 +577,7 @@ No Windows pkg-config is assumed. With a C11 Clang/GCC executable on PATH:
 $env:VMAF_INCLUDE_DIR = "C:\path\to\extracted\mingw64\include"
 $env:CC = "clang"
 $env:AV_METRICS_REQUIRE_CPU = "1"
-cargo +stable test --profile ci -p av-metrics-vmaf --lib ffi::tests::abi -- --nocapture
+cargo +stable test --profile ci -p av-metrics-vmaf --lib ffi::tests::internal_integration::abi -- --nocapture
 ```
 
 This compiles the portable C probe and exercises its drift check on that platform;
@@ -597,7 +597,7 @@ run isolated production `Context` paths
 against a C ABI fixture, checking state-init, context-init, import and pool
 failures, missing cleanup symbols, CPU fallback and successful teardown. It
 counts wrapper allocations/frees separately from resource releases; it does not
-execute a CUDA driver. On Linux, `ffi::tests::cleanup_uses_process_allocator_scope`
+execute a CUDA driver. On Linux, `ffi::tests::internal_integration::cleanup_uses_process_allocator_scope`
 separately checks the production allocator resolver against a local decoy `free`
 and an ordinary global relocation, comparing addresses without calling either.
 Hardware acceptance still requires repeated real CUDA
