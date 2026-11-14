@@ -1,6 +1,14 @@
 use andean_condor as condor;
 #[cfg(unix)]
 use condor::core::input::Input;
+#[cfg(unix)]
+use condor::{
+    metrics::Engine,
+    models::sequence::{
+        provenance::MetricBackend,
+        target_quality::types::{MeasurementError, QualityMetric, QualityPass},
+    },
+};
 #[path = "fixtures/probe_support.rs"]
 mod probe_fixture;
 #[cfg(unix)]
@@ -112,4 +120,183 @@ fn cleanup_never_deletes_an_input_even_inside_pass_scratch() {
         before
     );
     assert!(!script.with_extension("calls").exists());
+}
+
+#[cfg(unix)]
+fn check_complete_probe_reuse(phase: &str) {
+    assert!(["reuse", "invalid", "empty"].contains(&phase));
+    let (temp, mut input, mut encoder, config, directory) = fixture();
+    let script = temp.path().join("encoder");
+    executable(
+        &script,
+        "#!/bin/sh\nprintf spawned > \"$0.calls\"\nexit 1\n",
+    );
+    encoder.set_executable(Some(script.clone()));
+    let mut tasks = tasks(&encoder, &directory, 1);
+    // Synthetic valid reuse records, not owning-producer certification.
+    for task in &mut tasks {
+        task.passes.push(QualityPass {
+            provenance: None,
+            backend: Some(MetricBackend::current(Engine::Vmaf)),
+            quantizer: 26.0,
+            scores: vec![75.0, 76.0],
+            bitrate: 100.0,
+            started_on: 12,
+            completed_on: 34,
+        });
+    }
+    std::fs::remove_file(temp.path().join("source.mkv")).expect("no retained source");
+    for available in [true, false] {
+        if !available {
+            std::fs::remove_file(&script).expect("unavailable encoder");
+        }
+        let before = format!("{tasks:?}");
+        let completed = probe(1, &directory, &config, &mut input, &tasks)
+            .expect("complete validated history is sufficient");
+        assert_eq!(format!("{completed:?}"), before);
+        assert!(!script.with_extension("calls").exists());
+        eprintln!(
+            "probe-resume complete reuse: records unchanged, missing outputs/source, encoder available={available}, no spawn"
+        );
+    }
+    if phase == "reuse" {
+        return;
+    }
+    let mut invalid = tasks.clone();
+    invalid[1].passes[0].scores.pop();
+    assert!(
+        probe(1, &directory, &config, &mut input, &invalid)
+            .expect_err("strict history")
+            .is::<MeasurementError>()
+    );
+    let mut invalid_config = config.clone();
+    *invalid_config.metric.target_range_mut() = (f64::NAN, 75.0);
+    assert!(probe(1, &directory, &invalid_config, &mut input, &tasks).is_err());
+    let mut temporal = config.clone();
+    temporal.metric = QualityMetric::CVVDP {
+        target_range: (0.0, 1.0),
+        resolution: None,
+        display_model: None,
+        resize_to_display: None,
+        disable_temporal: None,
+        gpu_id: None,
+    };
+    let mut invalid_selection = tasks.clone();
+    invalid_selection[0].frame_indices.reverse();
+    let error = probe(1, &directory, &temporal, &mut input, &invalid_selection)
+        .expect_err("pure temporal selection validation still precedes reuse");
+    assert!(
+        format!("{error:#}").contains("strictly increasing"),
+        "{error:#}"
+    );
+    if phase == "invalid" {
+        return;
+    }
+    assert!(probe(0, &directory, &config, &mut input, &tasks).is_err());
+    assert!(
+        probe(1, &directory, &config, &mut input, &[])
+            .expect("empty no-work")
+            .is_empty()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn complete_probe_pass_reuses_valid_records_when_source_outputs_and_encoder_are_missing() {
+    check_complete_probe_reuse("reuse");
+}
+
+#[cfg(unix)]
+#[test]
+fn complete_probe_reuse_still_rejects_invalid_history_config_or_temporal_selection() {
+    check_complete_probe_reuse("invalid");
+}
+
+#[cfg(unix)]
+#[test]
+fn empty_probe_pass_is_a_noop_but_zero_pass_ordinal_is_invalid() {
+    check_complete_probe_reuse("empty");
+}
+
+#[cfg(unix)]
+#[test]
+fn incomplete_pass_reencodes_current_quantizers_and_replaces_partial_records() {
+    let (temp, mut input, encoder, config, directory) = fixture();
+    let mut tasks = probe(
+        1,
+        &directory,
+        &config,
+        &mut input,
+        &tasks(&encoder, &directory, 1),
+    )
+    .expect("verified prefix");
+    let previous = tasks
+        .iter()
+        .map(|task| serde_json::to_value(&task.passes).expect("history"))
+        .collect::<Vec<_>>();
+    for task in &mut tasks {
+        task.output = directory.join("2").join(format!("{:05}.mkv", task.original_index));
+        task.encoder.set_quantizer(28.0);
+    }
+    let partial = probe(2, &directory, &config, &mut input, &tasks[..1])
+        .expect("one scene has a current record");
+    tasks[0].passes = partial[0].passes.clone();
+    std::fs::write(&tasks[0].output, b"stale q28 marker").expect("abandoned output");
+    let outside = temp.path().join("caller-directory");
+    std::fs::create_dir_all(&outside).expect("outside directory");
+    std::fs::write(outside.join("caller-data"), b"outside sentinel").expect("outside");
+    std::os::unix::fs::symlink(&outside, &tasks[1].output).expect("stale output symlink");
+    let unrelated = directory.join("2/unrelated.txt");
+    std::fs::write(&unrelated, b"not a declared output").expect("caller neighbor");
+    for (task, q) in tasks.iter_mut().zip([30.0, 34.0]) {
+        task.encoder.set_quantizer(q);
+    }
+    let completed = probe(2, &directory, &config, &mut input, &tasks).expect("whole pass replay");
+    eprintln!(
+        "probe-resume mixed replay: {:?}",
+        completed
+            .iter()
+            .map(|task| (
+                task.original_index,
+                task.passes.iter().map(|pass| pass.quantizer).collect::<Vec<_>>()
+            ))
+            .collect::<Vec<_>>()
+    );
+    for (index, task) in completed.iter().enumerate() {
+        assert_eq!(
+            task.passes.len(),
+            2,
+            "replace current record rather than appending a duplicate"
+        );
+        assert_eq!(
+            serde_json::to_value(&task.passes[..1]).expect("prefix"),
+            previous[index]
+        );
+        assert_eq!(task.passes[1].quantizer, [30.0, 34.0][index]);
+        assert_eq!(task.passes[1].scores.len(), 2);
+        assert!(task.passes[1].scores.iter().all(|score| score.is_finite()));
+        assert!(!task.output.symlink_metadata().expect("fresh artifact").file_type().is_symlink());
+        assert_ne!(
+            std::fs::read(&task.output).expect("fresh output"),
+            b"stale q28 marker"
+        );
+    }
+    assert_eq!(
+        std::fs::read(outside.join("caller-data")).expect("symlink directory target preserved"),
+        b"outside sentinel"
+    );
+    assert_eq!(
+        std::fs::read(unrelated).expect("caller data preserved"),
+        b"not a declared output"
+    );
+    tasks[1].passes.clear();
+    let before = std::fs::read(&tasks[0].output).expect("output");
+    assert!(
+        probe(2, &directory, &config, &mut input, &tasks).is_err(),
+        "missing earlier prefix must not be invented"
+    );
+    assert_eq!(
+        std::fs::read(&tasks[0].output).expect("not deleted"),
+        before
+    );
 }
