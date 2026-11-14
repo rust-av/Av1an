@@ -1,4 +1,4 @@
-//! I09: real graph construction counts, not decode timing.
+//! Real graph construction counts and exact filtered samples, not decode timing.
 
 use std::{
     fs,
@@ -14,7 +14,7 @@ use std::{
 use ::vapoursynth::map::OwnedMap;
 
 use super::*;
-use crate::{
+use andean_condor::{
     core::sequence::{
         parallel_encoder::Task,
         zone_encoder::{ZoneEncoder, ZonePlan},
@@ -71,7 +71,22 @@ fn yuv_image(y: u8) -> Vec<u8> {
 }
 
 #[test]
-fn indexed_reader_retains_temporal_graph_and_rebuilds_after_modifier_change() {
+fn indexed_frame_reader_reuses_one_temporal_graph() {
+    check_reader_graphs("retained");
+}
+
+#[test]
+fn replacing_a_node_modifier_rebuilds_the_reader_graph() {
+    check_reader_graphs("replacement");
+}
+
+#[test]
+fn independent_inputs_do_not_share_reader_graphs() {
+    check_reader_graphs("independent");
+}
+
+fn check_reader_graphs(phase: &str) {
+    assert!(["retained", "replacement", "independent"].contains(&phase));
     let count = Arc::new(AtomicUsize::new(0));
     let mut input = temporal_input("GRAY16", &count);
     let opening = count.load(Ordering::Relaxed);
@@ -128,6 +143,10 @@ fn indexed_reader_retains_temporal_graph_and_rebuilds_after_modifier_change() {
     );
     drop(reader);
 
+    if phase == "retained" {
+        return;
+    }
+
     count.store(0, Ordering::Relaxed);
     input
         .decoder()
@@ -149,6 +168,10 @@ fn indexed_reader_retains_temporal_graph_and_rebuilds_after_modifier_change() {
     );
     assert_eq!(count.load(Ordering::Relaxed), 1);
     drop(changed);
+
+    if phase == "replacement" {
+        return;
+    }
 
     let independent_count = Arc::new(AtomicUsize::new(0));
     let mut independent = temporal_input("GRAY16", &independent_count);
@@ -311,7 +334,7 @@ fn decoded(path: &Path) -> Vec<u8> {
 
 #[test]
 #[cfg(unix)]
-fn actual_encoder_pass_builds_one_graph() {
+fn encoder_pass_reuses_one_temporal_graph_and_encodes_filtered_samples() {
     let directory = tempfile::tempdir().expect("encoder fixture");
     let count = Arc::new(AtomicUsize::new(0));
     let mut input = temporal_input("YUV420P8", &count);
@@ -336,7 +359,7 @@ fn actual_encoder_pass_builds_one_graph() {
 
 #[test]
 #[cfg(unix)]
-fn actual_zone_feed_builds_one_graph_across_tasks() {
+fn zone_tasks_share_one_temporal_graph_and_encode_selected_samples() {
     let directory = tempfile::tempdir().expect("zone fixture");
     let count = Arc::new(AtomicUsize::new(0));
     let mut input = temporal_input("YUV420P8", &count);
