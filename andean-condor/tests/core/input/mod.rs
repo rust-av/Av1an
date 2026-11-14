@@ -1,4 +1,5 @@
 mod frame_reader;
+mod vapoursynth;
 mod y4m;
 
 use andean_condor::{
