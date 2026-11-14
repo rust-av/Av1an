@@ -875,6 +875,148 @@ mod tests {
             );
             println!("HEADLESS_EVENT_MAPPING_ASSERTIONS_COMPLETED");
         }
+
+        #[cfg(target_os = "linux")]
+        fn check_interrupt_listener(phase: u8, test: &str) -> Result<()> {
+            assert!((1..=3).contains(&phase));
+            let Some(root) = std::env::var_os("INTERRUPT_LISTENER_ROOT") else {
+                let root = tempfile::tempdir()?;
+                let output = std::process::Command::new("python3")
+                    .arg(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/tests/interrupt/pty.py"
+                    ))
+                    .arg(std::env::current_exe()?)
+                    .arg(root.path())
+                    .arg("listener")
+                    .arg(phase.to_string())
+                    .output()?;
+                anyhow::ensure!(
+                    output.status.success(),
+                    "{}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                assert!(
+                    stdout.contains(&format!("listener phase {phase}: selected child completed"))
+                );
+                eprintln!("{stdout}");
+                return Ok(());
+            };
+            assert_eq!(std::env::var("INTERRUPT_LISTENER_TEST")?, test);
+            let root = std::path::PathBuf::from(root);
+            let mut prior: Option<crate::interrupt::Interrupt> = None;
+            for invocation in 0..if phase == 1 { 1 } else { 2 } {
+                let cancellation = crate::interrupt::Interrupt::default();
+                let mut listener = crate::interrupt::Listener::start(cancellation.clone())?;
+                assert!(crate::interrupt::Listener::start(cancellation.clone()).is_err());
+                for stage in 0..2 {
+                    let (tx, rx) = mpsc::channel();
+                    let display_cancel = cancellation.clone();
+                    let display = thread::spawn(move || TestApp::new().run(rx, display_cancel));
+                    if stage == 0 {
+                        tx.send(SequenceStatus::Whole(
+                            andean_condor::core::sequence::Status::Completed {
+                                id: "interrupt-listener".into(),
+                            },
+                        ))?;
+                    } else {
+                        assert!(
+                            !cancellation.token.is_cancelled(),
+                            "stale job or stage cancellation"
+                        );
+                        std::fs::write(root.join(format!("ready-{invocation}")), b"ready")?;
+                        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                        while !cancellation.token.is_cancelled() {
+                            anyhow::ensure!(
+                                std::time::Instant::now() < deadline,
+                                "first request watchdog"
+                            );
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        assert!(
+                            !cancellation.token.is_forced(),
+                            "duplicate handler escalated first event"
+                        );
+                        if let Some(prior) = &prior {
+                            assert!(prior.token.is_forced());
+                        }
+                        std::fs::write(root.join(format!("graceful-{invocation}")), b"graceful")?;
+                        while !cancellation.token.is_forced() {
+                            anyhow::ensure!(
+                                std::time::Instant::now() < deadline,
+                                "force request watchdog"
+                            );
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                    }
+                    drop(tx);
+                    display.join().expect("display")?;
+                }
+                listener.join()?;
+                let error = cancellation.finish(Ok(())).unwrap_err();
+                assert_eq!(
+                    error.downcast_ref::<crate::interrupt::Interrupted>().unwrap().0,
+                    if invocation == 0 { 143 } else { 130 }
+                );
+                // Refuse the same forced root before any source owner can open.
+                let input = andean_condor::models::input::Input::Video {
+                    path: root.join("must-not-open.mkv"),
+                    import_method: andean_condor::models::input::ImportMethod::FFMS2 {
+                        index: None,
+                        cache_path: None,
+                    },
+                    filters: vec![],
+                };
+                let error = crate::tui::open_input_cancel(&input, &cancellation.token)
+                    .err()
+                    .expect("forced opening");
+                assert!(error.is::<andean_condor::utils::cancellation::Cancelled>());
+                cancellation.request(130)?;
+                cancellation.request(143)?;
+                prior = Some(cancellation);
+            }
+            if phase == 3 {
+                // Join must drain an already handed-off OS event even before its thread starts.
+                let cancellation = crate::interrupt::Interrupt::default();
+                let mut listener = crate::interrupt::Listener::start(cancellation.clone())?;
+                signal_hook::low_level::raise(signal_hook::consts::SIGTERM)?;
+                listener.join()?;
+                assert!(cancellation.token.is_cancelled());
+                assert!(!cancellation.token.is_forced());
+            }
+            println!("INTERRUPT_LISTENER_PHASE_{phase}_ASSERTIONS_COMPLETED");
+            Ok(())
+        }
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn interrupt_listener_across_stages_preserves_first_signal_without_duplicate_delivery()
+        -> Result<()> {
+            check_interrupt_listener(
+                1,
+                "apps::tests::internal_integration::interrupt_listener_across_stages_preserves_first_signal_without_duplicate_delivery",
+            )
+        }
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn interrupt_listener_after_join_can_register_a_fresh_job() -> Result<()> {
+            check_interrupt_listener(
+                2,
+                "apps::tests::internal_integration::interrupt_listener_after_join_can_register_a_fresh_job",
+            )
+        }
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn interrupt_listener_join_drains_an_already_received_sigterm() -> Result<()> {
+            check_interrupt_listener(
+                3,
+                "apps::tests::internal_integration::interrupt_listener_join_drains_an_already_received_sigterm",
+            )
+        }
     }
 
     struct RenderFailureWriter {
@@ -1039,119 +1181,6 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn interrupt_listener_registration_survives_sequential_stages() -> Result<()> {
-        let root = tempfile::tempdir()?;
-        let output = std::process::Command::new("python3")
-            .arg(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/tests/interrupt/pty.py"
-            ))
-            .arg(std::env::current_exe()?)
-            .arg(root.path())
-            .arg("listener")
-            .output()?;
-        anyhow::ensure!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        Ok(())
-    }
-
-    // Isolated child only: never changes libtest parent's signal dispositions.
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn interrupt_listener_registration_child() -> Result<()> {
-        let Some(root) = std::env::var_os("INTERRUPT_LISTENER_ROOT") else {
-            return Ok(());
-        };
-        let root = std::path::PathBuf::from(root);
-        let mut prior: Option<crate::interrupt::Interrupt> = None;
-        for invocation in 0..2 {
-            let cancellation = crate::interrupt::Interrupt::default();
-            let mut listener = crate::interrupt::Listener::start(cancellation.clone())?;
-            assert!(crate::interrupt::Listener::start(cancellation.clone()).is_err());
-            for stage in 0..2 {
-                let (tx, rx) = mpsc::channel();
-                let display_cancel = cancellation.clone();
-                let display = thread::spawn(move || TestApp::new().run(rx, display_cancel));
-                if stage == 0 {
-                    tx.send(SequenceStatus::Whole(
-                        andean_condor::core::sequence::Status::Completed {
-                            id: "interrupt-listener".into(),
-                        },
-                    ))?;
-                } else {
-                    assert!(
-                        !cancellation.token.is_cancelled(),
-                        "stale job or stage cancellation"
-                    );
-                    std::fs::write(root.join(format!("ready-{invocation}")), b"ready")?;
-                    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-                    while !cancellation.token.is_cancelled() {
-                        anyhow::ensure!(
-                            std::time::Instant::now() < deadline,
-                            "first request watchdog"
-                        );
-                        thread::sleep(Duration::from_millis(5));
-                    }
-                    assert!(
-                        !cancellation.token.is_forced(),
-                        "duplicate handler escalated first event"
-                    );
-                    if let Some(prior) = &prior {
-                        assert!(prior.token.is_forced());
-                    }
-                    std::fs::write(root.join(format!("graceful-{invocation}")), b"graceful")?;
-                    while !cancellation.token.is_forced() {
-                        anyhow::ensure!(
-                            std::time::Instant::now() < deadline,
-                            "force request watchdog"
-                        );
-                        thread::sleep(Duration::from_millis(5));
-                    }
-                }
-                drop(tx);
-                display.join().expect("display")?;
-            }
-            listener.join()?;
-            let error = cancellation.finish(Ok(())).unwrap_err();
-            assert_eq!(
-                error.downcast_ref::<crate::interrupt::Interrupted>().unwrap().0,
-                if invocation == 0 { 143 } else { 130 }
-            );
-            // Before opening: the exact shared forced root refuses an owner,
-            // not a fresh flag that might start indexing a missing source.
-            let input = andean_condor::models::input::Input::Video {
-                path: root.join("must-not-open.mkv"),
-                import_method: andean_condor::models::input::ImportMethod::FFMS2 {
-                    index: None,
-                    cache_path: None,
-                },
-                filters: vec![],
-            };
-            let error = crate::tui::open_input_cancel(&input, &cancellation.token)
-                .err()
-                .expect("forced opening");
-            assert!(error.is::<andean_condor::utils::cancellation::Cancelled>());
-            cancellation.request(130)?;
-            cancellation.request(143)?;
-            prior = Some(cancellation);
-        }
-        // The OS callback has handed off this event, but an immediately joined
-        // listener may not have started yet. Shutdown must drain it, not lose it.
-        let cancellation = crate::interrupt::Interrupt::default();
-        let mut listener = crate::interrupt::Listener::start(cancellation.clone())?;
-        signal_hook::low_level::raise(signal_hook::consts::SIGTERM)?;
-        listener.join()?;
-        assert!(cancellation.token.is_cancelled());
-        assert!(!cancellation.token.is_forced());
-        Ok(())
     }
 
     fn emit_console_diagnostics() {

@@ -180,16 +180,23 @@ def run(binary: str, template: Path, base: Path, mode: str, route: str) -> None:
         assert not errors, errors
 
 
-def listener(binary: str, base: Path) -> None:
-    """Two sequential listener invocations, each driving two actual display stages."""
+def listener(binary: str, base: Path, phase: int) -> None:
+    """Drive the selected stage reuse, job re-registration or pending-signal join."""
+    tests = {
+        1: 'apps::tests::internal_integration::interrupt_listener_across_stages_preserves_first_signal_without_duplicate_delivery',
+        2: 'apps::tests::internal_integration::interrupt_listener_after_join_can_register_a_fresh_job',
+        3: 'apps::tests::internal_integration::interrupt_listener_join_drains_an_already_received_sigterm',
+    }
+    test = tests[phase]
     env = os.environ.copy()
     env['INTERRUPT_LISTENER_ROOT'] = str(base)
+    env['INTERRUPT_LISTENER_TEST'] = test
     with tempfile.TemporaryFile() as output:
-        child = subprocess.Popen([binary, '--exact', 'apps::tests::interrupt_listener_registration_child', '--nocapture'],
+        child = subprocess.Popen([binary, '--exact', test, '--nocapture'],
                                  stdin=subprocess.DEVNULL, stdout=output, stderr=output, env=env)
         try:
             deadline = time.monotonic() + 25
-            for invocation in range(2):
+            for invocation in range(1 if phase == 1 else 2):
                 for marker, event in ((f'ready-{invocation}', signal.SIGTERM if invocation == 0 else signal.SIGINT),
                                       (f'graceful-{invocation}', signal.SIGINT if invocation == 0 else signal.SIGTERM)):
                     while not (base/marker).exists():
@@ -201,6 +208,9 @@ def listener(binary: str, base: Path) -> None:
             text = output.read()
             assert status == 0, text
             assert b'1 passed; 0 failed' in text, text
+            assert f'INTERRUPT_LISTENER_PHASE_{phase}_ASSERTIONS_COMPLETED'.encode() in text, text
+            print(text.decode())
+            print(f'listener phase {phase}: selected child completed')
         finally:
             if child.poll() is None: child.kill()
             child.wait(timeout=5)
@@ -571,8 +581,8 @@ def native_pipeline(binary: str, root: Path) -> None:
 
 if __name__ == '__main__' and sys.argv[1] == '--native-pipeline':
     native_pipeline(sys.argv[2], Path(sys.argv[3]))
-elif __name__ == '__main__' and len(sys.argv) == 4:
-    listener(sys.argv[1], Path(sys.argv[2]))
+elif __name__ == '__main__' and len(sys.argv) == 5 and sys.argv[3] == 'listener':
+    listener(sys.argv[1], Path(sys.argv[2]), int(sys.argv[4]))
 elif __name__ == '__main__':
     assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
     binary, base = sys.argv[1:]
