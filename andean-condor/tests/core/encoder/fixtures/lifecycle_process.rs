@@ -16,7 +16,7 @@ fn main() -> io::Result<()> {
         let root = PathBuf::from(&args[3]);
         let case = &args[4];
         let index_child = args[1] == "supervise-index-publication";
-        let test = if index_child { "core::input::vapoursynth::tests::indexing::index_publication_child" } else { "core::encoder::tests::process_lifecycle::scene_cancellation_child" };
+        let test = if index_child { "core::input::vapoursynth::tests::indexing::index_publication_child" } else { args.get(5).expect("explicit exact lifecycle selector") };
         let mut child = Command::new(&args[2]).args(["--exact", test, "--nocapture"]).env(if index_child { "VS_INDEX_ROOT" } else { "PROCESS_LIFECYCLE_ROOT" }, &root).env(if index_child { "VS_INDEX_CASE" } else { "PROCESS_LIFECYCLE_CASE" }, case).process_group(0).spawn()?;
         let start = Instant::now();
         let mut rescued = 0;
