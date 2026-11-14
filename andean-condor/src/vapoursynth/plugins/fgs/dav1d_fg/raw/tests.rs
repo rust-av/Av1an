@@ -136,78 +136,82 @@ fn fields_padding_and_moves_are_deterministic() {
 
 // Miri checks the same production writer above without processes or native dependencies.
 #[cfg(not(miri))]
-#[test]
-fn matches_installed_dav1d_c_header() {
-    use std::{fmt::Write, fs, mem::align_of, process::Command, time::SystemTime};
+mod internal_integration {
+    use super::*;
 
-    struct Scratch(std::path::PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            fs::remove_dir_all(&self.0).expect("remove dav1d C-probe scratch directory");
+    #[test]
+    fn dav1d_grain_layout_and_serialized_bytes_match_installed_api7_headers() {
+        use std::{fmt::Write, fs, mem::align_of, process::Command, time::SystemTime};
+
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                fs::remove_dir_all(&self.0).expect("remove dav1d C-probe scratch directory");
+            }
         }
-    }
-    let nonce = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("clock is after Unix epoch")
-        .as_nanos();
-    let directory =
-        std::env::temp_dir().join(format!("grain-layout-dav1d-{}-{nonce}", std::process::id()));
-    #[allow(
-        clippy::create_dir,
-        reason = "Never reuse or clean up an existing directory"
-    )]
-    fs::create_dir(&directory).expect("create exclusive C-probe scratch directory");
-    let scratch = Scratch(directory);
-    let source = scratch.0.join("probe.c");
-    let executable = scratch.0.join("probe");
-    fs::write(&source, include_str!("../layout_probe.c")).expect("write C probe");
-    let compiler = Command::new("cc")
-        .args(["-std=c11", "-Wall", "-Wextra", "-Werror"])
-        .arg(&source)
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .expect("grain-layout ABI proof requires cc and dav1d API 7 development headers");
-    assert!(
-        compiler.status.success(),
-        "dav1d ABI probe failed: {}",
-        String::from_utf8_lossy(&compiler.stderr)
-    );
-    let output = Command::new(&executable).output().expect("run dav1d C probe");
-    assert!(output.status.success());
-    let text = String::from_utf8(output.stdout).expect("C probe emits ASCII");
-    println!("dav1d C oracle:\n{text}");
-    let mut lines = text.lines();
-    assert_eq!(
-        lines.next().expect("C layout summary"),
-        format!(
-            "layout {} {} {} {}",
-            size_of::<Raw>(),
-            align_of::<Raw>(),
-            size_of::<i32>(),
-            size_of::<u32>()
-        )
-    );
-    assert!(
-        lines.next().expect("C API version").starts_with("api 7 "),
-        "unsupported dav1d API major"
-    );
-    let raw = fixture();
-    for (name, offset, len) in fields(&raw) {
-        assert_eq!(
-            lines.next().expect("C field layout"),
-            format!("{name} {offset} {len}"),
-            "C layout mismatch for {name}"
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("clock is after Unix epoch")
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("grain-layout-dav1d-{}-{nonce}", std::process::id()));
+        #[allow(
+            clippy::create_dir,
+            reason = "Never reuse or clean up an existing directory"
+        )]
+        fs::create_dir(&directory).expect("create exclusive C-probe scratch directory");
+        let scratch = Scratch(directory);
+        let source = scratch.0.join("probe.c");
+        let executable = scratch.0.join("probe");
+        fs::write(&source, include_str!("../layout_probe.c")).expect("write C probe");
+        let compiler = Command::new("cc")
+            .args(["-std=c11", "-Wall", "-Wextra", "-Werror"])
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .expect("grain-layout ABI proof requires cc and dav1d API 7 development headers");
+        assert!(
+            compiler.status.success(),
+            "dav1d ABI probe failed: {}",
+            String::from_utf8_lossy(&compiler.stderr)
         );
+        let output = Command::new(&executable).output().expect("run dav1d C probe");
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).expect("C probe emits ASCII");
+        println!("dav1d C oracle:\n{text}");
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next().expect("C layout summary"),
+            format!(
+                "layout {} {} {} {}",
+                size_of::<Raw>(),
+                align_of::<Raw>(),
+                size_of::<i32>(),
+                size_of::<u32>()
+            )
+        );
+        assert!(
+            lines.next().expect("C API version").starts_with("api 7 "),
+            "unsupported dav1d API major"
+        );
+        let raw = fixture();
+        for (name, offset, len) in fields(&raw) {
+            assert_eq!(
+                lines.next().expect("C field layout"),
+                format!("{name} {offset} {len}"),
+                "C layout mismatch for {name}"
+            );
+        }
+        let expected_hex = lines.next().expect("C fixture bytes");
+        let mut actual_hex = String::new();
+        for byte in raw.to_bytes() {
+            write!(&mut actual_hex, "{byte:02x}").expect("write hex to string");
+        }
+        assert_eq!(
+            actual_hex, expected_hex,
+            "serialized fields differ from initialized C oracle"
+        );
+        assert!(lines.next().is_none());
     }
-    let expected_hex = lines.next().expect("C fixture bytes");
-    let mut actual_hex = String::new();
-    for byte in raw.to_bytes() {
-        write!(&mut actual_hex, "{byte:02x}").expect("write hex to string");
-    }
-    assert_eq!(
-        actual_hex, expected_hex,
-        "serialized fields differ from initialized C oracle"
-    );
-    assert!(lines.next().is_none());
 }

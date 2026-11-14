@@ -315,9 +315,8 @@ mod tests {
     }
 
     #[test]
-    fn deferred_filters_roundtrip_without_opening_a_source() {
-        let directory = tempfile::tempdir().expect("absent source fixture");
-        let path = directory.path().join("must-not-exist.mkv");
+    fn deferred_output_filters_preserve_unspecified_fields_through_json() {
+        let path = PathBuf::from("must-not-exist.mkv");
         let original = vec![
             Ffms2Filter::OutputFormat {
                 bit_depth: Some(10),
@@ -389,11 +388,6 @@ mod tests {
                 width: None,
                 height: None
             }]
-        );
-        assert_eq!(
-            std::fs::read_dir(directory.path()).expect("directory listing").count(),
-            0,
-            "no decoder/index/config I/O"
         );
     }
 

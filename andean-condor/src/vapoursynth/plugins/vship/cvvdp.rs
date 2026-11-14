@@ -277,187 +277,218 @@ fn collect_scene_values_with<'core>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::{cell::Cell, sync::mpsc};
+    mod internal_integration {
+        use super::super::*;
+        use std::{cell::Cell, sync::mpsc};
 
-    #[test]
-    fn plugin_scene_construction_pairing_progress_and_stop() {
-        let script = "import vapoursynth as vs\nc=vs.core\nc.std.Splice([c.std.BlankClip(width=32,height=32,length=1,format=vs.YUV420P8,color=[x,128,128]).std.SetFrameProps(CVVDP=float(x)) for x in [1,2,3,4,5,6]]).set_output()";
-        let mut decoder =
-            av_decoders::Decoder::from_script(script, Default::default()).expect("std fixture");
-        let decoder = decoder.get_vapoursynth_impl().expect("VS");
-        let core = crate::vapoursynth::get_core(&decoder.env).expect("core");
-        let reference = decoder
-            .get_output(decoder.get_output_index(), decoder.get_node_modifier())
-            .expect("node");
-        for indexing in [OutputIndexing::Aligned, OutputIndexing::Compacted] {
-            let distorted = if indexing == OutputIndexing::Aligned {
-                reference.clone()
-            } else {
-                Splice::invoke(
-                    core,
-                    &[
-                        Trim {
-                            first: Some(0),
-                            last: Some(1),
-                            ..Default::default()
-                        }
-                        .invoke(core, &reference)
-                        .expect("A"),
-                        Trim {
-                            first: Some(4),
-                            last: Some(5),
-                            ..Default::default()
-                        }
-                        .invoke(core, &reference)
-                        .expect("B"),
-                    ],
-                )
-                .expect("compacted")
-            };
-            for stop in [0, 1, 2, 3] {
-                let count = Cell::new(0);
-                let cancelled = AtomicBool::new(false);
-                let (tx, rx) = mpsc::channel();
-                let mut callbacks = Vec::new();
-                let result = collect_scene_values_with(
-                    core,
-                    &reference,
-                    &distorted,
-                    &[&[0, 1], &[], &[4, 5]],
-                    indexing,
-                    &tx,
-                    &cancelled,
-                    |position, value| {
-                        callbacks.push((position, *value));
-                        if stop == 1 {
-                            cancelled.store(true, Ordering::Relaxed);
-                        }
-                        if stop == 3 && position == 1 {
-                            cancelled.store(true, Ordering::Relaxed);
-                        }
-                        if stop == 2 {
-                            return Err(CVVDP::new_error("injected callback failure".to_owned()));
-                        }
-                        Ok(())
-                    },
-                    |a, b, indices| {
-                        let i = count.get();
-                        count.set(i + 1);
-                        assert_eq!(indices, if i == 0 { &[0, 1] } else { &[4, 5] });
-                        assert_eq!(a.info().num_frames, 2);
-                        for (local, expected) in
-                            if i == 0 { [1.0, 2.0] } else { [5.0, 6.0] }.into_iter().enumerate()
-                        {
-                            assert_eq!(
-                                a.get_frame(local)
-                                    .expect("reference")
-                                    .props()
-                                    .get_float("CVVDP")
-                                    .expect("marker"),
-                                expected
-                            );
-                            assert_eq!(
-                                b.get_frame(local)
-                                    .expect("distorted")
-                                    .props()
-                                    .get_float("CVVDP")
-                                    .expect("marker"),
-                                expected
-                            );
-                        }
-                        Ok(a.clone())
-                    },
-                );
-                if stop == 0 {
-                    assert_eq!(result.expect("scene filters"), [1.0, 2.0, 5.0, 6.0]);
-                    assert_eq!(count.get(), 2);
-                    assert_eq!(callbacks, [(0, 1.0), (1, 2.0), (2, 5.0), (3, 6.0)]);
-                    let counts = rx
-                        .try_iter()
-                        .filter_map(|event| match event {
-                            SequenceStatus::Whole(Status::Processing {
-                                completion: SequenceCompletion::Frames { completed, total },
-                                ..
-                            }) => Some((completed, total)),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>();
-                    assert_eq!(counts, [(0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]);
+        // The private scene-builder closure is required to inspect per-scene nodes.
+        fn with_node(run: impl for<'core> FnOnce(CoreRef<'core>, Node<'core>)) {
+            let script = "import vapoursynth as vs\nc=vs.core\nc.std.Splice([c.std.BlankClip(width=32,height=32,length=1,format=vs.YUV420P8,color=[x,128,128]).std.SetFrameProps(CVVDP=float(x)) for x in [1,2,3,4,5,6]]).set_output()";
+            let mut decoder =
+                av_decoders::Decoder::from_script(script, Default::default()).expect("std fixture");
+            let decoder = decoder.get_vapoursynth_impl().expect("VS");
+            let core = crate::vapoursynth::get_core(&decoder.env).expect("core");
+            let reference = decoder
+                .get_output(decoder.get_output_index(), decoder.get_node_modifier())
+                .expect("node");
+            run(core, reference);
+        }
+
+        #[test]
+        fn cvvdp_scene_collection_pairs_aligned_and_compacted_frames() {
+            with_node(|core, reference| assert_scene_pairs(core, &reference, &[0]));
+        }
+
+        #[test]
+        fn cvvdp_scene_collection_stops_before_building_later_scenes() {
+            with_node(|core, reference| assert_scene_pairs(core, &reference, &[1, 2, 3]));
+        }
+
+        fn assert_scene_pairs<'core>(core: CoreRef<'core>, reference: &Node<'core>, stops: &[u8]) {
+            for indexing in [OutputIndexing::Aligned, OutputIndexing::Compacted] {
+                let distorted = if indexing == OutputIndexing::Aligned {
+                    reference.clone()
                 } else {
-                    let error = result.expect_err("stop in scene A");
-                    assert_eq!(error.is::<probe::Cancelled>(), stop != 2);
-                    assert_eq!(count.get(), 1);
-                    assert_eq!(
-                        callbacks,
-                        if stop == 3 {
-                            vec![(0, 1.0), (1, 2.0)]
-                        } else {
-                            vec![(0, 1.0)]
-                        }
+                    Splice::invoke(
+                        core,
+                        &[
+                            Trim {
+                                first: Some(0),
+                                last: Some(1),
+                                ..Default::default()
+                            }
+                            .invoke(core, reference)
+                            .expect("A"),
+                            Trim {
+                                first: Some(4),
+                                last: Some(5),
+                                ..Default::default()
+                            }
+                            .invoke(core, reference)
+                            .expect("B"),
+                        ],
+                    )
+                    .expect("compacted")
+                };
+                for &stop in stops {
+                    let count = Cell::new(0);
+                    let cancelled = AtomicBool::new(false);
+                    let (tx, rx) = mpsc::channel();
+                    let mut callbacks = Vec::new();
+                    let result = collect_scene_values_with(
+                        core,
+                        reference,
+                        &distorted,
+                        &[&[0, 1], &[], &[4, 5]],
+                        indexing,
+                        &tx,
+                        &cancelled,
+                        |position, value| {
+                            callbacks.push((position, *value));
+                            if stop == 1 {
+                                cancelled.store(true, Ordering::Relaxed);
+                            }
+                            if stop == 3 && position == 1 {
+                                cancelled.store(true, Ordering::Relaxed);
+                            }
+                            if stop == 2 {
+                                return Err(CVVDP::new_error(
+                                    "injected callback failure".to_owned(),
+                                ));
+                            }
+                            Ok(())
+                        },
+                        |a, b, indices| {
+                            let i = count.get();
+                            count.set(i + 1);
+                            assert_eq!(indices, if i == 0 { &[0, 1] } else { &[4, 5] });
+                            assert_eq!(a.info().num_frames, 2);
+                            for (local, expected) in
+                                if i == 0 { [1.0, 2.0] } else { [5.0, 6.0] }.into_iter().enumerate()
+                            {
+                                assert_eq!(
+                                    a.get_frame(local)
+                                        .expect("reference")
+                                        .props()
+                                        .get_float("CVVDP")
+                                        .expect("marker"),
+                                    expected
+                                );
+                                assert_eq!(
+                                    b.get_frame(local)
+                                        .expect("distorted")
+                                        .props()
+                                        .get_float("CVVDP")
+                                        .expect("marker"),
+                                    expected
+                                );
+                            }
+                            Ok(a.clone())
+                        },
                     );
-                    assert!(
-                        !rx.try_iter()
-                            .any(|e| matches!(e, SequenceStatus::Whole(Status::Completed { .. })))
-                    );
+                    if stop == 0 {
+                        assert_eq!(result.expect("scene filters"), [1.0, 2.0, 5.0, 6.0]);
+                        assert_eq!(count.get(), 2);
+                        assert_eq!(callbacks, [(0, 1.0), (1, 2.0), (2, 5.0), (3, 6.0)]);
+                        let counts = rx
+                            .try_iter()
+                            .filter_map(|event| match event {
+                                SequenceStatus::Whole(Status::Processing {
+                                    completion: SequenceCompletion::Frames { completed, total },
+                                    ..
+                                }) => Some((completed, total)),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        assert_eq!(counts, [(0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]);
+                    } else {
+                        let error = result.expect_err("stop in scene A");
+                        assert_eq!(error.is::<probe::Cancelled>(), stop != 2);
+                        assert_eq!(count.get(), 1);
+                        assert_eq!(
+                            callbacks,
+                            if stop == 3 {
+                                vec![(0, 1.0), (1, 2.0)]
+                            } else {
+                                vec![(0, 1.0)]
+                            }
+                        );
+                        assert!(
+                            !rx.try_iter().any(|e| matches!(
+                                e,
+                                SequenceStatus::Whole(Status::Completed { .. })
+                            ))
+                        );
+                    }
                 }
             }
         }
-        let (tx, rx) = mpsc::channel();
-        assert!(
-            collect_scene_values_with(
-                core,
-                &reference,
-                &reference,
-                &[&[], &[]],
-                OutputIndexing::Aligned,
-                &tx,
-                &AtomicBool::new(false),
-                |_, _| panic!("empty callback"),
-                |_, _, _| panic!("empty filter")
-            )
-            .expect("empty scenes")
-            .is_empty()
-        );
-        assert!(rx.try_iter().next().is_none());
-        for scenes in [
-            &[&[1, 0][..]][..],
-            &[&[0, 1][..], &[1, 2][..]][..],
-            &[&[usize::MAX][..]][..],
-            &[&[6][..]][..],
-        ] {
-            let (tx, rx) = mpsc::channel();
-            assert!(
-                collect_scene_values_with(
-                    core,
-                    &reference,
-                    &reference,
-                    scenes,
-                    OutputIndexing::Aligned,
-                    &tx,
-                    &AtomicBool::new(false),
-                    |_, _| panic!("invalid callback"),
-                    |_, _, _| panic!("invalid filter")
-                )
-                .is_err()
-            );
-            assert!(rx.try_iter().next().is_none());
+
+        #[test]
+        fn cvvdp_empty_or_invalid_scenes_emit_no_progress() {
+            with_node(|core, reference| {
+                let (tx, rx) = mpsc::channel();
+                assert!(
+                    collect_scene_values_with(
+                        core,
+                        &reference,
+                        &reference,
+                        &[&[], &[]],
+                        OutputIndexing::Aligned,
+                        &tx,
+                        &AtomicBool::new(false),
+                        |_, _| panic!("empty callback"),
+                        |_, _, _| panic!("empty filter")
+                    )
+                    .expect("empty scenes")
+                    .is_empty()
+                );
+                assert!(rx.try_iter().next().is_none());
+                for scenes in [
+                    &[&[1, 0][..]][..],
+                    &[&[0, 1][..], &[1, 2][..]][..],
+                    &[&[usize::MAX][..]][..],
+                    &[&[6][..]][..],
+                ] {
+                    let (tx, rx) = mpsc::channel();
+                    assert!(
+                        collect_scene_values_with(
+                            core,
+                            &reference,
+                            &reference,
+                            scenes,
+                            OutputIndexing::Aligned,
+                            &tx,
+                            &AtomicBool::new(false),
+                            |_, _| panic!("invalid callback"),
+                            |_, _, _| panic!("invalid filter")
+                        )
+                        .is_err()
+                    );
+                    assert!(rx.try_iter().next().is_none());
+                }
+            });
         }
-        // Real M15 gateway receives the original within-scene source gap.
-        let (tx, _) = mpsc::channel();
-        let error = CVVDP::default()
-            .collect_scene_values(
-                core,
-                &reference,
-                &reference,
-                &[&[0, 2]],
-                OutputIndexing::Aligned,
-                tx,
-                &AtomicBool::new(false),
-                |_, _| panic!("gap scored"),
-            )
-            .expect_err("plugin cannot reset history alone");
-        assert!(error.to_string().contains("history-only"), "{error:#}");
+
+        #[test]
+        fn cvvdp_plugin_rejects_source_gaps_without_history_only_reset() {
+            with_node(|core, reference| {
+                let (tx, _) = mpsc::channel();
+                let error = CVVDP::default()
+                    .collect_scene_values(
+                        core,
+                        &reference,
+                        &reference,
+                        &[&[0, 2]],
+                        OutputIndexing::Aligned,
+                        tx,
+                        &AtomicBool::new(false),
+                        |_, _| panic!("gap scored"),
+                    )
+                    .expect_err("plugin cannot reset history alone");
+                assert!(error.to_string().contains("history-only"), "{error:#}");
+            });
+        }
     }
 }
 
