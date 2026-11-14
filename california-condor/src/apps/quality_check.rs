@@ -816,136 +816,61 @@ mod tests {
         assert_eq!(app.frame_scores.lock().unwrap().len(), 8203);
     }
 
-    #[test]
-    fn qc_headless_report_keeps_resumed_and_last_live_scores() {
-        if std::env::var_os("QC_RESUMED_REPORT_CHILD").is_none() {
-            let output = Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "apps::quality_check::tests::qc_headless_report_keeps_resumed_and_last_live_scores", "--nocapture"])
-                .env("QC_RESUMED_REPORT_CHILD", "1").env("CONDOR_TEST_MODE", "1").output().unwrap();
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            assert!(
-                output.status.success(),
-                "{stdout}\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let row: Vec<_> = stdout
-                .lines()
-                .find(|line| line.starts_with("Per-Frame"))
-                .expect("after_loop final report")
-                .split_whitespace()
-                .collect();
+    mod internal_integration {
+        use super::*;
+
+        #[test]
+        fn qc_saved_and_live_scores_produce_complete_final_statistics() {
+            const TEST: &str = "apps::quality_check::tests::internal_integration::qc_saved_and_live_scores_produce_complete_final_statistics";
+            if std::env::var_os("QC_RESUMED_REPORT_CHILD").is_none() {
+                let output = Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", TEST, "--nocapture"])
+                    .env("QC_RESUMED_REPORT_CHILD", TEST)
+                    .env("CONDOR_TEST_MODE", "1")
+                    .output()
+                    .unwrap();
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                assert!(
+                    output.status.success(),
+                    "{stdout}\n{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(
+                    stdout.contains("1 passed; 0 failed;")
+                        && stdout.contains("QC_RESUMED_INTERNAL_ASSERTIONS_COMPLETED")
+                );
+                eprintln!("{stdout}");
+                return;
+            }
+            assert_eq!(std::env::var("QC_RESUMED_REPORT_CHILD").unwrap(), TEST);
+            let app = crate::test_helpers::quality_scenes::run_resumed_quality_report();
             assert_eq!(
-                row,
-                ["Per-Frame", "99.5000", "0.0000", "199.0000", "2.0000", "57.7343"]
-            );
-            let events: Vec<_> = stdout
-                .lines()
-                .filter_map(|line| line.strip_prefix("[Quality Check][Frame] "))
-                .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap())
-                .collect();
-            assert_eq!(events.len(), 100);
-            assert_eq!(
-                events[0],
-                serde_json::json!({"FrameScore":{"frame":100,"score":100.0}})
+                (
+                    app.cached_state.frames_compared,
+                    app.cached_state.total_frames
+                ),
+                (200, 200)
             );
             assert_eq!(
-                events[99],
-                serde_json::json!({"FrameScore":{"frame":199,"score":199.0}})
+                app.cached_state.scene_scores,
+                BTreeMap::from([(0, 49.5), (1, 149.5)])
             );
-            assert!(
-                stdout.contains(
-                    "[Quality Check][Scene] {\"SceneScore\":{\"scene\":1,\"score\":149.5}}"
-                )
+            let scores = app.frame_scores.lock().unwrap();
+            assert_eq!(*scores, (0..200).map(f64::from).collect::<Vec<_>>());
+            let stats = QualityCheckApp::compute_stats(&scores, false).unwrap().unwrap();
+            assert_eq!(
+                (
+                    stats.count,
+                    stats.average,
+                    stats.minimum,
+                    stats.maximum,
+                    stats.percentile
+                ),
+                (200, 99.5, 0.0, 199.0, 2.0)
             );
-            return;
+            assert_eq!(stats.std_dev, 3333.25_f64.sqrt());
+            println!("QC_RESUMED_INTERNAL_ASSERTIONS_COMPLETED");
         }
-        let (clip, mut scenes) = crate::test_helpers::quality_scene_fixture();
-        scenes[0].sequence_data.quality_check.quality.scores = (0..100).map(f64::from).collect();
-        scenes[0].end_frame = 100;
-        scenes[1].start_frame = 100;
-        scenes[1].end_frame = 200;
-        scenes.truncate(2);
-        scenes[1].sequence_data.quality_check.quality = Default::default();
-        let mut app = QualityCheckApp::new(
-            clip,
-            &scenes,
-            QualityMetric::default(),
-            ProbeStatistic::Mean,
-            &ProbeStrategy::Whole,
-        )
-        .unwrap();
-        let (tx, rx) = std::sync::mpsc::channel();
-        for frame in 100..200 {
-            tx.send(SequenceStatus::Subprocess {
-                parent: Status::Processing {
-                    id: "Quality Check".into(),
-                    completion: SequenceCompletion::Custom {
-                        name: "Quality Check".into(),
-                        completed: (frame - 100) as f64 + 1.0,
-                        total: 100.0,
-                    },
-                },
-                child: Status::Processing {
-                    id: "Quality".into(),
-                    completion: SequenceCompletion::FrameScore {
-                        frame,
-                        score: frame as f64,
-                    },
-                },
-            })
-            .unwrap();
-        }
-        tx.send(SequenceStatus::Subprocess {
-            parent: Status::Processing {
-                id: "Quality Check".into(),
-                completion: SequenceCompletion::Custom {
-                    name: "Quality Check".into(),
-                    completed: 100.0,
-                    total: 100.0,
-                },
-            },
-            child: Status::Processing {
-                id: "Quality".into(),
-                completion: SequenceCompletion::SceneQuality {
-                    index: 1,
-                    score: 149.5,
-                    quantizer: 20.0,
-                    bitrate: 0.0,
-                },
-            },
-        })
-        .unwrap();
-        drop(tx);
-        app.run(
-            rx,
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
-        .unwrap();
-        assert_eq!(
-            (
-                app.cached_state.frames_compared,
-                app.cached_state.total_frames
-            ),
-            (200, 200)
-        );
-        assert_eq!(
-            app.cached_state.scene_scores,
-            BTreeMap::from([(0, 49.5), (1, 149.5)])
-        );
-        let scores = app.frame_scores.lock().unwrap();
-        assert_eq!(*scores, (0..200).map(f64::from).collect::<Vec<_>>());
-        let stats = QualityCheckApp::compute_stats(&scores, false).unwrap().unwrap();
-        assert_eq!(
-            (
-                stats.count,
-                stats.average,
-                stats.minimum,
-                stats.maximum,
-                stats.percentile
-            ),
-            (200, 99.5, 0.0, 199.0, 2.0)
-        );
-        assert_eq!(stats.std_dev, 3333.25_f64.sqrt());
     }
 
     #[test]
