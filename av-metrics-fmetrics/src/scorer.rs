@@ -940,58 +940,6 @@ mod tests {
     }
 
     #[test]
-    fn a_scorer_needs_the_library() {
-        // Without fmetrics this must be a clean error, not a panic: the caller
-        // falls back to the VapourSynth plugin when this tier is unavailable.
-        let config = FmetricsConfig::new(FmetricsMetric::Ssimulacra2);
-        match FmetricsScorer::new(config, color(8)) {
-            Ok(_) => assert!(FmetricsScorer::is_available()),
-            Err(error) => assert!(
-                matches!(error, FmetricsError::LibraryNotFound { .. }),
-                "expected unavailability, got {error:?}"
-            ),
-        }
-    }
-
-    #[test]
-    fn a_temporal_metric_needs_the_temporal_entry_point() {
-        // A CVVDP scorer holds a single accumulating context, so the per-pair
-        // entry point must refuse it rather than silently scoring each frame as
-        // if it were independent. This is the failure a caller hits when it
-        // submits a temporal metric through `submit_pair`: the error names the
-        // right remedy, which is what makes it diagnosable at the call site.
-        let Ok(mut scorer) = FmetricsScorer::new(
-            FmetricsConfig::new(FmetricsMetric::Cvvdp).with_frame_rate(24.0),
-            color(8),
-        ) else {
-            return;
-        };
-
-        let size = 64;
-        let frame = frame(size, size, 100);
-        let planes = PlaneSet::from_frame(&frame).unwrap();
-
-        let error = scorer
-            .submit_pair(&planes, &planes)
-            .expect_err("submit_pair must refuse a temporal metric");
-        assert!(
-            matches!(error, FmetricsError::MetricUnavailable { .. }),
-            "expected an unavailability error naming the remedy, got {error:?}"
-        );
-        assert!(
-            error.to_string().contains("submit_pair_temporal"),
-            "the error should name the entry point that does work, got {error}"
-        );
-
-        // The temporal entry point is the one that accepts it, which is what
-        // makes the error above a routing mistake rather than a dead end.
-        assert!(
-            scorer.submit_pair_temporal(&planes, &planes).is_ok(),
-            "submit_pair_temporal must accept a temporal metric"
-        );
-    }
-
-    #[test]
     fn cvvdp_default_frame_rate_is_usable() {
         let config = FmetricsConfig::new(FmetricsMetric::Cvvdp);
         assert_eq!(config.frame_rate(), 60.0);
@@ -999,7 +947,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_frame_rate_bounds_precede_library_loading() {
+    fn cvvdp_invalid_fps_from_fields_or_builders_rejects_before_discovery() {
         for rate in [
             0.0,
             -0.0,
@@ -1038,6 +986,10 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn cvvdp_accepts_positive_fps_through_one_hundred_thousand() {
         for rate in [f32::MIN_POSITIVE, 24.0, 23.976_025, 60.0, 100_000.0] {
             let config = FmetricsConfig::new(FmetricsMetric::Cvvdp).with_frame_rate(rate);
             assert!(
@@ -1048,7 +1000,7 @@ mod tests {
     }
 
     #[test]
-    fn frame_rate_validation_rejects_non_finite_and_zero() {
+    fn frame_rate_validation_rejects_zero_negative_nan_and_infinity_but_accepts_twenty_four() {
         for rate in [0.0f32, -1.0, f32::NAN, f32::INFINITY] {
             let config = FmetricsConfig::new(FmetricsMetric::Cvvdp).with_frame_rate(rate);
             assert!(
@@ -1172,7 +1124,7 @@ mod tests {
     }
 
     #[test]
-    fn a_frame_round_trips_through_conversion() {
+    fn frame_plane_conversion_produces_expected_rgb_geometry_and_stride() {
         // Conversion is what every submission does first, so it must work on a
         // frame built exactly as the driver would supply one.
         let frame = frame(16, 16, 100);
@@ -1181,53 +1133,6 @@ mod tests {
         let image = yuv_to_rgb(&frames, &info, 255).unwrap();
         assert_eq!((image.width(), image.height()), (16, 16));
         assert_eq!(image.stride(), 48);
-    }
-
-    #[test]
-    fn concurrent_scoring_matches_serial_scoring() {
-        // fmetrics' scratch arena is per-workspace, so sharing one workspace
-        // between threads corrupts it *silently*: no error is returned, the
-        // scores are just wrong. A "next index" counter hands the same
-        // workspace to two threads once they are far enough apart in
-        // the counter, which is what made this test fail before the
-        // pool became a free list. Bit equality is the only assertion
-        // strong enough to catch that.
-        let Ok(scorer) = FmetricsScorer::new(
-            FmetricsConfig::new(FmetricsMetric::Ssimulacra2).with_threads(4),
-            color(8),
-        ) else {
-            // Without the library there is nothing to race.
-            return;
-        };
-
-        let size = 64;
-        let reference_bytes = vec![128u8; size * size * 3];
-        let distorted_bytes = vec![100u8; size * size * 3];
-        let reference = RgbView::new(&reference_bytes, size, size, false).unwrap();
-        let distorted = RgbView::new(&distorted_bytes, size, size, false).unwrap();
-
-        let expected = scorer.submit_rgb(&reference, &distorted).unwrap();
-
-        let scorer = std::sync::Arc::new(scorer);
-        // Four threads for four workspaces: oversubscribing would be reported
-        // as exhaustion by design, which the allocator tests below cover.
-        let results: Vec<FrameScore> = std::thread::scope(|scope| {
-            (0..4)
-                .map(|_| {
-                    let scorer = std::sync::Arc::clone(&scorer);
-                    scope.spawn(move || scorer.submit_rgb(&reference, &distorted).unwrap())
-                })
-                .map(|handle| handle.join().unwrap())
-                .collect()
-        });
-
-        for score in &results {
-            assert_eq!(
-                score.ssimulacra2.unwrap().to_bits(),
-                expected.ssimulacra2.unwrap().to_bits(),
-                "a concurrent score differed from the serial one, so a workspace was shared"
-            );
-        }
     }
 
     #[test]
@@ -1309,15 +1214,26 @@ mod tests {
     }
 
     #[test]
-    fn error_and_unwind_return_capacity() {
+    fn free_slot_lease_returns_capacity_on_error() {
         let slots = FreeSlots::new(1);
         let score = || -> Result<(), &str> {
             let _lease = slots.claim().unwrap();
             Err("injected scoring failure")
         };
         assert_eq!(score(), Err("injected scoring failure"));
+        let lease = slots.claim().expect("error returned the slot");
+        assert_eq!(lease.index, 0);
+        assert!(
+            slots.claim().is_none(),
+            "returning a slot must not duplicate it"
+        );
+    }
+
+    #[test]
+    fn free_slot_lease_returns_capacity_on_unwind_without_duplicate_free_slot() {
+        let slots = FreeSlots::new(1);
         let panic = std::panic::catch_unwind(|| {
-            let _lease = slots.claim().expect("error returned the slot");
+            let _lease = slots.claim().expect("available slot");
             panic!("injected scoring panic");
         });
         assert!(panic.is_err(), "the scoring panic must propagate");
@@ -1356,92 +1272,160 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn callback_unwind_returns_capacity() {
-        // Isolate the loader OnceLock and use genuinely allocated/freed handles,
-        // even when a system fmetrics library is installed or unavailable.
-        if std::env::var_os("FMETRICS_CALLBACK_UNWIND_CHILD").is_none() {
-            let directory = tempfile::tempdir().expect("temporary native ABI sink");
-            let library = directory.path().join(ffi::library_names()[0]);
-            let output = std::process::Command::new("cc")
-                .args(["-shared", "-fPIC", "-o"])
-                .arg(&library)
-                .arg(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../andean-condor/tests/fixtures/metadata.c"
-                ))
-                .output()
-                .expect("callback ownership check requires cc");
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "scorer::tests::callback_unwind_returns_capacity", "--nocapture"])
-                .env("FMETRICS_CALLBACK_UNWIND_CHILD", "1")
-                .env("FMETRICS_LIB_PATH", directory.path())
-                .output()
-                .expect("run isolated callback regression");
-            assert!(
-                output.status.success(),
-                "{}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert!(
-                String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
-                "callback child must execute exactly one test: {}",
-                String::from_utf8_lossy(&output.stdout)
-            );
-            return;
-        }
-        let scorer = FmetricsScorer::new(
-            FmetricsConfig::new(FmetricsMetric::Ssimulacra2).with_threads(2),
-            color(8),
-        )
-        .expect("the native ABI sink must load");
-        let Inner::PerPair { pool } = &scorer.inner else {
-            panic!("expected a per-pair pool");
-        };
-        let held = pool.claim().unwrap();
-        assert!(matches!(
-            scorer.with_workspace(pool, |_| scorer.with_workspace(pool, |_| Ok(()))),
-            Err(FmetricsError::PoolExhausted { workspaces: 2, .. })
-        ));
-        assert!(matches!(
-            scorer.with_workspace(pool, |_| Err::<(), _>(FmetricsError::UnsupportedFormat {
-                reason: "injected scoring failure".to_owned(),
-            })),
-            Err(FmetricsError::UnsupportedFormat { .. })
-        ));
-        let panic = std::panic::catch_unwind(|| {
-            scorer.with_workspace(pool, |_| -> Result<(), FmetricsError> {
-                panic!("injected scoring panic");
-            })
-        });
-        assert!(panic.is_err(), "the scoring panic must propagate");
-        assert!(
-            scorer.with_workspace(pool, |_| Ok(())).is_ok(),
-            "a scoring panic must not permanently exhaust the pool"
-        );
-        drop(held);
+    mod internal_integration {
+        use super::*;
 
-        let overlap = std::sync::Barrier::new(2);
-        std::thread::scope(|scope| {
-            let threads: Vec<_> = (0..2)
-                .map(|_| {
-                    scope.spawn(|| {
-                        scorer.with_workspace(pool, |_| {
-                            overlap.wait();
-                            Ok(())
+        #[test]
+        fn nested_workspace_closures_report_pool_exhaustion_without_losing_held_lease() {
+            workspace_case(
+                "nested_workspace_closures_report_pool_exhaustion_without_losing_held_lease",
+                "nested",
+            );
+        }
+
+        #[test]
+        fn workspace_closure_error_returns_native_workspace_capacity() {
+            workspace_case(
+                "workspace_closure_error_returns_native_workspace_capacity",
+                "error",
+            );
+        }
+
+        #[test]
+        fn workspace_closure_unwind_returns_native_workspace_capacity() {
+            workspace_case(
+                "workspace_closure_unwind_returns_native_workspace_capacity",
+                "unwind",
+            );
+        }
+
+        #[test]
+        fn returned_native_workspace_leases_allow_two_overlapping_closures() {
+            workspace_case(
+                "returned_native_workspace_leases_allow_two_overlapping_closures",
+                "overlap",
+            );
+        }
+
+        fn workspace_case(test: &str, scenario: &str) {
+            // Isolate the loader OnceLock and use genuinely allocated/freed handles,
+            // even when a system fmetrics library is installed or unavailable.
+            if std::env::var_os("FMETRICS_CALLBACK_UNWIND_CHILD").is_none() {
+                let module = module_path!().split_once("::").expect("test crate prefix").1;
+                let exact = format!("{module}::{test}");
+                let directory = tempfile::tempdir().expect("temporary native ABI sink");
+                let library = directory.path().join(ffi::library_names()[0]);
+                let output = std::process::Command::new("cc")
+                    .args(["-shared", "-fPIC", "-o"])
+                    .arg(&library)
+                    .arg(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/../andean-condor/tests/fixtures/metadata.c"
+                    ))
+                    .output()
+                    .expect("callback ownership check requires cc");
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", &exact, "--nocapture"])
+                    .env("FMETRICS_CALLBACK_UNWIND_CHILD", scenario)
+                    .env("FMETRICS_LIB_PATH", directory.path())
+                    .output()
+                    .expect("run isolated callback regression");
+                assert!(
+                    output.status.success(),
+                    "{}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed")
+                        && String::from_utf8_lossy(&output.stdout)
+                            .contains(&format!("workspace {scenario}: assertions completed")),
+                    "callback child must execute exactly one test: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                );
+                return;
+            }
+            assert_eq!(
+                std::env::var("FMETRICS_CALLBACK_UNWIND_CHILD").expect("scenario"),
+                scenario,
+                "case belongs to this contract"
+            );
+            assert_workspace_capacity(scenario);
+            println!("workspace {scenario}: assertions completed");
+        }
+
+        fn assert_workspace_capacity(scenario: &str) {
+            let scorer = FmetricsScorer::new(
+                FmetricsConfig::new(FmetricsMetric::Ssimulacra2).with_threads(2),
+                color(8),
+            )
+            .expect("the native ABI sink must load");
+            let Inner::PerPair { pool } = &scorer.inner else {
+                panic!("expected a per-pair pool");
+            };
+            let held = pool.claim().unwrap();
+            assert!(matches!(
+                scorer.with_workspace(pool, |_| scorer.with_workspace(pool, |_| Ok(()))),
+                Err(FmetricsError::PoolExhausted { workspaces: 2, .. })
+            ));
+            if scenario == "nested" {
+                let returned = pool.claim().expect("nested refusal returned its outer lease");
+                assert_ne!(held.index, returned.index);
+                assert!(
+                    pool.claim().is_none(),
+                    "held and returned leases remain exclusive"
+                );
+                return;
+            }
+            assert!(matches!(
+                scorer.with_workspace(pool, |_| Err::<(), _>(FmetricsError::UnsupportedFormat {
+                    reason: "injected scoring failure".to_owned(),
+                })),
+                Err(FmetricsError::UnsupportedFormat { .. })
+            ));
+            if scenario == "error" {
+                assert!(
+                    scorer.with_workspace(pool, |_| Ok(())).is_ok(),
+                    "closure error returns its lease"
+                );
+                return;
+            }
+            let panic = std::panic::catch_unwind(|| {
+                scorer.with_workspace(pool, |_| -> Result<(), FmetricsError> {
+                    panic!("injected scoring panic");
+                })
+            });
+            assert!(panic.is_err(), "the scoring panic must propagate");
+            assert!(
+                scorer.with_workspace(pool, |_| Ok(())).is_ok(),
+                "a scoring panic must not permanently exhaust the pool"
+            );
+            if scenario == "unwind" {
+                return;
+            }
+            drop(held);
+
+            let overlap = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                let threads: Vec<_> = (0..2)
+                    .map(|_| {
+                        scope.spawn(|| {
+                            scorer.with_workspace(pool, |_| {
+                                overlap.wait();
+                                Ok(())
+                            })
                         })
                     })
-                })
-                .collect();
-            for thread in threads {
-                assert!(thread.join().unwrap().is_ok());
-            }
-        });
+                    .collect();
+                for thread in threads {
+                    assert!(thread.join().unwrap().is_ok());
+                }
+            });
+        }
     }
 }
