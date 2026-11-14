@@ -368,8 +368,8 @@ mod tests {
             .args(args))
     }
 
-    #[test]
-    fn initial_big_endian_source_normalizes_to_le() {
+    fn check_initial_byte_order(phase: &str) {
+        assert!(["normalized", "unexpected", "scaled"].contains(&phase));
         let directory = tempfile::tempdir().expect("BE fixture");
         let raw_path = directory.path().join("source.raw");
         let samples: Vec<u16> = (0..512).map(|i| 0x0123 + i % 113).collect();
@@ -436,6 +436,9 @@ mod tests {
             assert_eq!(&packed[..6], b"FRAME\n");
             assert_eq!(packed[6..], expected);
         }
+        if phase == "normalized" {
+            return;
+        }
         let native = decoder.get_ffms2_impl().expect("native source");
         // SAFETY: valid exclusive source and a terminated list of runtime IDs.
         // Passing null ErrorInfo is supported; the return code is checked.
@@ -454,6 +457,9 @@ mod tests {
         let error = pack_frame(decoder, 1, &mut packed).expect_err("never read unexpected BE");
         assert!(error.to_string().contains("frame 1"));
         assert_eq!(packed, [77], "failed preflight emits no partial frame");
+        if phase == "unexpected" {
+            return;
+        }
 
         // Intentional scaling uses converted dimensions, not Encoded*, and
         // does not rewrite the original source details retained for filters.
@@ -539,8 +545,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn native_changing_resolution_capability() {
+    fn check_changing_resolution_capability() {
         let directory = tempfile::tempdir().expect("changing resolution fixture");
         let mut encoded = Vec::new();
         for source in ["color=c=black:s=32x1080:r=24", "color=c=white:s=32x800:r=24"] {
@@ -1036,30 +1041,56 @@ mod tests {
         );
     }
 
-    // Literal geometry/counts: 853*479 + 2*427*240 = 613547;
-    // 853*480 + 2*427*240 = 614400; 853*479 + 2*427*479 = 817653.
-    #[test]
-    fn native_853x480_420() {
-        native_roundtrip((853, 480), (427, 240), "420", 8, 614400);
-    }
+    // Native headers, private pack_frame append state and direct plane views
+    // cannot be replaced by the public cursor-returning Input API.
+    mod internal_integration {
+        use super::*;
 
-    #[test]
-    fn native_853x479_420() {
-        native_roundtrip((853, 479), (427, 240), "420", 8, 613547);
-    }
+        #[test]
+        fn ffms2_initial_big_endian_frames_are_normalized_to_little_endian() {
+            check_initial_byte_order("normalized");
+        }
 
-    #[test]
-    fn native_853x479_422() {
-        native_roundtrip((853, 479), (427, 479), "422", 8, 817653);
-    }
+        #[test]
+        fn ffms2_unexpected_big_endian_frame_leaves_output_unchanged() {
+            check_initial_byte_order("unexpected");
+        }
 
-    #[test]
-    fn native_853x479_420_high_depth() {
-        native_roundtrip((853, 479), (427, 240), "420p10", 10, 1227094);
-    }
+        #[test]
+        fn ffms2_scaled_output_retains_the_original_source_dimensions() {
+            check_initial_byte_order("scaled");
+        }
 
-    #[test]
-    fn native_even_420_control() {
-        native_roundtrip((64, 32), (32, 16), "420", 8, 3072);
+        #[test]
+        fn ffms2_resolution_changes_reject_exposed_drift_but_accept_fixed_output() {
+            check_changing_resolution_capability();
+        }
+
+        // Literal geometry/counts: 853*479 + 2*427*240 = 613547;
+        // 853*480 + 2*427*240 = 614400; 853*479 + 2*427*479 = 817653.
+        #[test]
+        fn ffms2_odd_width_420_preserves_edge_samples_and_frame_alignment() {
+            native_roundtrip((853, 480), (427, 240), "420", 8, 614400);
+        }
+
+        #[test]
+        fn ffms2_odd_width_and_height_420_preserves_chroma_edges() {
+            native_roundtrip((853, 479), (427, 240), "420", 8, 613547);
+        }
+
+        #[test]
+        fn ffms2_odd_size_422_preserves_chroma_rows_and_frame_alignment() {
+            native_roundtrip((853, 479), (427, 479), "422", 8, 817653);
+        }
+
+        #[test]
+        fn ffms2_odd_size_ten_bit_420_preserves_little_endian_samples() {
+            native_roundtrip((853, 479), (427, 240), "420p10", 10, 1227094);
+        }
+
+        #[test]
+        fn ffms2_even_size_420_preserves_two_exact_frames() {
+            native_roundtrip((64, 32), (32, 16), "420", 8, 3072);
+        }
     }
 }
