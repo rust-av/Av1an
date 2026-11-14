@@ -54,13 +54,67 @@ mod common;
 #[path = "../../test-support/runtime_discovery.rs"]
 mod runtime_discovery;
 
-/// Catches repeated default probes, check-then-store races, cached failures,
-/// skipped explicit admission, and routing a selected device to the wrong init.
-#[test]
 #[cfg(unix)]
-fn default_capability_cache() {
-    if let Ok(scenario) = std::env::var("VSHIP_CAPABILITY_FIXTURE_CHILD") {
-        capability_child(&scenario);
+macro_rules! capability_case {
+    ($name:ident, $scenario:literal) => {
+        #[test]
+        fn $name() {
+            run_capability_case(stringify!($name), $scenario);
+        }
+    };
+}
+
+#[cfg(unix)]
+capability_case!(
+    default_queries_share_one_successful_probe_and_borrowed_version,
+    "queries"
+);
+#[cfg(unix)]
+capability_case!(
+    first_default_constructor_probes_once_then_reuses_admission,
+    "constructor-first"
+);
+#[cfg(unix)]
+capability_case!(concurrent_first_default_requests_probe_once, "concurrent");
+#[cfg(unix)]
+capability_case!(
+    all_integrated_devices_select_and_initialize_last_device,
+    "all-integrated"
+);
+#[cfg(unix)]
+capability_case!(failed_default_probes_retry_until_success, "retry");
+#[cfg(unix)]
+capability_case!(
+    explicit_metric_constructors_probe_and_initialize_the_requested_device,
+    "explicit"
+);
+#[cfg(unix)]
+capability_case!(
+    invalid_explicit_device_does_not_allocate_or_fall_back,
+    "invalid"
+);
+#[cfg(unix)]
+capability_case!(
+    explicit_probe_failure_does_not_poison_cached_default,
+    "explicit-failure"
+);
+#[cfg(unix)]
+capability_case!(
+    handler_init_failure_does_not_poison_default_admission,
+    "init-failure"
+);
+#[cfg(unix)]
+capability_case!(
+    compute_failure_recovers_on_same_handler_without_reprobing_default,
+    "compute-failure"
+);
+
+#[cfg(unix)]
+fn run_capability_case(test: &str, scenario: &str) {
+    if let Ok(selected) = std::env::var("VSHIP_CAPABILITY_FIXTURE_CHILD") {
+        assert_eq!(selected, scenario, "case belongs to this contract");
+        capability_child(scenario);
+        println!("capability {scenario}: assertions completed");
         return;
     }
     let dir = tempfile::tempdir().expect("capability fixture directory");
@@ -71,52 +125,53 @@ fn default_capability_cache() {
     });
     compile(&library, false, &[]);
     let mut errors = Vec::new();
-    for scenario in ["mixed", "constructor-first", "concurrent", "all-integrated", "retry"] {
-        let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "default_capability_cache", "--nocapture"])
-            .env("VSHIP_CAPABILITY_FIXTURE_CHILD", scenario)
-            .env(
-                "VSHIP_CAPABILITY_FIXTURE_DEVICES",
-                if scenario == "all-integrated" {
-                    "2"
-                } else {
-                    "1"
-                },
-            )
-            .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
-            .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
-            .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
-            .env(
-                "VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS",
-                if scenario == "retry" { "777" } else { "0" },
-            )
-            .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", "0")
-            .env("VSHIP_HANDLER_FIXTURE_INIT_STATUS", "0")
-            .env_remove("VSHIP_BOUNDARY_FIXTURE_TAG")
-            .env("VSHIP_PLUGIN_PATH", dir.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("capability child");
-        let start = Instant::now();
-        while child.try_wait().expect("status").is_none() {
-            if start.elapsed() > Duration::from_secs(30) {
-                child.kill().expect("kill");
-                child.wait().expect("reap");
-                panic!("capability cache timed out: {scenario}");
-            }
-            std::thread::sleep(Duration::from_millis(10));
+    let mut child = Command::new(std::env::current_exe().expect("executable"))
+        .args(["--exact", test, "--nocapture"])
+        .env("VSHIP_CAPABILITY_FIXTURE_CHILD", scenario)
+        .env(
+            "VSHIP_CAPABILITY_FIXTURE_DEVICES",
+            if scenario == "all-integrated" {
+                "2"
+            } else {
+                "1"
+            },
+        )
+        .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
+        .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
+        .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
+        .env(
+            "VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS",
+            if scenario == "retry" { "777" } else { "0" },
+        )
+        .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", "0")
+        .env("VSHIP_HANDLER_FIXTURE_INIT_STATUS", "0")
+        .env_remove("VSHIP_BOUNDARY_FIXTURE_TAG")
+        .env("VSHIP_PLUGIN_PATH", dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("capability child");
+    let start = Instant::now();
+    while child.try_wait().expect("status").is_none() {
+        if start.elapsed() > Duration::from_secs(30) {
+            child.kill().expect("kill");
+            child.wait().expect("reap");
+            panic!("capability cache timed out: {scenario}");
         }
-        let out = child.wait_with_output().expect("output");
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        if !out.status.success() || !stdout.contains("1 passed; 0 failed") {
-            errors.push(format!(
-                "{scenario}: {stdout}\n{}",
-                String::from_utf8_lossy(&out.stderr)
-            ));
-        } else {
-            print!("{stdout}");
-        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let out = child.wait_with_output().expect("output");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    if !out.status.success()
+        || !stdout.contains("1 passed; 0 failed")
+        || !stdout.contains(&format!("capability {scenario}: assertions completed"))
+    {
+        errors.push(format!(
+            "{scenario}: {stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    } else {
+        print!("{stdout}");
     }
     assert!(errors.is_empty(), "{}", errors.join("\n"));
 }
@@ -294,7 +349,9 @@ fn capability_child(scenario: &str) {
             "default two reaches init, reuses probe, and frees its handler"
         );
     }
-    if scenario != "mixed" {
+    if !["explicit", "invalid", "explicit-failure", "init-failure", "compute-failure"]
+        .contains(&scenario)
+    {
         return;
     }
 
@@ -345,6 +402,9 @@ fn capability_child(scenario: &str) {
         (10, 10),
         "fresh owned handler per constructor"
     );
+    if scenario == "explicit" {
+        return;
+    }
     assert!(
         matches!(new(VshipConfig::new().with_gpu_id(3)), Err(VshipError::CallFailed {
         function: "Vship_GPUFullCheck", status: 8, message
@@ -356,6 +416,9 @@ fn capability_child(scenario: &str) {
         (1, 0, 10),
         "invalid explicit device never allocates or falls back"
     );
+    if scenario == "invalid" {
+        return;
+    }
     set(2, 777);
     assert!(
         matches!(new(VshipConfig::new().with_gpu_id(0)), Err(VshipError::CallFailed {
@@ -370,6 +433,9 @@ fn capability_child(scenario: &str) {
     );
     set(2, 0);
     drop(new(VshipConfig::new().with_gpu_id(0)).expect("explicit recovery"));
+    if scenario == "explicit-failure" {
+        return;
+    }
     let probes = count(0);
     set(1, 777);
     assert!(
@@ -386,6 +452,16 @@ fn capability_child(scenario: &str) {
         .build::<u8>()
         .expect("frame");
     let mut scorer = new(VshipConfig::new()).expect("init recovery");
+    if scenario == "init-failure" {
+        drop(scorer);
+        assert_eq!(count(0), probes, "init recovery keeps cached admission");
+        assert_eq!(
+            (count(1), count(2)),
+            (13, 12),
+            "only failed init has no owned handler"
+        );
+        return;
+    }
     set(3, 777);
     assert!(
         matches!(scorer.submit_pair(&frame, &frame), Err(VshipError::CallFailed {
@@ -421,7 +497,7 @@ fn capability_child(scenario: &str) {
         "native scoring failures retain the borrowed version"
     );
     println!(
-        "capability cache mixed: explicit FullCheck/Init IDs checked; status 8/777, probe/init/compute recovery; probes={}, init/free={}/{}, compute={}",
+        "capability cache {scenario}: explicit FullCheck/Init IDs checked; status 8/777, probe/init/compute recovery; probes={}, init/free={}/{}, compute={}",
         count(0),
         count(1),
         count(2),
@@ -431,25 +507,52 @@ fn capability_child(scenario: &str) {
 
 #[test]
 #[cfg(unix)]
-fn runtime_overrides_and_staged_release() {
-    if std::env::var_os("RUNTIME_DISCOVERY_CHILD").is_some() {
+fn vship_plugin_path_loads_fixture_without_bundled_sibling() {
+    runtime_case(
+        "vship_plugin_path_loads_fixture_without_bundled_sibling",
+        "VSHIP_PLUGIN_PATH",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn vship_lib_dir_loads_fixture_without_bundled_sibling() {
+    runtime_case(
+        "vship_lib_dir_loads_fixture_without_bundled_sibling",
+        "VSHIP_LIB_DIR",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn staged_vship_loads_via_runtime_loader_path_from_separate_media_cwd() {
+    runtime_case(
+        "staged_vship_loads_via_runtime_loader_path_from_separate_media_cwd",
+        "bundled",
+    );
+}
+
+#[cfg(unix)]
+fn runtime_case(test: &str, mode: &str) {
+    if let Ok(selected) = std::env::var("RUNTIME_DISCOVERY_CHILD") {
+        assert_eq!(selected, mode, "case belongs to this contract");
         // Load through production discovery before mapping fixture counters.
         assert_eq!(
             av_metrics_vship::libvship_version(),
             Some("5.1.2"),
             "production discovery selects the pinned runtime"
         );
-        child();
+        child("all");
         return;
     }
     runtime_discovery::run(
-        "runtime_overrides_and_staged_release",
+        test,
         if cfg!(target_os = "macos") {
             "libvship.dylib"
         } else {
             "libvship.so"
         },
-        &["VSHIP_PLUGIN_PATH", "VSHIP_LIB_DIR", "bundled"],
+        &[mode],
         true,
         |library| compile(library, false, &[]),
         |command, library| {
@@ -463,12 +566,39 @@ fn runtime_overrides_and_staged_release() {
     );
 }
 
-/// Catches per-request version clones/leaks while retaining fresh explicit admission.
 #[test]
 #[cfg(unix)]
-fn version_borrows_cached_storage() {
-    if std::env::var_os("VSHIP_VERSION_FIXTURE_CHILD").is_some() {
-        version_child();
+fn free_and_associated_version_queries_borrow_one_cached_string_without_handlers() {
+    version_case(
+        "free_and_associated_version_queries_borrow_one_cached_string_without_handlers",
+        "queries",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn cached_default_version_does_not_hide_explicit_probe_failure() {
+    version_case(
+        "cached_default_version_does_not_hide_explicit_probe_failure",
+        "failure",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn explicit_probe_recovery_preserves_cached_version_storage() {
+    version_case(
+        "explicit_probe_recovery_preserves_cached_version_storage",
+        "recovery",
+    );
+}
+
+#[cfg(unix)]
+fn version_case(test: &str, scenario: &str) {
+    if let Ok(selected) = std::env::var("VSHIP_VERSION_FIXTURE_CHILD") {
+        assert_eq!(selected, scenario, "case belongs to this contract");
+        version_child(scenario);
+        println!("version {scenario}: assertions completed");
         return;
     }
     let dir = tempfile::tempdir().expect("version fixture directory");
@@ -479,8 +609,8 @@ fn version_borrows_cached_storage() {
     });
     compile(&library, false, &[]);
     let mut child = Command::new(std::env::current_exe().expect("executable"))
-        .args(["--exact", "version_borrows_cached_storage", "--nocapture"])
-        .env("VSHIP_VERSION_FIXTURE_CHILD", "1")
+        .args(["--exact", test, "--nocapture"])
+        .env("VSHIP_VERSION_FIXTURE_CHILD", scenario)
         .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
         .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
         .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
@@ -502,7 +632,9 @@ fn version_borrows_cached_storage() {
     let out = child.wait_with_output().expect("output");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        out.status.success() && stdout.contains("1 passed; 0 failed"),
+        out.status.success()
+            && stdout.contains("1 passed; 0 failed")
+            && stdout.contains(&format!("version {scenario}: assertions completed")),
         "{stdout}\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -510,7 +642,7 @@ fn version_borrows_cached_storage() {
 }
 
 #[cfg(unix)]
-fn version_child() {
+fn version_child(scenario: &str) {
     // SAFETY: exact fixture exports; mapping outlives all calls and reads.
     let lib = unsafe {
         libloading::Library::new(
@@ -557,6 +689,9 @@ fn version_child() {
         (0, 0),
         "version probes allocate no handlers"
     );
+    if scenario == "queries" {
+        return;
+    }
     // SAFETY: control 2 changes only probe status in the isolated child.
     unsafe { control(2, 777) };
     assert!(
@@ -608,6 +743,9 @@ fn version_child() {
         (2, 0, 0),
         "failed probes allocate no handlers"
     );
+    if scenario == "failure" {
+        return;
+    }
     // SAFETY: restore the same child-local probe control to success.
     unsafe { control(2, 0) };
     let recovered = av_metrics_vship::libvship_version().expect("device recovered");
@@ -642,13 +780,93 @@ fn version_child() {
     );
 }
 
-/// Catches serial handler multiplication, lost ownership on errors, and resets
-/// before preflight. This drives the production constructor/submission boundary.
-#[test]
 #[cfg(unix)]
-fn single_handler_native_ownership() {
+macro_rules! handler_contract {
+    ($name:ident, $preflight:literal, $cases:expr) => {
+        #[test]
+        fn $name() {
+            handler_cases(stringify!($name), $cases, $preflight);
+        }
+    };
+}
+
+#[cfg(unix)]
+handler_contract!(
+    legacy_handler_requests_use_one_ordered_native_handler_for_each_metric,
+    false,
+    &[("ok", "1"), ("ok", "3"), ("ok", "default"), ("ok", "max")]
+);
+#[cfg(unix)]
+handler_contract!(
+    invalid_pair_on_either_side_rejects_before_reset_or_compute,
+    true,
+    &[("ok", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    compute_known_status_retains_handler_without_callback_or_submission,
+    false,
+    &[("compute17", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    compute_unknown_positive_status_retains_handler_without_callback_or_submission,
+    false,
+    &[("compute777", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    compute_negative_status_retains_handler_without_callback_or_submission,
+    false,
+    &[("compute-123", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    invalid_native_score_tag_is_not_returned_or_counted,
+    false,
+    &[("tag", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    disabled_temporal_history_reset_failure_stops_before_score_reset,
+    false,
+    &[("history", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    disabled_temporal_score_reset_failure_stops_after_history_reset,
+    false,
+    &[("score", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    gap_reset_failure_stops_before_compute,
+    false,
+    &[("gap", "3")]
+);
+#[cfg(unix)]
+handler_contract!(
+    failed_handler_init_does_not_adopt_nonnull_output,
+    false,
+    &[("init", "3")]
+);
+
+#[cfg(unix)]
+fn handler_cases(test: &str, cases: &[(&str, &str)], preflight_only: bool) {
     if std::env::var_os("VSHIP_HANDLER_FIXTURE_CHILD").is_some() {
-        handler_child();
+        let scenario = std::env::var("VSHIP_HANDLER_FIXTURE_CHILD").expect("scenario");
+        let requested = std::env::var("VSHIP_HANDLER_FIXTURE_REQUESTED").expect("requested");
+        assert!(
+            cases.contains(&(scenario.as_str(), requested.as_str())),
+            "case belongs to this contract"
+        );
+        assert_eq!(
+            std::env::var("VSHIP_HANDLER_FIXTURE_PREFLIGHT").expect("mode"),
+            if preflight_only { "1" } else { "0" },
+            "explicit fixture mode"
+        );
+        handler_child(preflight_only);
+        println!("handler {scenario}/{requested}/{preflight_only}: assertions completed");
         return;
     }
     let dir = tempfile::tempdir().expect("handler fixture directory");
@@ -659,24 +877,15 @@ fn single_handler_native_ownership() {
     });
     compile(&library, false, &[]);
     let mut errors = Vec::new();
-    for (scenario, requested) in [
-        ("ok", "1"),
-        ("ok", "3"),
-        ("ok", "default"),
-        ("ok", "max"),
-        ("compute17", "3"),
-        ("compute777", "3"),
-        ("compute-123", "3"),
-        ("tag", "3"),
-        ("history", "3"),
-        ("score", "3"),
-        ("gap", "3"),
-        ("init", "3"),
-    ] {
+    for (scenario, requested) in cases {
         let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "single_handler_native_ownership", "--nocapture"])
+            .args(["--exact", test, "--nocapture"])
             .env("VSHIP_HANDLER_FIXTURE_CHILD", scenario)
             .env("VSHIP_HANDLER_FIXTURE_REQUESTED", requested)
+            .env(
+                "VSHIP_HANDLER_FIXTURE_PREFLIGHT",
+                if preflight_only { "1" } else { "0" },
+            )
             .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
             .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
             .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
@@ -700,7 +909,12 @@ fn single_handler_native_ownership() {
         }
         let out = child.wait_with_output().expect("output");
         let stdout = String::from_utf8_lossy(&out.stdout);
-        if !out.status.success() || !stdout.contains("1 passed; 0 failed") {
+        if !out.status.success()
+            || !stdout.contains("1 passed; 0 failed")
+            || !stdout.contains(&format!(
+                "handler {scenario}/{requested}/{preflight_only}: assertions completed"
+            ))
+        {
             errors.push(format!(
                 "{scenario}/{requested}: {stdout}\n{}",
                 String::from_utf8_lossy(&out.stderr)
@@ -713,7 +927,7 @@ fn single_handler_native_ownership() {
 }
 
 #[cfg(unix)]
-fn handler_child() {
+fn handler_child(preflight_only: bool) {
     use av_metrics_vship::{PlaneSet, PlaneSource};
     let scenario = std::env::var("VSHIP_HANDLER_FIXTURE_CHILD").expect("scenario");
     let requested = std::env::var("VSHIP_HANDLER_FIXTURE_REQUESTED").expect("requested");
@@ -874,6 +1088,20 @@ fn handler_child() {
             1,
             "invalid pairs do not advance submissions"
         );
+        if preflight_only {
+            drop(scorer);
+            assert_eq!(
+                (count(1), count(2)),
+                (before.0 + 1, before.1 + 1),
+                "preflight refusal retains one owned handler"
+            );
+            assert_eq!(
+                events().last().copied(),
+                Some(20000 + id * 100 + 1),
+                "free the same handle after its only valid submission"
+            );
+            continue;
+        }
         match scenario.as_str() {
             "compute17" => set(3, 17),
             "compute777" => set(3, 777),
@@ -1000,9 +1228,99 @@ fn handler_child() {
 
 #[test]
 #[cfg(unix)]
-fn native_discriminants_and_admission() {
+fn unknown_native_backend_rejects_before_probe_or_allocation() {
+    admission_cases(
+        "unknown_native_backend_rejects_before_probe_or_allocation",
+        &[(777, 2, 0, 0, -1), (-123, 2, 0, 0, -1)],
+        "all",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn unverified_vship_patch_rejects_before_probe_or_allocation() {
+    admission_cases(
+        "unverified_vship_patch_rejects_before_probe_or_allocation",
+        &[(3, 3, 0, 0, -1), (3, 1, 0, 0, -1)],
+        "all",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn known_backend_tags_roundtrip_and_score_each_metric() {
+    let cases: Vec<_> = (0..4).map(|backend| (backend, 2, 0, 0, -1)).collect();
+    admission_cases(
+        "known_backend_tags_roundtrip_and_score_each_metric",
+        &cases,
+        "all",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn native_probe_failure_preserves_raw_status_without_handler_allocation() {
+    let cases: Vec<_> = [1, 17, 777, -123].map(|status| (3, 2, status, 0, -1)).into();
+    admission_cases(
+        "native_probe_failure_preserves_raw_status_without_handler_allocation",
+        &cases,
+        "all",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn native_compute_failure_preserves_known_or_unknown_status() {
+    let cases: Vec<_> = [1, 17, 777, -123].map(|status| (3, 2, 0, status, -1)).into();
+    admission_cases(
+        "native_compute_failure_preserves_known_or_unknown_status",
+        &cases,
+        "all",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn wrong_or_unknown_native_score_tag_is_rejected_and_handler_freed() {
+    let cases: Vec<_> = [0, 1, 4, 5, 6, 777, -123].map(|tag| (3, 2, 0, 0, tag)).into();
+    admission_cases(
+        "wrong_or_unknown_native_score_tag_is_rejected_and_handler_freed",
+        &cases,
+        "wrong",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn matching_native_score_tag_returns_metric_marker_and_frees_handler() {
+    let cases: Vec<_> = [4, 5, 6].map(|tag| (3, 2, 0, 0, tag)).into();
+    admission_cases(
+        "matching_native_score_tag_returns_metric_marker_and_frees_handler",
+        &cases,
+        "matching",
+    );
+}
+
+#[cfg(unix)]
+fn admission_cases(test: &str, cases: &[(i32, i32, i32, i32, i32)], tag_contract: &str) {
     if std::env::var_os("VSHIP_BOUNDARY_FIXTURE_CHILD").is_some() {
-        child();
+        let setting = |key| std::env::var(key).expect("setting").parse().expect("integer");
+        let selected = (
+            setting("VSHIP_BOUNDARY_FIXTURE_BACKEND"),
+            setting("VSHIP_BOUNDARY_FIXTURE_PATCH"),
+            setting("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS"),
+            setting("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS"),
+            std::env::var("VSHIP_BOUNDARY_FIXTURE_TAG")
+                .map_or(-1, |value| value.parse().expect("tag")),
+        );
+        assert!(cases.contains(&selected), "case belongs to this contract");
+        assert_eq!(
+            std::env::var("VSHIP_BOUNDARY_FIXTURE_TAG_CONTRACT").expect("contract"),
+            tag_contract,
+            "selected tag contract"
+        );
+        child(tag_contract);
+        println!("admission {selected:?}/{tag_contract}: assertions completed");
         return;
     }
     let dir = tempfile::tempdir().expect("fixture directory");
@@ -1012,28 +1330,16 @@ fn native_discriminants_and_admission() {
         "libvship.so"
     });
     compile(&library, false, &[]);
-    // backend, patch, probe status, compute status, score tag (-1 = retain).
-    let mut cases =
-        vec![(777, 2, 0, 0, -1), (-123, 2, 0, 0, -1), (3, 3, 0, 0, -1), (3, 1, 0, 0, -1)];
-    for backend in 0..4 {
-        cases.push((backend, 2, 0, 0, -1));
-    }
-    for status in [1, 17, 777, -123] {
-        cases.push((3, 2, status, 0, -1));
-        cases.push((3, 2, 0, status, -1));
-    }
-    for tag in [0, 1, 4, 5, 6, 777, -123] {
-        cases.push((3, 2, 0, 0, tag));
-    }
-    for (backend, patch, probe, status, tag) in cases {
+    for &(backend, patch, probe, status, tag) in cases {
         let mut child = Command::new(std::env::current_exe().expect("executable"));
         child
-            .args(["--exact", "native_discriminants_and_admission", "--nocapture"])
+            .args(["--exact", test, "--nocapture"])
             .env("VSHIP_BOUNDARY_FIXTURE_CHILD", "1")
             .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", backend.to_string())
             .env("VSHIP_BOUNDARY_FIXTURE_PATCH", patch.to_string())
             .env("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS", probe.to_string())
             .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", status.to_string())
+            .env("VSHIP_BOUNDARY_FIXTURE_TAG_CONTRACT", tag_contract)
             .env("VSHIP_PLUGIN_PATH", dir.path())
             .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
             .stdout(Stdio::piped())
@@ -1061,13 +1367,18 @@ fn native_discriminants_and_admission() {
             String::from_utf8_lossy(&out.stderr)
         );
         assert!(
-            stdout.contains("1 passed; 0 failed"),
+            stdout.contains("1 passed; 0 failed")
+                && stdout.contains(&format!(
+                    "admission {:?}/{tag_contract}: assertions completed",
+                    (backend, patch, probe, status, tag)
+                )),
             "exact nonzero test count: {stdout}"
         );
+        print!("{stdout}");
     }
 }
 #[cfg(unix)]
-fn child() {
+fn child(tag_contract: &str) {
     let setting = |name| std::env::var(name).expect("setting").parse::<i32>().expect("integer");
     // SAFETY: isolated fixture and exact counter signature, mapping remains live.
     let lib = unsafe {
@@ -1092,7 +1403,22 @@ fn child() {
         color_space: None,
         chroma_location: None,
     };
+    let tag = std::env::var("VSHIP_BOUNDARY_FIXTURE_TAG")
+        .ok()
+        .map(|s| s.parse::<i32>().expect("tag"));
+    let mut checked_metrics = 0;
     for metric in VshipMetric::all() {
+        let expected = match metric {
+            VshipMetric::Ssimulacra2 => 4,
+            VshipMetric::Butteraugli => 5,
+            VshipMetric::Cvvdp => 6,
+        };
+        if (tag_contract == "wrong" && tag == Some(expected))
+            || (tag_contract == "matching" && tag != Some(expected))
+        {
+            continue;
+        }
+        checked_metrics += 1;
         let result = VshipScorer::new(
             VshipConfig::new().with_metric(metric).with_handler_threads(1),
             format,
@@ -1143,14 +1469,6 @@ fn child() {
             .expect("frame");
         let result = scorer.submit_pair(&frame, &frame);
         let status = setting("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS");
-        let tag = std::env::var("VSHIP_BOUNDARY_FIXTURE_TAG")
-            .ok()
-            .map(|s| s.parse::<i32>().expect("tag"));
-        let expected = match metric {
-            VshipMetric::Ssimulacra2 => 4,
-            VshipMetric::Butteraugli => 5,
-            VshipMetric::Cvvdp => 6,
-        };
         if status != 0 {
             let error = result.expect_err("status");
             assert!(
@@ -1178,12 +1496,70 @@ fn child() {
         drop(scorer);
         assert_eq!(count(1), count(2), "all handlers freed");
     }
+    let expected_metrics = match tag_contract {
+        "matching" => 1,
+        "wrong" if tag.is_some_and(|value| (4..=6).contains(&value)) => 2,
+        _ => 3,
+    };
+    assert_eq!(
+        checked_metrics, expected_metrics,
+        "tag filter must execute every applicable metric, not a no-op child"
+    );
 }
 #[test]
 #[cfg(unix)]
-fn public_resets() {
+fn ssimulacra2_resets_are_native_noops_for_legacy_requests_one_and_three() {
+    reset_cases(
+        "ssimulacra2_resets_are_native_noops_for_legacy_requests_one_and_three",
+        &[("SSIMULACRA2", 1, 777), ("SSIMULACRA2", 3, 777)],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn butteraugli_resets_are_native_noops_for_legacy_requests_one_and_three() {
+    reset_cases(
+        "butteraugli_resets_are_native_noops_for_legacy_requests_one_and_three",
+        &[("Butteraugli", 1, 777), ("Butteraugli", 3, 777)],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn cvvdp_temporal_and_score_resets_call_native_once_without_reallocating() {
+    reset_cases(
+        "cvvdp_temporal_and_score_resets_call_native_once_without_reallocating",
+        &[("CVVDP", 1, 0)],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn cvvdp_reset_errors_preserve_function_and_raw_status_without_losing_handler() {
+    reset_cases(
+        "cvvdp_reset_errors_preserve_function_and_raw_status_without_losing_handler",
+        &[("CVVDP", 1, 17), ("CVVDP", 1, 777), ("CVVDP", 1, -123)],
+    );
+}
+
+#[cfg(unix)]
+fn reset_cases(test: &str, cases: &[(&str, u32, i32)]) {
     if std::env::var_os("VSHIP_RESET_FIXTURE_CHILD").is_some() {
+        let metric = std::env::var("VSHIP_RESET_FIXTURE_METRIC").expect("metric");
+        let handlers = std::env::var("VSHIP_RESET_FIXTURE_HANDLERS")
+            .expect("handlers")
+            .parse()
+            .expect("integer");
+        let status = std::env::var("VSHIP_RESET_FIXTURE_RESET_STATUS")
+            .expect("status")
+            .parse()
+            .expect("integer");
+        assert!(
+            cases.contains(&(metric.as_str(), handlers, status)),
+            "case belongs to this contract"
+        );
         reset_child();
+        println!("reset {metric}/{handlers}/{status}: assertions completed");
         return;
     }
     let dir = tempfile::tempdir().expect("reset fixture directory");
@@ -1194,18 +1570,9 @@ fn public_resets() {
     });
     compile(&library, false, &[]);
     let mut errors = Vec::new();
-    for (metric, handlers, status) in [
-        ("SSIMULACRA2", 1, 777),
-        ("SSIMULACRA2", 3, 777),
-        ("Butteraugli", 1, 777),
-        ("Butteraugli", 3, 777),
-        ("CVVDP", 1, 0),
-        ("CVVDP", 1, 17),
-        ("CVVDP", 1, 777),
-        ("CVVDP", 1, -123),
-    ] {
+    for (metric, handlers, status) in cases {
         let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "public_resets", "--nocapture"])
+            .args(["--exact", test, "--nocapture"])
             .env("VSHIP_RESET_FIXTURE_CHILD", "1")
             .env("VSHIP_RESET_FIXTURE_METRIC", metric)
             .env("VSHIP_RESET_FIXTURE_HANDLERS", handlers.to_string())
@@ -1232,7 +1599,12 @@ fn public_resets() {
         }
         let out = child.wait_with_output().expect("output");
         let stdout = String::from_utf8_lossy(&out.stdout);
-        if !out.status.success() || !stdout.contains("1 passed; 0 failed") {
+        if !out.status.success()
+            || !stdout.contains("1 passed; 0 failed")
+            || !stdout.contains(&format!(
+                "reset {metric}/{handlers}/{status}: assertions completed"
+            ))
+        {
             errors.push(format!(
                 "{metric}/{handlers}/{status}: {stdout}\n{}",
                 String::from_utf8_lossy(&out.stderr)
@@ -1393,7 +1765,16 @@ fn compile(path: &std::path::Path, probe: bool, flags: &[&str]) {
     );
 }
 #[test]
-fn real_header_layouts_and_signatures() {
+fn pinned_vship_c_header_layouts_and_export_signatures_match_rust() {
+    check_header_abi(false);
+}
+
+#[test]
+fn short_enum_c_abi_is_rejected_by_same_layout_oracle() {
+    check_header_abi(true);
+}
+
+fn check_header_abi(drift_check: bool) {
     let dir = tempfile::tempdir().expect("probe directory");
     let exe = dir.path().join(if cfg!(windows) { "probe.exe" } else { "probe" });
     compile(&exe, true, &[]);
@@ -1445,6 +1826,9 @@ fn real_header_layouts_and_signatures() {
         "Vship ABI: {} real-header values, all 14 resolved signatures",
         actual.len()
     );
+    if !drift_check {
+        return;
+    }
     let drift = dir.path().join(if cfg!(windows) {
         "short-enums.exe"
     } else {

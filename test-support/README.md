@@ -39,7 +39,9 @@ Native Windows execution is required before claiming Windows loader acceptance.
 
 ```sh
 cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics --test ffi -- \
-  runtime_overrides_and_staged_release \
+  vship_plugin_path_loads_fixture_without_bundled_sibling \
+  vship_lib_dir_loads_fixture_without_bundled_sibling \
+  staged_vship_loads_via_runtime_loader_path_from_separate_media_cwd \
   vmaf_lib_dir_loads_fixture_without_bundled_sibling \
   staged_vmaf_loads_via_runtime_loader_path_from_separate_media_cwd \
   fmetrics_lib_path_loads_fixture_without_bundled_sibling \
