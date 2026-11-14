@@ -37,3 +37,36 @@ where
         }
     }
 }
+
+// Synthetic current-context stamps test consumer admission, not owning-producer publication.
+pub(in crate::core) fn current_quality_fixture(
+    job: &mut Condor<
+        andean_condor::models::sequence::DefaultSequenceData,
+        andean_condor::models::sequence::DefaultSequenceConfig,
+    >,
+) {
+    use andean_condor::{
+        metrics,
+        models::{input::Input as InputModel, sequence::provenance::MetricBackend},
+    };
+    let root = job.input.as_data();
+    let qc = job.sequence_config.quality_check.as_ref().expect("QC");
+    let input = qc.input.as_ref().unwrap_or(&root);
+    let output = job.sequence_config.scene_concatenator.effective_output(&job.output.path);
+    for scene in &mut job.scenes {
+        if !scene.sequence_data.quality_check.quality.is_unmeasured() {
+            let engine = metrics::engine(&qc.metric, !matches!(input, InputModel::Video { .. }))
+                .unwrap_or(metrics::Engine::VapourSynth);
+            let backend = if engine == metrics::Engine::VapourSynth {
+                MetricBackend::available_plugin(&qc.metric).expect("actual plugin fixture")
+            } else {
+                MetricBackend::current(engine)
+            };
+            let context = provenance::quality_context(input, output, scene, qc, &backend)
+                .expect("explicit current quality fixture");
+            let pass = &mut scene.sequence_data.quality_check.quality;
+            pass.backend = Some(backend);
+            pass.provenance = Some(ResultProvenance::new(context));
+        }
+    }
+}
