@@ -2134,15 +2134,16 @@ mod cli_parser {
         }
 
         #[test]
-        fn discard_defaults_to_none() {
+        fn concatenate_without_discard_parses_with_no_discard_categories() {
             let result = CondorCli::try_parse_from(["condor", "concatenate"]);
-            if let Ok(CondorCli {
+            let CondorCli {
                 command: Some(Commands::Concatenate { discard, .. }),
                 ..
-            }) = result
-            {
-                assert!(discard.is_none(), "--discard defaults to unset");
-            }
+            } = result.expect("concatenate defaults parse")
+            else {
+                panic!("expected concatenate command");
+            };
+            assert!(discard.is_none(), "--discard defaults to unset");
         }
     }
 
@@ -2176,15 +2177,16 @@ mod cli_parser {
         }
 
         #[test]
-        fn all_defaults_to_false() {
+        fn clean_without_all_parses_with_all_false() {
             let result = CondorCli::try_parse_from(["condor", "clean"]);
-            if let Ok(CondorCli {
+            let CondorCli {
                 command: Some(Commands::Clean { all, .. }),
                 ..
-            }) = result
-            {
-                assert!(!all, "--all defaults to false");
-            }
+            } = result.expect("clean defaults parse")
+            else {
+                panic!("expected clean command");
+            };
+            assert!(!all, "--all defaults to false");
         }
     }
 }

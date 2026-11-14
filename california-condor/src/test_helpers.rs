@@ -1761,10 +1761,7 @@ pub fn check_target_quality(
             expected_target_quality.probing.encoder_options
         );
     } else {
-        assert!(
-            expected_target_quality.is_none(),
-            "Expected Target Quality is None"
-        );
+        assert!(target_quality.is_none(), "Expected Target Quality is None");
     }
 }
 
@@ -1856,9 +1853,23 @@ pub fn check_quality_check(
             expected_quality_check.strategy
         );
     } else {
-        assert!(
-            expected_quality_check.is_none(),
-            "Expected Quality Check is None"
-        );
+        assert!(quality_check.is_none(), "Expected Quality Check is None");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "Expected Target Quality is None")]
+    fn target_quality_comparison_rejects_unexpected_configuration() {
+        check_target_quality(Some(&TargetQualityConfig::default()), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected Quality Check is None")]
+    fn quality_check_comparison_rejects_unexpected_configuration() {
+        check_quality_check(Some(&QualityCheckConfig::default()), None);
     }
 }

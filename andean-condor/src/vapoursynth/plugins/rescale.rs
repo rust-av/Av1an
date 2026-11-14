@@ -763,16 +763,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_rescale() {
+    fn bilinear_rescale_kernel_renders_mirror_border_handling() {
         let kernel = VSJETKernel::Bilinear {
             linear: false,
             border_handling: BorderHandling::Mirror,
         };
 
-        println!(
-            "{}(border_handling = BorderHandling.{})",
-            kernel,
-            BorderHandling::Mirror
+        assert_eq!(
+            format!(
+                "{}(border_handling = BorderHandling.{})",
+                kernel,
+                BorderHandling::Mirror
+            ),
+            "Bilinear(border_handling = BorderHandling.MIRROR)"
         );
     }
 }

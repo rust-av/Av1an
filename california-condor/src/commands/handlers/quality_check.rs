@@ -370,7 +370,8 @@ mod tests {
             .as_path()
             .to_path_buf();
 
-        let expected_config = default_config(&test_video, &output, &temp_abs);
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        expected_config.condor.sequence_config.quality_check = Some(QualityCheckConfig::default());
 
         init_handler(
             // Simulate default directory to avoid changing CWD
