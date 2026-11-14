@@ -295,7 +295,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn benchmark_throttled_first_event_is_observed_baseline() {
+    fn benchmark_first_observed_frame_is_rate_baseline_and_finished_rate_stays_fixed() {
         let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
         let mut app = BenchmarkerApp::new(scenes[0].encoder.clone(), clip);
         let mut mapper = app.progress_mapper();

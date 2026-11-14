@@ -148,7 +148,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn progress_rates_reject_nonfinite_intervals_and_overflow() {
+    fn progress_rates_return_finite_values_for_nonfinite_elapsed_or_overflow() {
         let bar = ProgressBar {
             completed: 1,
             total: u64::MAX,
@@ -171,8 +171,8 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn progress_empty_overcomplete_reversed_and_narrow_unicode_are_finite() {
+    fn check_progress_display(phase: &str) {
+        assert!(["ratio", "finite", "future"].contains(&phase));
         for (initial, completed, total, ratio) in
             [(0, 0, 0, 0.0), (0, 101, 100, 1.0), (100, 90, 100, 0.9), (0, u64::MAX, 1, 1.0)]
         {
@@ -188,22 +188,28 @@ pub(crate) mod tests {
                 ..Default::default()
             };
             assert_eq!(ProgressBar::clamped_ratio(completed, total), ratio);
-            for elapsed in [Duration::ZERO, Duration::from_nanos(1), Duration::MAX] {
-                let text = render_bar(&bar, elapsed);
-                assert!(!text.contains("NaN") && !text.contains("inf"), "{text}");
-                for width in [1, 4, 12] {
-                    let mut terminal =
-                        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 3))
+            if phase == "ratio" {
+                continue;
+            }
+            if phase == "finite" {
+                for elapsed in [Duration::ZERO, Duration::from_nanos(1), Duration::MAX] {
+                    let text = render_bar(&bar, elapsed);
+                    assert!(!text.contains("NaN") && !text.contains("inf"), "{text}");
+                    for width in [1, 4, 12] {
+                        let mut terminal =
+                            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 3))
+                                .unwrap();
+                        terminal
+                            .draw(|frame| {
+                                frame.render_widget(
+                                    bar.generate_with_elapsed(Some(elapsed)),
+                                    frame.area(),
+                                );
+                            })
                             .unwrap();
-                    terminal
-                        .draw(|frame| {
-                            frame.render_widget(
-                                bar.generate_with_elapsed(Some(elapsed)),
-                                frame.area(),
-                            );
-                        })
-                        .unwrap();
+                    }
                 }
+                continue;
             }
             let future = Instant::now() + Duration::from_secs(60);
             let mut terminal =
@@ -219,6 +225,21 @@ pub(crate) mod tests {
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn progress_ratios_clamp_empty_or_overcomplete_counts() {
+        check_progress_display("ratio");
+    }
+
+    #[test]
+    fn progress_extreme_durations_and_narrow_unicode_render_without_nonfinite_rates() {
+        check_progress_display("finite");
+    }
+
+    #[test]
+    fn progress_future_start_renders_zero_rate_and_correct_completion_marker() {
+        check_progress_display("future");
     }
 
     #[test]

@@ -818,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    fn setting_a_start_frame_clips_sub_scenes_and_reports_the_gap() {
+    fn scene_start_edit_keeps_neighbors_clips_subscenes_and_reports_no_overlap_for_a_gap() {
         let mut scenes = scenes();
         scenes[0].sub_scenes = Some(vec![sub_scene(10, 80), sub_scene(80, 121)]);
 
@@ -1003,7 +1003,7 @@ mod tests {
     }
 
     #[test]
-    fn indices_render_as_the_ranges_they_came_from() {
+    fn format_indices_collapses_contiguous_indices_and_keeps_gaps_comma_separated() {
         assert_eq!(format_indices(&[]), "");
         assert_eq!(format_indices(&[1]), "1");
         assert_eq!(format_indices(&[0, 1, 2, 3, 4]), "0-4");

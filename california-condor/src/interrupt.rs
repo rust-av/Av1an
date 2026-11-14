@@ -205,8 +205,7 @@ mod tests {
         assert!(error.downcast_ref::<Interrupted>().is_none());
     }
 
-    #[test]
-    fn first_cause_and_typed_cleanup_failure() {
+    fn check_interrupt_finish(typed_cleanup: bool) {
         let cancellation = Interrupt::default();
         cancellation.request(143).unwrap();
         assert!(!cancellation.token.is_forced());
@@ -220,11 +219,24 @@ mod tests {
         );
         let error = cancellation.finish(Err(failure.into())).unwrap_err();
         assert_eq!(error.downcast_ref::<Interrupted>().unwrap().0, 143);
+        if !typed_cleanup {
+            return;
+        }
         assert_eq!(
             error.downcast_ref::<std::io::Error>().unwrap().kind(),
             std::io::ErrorKind::PermissionDenied
         );
         assert!(format!("{error:#}").contains("cleanup failure sentinel"));
+    }
+
+    #[test]
+    fn repeated_interrupt_requests_escalate_but_preserve_the_first_exit_code() {
+        check_interrupt_finish(false);
+    }
+
+    #[test]
+    fn interrupt_finish_preserves_typed_cleanup_error_and_diagnostic() {
+        check_interrupt_finish(true);
     }
 }
 
