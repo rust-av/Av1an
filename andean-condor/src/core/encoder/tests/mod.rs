@@ -13,6 +13,16 @@ use av_decoders::{ColorPrimaries, ColorSpace, TransferCharacteristic};
 
 use super::*;
 
+#[test]
+fn version_lines_without_the_expected_separator_do_not_panic() {
+    assert_eq!(aom_style_version("    av1"), "av1");
+    assert_eq!(aom_style_version("    av1    - 3.12.0 (default)"), "3.12.0");
+    assert_eq!(after_first_space("x264"), "x264");
+    assert_eq!(after_first_space("x264 - core 164"), "- core 164");
+    assert_eq!(after_first_colon("x265"), "x265");
+    assert_eq!(after_first_colon("x265 4.1+1: build"), "build");
+}
+
 pub(super) fn clip_info() -> ClipInfo {
     ClipInfo {
         num_frames: 24,

@@ -735,7 +735,7 @@ mod tests {
                 );
                 assert!(
                     matches!(
-                        crate::VshipScorer::new(config.clone(), format, format, None),
+                        crate::VshipScorer::new(config, format, format, None),
                         Err(VshipError::InvalidConfiguration { .. })
                     ),
                     "{rate} must fail before library discovery"

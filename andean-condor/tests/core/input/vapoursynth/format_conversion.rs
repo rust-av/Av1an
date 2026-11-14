@@ -313,7 +313,7 @@ fn direct_inputs_reject_unsupported_deferred_output_formats() {
             source: VapourSynthScriptSource::Text(format!("{source}clip.set_output()\n")),
             variables: HashMap::new(),
             index: 0,
-            filters: vec![filter.clone()],
+            filters: vec![filter],
             stream_concurrently: true,
         };
         let error = Input::from_data(&data).err().expect("direct runtime error").to_string();

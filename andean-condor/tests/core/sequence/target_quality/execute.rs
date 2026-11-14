@@ -577,7 +577,7 @@ fn check_measured_restoration(phase: u8) {
         let mut scene_encoder = encoder.clone();
         scene_encoder.set_quantizer(20.0);
         let mut data = DefaultSequenceData::default();
-        data.get_target_quality_mut().expect("TQ").passes = history.clone();
+        data.get_target_quality_mut().expect("TQ").passes = history;
         let scenes = vec![Scene {
             start_frame: 0,
             end_frame: 2,
