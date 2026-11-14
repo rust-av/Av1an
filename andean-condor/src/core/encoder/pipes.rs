@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_record_retains_bytes_and_later_progress_on_both_routes() {
+    fn invalid_utf8_progress_records_preserve_bytes_and_later_counts() {
         for (base, stdout, data) in [
             (
                 EncoderBase::X264,

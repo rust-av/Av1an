@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn avm_one_pass_control_has_no_pass_or_statistics_options() {
+fn avm_one_pass_argv_omits_pass_and_statistics_options() {
     // The pinned AVM CLI already defaults to one pass; do not copy the AOM fix.
     let output = Path::new("job space 映像/scene0.ivf");
     assert_eq!(

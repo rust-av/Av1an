@@ -3,7 +3,7 @@ use super::*;
 use std::fs;
 
 #[test]
-fn rav1e_exact_pass_parameters_and_argv() {
+fn rav1e_pass_argv_uses_first_and_second_pass_statistics_flags() {
     // Reintroducing --passes/--pass, losing the parent, or splitting the stats
     // filename would produce argv that rav1e cannot use for its second pass.
     let output = Path::new("job space 映像/scene0.ivf");

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn force_wakes_full_replay_and_prevents_next_pass() {
+fn forced_spool_replay_unblocks_a_full_consumer_queue() {
     let cancellation = Cancellation::default();
     let (tx, rx) = bounded(1);
     tx.send(Cursor::new(vec![1; 1024 * 1024])).expect("spool input");
@@ -26,7 +26,10 @@ fn force_wakes_full_replay_and_prevents_next_pass() {
     .expect_err("force unblocks the bounded replay producer");
     assert_eq!(calls, 1);
     assert!(error.is::<Cancelled>());
+}
 
+#[test]
+fn force_between_spool_passes_prevents_the_next_pass() {
     let cancellation = Cancellation::default();
     let (tx, rx) = bounded(1);
     tx.send(Cursor::new(vec![1; 32])).expect("spool input");

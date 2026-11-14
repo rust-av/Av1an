@@ -1,7 +1,7 @@
 use crate::core::encoder::parse::*;
 
 #[test]
-fn malformed_counts() {
+fn aom_frame_count_rejects_signed_nondecimal_and_overflow_values() {
     for count in ["+1", "-1", "", "1x", "1.0", "１", "18446744073709551616"] {
         let line = format!("Pass 1/1 frame    1/{count} 12345678901234567890B");
         assert_eq!(parse_aom_vpx_frames(&line), None, "count: {count:?}");
@@ -281,7 +281,7 @@ fn guard_page_cases() {
 }
 
 #[test]
-fn vvenc_keyed_stats_reach_public_parser_and_dispatcher() {
+fn vvenc_stats_frame_key_is_parsed_with_optional_totals_and_percentages() {
     use crate::core::encoder::Encoder;
 
     // Stats.h at a455d51e335c97b40eeea7bb90e3ad52b84c6e83 emits both forms.
@@ -356,7 +356,7 @@ fn vvenc_rejects_malformed_counts_and_non_stats_noise() {
 }
 
 #[test]
-fn literal_help_options_and_negative_controls() {
+fn help_parser_expands_native_option_spellings_without_inventing_flags() {
     // Losing aliases, no- expansion, or equals trimming must break these
     // independent fixtures; native help is checked separately, not snapshotted.
     for (base, help, expected) in [
@@ -394,7 +394,7 @@ fn literal_help_options_and_negative_controls() {
 }
 
 #[test]
-fn rav1e_parsing() {
+fn rav1e_progress_extracts_encoded_frames_and_ignores_noise() {
     let test_cases = [
         (
             "encoded 1 frames, 126.416 fps, 16.32 Kb/s, elap. time: 1m 36s",
@@ -429,7 +429,7 @@ fn rav1e_parsing() {
 }
 
 #[test]
-fn x26x_parsing() {
+fn x264_and_x265_progress_extracts_current_frame_counts() {
     let test_cases = [
         ("24 frames: 39.11 fps, 14.60 kb/s", Some(24)),
         ("240 frames: 39.11 fps, 14.60 kb/s", Some(240)),
@@ -451,7 +451,7 @@ fn x26x_parsing() {
 }
 
 #[test]
-fn svt_av1_parsing() {
+fn svt_av1_progress_extracts_encoded_frame_counts() {
     let test_cases = [
         ("Encoding frame    0 1.08 kbps 2.00 fps", Some(0)),
         ("Encoding frame    7 1.08 kbps 2.00 fps", Some(7)),
@@ -490,7 +490,7 @@ fn svt_av1_parsing() {
 
 #[test]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-fn aom_vpx_parsing() {
+fn aom_and_vpx_progress_scalar_and_simd_counts_agree() {
     // We return the number of frames without checking
     // if those frames are not the final pass.
 

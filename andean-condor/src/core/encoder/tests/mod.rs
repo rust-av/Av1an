@@ -221,7 +221,7 @@ fn vvenc_default_one_pass_argv_declares_y4m_pipe() {
 }
 
 #[test]
-fn vvenc_y4m_remains_caller_controlled() {
+fn vvenc_disabled_or_excluded_y4m_default_is_not_reinserted() {
     let output = "job space 映像/scene0.vvc";
     for exclude_defaults in [false, true] {
         let mut encoder = Encoder::default_from_base(&EncoderBase::VVenC, exclude_defaults);
@@ -242,7 +242,7 @@ fn vvenc_y4m_remains_caller_controlled() {
 }
 
 #[test]
-fn colour_data_is_appended_by_default() {
+fn svt_av1_default_argv_includes_source_colour_metadata() {
     let encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, true);
     let parameters = parameters(&encoder);
 
@@ -306,7 +306,7 @@ fn a_user_option_overrides_the_appended_hdr_metadata() {
 }
 
 #[test]
-fn colour_data_follows_the_pass_parameters() {
+fn svt_av1_multipass_argv_keeps_pass_and_colour_options() {
     let mut encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, true);
     encoder
         .passes_mut()

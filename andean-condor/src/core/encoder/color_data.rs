@@ -1090,7 +1090,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr10_reaches_aom() {
+    fn aom_hdr10_metadata_renders_native_colour_flags() {
         assert_eq!(
             rendered(EncoderBase::AOM, &hdr10()),
             [
@@ -1103,7 +1103,7 @@ mod tests {
     }
 
     #[test]
-    fn aom_skips_a_chroma_location_it_cannot_signal() {
+    fn aom_unrepresentable_chroma_location_is_omitted() {
         let clip_info = ClipInfo {
             chroma_location: Some(ChromaLocation::Center),
             ..hdr10()
@@ -1115,6 +1115,14 @@ mod tests {
                 .any(|parameter| parameter.starts_with("--chroma-sample-position")),
             "aomenc only spells vertical and colocated"
         );
+    }
+
+    #[test]
+    fn avm_supports_the_same_chroma_location() {
+        let clip_info = ClipInfo {
+            chroma_location: Some(ChromaLocation::Center),
+            ..hdr10()
+        };
         assert_eq!(
             rendered(EncoderBase::AVM, &clip_info)
                 .iter()
@@ -1126,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr10_reaches_rav1e() {
+    fn rav1e_hdr10_metadata_renders_native_colour_flags() {
         assert_eq!(
             rendered(EncoderBase::RAV1E, &hdr10()),
             [
@@ -1142,7 +1150,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr10_reaches_svt_av1() {
+    fn svt_av1_hdr10_metadata_renders_native_colour_flags() {
         assert_eq!(
             rendered(EncoderBase::SVTAV1, &hdr10()),
             [
@@ -1159,7 +1167,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr10_reaches_x264_in_fixed_point() {
+    fn x264_hdr10_metadata_renders_fixed_point_values() {
         assert_eq!(
             rendered(EncoderBase::X264, &hdr10()),
             [
@@ -1176,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr10_reaches_x265_in_fixed_point() {
+    fn x265_hdr10_metadata_renders_fixed_point_values() {
         assert_eq!(
             rendered(EncoderBase::X265, &hdr10()),
             [
@@ -1192,7 +1200,7 @@ mod tests {
     }
 
     #[test]
-    fn hdr10_reaches_vvenc_through_additional() {
+    fn vvenc_hdr10_metadata_renders_additional_options() {
         assert_eq!(
             rendered(EncoderBase::VVenC, &hdr10()),
             ["--additional=ColourDescriptionPresent=1:Range=limited:ColourPrimaries=bt2020:\
@@ -1203,7 +1211,7 @@ mod tests {
     }
 
     #[test]
-    fn ffmpeg_colour_flags_are_input_options() {
+    fn ffmpeg_hdr10_flags_match_the_input_option_allowlist() {
         // Every flag `ffmpeg()` emits has to be listed, otherwise it reaches
         // the command line as an output option where FFmpeg discards it.
         let mut emitted: Vec<String> = ffmpeg(&hdr10()).into_keys().collect();
@@ -1303,7 +1311,7 @@ mod tests {
     }
 
     #[test]
-    fn the_vvenc_range_flag_enables_the_colour_description() {
+    fn vvenc_full_range_only_renders_the_range_option() {
         let clip_info = ClipInfo {
             color_range: Some(ColorRange::Full),
             ..clip_info()

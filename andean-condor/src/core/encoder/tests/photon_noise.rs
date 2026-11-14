@@ -76,7 +76,7 @@ fn expected_params(
 }
 
 #[test]
-fn source_identity_matrix_preserves_generated_params() {
+fn photon_noise_cache_keys_distinguish_source_geometry_transfer_and_range() {
     let noise = noise();
     for base in [EncoderBase::AOM, EncoderBase::RAV1E, EncoderBase::SVTAV1] {
         let encoder = encoder(&noise, base);
@@ -114,7 +114,7 @@ fn source_identity_matrix_preserves_generated_params() {
 }
 
 #[test]
-fn overrides_normalize_dimensions_and_keep_all_grain_settings_in_key() {
+fn photon_noise_cache_keys_use_effective_dimensions_and_coefficients() {
     let original = noise();
     let generate = |noise: &PhotonNoise, width, height| {
         table(

@@ -165,7 +165,7 @@ fn installed_aom_scene_default_has_only_initial_decoded_keyframe() {
 }
 
 #[test]
-fn aom_exact_pass_parameters_and_argv() {
+fn aom_pass_argv_uses_native_statistics_and_final_output_only() {
     // Omitting --passes=1 lets aomenc attempt to reread exhausted piped stdin.
     let output = Path::new("job space 映像/scene0.ivf");
     let base = std::env::current_dir().expect("cwd").join("job space 映像/scene0");

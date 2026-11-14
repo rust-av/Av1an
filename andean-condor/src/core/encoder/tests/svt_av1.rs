@@ -3,7 +3,7 @@ use crate::core::encoder::tests::support::run_bounded;
 use std::fs;
 
 #[test]
-fn svt_exact_pass_parameters_and_argv() {
+fn svt_av1_pass_argv_uses_native_stats_and_final_output_only() {
     // A single-dash stats option is rejected by SVT, even when it exits zero.
     let output = Path::new("job space 映像/scene0.ivf");
     let base = std::env::current_dir().expect("cwd").join("job space 映像/scene0");
