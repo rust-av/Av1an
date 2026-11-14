@@ -1,7 +1,10 @@
 #[cfg(unix)]
 pub(in crate::core::sequence) mod native_scoring;
 
+use crate as condor;
 use std::sync;
+#[path = "../../../../../tests/core/sequence/target_quality/fixtures/probe_support.rs"]
+mod probe_fixture;
 
 use super::{
     SequenceCompletion, SequenceStatus, Status, TargetQuality, Task, spawn_compare_progress,
@@ -1236,108 +1239,9 @@ mod probe_resume {
         utils::cancellation::{Cancellation, Cancelled},
     };
 
-    // Real FFmpeg/FFMS2/libvmaf, shared with the Q04 acceptance fixture.
-    fn fixture() -> (
-        tempfile::TempDir,
-        Input,
-        Encoder,
-        TargetQualityConfig,
-        PathBuf,
-    ) {
-        let temp = tempfile::tempdir().expect("fixture");
-        let source = temp.path().join("source.mkv");
-        let generated = std::process::Command::new("ffmpeg")
-            .args([
-                "-v",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc2=size=128x128:rate=24",
-                "-frames:v",
-                "4",
-                "-c:v",
-                "ffv1",
-            ])
-            .arg(&source)
-            .output()
-            .expect("existing FFmpeg");
-        assert!(generated.status.success(), "{generated:?}");
-        let input = Input::from_video(&InputModel::Video {
-            path: source,
-            import_method: ImportMethod::FFMS2 {
-                index: None,
-                cache_path: None,
-            },
-            filters: vec![],
-        })
-        .expect("FFMS2");
-        let mut encoder = Encoder::default_from_base(&EncoderBase::FFmpeg, false);
-        encoder.parameters_mut().extend(CLIParameter::new_strings(
-            "-",
-            " ",
-            &[("c:v", "libx264"), ("preset", "ultrafast")],
-        ));
-        encoder.set_quantizer(26.0);
-        let config = TargetQualityConfig {
-            quantizer_range: (26, 34),
-            maximum_probes: 2,
-            metric: QualityMetric::VMAF {
-                target_range: (0.0, 0.0),
-                resolution: None,
-                scaler: "bicubic".into(),
-                threads: 0,
-                model: None,
-                features: vec![],
-            },
-            ..Default::default()
-        };
-        let directory = temp.path().join("Target Quality");
-        for pass in 1..=2 {
-            std::fs::create_dir_all(directory.join(pass.to_string()).join("Scene Concatenator"))
-                .expect("scratch");
-        }
-        (temp, input, encoder, config, directory)
-    }
-
-    fn tasks(encoder: &Encoder, directory: &Path, pass: u8) -> Vec<Task> {
-        [vec![0, 1], vec![2, 3]]
-            .into_iter()
-            .enumerate()
-            .map(|(index, frame_indices)| Task {
-                original_index: index,
-                frame_indices,
-                encoder: encoder.clone(),
-                output: directory.join(pass.to_string()).join(format!("{index:05}.mkv")),
-                passes: vec![],
-            })
-            .collect()
-    }
-
-    fn probe(
-        pass: u8,
-        directory: &Path,
-        config: &TargetQualityConfig,
-        input: &mut Input,
-        tasks: &[Task],
-    ) -> Result<Vec<Task>> {
-        let (tx, _rx) = sync::mpsc::channel();
-        let (completed, warnings) = TargetQuality::probe_pass_with_options(
-            pass,
-            directory,
-            config,
-            input,
-            None,
-            1,
-            &ConcatMethod::FFmpeg(Default::default()),
-            tasks,
-            tx,
-            &Default::default(),
-            Default::default(),
-        )?;
-        assert!(warnings.is_empty(), "{warnings:?}");
-        Ok(completed)
-    }
+    #[cfg(unix)]
+    use super::probe_fixture::executable;
+    use super::probe_fixture::{fixture, probe, tasks};
 
     type SavedScenes = std::rc::Rc<std::cell::RefCell<Vec<Vec<Scene<DefaultSequenceData>>>>>;
 
@@ -2292,13 +2196,6 @@ mod probe_resume {
         eprintln!(
             "probe-rounds lowered max1 [3,1] no work/scratch/save, one changed-q restoration save only; raised max2 -> [3,2] with progress={raised:?}"
         );
-    }
-
-    #[cfg(unix)]
-    fn executable(path: &Path, source: &str) {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::write(path, source).expect("script");
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("executable");
     }
 
     #[test]
