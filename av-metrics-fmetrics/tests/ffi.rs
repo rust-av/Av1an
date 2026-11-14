@@ -20,8 +20,35 @@ mod runtime_discovery;
 
 #[test]
 #[cfg(unix)]
-fn runtime_overrides_and_staged_release() {
-    if std::env::var_os("RUNTIME_DISCOVERY_CHILD").is_some() {
+fn fmetrics_lib_path_loads_fixture_without_bundled_sibling() {
+    runtime_case(
+        "fmetrics_lib_path_loads_fixture_without_bundled_sibling",
+        "FMETRICS_LIB_PATH",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn fmetrics_lib_dir_loads_fixture_without_bundled_sibling() {
+    runtime_case(
+        "fmetrics_lib_dir_loads_fixture_without_bundled_sibling",
+        "FMETRICS_LIB_DIR",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn staged_fmetrics_loads_executable_sibling_without_loader_path_from_media_cwd() {
+    runtime_case(
+        "staged_fmetrics_loads_executable_sibling_without_loader_path_from_media_cwd",
+        "bundled",
+    );
+}
+
+#[cfg(unix)]
+fn runtime_case(test: &str, mode: &str) {
+    if let Ok(selected) = std::env::var("RUNTIME_DISCOVERY_CHILD") {
+        assert_eq!(selected, mode, "case belongs to this contract");
         // Load through production discovery before mapping fixture counters.
         assert_eq!(
             av_metrics_fmetrics::fmetrics_version().as_deref(),
@@ -32,13 +59,13 @@ fn runtime_overrides_and_staged_release() {
         return;
     }
     runtime_discovery::run(
-        "runtime_overrides_and_staged_release",
+        test,
         if cfg!(target_os = "macos") {
             "libfmetrics.dylib"
         } else {
             "libfmetrics.so"
         },
-        &["FMETRICS_LIB_PATH", "FMETRICS_LIB_DIR", "bundled"],
+        &[mode],
         false,
         |library| compile(library, false, &[]),
         |command, library| {
@@ -52,9 +79,58 @@ fn runtime_overrides_and_staged_release() {
 
 #[test]
 #[cfg(unix)]
-fn native_status_and_version_contract() {
+fn unverified_fmetrics_version_rejects_before_workspace_allocation() {
+    status_cases(
+        "unverified_fmetrics_version_rejects_before_workspace_allocation",
+        &["0.2.0", "0.1.0-dev", "", "null", "non-UTF8", "m04-test"],
+        &[0],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn accepted_fmetrics_abi_fixture_returns_ssimulacra2_marker() {
+    status_cases(
+        "accepted_fmetrics_abi_fixture_returns_ssimulacra2_marker",
+        &["0.1.0"],
+        &[0],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn known_native_fmetrics_failure_preserves_code_and_native_message() {
+    status_cases(
+        "known_native_fmetrics_failure_preserves_code_and_native_message",
+        &["0.1.0"],
+        &[1, 6],
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn unknown_native_fmetrics_failure_preserves_raw_code_without_enum_translation() {
+    status_cases(
+        "unknown_native_fmetrics_failure_preserves_raw_code_without_enum_translation",
+        &["0.1.0"],
+        &[777, -123],
+    );
+}
+
+#[cfg(unix)]
+fn status_cases(test: &str, versions: &[&str], statuses: &[i32]) {
     if std::env::var_os("FMETRICS_BOUNDARY_FIXTURE_CHILD").is_some() {
+        let version = std::env::var("FMETRICS_BOUNDARY_FIXTURE_VERSION").expect("version");
+        let status = std::env::var("FMETRICS_BOUNDARY_FIXTURE_STATUS")
+            .expect("status")
+            .parse()
+            .expect("integer");
+        assert!(
+            versions.contains(&version.as_str()) && statuses.contains(&status),
+            "case belongs to this contract"
+        );
         child();
+        println!("native status/version assertions completed");
         return;
     }
     let dir = tempfile::tempdir().expect("fixture directory");
@@ -64,13 +140,10 @@ fn native_status_and_version_contract() {
         "libfmetrics.so"
     });
     compile(&library, false, &[]);
-    for version in ["0.1.0", "0.2.0", "0.1.0-dev", "", "null", "non-UTF8", "m04-test"] {
-        for status in [0, 1, 6, 777, -123] {
-            if version != "0.1.0" && status != 0 {
-                continue;
-            }
+    for version in versions {
+        for status in statuses {
             let mut child = Command::new(std::env::current_exe().expect("test executable"))
-                .args(["--exact", "native_status_and_version_contract", "--nocapture"])
+                .args(["--exact", test, "--nocapture"])
                 .env("FMETRICS_BOUNDARY_FIXTURE_CHILD", "1")
                 .env("FMETRICS_BOUNDARY_FIXTURE_VERSION", version)
                 .env("FMETRICS_BOUNDARY_FIXTURE_STATUS", status.to_string())
@@ -97,7 +170,8 @@ fn native_status_and_version_contract() {
                 String::from_utf8_lossy(&out.stderr)
             );
             assert!(
-                stdout.contains("1 passed; 0 failed"),
+                stdout.contains("1 passed; 0 failed")
+                    && stdout.contains("native status/version assertions completed"),
                 "exact nonzero test count: {stdout}"
             );
         }
@@ -106,9 +180,46 @@ fn native_status_and_version_contract() {
 
 #[test]
 #[cfg(unix)]
-fn finite_options_checked_results_and_returned_leases() {
-    if std::env::var_os("FMETRICS_RESULT_FIXTURE_CHILD").is_some() {
-        finite_options_child();
+fn nonpositive_butteraugli_norm_from_field_or_builder_rejects_before_probe_and_allocation() {
+    result_case(
+        "nonpositive_butteraugli_norm_from_field_or_builder_rejects_before_probe_and_allocation",
+        "invalid",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn butteraugli_default_and_positive_norm_options_reach_native_sink_verbatim() {
+    result_case(
+        "butteraugli_default_and_positive_norm_options_reach_native_sink_verbatim",
+        "options",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn nonfinite_butteraugli_result_reports_norm_and_returns_sole_workspace_lease() {
+    result_case(
+        "nonfinite_butteraugli_result_reports_norm_and_returns_sole_workspace_lease",
+        "nonfinite",
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn native_status_error_precedes_nonfinite_result_validation_and_returns_lease() {
+    result_case(
+        "native_status_error_precedes_nonfinite_result_validation_and_returns_lease",
+        "status",
+    );
+}
+
+#[cfg(unix)]
+fn result_case(test: &str, scenario: &str) {
+    if let Ok(selected) = std::env::var("FMETRICS_RESULT_FIXTURE_CHILD") {
+        assert_eq!(selected, scenario, "case belongs to this contract");
+        finite_options_child(scenario);
+        println!("finite options {scenario}: assertions completed");
         return;
     }
     let dir = tempfile::tempdir().expect("fixture directory");
@@ -119,8 +230,8 @@ fn finite_options_checked_results_and_returned_leases() {
     });
     compile(&library, false, &[]);
     let out = Command::new(std::env::current_exe().expect("test executable"))
-        .args(["--exact", "finite_options_checked_results_and_returned_leases", "--nocapture"])
-        .env("FMETRICS_RESULT_FIXTURE_CHILD", "1")
+        .args(["--exact", test, "--nocapture"])
+        .env("FMETRICS_RESULT_FIXTURE_CHILD", scenario)
         .env("FMETRICS_BOUNDARY_FIXTURE_VERSION", "0.1.0")
         .env("FMETRICS_BOUNDARY_FIXTURE_STATUS", "0")
         .env("FMETRICS_LIB_PATH", dir.path())
@@ -138,12 +249,17 @@ fn finite_options_checked_results_and_returned_leases() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed; 0 failed"));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("1 passed; 0 failed")
+            && stdout.contains(&format!("finite options {scenario}: assertions completed")),
+        "selected result contract ran: {stdout}"
+    );
     eprint!("{}", String::from_utf8_lossy(&out.stderr));
 }
 
 #[cfg(unix)]
-fn finite_options_child() {
+fn finite_options_child(scenario: &str) {
     // SAFETY: exact fixture counter signature; mapping outlives every call.
     let lib = unsafe {
         libloading::Library::new(
@@ -188,6 +304,9 @@ fn finite_options_child() {
             );
         }
     }
+    if scenario == "invalid" {
+        return;
+    }
     let bytes = [128u8; 32 * 32 * 3];
     let image = RgbView::new(&bytes, 32, 32, false).expect("RGB");
     for p in [None, Some(3), Some(7), Some(i32::MAX)] {
@@ -204,6 +323,14 @@ fn finite_options_child() {
             log.ends_with(&format!("score {} 150\n", p.unwrap_or(3))),
             "{log}"
         );
+    }
+    if scenario == "options" {
+        assert_eq!(
+            (count(0), count(1), count(2)),
+            (4, 4, 4),
+            "finite option workspaces all destroyed"
+        );
+        return;
     }
     let scorer =
         FmetricsScorer::new(config.with_pnorm(i32::MAX), color).expect("large finite norm");
@@ -233,6 +360,15 @@ fn finite_options_child() {
             Some(42.0),
             "the sole workspace must be reusable after {value}"
         );
+    }
+    if scenario == "nonfinite" {
+        drop(scorer);
+        assert_eq!(
+            (count(0), count(1), count(2)),
+            (5, 5, 10),
+            "nonfinite errors return every lease"
+        );
+        return;
     }
     for raw in [1, 777, -123] {
         std::fs::write(&result_file, format!("nan {raw}")).expect("raw native failure");
@@ -363,7 +499,16 @@ fn compile(path: &std::path::Path, probe: bool, flags: &[&str]) {
 }
 
 #[test]
-fn real_header_layouts_and_signatures() {
+fn pinned_fmetrics_c_header_layouts_and_export_signatures_match_rust() {
+    check_header_abi(false);
+}
+
+#[test]
+fn short_enum_fmetrics_c_abi_is_rejected_by_same_layout_oracle() {
+    check_header_abi(true);
+}
+
+fn check_header_abi(drift_check: bool) {
     let dir = tempfile::tempdir().expect("probe directory");
     let exe = dir.path().join(if cfg!(windows) { "probe.exe" } else { "probe" });
     compile(&exe, true, &[]);
@@ -419,6 +564,9 @@ fn real_header_layouts_and_signatures() {
         "fmetrics ABI: {} real-header values, all 17 exported signatures",
         actual.len()
     );
+    if !drift_check {
+        return;
+    }
     let drift = dir.path().join(if cfg!(windows) {
         "short-enums.exe"
     } else {

@@ -217,7 +217,7 @@ fn butteraugli_rejects_a_null_workspace_gracefully() {
 }
 
 #[test]
-fn every_exposed_metric_produces_a_score() {
+fn native_ssimulacra2_returns_a_finite_score() {
     if !is_available() {
         eprintln!("skipping: fmetrics is not available");
         return;
@@ -225,15 +225,9 @@ fn every_exposed_metric_produces_a_score() {
 
     let _guard = library!();
     let api = FmetricsApi::load().expect("available means loadable");
-    // The buffers must stay bound for the life of this test: `reference_img`
-    // and `distorted_img` are pointers *into* them, so dropping either at
-    // the end of this statement leaves the descriptors dangling for every
-    // call below. Naming them `_reference`/`_distorted` would drop them at
-    // the end of the `let`, which reads as harmless and is not.
+    // Descriptors borrow these buffers through the native call.
     let (reference, distorted, reference_img, distorted_img) = images();
     let _keep = (&reference, &distorted);
-    let options = FmetricsButteraugliOptions::default();
-
     let mut ssimu2 = 0f64;
     let status = {
         // SAFETY: `workspace_create` takes no arguments and returns an opaque
@@ -249,6 +243,20 @@ fn every_exposed_metric_produces_a_score() {
     };
     assert_eq!(status, FmetricsErr::Ok, "ssimu2 must succeed");
     assert!(ssimu2.is_finite(), "ssimu2 must be finite, got {ssimu2}");
+}
+
+#[test]
+fn native_butteraugli_returns_a_non_nan_score() {
+    if !is_available() {
+        eprintln!("skipping: fmetrics is not available");
+        return;
+    }
+
+    let _guard = library!();
+    let api = FmetricsApi::load().expect("available means loadable");
+    let (reference, distorted, reference_img, distorted_img) = images();
+    let _keep = (&reference, &distorted);
+    let options = FmetricsButteraugliOptions::default();
 
     let mut butteraugli = 0f64;
     let status = {
@@ -277,13 +285,10 @@ fn every_exposed_metric_produces_a_score() {
         !butteraugli.is_nan(),
         "butteraugli must not be NaN, got {butteraugli}"
     );
-
-    // IW-SSIM and MS-SSIM are covered separately, since they impose a minimum
-    // image size that the other three do not.
 }
 
 #[test]
-fn multi_scale_metrics_reject_an_image_below_their_minimum() {
+fn native_iwssim_rejects_image_one_pixel_below_declared_minimum() {
     if !is_available() {
         eprintln!("skipping: fmetrics is not available");
         return;
@@ -320,7 +325,16 @@ fn multi_scale_metrics_reject_an_image_below_their_minimum() {
 }
 
 #[test]
-fn multi_scale_metrics_accept_an_image_large_enough() {
+fn native_iwssim_scores_a_two_hundred_fifty_six_square_image() {
+    score_multiscale_metric("iwssim", true);
+}
+
+#[test]
+fn native_msssim_scores_a_two_hundred_fifty_six_square_image() {
+    score_multiscale_metric("msssim", false);
+}
+
+fn score_multiscale_metric(name: &str, is_iwssim: bool) {
     if !is_available() {
         eprintln!("skipping: fmetrics is not available");
         return;
@@ -336,33 +350,31 @@ fn multi_scale_metrics_accept_an_image_large_enough() {
     // Bound so the buffers outlive the descriptors, which point into them.
     let _keep = (&reference, &distorted);
 
-    for (name, is_iwssim) in [("iwssim", true), ("msssim", false)] {
-        let mut value = 0f64;
-        // SAFETY: the workspace is created and released here, and both images
-        // outlive the call.
-        let workspace = unsafe { (api.workspace_create)() };
-        // SAFETY: as above.
-        let status = unsafe {
-            if is_iwssim {
-                (api.iwssim_cmp)(workspace, &reference_img, &distorted_img, &mut value)
-            } else {
-                (api.msssim_cmp)(workspace, &reference_img, &distorted_img, &mut value)
-            }
-        };
-        // SAFETY: the workspace came from `workspace_create`.
-        unsafe { (api.workspace_destroy)(workspace) };
+    let mut value = 0f64;
+    // SAFETY: the workspace is created and released here, and both images
+    // outlive the call.
+    let workspace = unsafe { (api.workspace_create)() };
+    // SAFETY: as above.
+    let status = unsafe {
+        if is_iwssim {
+            (api.iwssim_cmp)(workspace, &reference_img, &distorted_img, &mut value)
+        } else {
+            (api.msssim_cmp)(workspace, &reference_img, &distorted_img, &mut value)
+        }
+    };
+    // SAFETY: the workspace came from `workspace_create`.
+    unsafe { (api.workspace_destroy)(workspace) };
 
-        assert_eq!(
-            status,
-            FmetricsErr::Ok,
-            "{name} must accept a {size}x{size} image"
-        );
-        assert!(value.is_finite(), "{name} must be finite, got {value}");
-    }
+    assert_eq!(
+        status,
+        FmetricsErr::Ok,
+        "{name} must accept a {size}x{size} image"
+    );
+    assert!(value.is_finite(), "{name} must be finite, got {value}");
 }
 
 #[test]
-fn cvvdp_reports_both_measures_through_a_context() {
+fn native_cvvdp_one_shot_returns_distinct_finite_jod_and_quality() {
     if !is_available() {
         eprintln!("skipping: fmetrics is not available");
         return;
