@@ -5,12 +5,11 @@ mod runtime;
 use super::*;
 use crate::models::encoder::photon_noise::PhotonNoise;
 
-fn temp_directory(name: &str) -> PathBuf {
-    let directory =
-        std::env::temp_dir().join(format!("av1an-zone-encoder-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&directory);
-    fs::create_dir_all(&directory).expect("temp directory created");
-    directory
+fn temp_directory(name: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("av1an-zone-{name}-"))
+        .tempdir()
+        .expect("zone fixture")
 }
 
 fn x264(quantizer: f64) -> Encoder {
@@ -332,9 +331,9 @@ fn a_single_scene_needs_no_keyframe_options() {
     assert_eq!(config_content, "Zones : 0,4,20\n");
 }
 
-#[test]
-fn zone_options_are_written_next_to_the_scene_files() {
-    let directory = temp_directory("options");
+fn check_zone_option_files() {
+    let owner = temp_directory("options");
+    let directory = owner.path().to_path_buf();
     let zones = ZonePlan::from_tasks(&[task(0, 5, x264(20.0)), task(1, 3, x264(30.0))])
         .expect("zones built");
     let plan = ZonePlan {
@@ -365,7 +364,6 @@ fn zone_options_are_written_next_to_the_scene_files() {
         panic!("qpfile option should be a string");
     };
     assert_eq!(qpfile_value, &zone_files[0].display().to_string());
-    let _ = fs::remove_dir_all(&directory);
 }
 
 #[test]
@@ -398,12 +396,12 @@ fn frame_starts_ignore_headers_and_slice_continuations() {
 /// boundary landing inside a slice instead of at a picture, or the
 /// per-file headers missing so a part no longer decodes. This runs the
 /// actual x264 binary when it is available.
-#[test]
-fn a_real_zone_stream_splits_into_decodable_parts() {
+fn check_x264_zone_stream_split() {
     let Ok(x264_binary) = which::which("x264") else {
         return; // no encoder available to test against
     };
-    let directory = temp_directory("real");
+    let owner = temp_directory("real");
+    let directory = owner.path().to_path_buf();
     let source = directory.join("full.y4m");
     // 30 frames of a cheap gradient, 10 per scene.
     write_test_y4m(&source, 0, 30, 8);
@@ -546,21 +544,20 @@ fn a_real_zone_stream_splits_into_decodable_parts() {
             );
         }
     }
-    let _ = fs::remove_dir_all(&directory);
 }
 
 /// The same guarantee for x265, which splits on
 /// `first_slice_segment_in_pic_flag` and reconfigures the quantizer from a
 /// zone file rather than an inline option.
-#[test]
-fn a_real_x265_zone_stream_splits_into_decodable_parts() {
+fn check_x265_zone_stream_split() {
     let Ok(x265) = which::which("x265") else {
         return; // no encoder available to test against
     };
     let Ok(ffmpeg) = which::which("ffmpeg") else {
         return; // decoding is how the parts are verified
     };
-    let directory = temp_directory("x265");
+    let owner = temp_directory("x265");
+    let directory = owner.path().to_path_buf();
     let source = directory.join("full.y4m");
     write_test_y4m(&source, 0, 30, 8);
 
@@ -693,7 +690,6 @@ fn a_real_x265_zone_stream_splits_into_decodable_parts() {
             );
         }
     }
-    let _ = fs::remove_dir_all(&directory);
 }
 
 const WIDTH_CY: usize = 64;
@@ -714,12 +710,12 @@ const MAX_RATE_CONTROL_CARRY_DELTA: u8 = 32;
 /// `--force-key-frames` rather than a qpfile. Only a build with WebM IO
 /// (the SVT-AV1-Essential fork) supports `--zones` at all, so this is
 /// skipped unless the installed binary does.
-#[test]
-fn a_real_svt_av1_zone_stream_forces_a_keyframe_at_every_zone_start() {
+fn check_svt_zone_keyframes() {
     let Ok(svt) = which::which("SvtAv1EncApp") else {
         return; // no encoder available to test against
     };
-    let directory = temp_directory("svt");
+    let owner = temp_directory("svt");
+    let directory = owner.path().to_path_buf();
     let source = directory.join("full.y4m");
     // SVT-AV1-Essential is 10-bit only.
     write_test_y4m(&source, 0, 30, 10);
@@ -779,7 +775,6 @@ fn a_real_svt_av1_zone_stream_forces_a_keyframe_at_every_zone_start() {
     let status = child.wait().expect("SvtAv1EncApp runs");
     if !status.success() {
         // Stock SVT-AV1 has no `--zones`; nothing to assert here.
-        let _ = fs::remove_dir_all(&directory);
         return;
     }
 
@@ -843,7 +838,6 @@ fn a_real_svt_av1_zone_stream_forces_a_keyframe_at_every_zone_start() {
             );
         }
     }
-    let _ = fs::remove_dir_all(&directory);
 }
 
 /// Returns the largest per-sample difference and how many samples differ.
@@ -981,9 +975,9 @@ fn ivf_nframe(path: &Path) -> u32 {
     u32::from_le_bytes(fs::read(path).expect("part read")[24..28].try_into().expect("4 bytes"))
 }
 
-#[test]
-fn ivf_output_splits_into_per_scene_files() {
-    let directory = temp_directory("ivf");
+fn check_ivf_scene_files() {
+    let owner = temp_directory("ivf");
+    let directory = owner.path().to_path_buf();
     let whole = directory.join("zone-pass.temp.ivf");
     // Frames: scene 0 gets 2, scene 1 gets 3, scene 2 gets 1.
     fs::write(&whole, synthetic_ivf(&[3, 5, 7, 2, 9, 4])).expect("ivf written");
@@ -1039,7 +1033,6 @@ fn ivf_output_splits_into_per_scene_files() {
         "per-scene frame counts"
     );
     let _ = fs::remove_file(&whole);
-    let _ = fs::remove_dir_all(&directory);
 }
 
 fn synthetic_h264(frames: usize) -> Vec<u8> {
@@ -1054,9 +1047,9 @@ fn synthetic_h264(frames: usize) -> Vec<u8> {
     stream
 }
 
-#[test]
-fn annexb_output_splits_with_headers_in_every_file() {
-    let directory = temp_directory("annexb");
+fn check_annexb_scene_headers() {
+    let owner = temp_directory("annexb");
+    let directory = owner.path().to_path_buf();
     let whole = directory.join("zone-pass.temp.264");
     fs::write(&whole, synthetic_h264(6)).expect("stream written");
     let tasks = vec![
@@ -1107,11 +1100,9 @@ fn annexb_output_splits_with_headers_in_every_file() {
     }
     assert_eq!(reassembled, fs::read(&whole).expect("whole"));
     let _ = fs::remove_file(&whole);
-    let _ = fs::remove_dir_all(&directory);
 }
 
-#[test]
-fn zone_parts_require_decodable_frames_before_publication() {
+fn check_zone_part_validation() {
     let directory = tempfile::tempdir().expect("zone fixture");
     let whole = directory.path().join("whole.264");
     fs::write(&whole, synthetic_h264(3)).expect("structurally splittable but undecodable");
@@ -1141,4 +1132,45 @@ fn zone_parts_require_decodable_frames_before_publication() {
         1,
         "only caller-owned whole file remains"
     );
+}
+
+// File formatting, splitter outputs and native payloads require private
+// ZonePlan/split_ivf/split_annexb seams; public encode cases stay separate.
+mod internal_integration {
+    use super::*;
+
+    #[test]
+    fn zone_options_are_written_next_to_the_scene_files() {
+        check_zone_option_files();
+    }
+
+    #[test]
+    fn x264_zone_stream_splits_into_standalone_parts_with_bounded_rate_control_carryover() {
+        check_x264_zone_stream_split();
+    }
+
+    #[test]
+    fn x265_zone_stream_splits_into_standalone_parts_with_bounded_rate_control_carryover() {
+        check_x265_zone_stream_split();
+    }
+
+    #[test]
+    fn a_real_svt_av1_zone_stream_forces_a_keyframe_at_every_zone_start() {
+        check_svt_zone_keyframes();
+    }
+
+    #[test]
+    fn ivf_output_splits_into_per_scene_files() {
+        check_ivf_scene_files();
+    }
+
+    #[test]
+    fn annexb_output_splits_with_headers_in_every_file() {
+        check_annexb_scene_headers();
+    }
+
+    #[test]
+    fn zone_parts_require_decodable_frames_before_publication() {
+        check_zone_part_validation();
+    }
 }
