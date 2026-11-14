@@ -1,13 +1,11 @@
-//! I05: losing source options changes the image used as the metric reference.
-
-use std::{fs, path::Path, process::Command};
-
+//! Private source-planner, additional-node and Python-literal boundary evidence.
 use super::*;
 use crate::vapoursynth::script_builder::script::Lines;
+use std::{fs, path::Path, process::Command};
 
 #[path = "../../../../../tests/core/input/vapoursynth/fixtures/source_options_support.rs"]
 mod fixture;
-use fixture::{Fixture, expected_frame, run};
+use fixture::{Fixture, PYTHON_LITERAL_STRINGS, expected_frame, recorded_script, run};
 
 fn files(path: &Path) -> Vec<std::path::PathBuf> {
     if path.is_file() {
@@ -24,7 +22,6 @@ fn files(path: &Path) -> Vec<std::path::PathBuf> {
 
 fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod, additional_readers: bool) {
     let fixture = Fixture::new();
-    // Start with nonzero so a lost selection fails on actual image data, not just kwargs.
     for track in [Some(1), Some(0), None] {
         for scripted in [false, true] {
             let cache = fixture.cache(&format!("{track:?}-{scripted}"));
@@ -39,8 +36,8 @@ fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod, additional_readers:
                     bottom: None,
                 }],
             };
-            // Catch dropped cache options before a regression can write BestSource's default
-            // index outside this fixture. The image check below still uses the real plugin.
+            // Guard the actual source planner before a dropped BestSource cache
+            // option could create a default index outside the owned fixture.
             let (_, lines) = source_script(&fixture.source, &method(track), Some(&cache))
                 .expect("source options");
             let options = recorded(lines);
@@ -71,7 +68,6 @@ fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod, additional_readers:
             assert!(input.streams_concurrently());
             if additional_readers && !scripted {
                 let sources = input.frame_sources(5).expect("additional source instances");
-                // FFMS2/LSMASH reopen after reader 1, BestSource after reader 4.
                 let crate::core::input::FrameSourceKind::VapourSynth(node) = &sources[4].kind
                 else {
                     panic!("VS frame source");
@@ -98,77 +94,7 @@ fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod, additional_readers:
 }
 
 pub(super) fn recorded(lines: Lines) -> serde_json::Value {
-    let mut script = VapourSynthScript::default();
-    script.add_lines(lines);
-    script.outputs.insert(0, "clip".to_owned());
-    recorded_script(&script.to_string(), &HashMap::new())
-}
-
-fn recorded_script(script: &str, variables: &HashMap<String, String>) -> serde_json::Value {
-    let script_file = tempfile::NamedTempFile::new().expect("generated script");
-    fs::write(script_file.path(), script).expect("write generated script");
-    let output = run(Command::new("timeout").args(["10s", "python3", "-c", r#"
-import json, sys, types
-calls = []
-class Clip:
-    def set_output(self, *args, **kwargs): pass
-def source(**kwargs):
-    calls.append(kwargs)
-    return Clip()
-core = types.SimpleNamespace(**{n: types.SimpleNamespace(**{f: source}) for n, f in [('ffms2','Source'), ('bs','VideoSource'), ('lsmas','LWLibavSource'), ('dgdecodenv','DGSource')]})
-sys.modules['vapoursynth'] = types.SimpleNamespace(core=core)
-exec(compile(open(sys.argv[1]).read(), sys.argv[1], 'exec'), json.loads(sys.argv[2]))
-print(json.dumps(calls))
-"#]).arg(script_file.path()).arg(serde_json::to_string(variables).expect("script variables")));
-    serde_json::from_slice(&output).expect("recorded generated kwargs")
-}
-
-#[test]
-fn standalone_generators_keep_zero_nonzero_and_default_tracks() {
-    for track in [Some(0), Some(1), None] {
-        let mut ffms = Source::new(Path::new("source 映像.mkv"));
-        ffms.track = track;
-        ffms.cachefile = Some("cache 索引".into());
-        let mut best = VideoSource::new(&ffms.source);
-        best.track = track;
-        best.cachepath = ffms.cachefile.clone();
-        let mut lsmash = LWLibavSource::new(&ffms.source);
-        lsmash.stream_index = track;
-        lsmash.cachefile = ffms.cachefile.clone();
-        for (plugin, track_key, cache_key) in [
-            (&ffms as &dyn VapourSynthPluginScript, "track", "cachefile"),
-            (&best, "track", "cachepath"),
-            (&lsmash, "stream_index", "cachefile"),
-        ] {
-            let (_, lines) = plugin.generate_script("clip".to_owned()).expect("source generator");
-            let actual = recorded(lines);
-            let mut expected =
-                serde_json::json!({"source": "source 映像.mkv", cache_key: "cache 索引"});
-            if let Some(track) = track {
-                expected[track_key] = track.into();
-            }
-            assert_eq!(actual, serde_json::json!([expected]));
-        }
-    }
-}
-
-#[test]
-fn dg_generator_uses_dgi_source_not_unverified_cache_keywords() {
-    for alias in [false, true] {
-        let mut dg = DGSource::new(Path::new(if alias {
-            "original media.mkv"
-        } else {
-            "chosen index.dgi"
-        }));
-        if alias {
-            dg.indexing_path = Some("chosen index.dgi".into());
-        }
-        let (_, lines) = dg.generate_script("clip".to_owned()).expect("DG generator");
-        assert_eq!(
-            recorded(lines),
-            serde_json::json!([{"source": "chosen index.dgi"}])
-        );
-    }
+    fixture::recorded(lines)
 }
 
 fn check_existing_dg_source_planning() {
@@ -188,7 +114,6 @@ fn check_existing_dg_source_planning() {
         (&media, None, &default),
         (&explicit, None, &explicit),
     ] {
-        // All opening/reopening routes share this planner, including frame_sources.
         let source =
             source_path(path, &method, cache).expect("reuse existing .dgi; no indexer installed");
         assert_eq!(&source, expected);
@@ -203,91 +128,6 @@ fn check_existing_dg_source_planning() {
             "additional nodes must not receive an invented cache keyword"
         );
     }
-}
-
-const PYTHON_LITERAL_STRINGS: &[&str] = &[
-    "",
-    "single' and double\" quotes",
-    "back\\slash",
-    "literal\\n\\t\\u1234\\x41",
-    "line\ncarriage\rtab\t",
-    "trailing\\",
-    "映像🦀 e\u{301}\u{2028}\u{2029}",
-    "\0\u{1}\u{8}\u{c}\u{1f}",
-    "\"+str(marker.append('executed'))+\"",
-    "str(marker.append('executed'))",
-];
-
-fn case(
-    plugin: &dyn VapourSynthPluginScript,
-    function: &str,
-    kwargs: &serde_json::Value,
-) -> serde_json::Value {
-    let (imports, lines) = plugin.generate_script("clip".to_owned()).expect("generator");
-    let mut script = VapourSynthScript::default();
-    if let Some(imports) = imports {
-        script.add_imports(imports);
-    }
-    script.add_lines(lines);
-    script.outputs.insert(0, "clip".to_owned());
-    serde_json::json!({"script": script.to_string(), "expected": [{"function": function, "kwargs": kwargs}]})
-}
-
-fn check_cases(cases: &[serde_json::Value]) {
-    let input = tempfile::NamedTempFile::new().expect("python-literal cases");
-    fs::write(input.path(), serde_json::to_vec(cases).expect("cases JSON")).expect("write cases");
-    let output = run(Command::new("timeout")
-        .args([
-            "10s",
-            "python3",
-            "-c",
-            r#"
-import json
-import sys
-import types
-
-class Clip:
-    def set_output(self, **kwargs):
-        pass
-
-calls = []
-def recorder(function):
-    def record(**kwargs):
-        calls.append({"function": function, "kwargs": kwargs})
-        return Clip()
-    return record
-
-functions = {
-    "ffms2": ["Source"], "bs": ["VideoSource"],
-    "lsmas": ["LWLibavSource"], "dgdecodenv": ["DGSource"],
-    "mvu": ["Super", "Analyse", "AnalyseMany", "Recalculate", "Degrain"],
-    "std": ["PlaneStats"], "resize": ["Bob"], "vship": ["CVVDP"],
-}
-core = types.SimpleNamespace(**{
-    ns: types.SimpleNamespace(**{f: recorder(f"{ns}.{f}") for f in names})
-    for ns, names in functions.items()
-})
-sys.modules["vapoursynth"] = types.SimpleNamespace(core=core)
-failures = []
-with open(sys.argv[1], encoding="utf-8") as handle:
-    cases = json.load(handle)
-for case in cases:
-    calls.clear()
-    marker = []
-    environment = {"clip": Clip(), "marker": marker}
-    try:
-        exec(compile(case["script"], "<python-literal generated>", "exec"), environment)
-        actual = json.loads(json.dumps(calls, default=lambda node: "node"))
-        assert marker == [], f"embedded expression executed: {marker!r}"
-        assert actual == case["expected"], (actual, case["expected"])
-    except (SyntaxError, ValueError, NameError, TypeError, AssertionError) as error:
-        failures.append(f"{case['expected']!r}: {type(error).__name__}: {error}")
-assert not failures, "\n".join(failures)
-print(f"python-literal compiled/executed {len(cases)} generated scripts; exact kwargs, marker untouched")
-"#,
-        ])
-        .arg(input.path()));
-    eprint!("{}", String::from_utf8(output).expect("Python summary"));
 }
 
 fn check_python_string_literal_roundtrips() {
@@ -322,53 +162,7 @@ for literal, expected in cases:
         .arg(input.path()));
 }
 
-#[test]
-fn source_and_cache_literals_preserve_data_without_execution() {
-    let mut cases = Vec::new();
-    for &value in PYTHON_LITERAL_STRINGS {
-        // Isolate each input so a broken source literal cannot hide a broken cache literal.
-        for cache_only in [false, true] {
-            let source = if cache_only { "source.mkv" } else { value };
-            let cache = if cache_only { value } else { "cache" };
-            let mut ffms = Source::new(Path::new(source));
-            ffms.cachefile = Some(cache.into());
-            let mut best = VideoSource::new(Path::new(source));
-            best.cachepath = Some(cache.into());
-            let mut lsmash = LWLibavSource::new(Path::new(source));
-            lsmash.cachefile = Some(cache.into());
-            for (plugin, function, cache_key) in [
-                (
-                    &ffms as &dyn VapourSynthPluginScript,
-                    "ffms2.Source",
-                    "cachefile",
-                ),
-                (&best, "bs.VideoSource", "cachepath"),
-                (&lsmash, "lsmas.LWLibavSource", "cachefile"),
-            ] {
-                cases.push(case(
-                    plugin,
-                    function,
-                    &serde_json::json!({"source": source, cache_key: cache}),
-                ));
-            }
-        }
-        for alias in [false, true] {
-            let mut dg = DGSource::new(Path::new(if alias { "original.mkv" } else { value }));
-            if alias {
-                dg.indexing_path = Some(value.into());
-            }
-            cases.push(case(
-                &dg,
-                "dgdecodenv.DGSource",
-                &serde_json::json!({"source": value}),
-            ));
-        }
-    }
-    check_cases(&cases);
-}
-
-// Private source_script cache preflight protects BestSource from creating its
-// default cache outside the fixture; frame_sources also exposes private node kinds.
+// source_script and frame_sources expose private planner/node assertions.
 mod internal_integration {
     use super::*;
 
@@ -414,102 +208,4 @@ mod internal_integration {
     fn python_string_literals_preserve_quotes_controls_and_unicode() {
         check_python_string_literal_roundtrips();
     }
-}
-
-#[test]
-fn prefix_literals_preserve_data_without_execution() {
-    use crate::vapoursynth::plugins::mvutensils::{
-        analyse::Analyse, analyse_many::AnalyseMany, degrain::Degrain, mvu_super::MVUSuper,
-        recalculate::Recalculate,
-    };
-    let mut cases = Vec::new();
-    for &value in PYTHON_LITERAL_STRINGS {
-        let super_filter = MVUSuper {
-            prefix: Some(value.into()),
-            ..Default::default()
-        };
-        let analyse = Analyse {
-            prefix: Some(value.into()),
-            ..Default::default()
-        };
-        let many = AnalyseMany {
-            prefix: Some(value.into()),
-            ..Default::default()
-        };
-        let recalculate = Recalculate {
-            prefix: Some(value.into()),
-            ..Default::default()
-        };
-        let degrain = Degrain {
-            prefix: Some(value.into()),
-            ..Default::default()
-        };
-        for (plugin, function, kwargs) in [
-            (
-                &super_filter as &dyn VapourSynthPluginScript,
-                "mvu.Super",
-                serde_json::json!({"clip": "node", "blksize": [8], "overlap": [4], "prefix": value}),
-            ),
-            (
-                &analyse,
-                "mvu.Analyse",
-                serde_json::json!({"super": "node", "prefix": value}),
-            ),
-            (
-                &many,
-                "mvu.AnalyseMany",
-                serde_json::json!({"super": "node", "prefix": value}),
-            ),
-            (
-                &recalculate,
-                "mvu.Recalculate",
-                serde_json::json!({"super": "node", "vectors": "node", "prefix": value}),
-            ),
-            (
-                &degrain,
-                "mvu.Degrain",
-                serde_json::json!({"clip": "node", "super": "node", "vectors": "node", "prefix": value}),
-            ),
-        ] {
-            cases.push(case(plugin, function, &kwargs));
-        }
-    }
-    check_cases(&cases);
-}
-
-#[test]
-fn other_string_filters_preserve_data_without_execution() {
-    use crate::vapoursynth::plugins::{
-        resize::bob::Bob, standard::plane_stats::PlaneStats, vship::cvvdp::CVVDP,
-    };
-    let mut cases = Vec::new();
-    for &value in PYTHON_LITERAL_STRINGS {
-        let stats = PlaneStats {
-            clip_b_name: None,
-            plane: None,
-            prop: Some(value.into()),
-        };
-        let bob = Bob {
-            filter: Some(value.into()),
-            ..Default::default()
-        };
-        let cvvdp = CVVDP {
-            reference_node_name: "clip".into(),
-            distorted_node_name: "clip".into(),
-            model_config_json: Some(value.into()),
-            ..Default::default()
-        };
-        cases.push(case(
-            &stats,
-            "std.PlaneStats",
-            &serde_json::json!({"clip": "node", "prop": value}),
-        ));
-        cases.push(case(
-            &bob,
-            "resize.Bob",
-            &serde_json::json!({"clip": "node", "filter": value}),
-        ));
-        cases.push(case(&cvvdp, "vship.CVVDP", &serde_json::json!({"reference": "node", "distorted": "node", "model_config_json": value})));
-    }
-    check_cases(&cases);
 }

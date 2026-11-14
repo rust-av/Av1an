@@ -1,5 +1,48 @@
 //! Owned read-only source and explicit-cache fixtures shared by source-option tests.
+use super::{HashMap, Lines, VapourSynthScript};
 use std::{fs, process::Command};
+
+pub(super) const PYTHON_LITERAL_STRINGS: &[&str] = &[
+    "",
+    "single' and double\" quotes",
+    "back\\slash",
+    "literal\\n\\t\\u1234\\x41",
+    "line\ncarriage\rtab\t",
+    "trailing\\",
+    "映像🦀 e\u{301}\u{2028}\u{2029}",
+    "\0\u{1}\u{8}\u{c}\u{1f}",
+    "\"+str(marker.append('executed'))+\"",
+    "str(marker.append('executed'))",
+];
+
+pub(super) fn recorded(lines: Lines) -> serde_json::Value {
+    let mut script = VapourSynthScript::default();
+    script.add_lines(lines);
+    script.outputs.insert(0, "clip".to_owned());
+    recorded_script(&script.to_string(), &HashMap::new())
+}
+
+pub(super) fn recorded_script(
+    script: &str,
+    variables: &HashMap<String, String>,
+) -> serde_json::Value {
+    let script_file = tempfile::NamedTempFile::new().expect("generated script");
+    fs::write(script_file.path(), script).expect("write generated script");
+    let output = run(Command::new("timeout").args(["10s","python3","-c",r#"
+import json, sys, types
+calls = []
+class Clip:
+    def set_output(self, *args, **kwargs): pass
+def source(**kwargs):
+    calls.append(kwargs)
+    return Clip()
+core = types.SimpleNamespace(**{n: types.SimpleNamespace(**{f: source}) for n, f in [('ffms2','Source'), ('bs','VideoSource'), ('lsmas','LWLibavSource'), ('dgdecodenv','DGSource')]})
+sys.modules['vapoursynth'] = types.SimpleNamespace(core=core)
+exec(compile(open(sys.argv[1]).read(), sys.argv[1], 'exec'), json.loads(sys.argv[2]))
+print(json.dumps(calls))
+"#]).arg(script_file.path()).arg(serde_json::to_string(variables).expect("script variables")));
+    serde_json::from_slice(&output).expect("recorded generated kwargs")
+}
 
 pub(super) fn run(command: &mut Command) -> Vec<u8> {
     // File-backed output plus the caller's timeout avoids pipe deadlocks.
