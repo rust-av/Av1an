@@ -6,14 +6,140 @@ use std::{
 
 use super::*;
 
-const EXACT_TEST: &str = "backend::tests::cuda::cuda_ownership";
+#[test]
+fn cuda_context_success_releases_imported_resource_and_wrapper_once() {
+    isolated_case(
+        "cuda_context_success_releases_imported_resource_and_wrapper_once",
+        0,
+    );
+}
 
 #[test]
-fn cuda_ownership() {
+fn cuda_state_init_error_with_null_output_allocates_nothing() {
+    isolated_case(
+        "cuda_state_init_error_with_null_output_allocates_nothing",
+        1,
+    );
+}
+
+#[test]
+fn cuda_state_init_error_with_empty_wrapper_releases_and_frees_it() {
+    isolated_case(
+        "cuda_state_init_error_with_empty_wrapper_releases_and_frees_it",
+        2,
+    );
+}
+
+#[test]
+fn cuda_state_init_success_with_null_output_is_rejected() {
+    isolated_case("cuda_state_init_success_with_null_output_is_rejected", 3);
+}
+
+#[test]
+fn cuda_context_init_error_releases_original_state() {
+    isolated_case("cuda_context_init_error_releases_original_state", 4);
+}
+
+#[test]
+fn cuda_context_init_success_with_null_output_releases_original_state() {
+    isolated_case(
+        "cuda_context_init_success_with_null_output_releases_original_state",
+        5,
+    );
+}
+
+#[test]
+fn cuda_import_error_closes_context_and_releases_original_state() {
+    isolated_case(
+        "cuda_import_error_closes_context_and_releases_original_state",
+        6,
+    );
+}
+
+#[test]
+fn cuda_pool_error_closes_import_owner_and_frees_wrapper() {
+    isolated_case("cuda_pool_error_closes_import_owner_and_frees_wrapper", 7);
+}
+
+#[test]
+fn cuda_state_init_error_with_resource_releases_and_frees_it() {
+    isolated_case(
+        "cuda_state_init_error_with_resource_releases_and_frees_it",
+        8,
+    );
+}
+
+#[test]
+fn missing_cuda_release_rejects_before_native_calls() {
+    isolated_case("missing_cuda_release_rejects_before_native_calls", 9);
+}
+
+#[test]
+fn missing_cuda_free_rejects_before_native_calls() {
+    isolated_case("missing_cuda_free_rejects_before_native_calls", 10);
+}
+
+#[test]
+fn cpu_only_without_cuda_symbols_uses_cpu_pool() {
+    isolated_case("cpu_only_without_cuda_symbols_uses_cpu_pool", 11);
+}
+
+#[test]
+fn auto_without_cuda_free_uses_cpu_pool() {
+    isolated_case("auto_without_cuda_free_uses_cpu_pool", 12);
+}
+
+#[test]
+fn require_cuda_without_free_reports_feature_or_symbol_error() {
+    isolated_case(
+        "require_cuda_without_free_reports_feature_or_symbol_error",
+        13,
+    );
+}
+
+#[test]
+fn require_cuda_without_release_reports_feature_or_symbol_error() {
+    isolated_case(
+        "require_cuda_without_release_reports_feature_or_symbol_error",
+        14,
+    );
+}
+
+#[test]
+fn auto_uses_cpu_when_cuda_is_disabled_or_state_initialization_fails() {
+    isolated_case(
+        "auto_uses_cpu_when_cuda_is_disabled_or_state_initialization_fails",
+        15,
+    );
+}
+
+#[test]
+fn missing_cuda_state_init_rejects_before_native_calls() {
+    isolated_case("missing_cuda_state_init_rejects_before_native_calls", 16);
+}
+
+#[test]
+fn missing_cuda_import_rejects_before_native_calls() {
+    isolated_case("missing_cuda_import_rejects_before_native_calls", 17);
+}
+
+#[test]
+fn missing_cuda_preallocate_rejects_before_native_calls() {
+    isolated_case("missing_cuda_preallocate_rejects_before_native_calls", 18);
+}
+
+fn isolated_case(test: &str, scenario: u32) {
     if std::env::var_os("VMAF_CUDA_FIXTURE_CHILD").is_some() {
+        assert_eq!(
+            std::env::var("VMAF_CUDA_FIXTURE_SCENARIO").expect("scenario"),
+            scenario.to_string()
+        );
         check_scenario();
+        println!("CUDA fixture scenario {scenario}: assertions completed");
         return;
     }
+    let module = module_path!().split_once("::").expect("test crate prefix").1;
+    let exact = format!("{module}::{test}");
     let directory = tempfile::tempdir().expect("temporary CUDA ABI fixture");
     let library = directory.path().join(if cfg!(target_os = "macos") {
         "libvmaf.dylib"
@@ -35,40 +161,42 @@ fn cuda_ownership() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    for scenario in 0..19 {
-        let mut child = Command::new(std::env::current_exe().expect("test executable"))
-            .args(["--exact", EXACT_TEST, "--nocapture"])
-            .env("VMAF_CUDA_FIXTURE_CHILD", "1")
-            .env("VMAF_CUDA_FIXTURE_SCENARIO", scenario.to_string())
-            .env("VMAF_CUDA_FIXTURE_LIBRARY", &library)
-            .env("VMAF_LIB_DIR", directory.path())
-            .env_remove("VMAF_MODEL_PATH")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("isolated CUDA ABI child");
-        let start = Instant::now();
-        while child.try_wait().expect("child status").is_none() {
-            if start.elapsed() > Duration::from_secs(30) {
-                child.kill().expect("kill timed out child");
-                child.wait().expect("reap timed out child");
-                panic!("scenario {scenario}: child exceeded 30s");
-            }
-            std::thread::sleep(Duration::from_millis(10));
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", &exact, "--nocapture"])
+        .env("VMAF_CUDA_FIXTURE_CHILD", "1")
+        .env("VMAF_CUDA_FIXTURE_SCENARIO", scenario.to_string())
+        .env("VMAF_CUDA_FIXTURE_LIBRARY", &library)
+        .env("VMAF_LIB_DIR", directory.path())
+        .env_remove("VMAF_MODEL_PATH")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("isolated CUDA ABI child");
+    let start = Instant::now();
+    while child.try_wait().expect("child status").is_none() {
+        if start.elapsed() > Duration::from_secs(30) {
+            child.kill().expect("kill timed out child");
+            child.wait().expect("reap timed out child");
+            panic!("scenario {scenario}: child exceeded 30s");
         }
-        let output = child.wait_with_output().expect("child output");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            output.status.success(),
-            "scenario {scenario}: {stdout}\n{stderr}"
-        );
-        assert!(
-            stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
-            "exact filter must execute one test: {stdout}"
-        );
-        eprintln!("scenario {scenario}: {stdout}\n{stderr}");
+        std::thread::sleep(Duration::from_millis(10));
     }
+    let output = child.wait_with_output().expect("child output");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "scenario {scenario}: {stdout}\n{stderr}"
+    );
+    assert!(
+        stdout.contains("running 1 test")
+            && stdout.contains("1 passed; 0 failed")
+            && stdout.contains(&format!(
+                "CUDA fixture scenario {scenario}: assertions completed"
+            )),
+        "exact filter must execute one test: {stdout}"
+    );
+    eprintln!("scenario {scenario}: {stdout}\n{stderr}");
 }
 
 fn check_scenario() {
