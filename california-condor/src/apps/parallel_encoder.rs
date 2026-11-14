@@ -839,8 +839,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn first_event_pass_order_and_retry_reset() {
+    fn check_pass_progress(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let mut scenes = scenes();
         *scenes.get_mut(&1).expect("scene").1.encoder.passes_mut().expect("passes") =
             andean_condor::models::encoder::EncoderPasses::All(2);
@@ -852,16 +852,37 @@ mod tests {
             ParallelEncoderApp::map_progress(progress(0, (1, 1), frame), state);
         }
         assert_eq!(state.scenes[&0].0, 30);
+        if phase == 1 {
+            return;
+        }
         ParallelEncoderApp::map_progress(progress(1, (1, 2), 90), state);
         assert_eq!(state.scenes[&1].0, 0);
         ParallelEncoderApp::map_progress(progress(1, (2, 2), 10), state);
         ParallelEncoderApp::map_progress(progress(1, (1, 2), 99), state);
         assert_eq!(state.active_encoders[&1].current_pass, 2);
         assert_eq!(state.active_encoders[&1].frames_processed, 10);
+        if phase == 2 {
+            return;
+        }
         ParallelEncoderApp::map_progress(custom(1, "attempt", 2.0), state);
         ParallelEncoderApp::map_progress(progress(1, (1, 2), 2), state);
         assert_eq!(state.scenes[&1].0, 0);
         assert_eq!(state.active_encoders[&1].frames_processed, 2);
+    }
+
+    #[test]
+    fn parallel_progress_first_final_pass_event_credits_scene_frames() {
+        check_pass_progress(1);
+    }
+
+    #[test]
+    fn parallel_progress_earlier_pass_does_not_credit_scene_or_rewind_later_worker_pass() {
+        check_pass_progress(2);
+    }
+
+    #[test]
+    fn parallel_progress_retry_resets_worker_frames_without_crediting_final_work() {
+        check_pass_progress(3);
     }
 
     #[test]

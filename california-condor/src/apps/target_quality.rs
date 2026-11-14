@@ -977,7 +977,7 @@ mod tests {
 
     /// Cancelling takes over the title, whatever the pass counters say.
     #[test]
-    fn cancelling_titles_the_abort() {
+    fn target_quality_cancellation_displays_aborted_title() {
         assert_eq!(
             TargetQualityApp::completed_title(&state(2, TOTAL, TOTAL), true),
             "Target Quality Aborted"

@@ -949,8 +949,12 @@ mod tests {
     }
 
     #[test]
-    fn qc_report_rejects_nonfinite_and_overflow_instead_of_printing_fake_stats() {
+    fn qc_statistics_empty_scores_return_no_measurement() {
         assert!(QualityCheckApp::compute_stats(&[], false).expect("no measurement").is_none());
+    }
+
+    #[test]
+    fn qc_statistics_nonfinite_or_overflowing_scores_return_error() {
         for scores in [
             vec![f64::NAN],
             vec![f64::INFINITY],
@@ -963,6 +967,10 @@ mod tests {
                 "{scores:?}"
             );
         }
+    }
+
+    #[test]
+    fn qc_statistics_accept_finite_negative_scores() {
         let stats = QualityCheckApp::compute_stats(&[-1.0, 2.0], false)
             .expect("finite negatives")
             .expect("stats");
