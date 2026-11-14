@@ -128,7 +128,7 @@ fn stream_cases(test: &str, cases: &[&str]) {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-fn native_input(root: &Path) -> Input {
+pub(super) fn native_input(root: &Path) -> Input {
     let path = root.join("finite.y4m");
     let mut bytes = b"YUV4MPEG2 W64 H64 F24:1 Ip A1:1 C420jpeg\n".to_vec();
     for _ in 0..96 {

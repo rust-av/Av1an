@@ -287,7 +287,9 @@ pub(super) fn encode_attempts<'a>(
                 drop(directory);
                 drop(attempt_progress);
                 #[cfg(all(test, target_os = "linux"))]
-                super::tests::retry_progress::after_failure(&stop.cancellation);
+                super::tests::retry_progress::internal_integration::after_failure(
+                    &stop.cancellation,
+                );
                 let again = retryable(&error)
                     && attempt < options.max_tries
                     && !stop.stopped(&stop.cancellation);
