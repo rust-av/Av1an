@@ -39,7 +39,7 @@ fn video_details(
 /// A mismatch here hands the encoder mis-parsed frames, since `y4m_frames`
 /// picks the sample type from `ClipInfo`.
 #[test]
-fn chroma_tag_agrees_with_clip_info_bit_depth() {
+fn ffms2_pixel_format_preserves_requested_bit_depth() {
     for (bit_depth, chroma) in [
         (8, ChromaSubsampling::Yuv420),
         (10, ChromaSubsampling::Yuv420),
@@ -235,7 +235,7 @@ fn gray16_ffmpeg_roundtrip() {
 }
 
 #[test]
-fn unsupported_output_format_is_rejected() {
+fn native_yuv420_format_mapping_rejects_sixteen_bit_output() {
     // FFMS2 has no 16-bit output, so the mapping must not invent one.
     assert!(ffms2_pixel_format(16, ChromaSubsampling::Yuv420).is_none());
     assert!(ffms2_pixel_format(10, ChromaSubsampling::Yuv420).is_some());

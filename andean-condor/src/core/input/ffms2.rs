@@ -479,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn filter_dimensions_reject_before_native_narrowing() {
+    fn ffms2_output_dimensions_reject_zero_and_i32_overflow() {
         for (width, height) in [
             (0, 16),
             (16, 0),
@@ -794,7 +794,7 @@ mod tests {
 
     /// Bulk row copies are only safe if they match `Plane::byte_data` exactly.
     #[test]
-    fn writer_matches_byte_data() {
+    fn ffms2_eight_bit_writer_matches_visible_frame_plane_bytes() {
         for chroma in [
             ChromaSubsampling::Yuv420,
             ChromaSubsampling::Yuv422,
@@ -822,7 +822,7 @@ mod tests {
     /// As above for high bit depth, where y4m requires little-endian samples
     /// regardless of host byte order.
     #[test]
-    fn writer_matches_byte_data_high_bit_depth() {
+    fn ffms2_high_depth_writer_matches_little_endian_plane_bytes() {
         for chroma in [
             ChromaSubsampling::Yuv420,
             ChromaSubsampling::Yuv444,

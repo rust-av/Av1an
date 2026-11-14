@@ -488,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_variant() {
+    fn ffms2_filter_parser_rejects_unknown_or_empty_variants() {
         assert!(Ffms2Filter::from_str("crop:top=1;").is_err());
         assert!(Ffms2Filter::from_str("").is_err());
     }
@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn display_round_trips() {
+    fn ffms2_filter_display_preserves_parseable_output_format_fields() {
         for input in [
             "output-format:bit_depth=10;chroma=Yuv420;",
             "output-format:width=1280;height=720;",
@@ -606,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_explicit_formats_are_not_native_resizes() {
+    fn ffms2_resize_conversion_rejects_unsupported_explicit_pixel_formats() {
         for format in [FFPixelFormat::NV12, FFPixelFormat::GBRP, FFPixelFormat::YUV440P] {
             let filter = VapourSynthFilter::Resize {
                 scaler: None,
@@ -658,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn gray12_spellings_preserve_native_and_vapoursynth_intent() {
+    fn gray12_aliases_convert_to_native_monochrome_but_gbr12_is_rejected() {
         for spelling in ["gray12l", "gray12le"] {
             let format = FFPixelFormat::from_str(spelling).expect("gray format");
             assert_eq!(

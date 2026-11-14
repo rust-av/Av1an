@@ -622,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn converted_metadata_mismatch_rejected() {
+    fn ffms2_frame_metadata_mismatch_reports_frame_and_expected_geometry() {
         let details = frame_details(16, 1080, 8);
         // Overallocate every plane for the OLD configured-height read as well
         // as every claimed format. RED must never rely on invalid memory.
@@ -647,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn metadata_precedes_all_plane_headers() {
+    fn ffms2_metadata_mismatch_is_rejected_before_null_plane_headers() {
         let details = frame_details(16, 1080, 10);
         let mut frame = header(&[], 16, 800, "yuv420p10le");
         frame.Data = [std::ptr::null(); 4];
@@ -683,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn all_planes_preflight_without_views() {
+    fn ffms2_plane_preflight_rejects_null_data_and_short_strides() {
         let details = frame_details(16, 8, 8);
         // These deliberately have NO readable plane allocation. Only the
         // production pure preflight is called, never `planes_of`/`view`.
@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn spans_checked_and_last_row_padding_not_required() {
+    fn plane_span_rejects_overflow_and_invalid_dimensions() {
         for (stride, width, height, bytes) in [
             (1, 0, 1, 1),
             (1, 1, 0, 1),
@@ -725,6 +725,10 @@ mod tests {
             assert_eq!(plane_span(stride, width, height, bytes), None);
         }
         assert_eq!(plane_span(isize::MAX as usize, 1, 1, 1), Some(1));
+    }
+
+    #[test]
+    fn raw_plane_last_row_needs_only_visible_sample_bytes() {
         let mut details = frame_details(2, 2, 10);
         details.chroma_sampling = ChromaSubsampling::Monochrome;
         let data = [0x23, 0x01, 0x45, 0x02, 99, 99, 0x67, 0x03, 0x89, 0x01];
@@ -740,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_layouts_and_documented_unscaled_sentinel() {
+    fn ffms2_plane_preflight_accepts_supported_odd_size_layouts() {
         let data = vec![0x01; 32 * 8];
         for (depth, format) in [(8, "yuv420p"), (10, "yuv420p10le"), (12, "yuv420p12le")] {
             let details = frame_details(5, 3, depth);
@@ -752,12 +756,6 @@ mod tests {
             let raw = unsafe { planes_of(&frame, &details, 0) }.expect("valid output");
             let (u, v) = raw.chroma.expect("420 chroma");
             assert_eq!((u.width(), u.height(), v.width(), v.height()), (3, 2, 3, 2));
-            frame.ScaledWidth = -1;
-            frame.ScaledHeight = -1;
-            assert!(preflight_planes(&frame, &details, 1).is_err());
-            frame.EncodedWidth = 5;
-            frame.EncodedHeight = 3;
-            assert!(preflight_planes(&frame, &details, 1).is_ok());
         }
         for depth in [9, 16] {
             // av-decoders 0.12 does not accept these as native decoder output.
@@ -766,6 +764,28 @@ mod tests {
         let details = frame_details(0, 3, 8);
         let frame = header(&data, 0, 3, "yuv420p");
         assert!(preflight_planes(&frame, &details, 1).is_err());
+    }
+
+    #[test]
+    fn ffms2_unscaled_sentinel_uses_encoded_dimensions() {
+        let data = vec![0x01; 32 * 8];
+        for (depth, format) in [(8, "yuv420p"), (10, "yuv420p10le"), (12, "yuv420p12le")] {
+            let details = frame_details(5, 3, depth);
+            let mut frame = header(&data, 5, 3, format);
+            frame.EncodedWidth = 100;
+            frame.EncodedHeight = 800;
+            frame.ScaledWidth = -1;
+            frame.ScaledHeight = -1;
+            assert!(preflight_planes(&frame, &details, 1).is_err());
+            frame.EncodedWidth = 5;
+            frame.EncodedHeight = 3;
+            assert!(preflight_planes(&frame, &details, 1).is_ok());
+        }
+    }
+
+    #[test]
+    fn ffms2_metadata_rejects_dimension_narrowing_overflow() {
+        let data = vec![0x01; 32 * 8];
         let frame = header(&data, 5, 3, "yuv420p");
         let mut details = frame_details(5, 3, 8);
         assert!(validate_metadata(&frame, &details, 1).is_ok());
@@ -779,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn only_supported_sample_widths_read() {
+    fn sample_byte_width_rejects_zero_and_float_depths() {
         assert_eq!(sample_bytes(8).expect("8-bit"), 1);
         assert_eq!(sample_bytes(10).expect("10-bit"), 2);
         assert_eq!(sample_bytes(12).expect("12-bit"), 2);
@@ -851,7 +871,7 @@ mod tests {
     /// Rows address only visible samples: stride padding stays unread, and
     /// samples decode little-endian at either width.
     #[test]
-    fn rows_and_samples_read_visible_pixels_only() {
+    fn raw_plane_rows_skip_padding_and_samples_decode_little_endian() {
         // 4x2 8-bit samples with 2 padding bytes at the end of each 6-byte row.
         let data = vec![0, 1, 2, 3, 91, 92, 4, 5, 6, 7, 93, 94];
         let plane = RawPlane::new(&data, 6, 4, 2, 1).expect("valid 8-bit plane");
