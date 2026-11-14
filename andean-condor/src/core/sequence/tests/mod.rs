@@ -1,5 +1,3 @@
-use super::*;
-
 mod metric_fallback;
 #[cfg(unix)]
 mod native_scoring;
