@@ -1,5 +1,5 @@
+use super::support::run_bounded;
 use super::*;
-use crate::core::encoder::tests::support::run_bounded;
 use std::{collections::HashSet, fs};
 
 fn option_names(argv: &[String]) -> Vec<&str> {
@@ -99,10 +99,11 @@ fn native_help_gaps(base: EncoderBase, root: &Path) -> Vec<String> {
     fs::write(&input, &source).expect("finite source");
     let sentinel = cwd.join("scene0.stat");
     fs::write(&sentinel, b"unrelated statistics").expect("sentinel");
-    let mut clip = crate::core::encoder::tests::clip_info();
+    let mut clip = super::clip_info();
     clip.num_frames = 3;
     clip.resolution = (64, 64);
-    clip.format_info = crate::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
+    clip.format_info =
+        andean_condor::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
     let output = cwd.join(format!("scene0.{}", base.output_extension()));
     let mut encoder = Encoder::default_from_base(&base, false);
     let table = cwd.join("valid grain table.tbl");
@@ -206,10 +207,29 @@ fn rav1e_hidden_grain_alias_accepts_generated_valid_table() {
     assert!(proven.iter().any(|name| name == "--photon-noise-table"));
 }
 
-#[test]
-fn production_argv_options_match_installed_help() {
+macro_rules! help_case {
+    ($name:ident, $base:ident) => {
+        #[test]
+        fn $name() {
+            argv_options_exist_in_installed_help(EncoderBase::$base);
+        }
+    };
+}
+
+help_case!(aom_argv_options_exist_in_installed_help, AOM);
+help_case!(rav1e_argv_options_exist_in_installed_help, RAV1E);
+help_case!(svt_av1_argv_options_exist_in_installed_help, SVTAV1);
+help_case!(x264_argv_options_exist_in_installed_help, X264);
+help_case!(x265_argv_options_exist_in_installed_help, X265);
+help_case!(vpx_argv_options_exist_in_installed_help, VPX);
+help_case!(vvenc_argv_options_exist_in_installed_help, VVenC);
+help_case!(avm_argv_options_exist_in_installed_help, AVM);
+help_case!(ffmpeg_argv_options_exist_in_installed_help, FFmpeg);
+
+fn argv_options_exist_in_installed_help(selected: EncoderBase) {
     let temp = tempfile::tempdir().expect("help fixture");
     let mut failures = Vec::new();
+    let mut selected_rows = 0;
     for (base, binary, help_args, critical) in [
         (
             EncoderBase::AOM,
@@ -269,6 +289,10 @@ fn production_argv_options_match_installed_help() {
             )],
         ),
     ] {
+        if base != selected {
+            continue;
+        }
+        selected_rows += 1;
         let executable = match which::which(binary) {
             Ok(path) => path,
             Err(error) if matches!(base, EncoderBase::AVM | EncoderBase::VVenC) => {
@@ -341,15 +365,11 @@ fn production_argv_options_match_installed_help() {
                 }
                 let output = root.join(format!("scene.{}", base.output_extension()));
                 for argv in [
-                    encoder.parameters_with_output(
-                        pass,
-                        &output,
-                        &crate::core::encoder::tests::clip_info(),
-                    ),
+                    encoder.parameters_with_output(pass, &output, &super::clip_info()),
                     encoder.parameters_with_stats(
                         pass,
                         &output,
-                        &crate::core::encoder::tests::clip_info(),
+                        &super::clip_info(),
                         &root.join("owned stats"),
                     ),
                 ] {
@@ -416,11 +436,7 @@ fn production_argv_options_match_installed_help() {
                 *passes = EncoderPasses::All(1);
             }
             let argv = encoder
-                .parameters_with_output(
-                    (1, 1),
-                    &root.join("override.ivf"),
-                    &crate::core::encoder::tests::clip_info(),
-                )
+                .parameters_with_output((1, 1), &root.join("override.ivf"), &super::clip_info())
                 .expect("override argv");
             assert_eq!(value(&argv, &format!("{prefix}{key}")), Some(expected));
             assert!(
@@ -446,10 +462,14 @@ fn production_argv_options_match_installed_help() {
         "CLI parity help contract failures:\n{}",
         failures.join("\n")
     );
+    assert_eq!(
+        selected_rows, 1,
+        "registered help contract must select exactly one encoder"
+    );
 }
 
 #[test]
-fn svt_one_pass_is_ivf_and_decodes_exact_frames() {
+fn svt_av1_one_pass_output_is_ivf_with_three_decodable_frames() {
     let temp = tempfile::tempdir().expect("fixture");
     let root = temp.path();
     let svt = which::which("SvtAv1EncApp").expect("required SVT-AV1 executable");
@@ -466,10 +486,11 @@ fn svt_one_pass_is_ivf_and_decodes_exact_frames() {
             &root.join("version.log")
         )
     );
-    let mut clip = crate::core::encoder::tests::clip_info();
+    let mut clip = super::clip_info();
     clip.num_frames = 3;
     clip.resolution = (64, 64);
-    clip.format_info = crate::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
+    clip.format_info =
+        andean_condor::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
     let input = root.join("source.y4m");
     let source = tiny_y4m();
     fs::write(&input, &source).expect("source");
@@ -526,18 +547,35 @@ fn tiny_y4m() -> Vec<u8> {
     bytes
 }
 
-#[test]
-fn remaining_cpu_one_and_two_pass_outputs_decode_exact_frames() {
+macro_rules! native_pass_case {
+    ($name:ident, $base:ident) => {
+        #[test]
+        fn $name() {
+            native_pass_outputs_decode_three_frames(EncoderBase::$base);
+        }
+    };
+}
+
+native_pass_case!(aom_two_pass_output_decodes_three_frames, AOM);
+native_pass_case!(rav1e_one_pass_output_decodes_three_frames, RAV1E);
+native_pass_case!(vpx_two_pass_output_decodes_three_frames, VPX);
+native_pass_case!(x264_one_and_two_pass_outputs_decode_three_frames, X264);
+native_pass_case!(x265_one_and_two_pass_outputs_decode_three_frames, X265);
+native_pass_case!(ffmpeg_ffv1_output_decodes_three_frames, FFmpeg);
+
+fn native_pass_outputs_decode_three_frames(selected: EncoderBase) {
     let temp = tempfile::tempdir().expect("native fixture");
     let root = temp.path();
     let ffprobe = which::which("ffprobe").expect("required frame-count verifier");
     let input = root.join("source.y4m");
     let source = tiny_y4m();
     fs::write(&input, &source).expect("source");
-    let mut clip = crate::core::encoder::tests::clip_info();
+    let mut clip = super::clip_info();
     clip.num_frames = 3;
     clip.resolution = (64, 64);
-    clip.format_info = crate::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
+    clip.format_info =
+        andean_condor::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
+    let mut selected_rows = 0;
     // rav1e/SVT-AV1/AOM/VPX already cover rav1e/SVT two-pass and AOM/VP8/VP9
     // one-pass. These are the remaining genuine CPU pass contracts.
     for (base, binary, counts, codec, container) in [
@@ -554,6 +592,10 @@ fn remaining_cpu_one_and_two_pass_outputs_decode_exact_frames() {
             "matroska,webm",
         ),
     ] {
+        if base != selected {
+            continue;
+        }
+        selected_rows += 1;
         let executable =
             which::which(binary).unwrap_or_else(|error| panic!("required {binary}: {error}"));
         for count in counts {
@@ -673,6 +715,10 @@ fn remaining_cpu_one_and_two_pass_outputs_decode_exact_frames() {
             assert_eq!(fs::read_dir(cwd).expect("no statistics spill").count(), 2);
         }
     }
+    assert_eq!(
+        selected_rows, 1,
+        "registered pass contract must select exactly one encoder"
+    );
 }
 
 #[test]
@@ -684,10 +730,11 @@ fn vpx_default_and_conflicting_webm_outputs_are_ivf() {
     let input = root.join("source.y4m");
     let source = tiny_y4m();
     fs::write(&input, &source).expect("finite source");
-    let mut clip = crate::core::encoder::tests::clip_info();
+    let mut clip = super::clip_info();
     clip.num_frames = 3;
     clip.resolution = (64, 64);
-    clip.format_info = crate::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
+    clip.format_info =
+        andean_condor::core::input::pixel_format::PixelFormat::VapourSynth { bit_depth: 8 };
     let mut failures = Vec::new();
     for (codec, fourcc) in [("vp8", b"VP80"), ("vp9", b"VP90")] {
         for webm in [false, true] {

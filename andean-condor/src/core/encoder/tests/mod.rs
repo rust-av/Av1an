@@ -1,6 +1,5 @@
 mod aom;
 mod avm;
-mod cli;
 #[cfg(target_os = "linux")]
 mod diagnostics;
 #[cfg(unix)]
