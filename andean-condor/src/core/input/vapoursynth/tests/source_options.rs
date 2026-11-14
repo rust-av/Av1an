@@ -22,7 +22,7 @@ fn files(path: &Path) -> Vec<std::path::PathBuf> {
         .collect()
 }
 
-fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod) {
+fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod, additional_readers: bool) {
     let fixture = Fixture::new();
     // Start with nonzero so a lost selection fails on actual image data, not just kwargs.
     for track in [Some(1), Some(0), None] {
@@ -69,7 +69,7 @@ fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod) {
                 (24, 1)
             );
             assert!(input.streams_concurrently());
-            if !scripted {
+            if additional_readers && !scripted {
                 let sources = input.frame_sources(5).expect("additional source instances");
                 // FFMS2/LSMASH reopen after reader 1, BestSource after reader 4.
                 let crate::core::input::FrameSourceKind::VapourSynth(node) = &sources[4].kind
@@ -95,21 +95,6 @@ fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod) {
             fixture.unchanged();
         }
     }
-}
-
-#[test]
-fn ffms2_direct_and_scripted_track_cache() {
-    routes(|index| VapourSynthImportMethod::FFMS2 { index });
-}
-
-#[test]
-fn bestsource_direct_and_scripted_track_cache() {
-    routes(|index| VapourSynthImportMethod::BestSource { index });
-}
-
-#[test]
-fn lsmash_direct_and_scripted_track_cache() {
-    routes(|index| VapourSynthImportMethod::LSMASHWorks { index });
 }
 
 pub(super) fn recorded(lines: Lines) -> serde_json::Value {
@@ -186,8 +171,7 @@ fn dg_generator_uses_dgi_source_not_unverified_cache_keywords() {
     }
 }
 
-#[test]
-fn dg_production_routes_plan_existing_index_as_source_without_indexer() {
+fn check_existing_dg_source_planning() {
     let directory = tempfile::tempdir().expect("DG planning fixture, not a native decode test");
     let media = directory.path().join("media 映像.mkv");
     fs::write(&media, b"CPU planning fixture").expect("media placeholder");
@@ -306,8 +290,7 @@ print(f"python-literal compiled/executed {len(cases)} generated scripts; exact k
     eprint!("{}", String::from_utf8(output).expect("Python summary"));
 }
 
-#[test]
-fn literal_encoder_roundtrips_in_python() {
+fn check_python_string_literal_roundtrips() {
     use crate::vapoursynth::script_builder::script::python_string_literal;
     let cases: Vec<_> = PYTHON_LITERAL_STRINGS
         .iter()
@@ -382,6 +365,55 @@ fn source_and_cache_literals_preserve_data_without_execution() {
         }
     }
     check_cases(&cases);
+}
+
+// Private source_script cache preflight protects BestSource from creating its
+// default cache outside the fixture; frame_sources also exposes private node kinds.
+mod internal_integration {
+    use super::*;
+
+    #[test]
+    fn ffms2_direct_and_scripted_inputs_preserve_track_and_cache() {
+        routes(|index| VapourSynthImportMethod::FFMS2 { index }, false);
+    }
+
+    #[test]
+    fn ffms2_additional_readers_preserve_selected_track() {
+        routes(|index| VapourSynthImportMethod::FFMS2 { index }, true);
+    }
+
+    #[test]
+    fn bestsource_direct_and_scripted_inputs_preserve_track_and_cache() {
+        routes(|index| VapourSynthImportMethod::BestSource { index }, false);
+    }
+
+    #[test]
+    fn bestsource_additional_readers_preserve_selected_track() {
+        routes(|index| VapourSynthImportMethod::BestSource { index }, true);
+    }
+
+    #[test]
+    fn lsmash_direct_and_scripted_inputs_preserve_track_and_cache() {
+        routes(
+            |index| VapourSynthImportMethod::LSMASHWorks { index },
+            false,
+        );
+    }
+
+    #[test]
+    fn lsmash_additional_readers_preserve_selected_track() {
+        routes(|index| VapourSynthImportMethod::LSMASHWorks { index }, true);
+    }
+
+    #[test]
+    fn dg_source_planning_reuses_selected_index_without_spawning_indexer() {
+        check_existing_dg_source_planning();
+    }
+
+    #[test]
+    fn python_string_literals_preserve_quotes_controls_and_unicode() {
+        check_python_string_literal_roundtrips();
+    }
 }
 
 #[test]
