@@ -4,6 +4,7 @@ mod cli;
 mod diagnostics;
 #[cfg(unix)]
 mod executable_resolution;
+mod parse;
 #[cfg(unix)]
 mod preflight;
 #[cfg(target_os = "linux")]
