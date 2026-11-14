@@ -5,6 +5,7 @@ mod diagnostics;
 #[cfg(unix)]
 mod executable_resolution;
 mod parse;
+mod photon_noise;
 #[cfg(unix)]
 mod preflight;
 #[cfg(target_os = "linux")]
