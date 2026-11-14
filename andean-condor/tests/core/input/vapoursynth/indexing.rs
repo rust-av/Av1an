@@ -1,8 +1,47 @@
 //! CPU index validation, not licensed DGDecNV decode acceptance.
+use andean_condor::utils::cancellation::{Cancellation, Cancelled};
 use andean_condor::vapoursynth::plugins::dgdecodenv::DGSource;
 use std::fs;
 
 const SAMPLE: &[u8] = include_bytes!("../../../../src/vapoursynth/plugins/dgindexnv_sample.dgi");
+
+#[path = "fixtures/indexing_support.rs"]
+mod fixture;
+
+macro_rules! index_cases {
+    ($name:ident, [$($case:literal),+ $(,)?]) => {
+        #[test]
+        fn $name() {
+            fixture::run_index_cases(concat!("core::input::vapoursynth::indexing::",stringify!($name)), &[$($case),+], fixture::assert_index_case);
+        }
+    };
+}
+
+index_cases!(
+    dg_index_candidates_are_validated_before_publication,
+    ["missing", "zero", "garbage", "truncated", "directory", "symlink"]
+);
+index_cases!(
+    dg_index_existing_artifacts_are_validated_without_spawning,
+    ["existing"]
+);
+index_cases!(dg_index_spawn_failure_leaves_no_partial_cache, ["spawn"]);
+index_cases!(
+    dg_index_force_reaps_owned_processes_before_cleanup,
+    ["force-retry"]
+);
+index_cases!(
+    dg_index_graceful_cancellation_finishes_admitted_work,
+    ["graceful"]
+);
+index_cases!(
+    concurrent_dg_indexers_publish_one_complete_cache,
+    ["concurrent"]
+);
+index_cases!(
+    dg_index_observer_panics_return_after_reader_and_process_join,
+    ["observer-panic"]
+);
 
 #[test]
 fn dg_index_reuse_accepts_either_valid_numeric_footer_order() {
