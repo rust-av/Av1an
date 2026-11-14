@@ -594,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn a_parameter_string_parses_like_the_params_flag() {
+    fn zone_parameter_string_preserves_option_prefix_delimiter_and_numeric_values() {
         let scene = scene(0, 100);
         let zone = merge(ZoneEncoderMerge {
             base: Some(EncoderBase::SVTAV1),
@@ -757,7 +757,7 @@ mod tests {
     }
 
     #[test]
-    fn a_photon_noise_merge_onto_an_encoder_without_one_warns() {
+    fn photon_noise_merge_on_an_unsupported_encoder_warns_about_missing_table_capability() {
         let mut scene = scene(0, 100);
         scene.encoder = Encoder::default_from_base(&EncoderBase::X264, false);
         let zone = merge(ZoneEncoderMerge {
@@ -912,7 +912,7 @@ mod tests {
     }
 
     #[test]
-    fn validation_resolves_unset_bounds_and_rejects_the_past() {
+    fn zone_validation_accepts_unset_bounds_and_rejects_a_start_past_the_input() {
         let zone = Zone {
             start_frame: None,
             end_frame: None,
@@ -1031,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn normalization_round_trips_through_json() {
+    fn zone_json_roundtrip_preserves_executable_options_and_noise_replacement() {
         let zone = Zone {
             start_frame: Some(0),
             end_frame: Some(100),

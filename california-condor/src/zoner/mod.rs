@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_boundary_partition_table() {
+    fn zone_boundaries_partition_encoders_without_losing_or_duplicating_frames() {
         use EncoderBase::{SVTAV1 as S, X265 as X};
         // Literal oracles catch whole-scene overrides, lost cuts/gaps and inclusive ends.
         let cases = [
@@ -782,7 +782,7 @@ mod tests {
     }
 
     #[test]
-    fn no_zones_change_nothing() {
+    fn no_zones_preserve_scene_count_without_warnings() {
         let mut scenes = scenes();
 
         let warnings = apply_zones(&[], &mut scenes, 400);

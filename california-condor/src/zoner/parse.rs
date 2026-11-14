@@ -588,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn a_merge_zone_parses_every_field() {
+    fn merge_zone_parses_bounds_executable_options_and_photon_noise_fields() {
         let zone = parse_zone(MERGE).expect("the documented merge zone parses");
 
         assert_eq!(
@@ -640,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn a_zone_can_only_cap_scene_length() {
+    fn maximum_frames_only_zone_parses_bounds_and_cap_without_changing_encoder() {
         let zone = parse_zone("0 200 --maximum-frames 100").expect("the zone parses");
 
         assert_eq!(zone.start_frame, Some(0));
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn a_filtergraph_merges() {
+    fn zone_filter_flag_sets_the_requested_merge_filtergraph() {
         let zone = parse_zone("0 200 svt-av1 --ffmpeg-filter \"crop=iw-16:ih-16\"")
             .expect("the zone parses");
 
@@ -693,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn a_backwards_bound_is_an_error() {
+    fn zone_start_below_negative_one_is_rejected() {
         let error = parse_zone("-2 200").expect_err("only -1 is a boundary");
 
         assert!(
@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn a_zone_without_options_needs_no_encoder() {
+    fn zone_options_without_encoder_are_rejected() {
         let error = parse_zone("0 200 \"--preset 3\"").expect_err("options need an encoder");
 
         assert!(
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn a_finished_zone_leaves_nothing_to_parse() {
+    fn trailing_word_after_a_valid_zone_is_rejected_as_an_unknown_flag() {
         let error = parse_zone("0 200 svt-av1 \"--preset 3\" extra")
             .expect_err("trailing words are not flags");
 

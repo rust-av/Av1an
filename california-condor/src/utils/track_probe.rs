@@ -810,7 +810,7 @@ mod tests {
     /// FFmpeg stream indices are matched by position within each type, so the
     /// attachment (index 3) does not shift the second audio stream (index 4).
     #[test]
-    fn ffmpeg_indices_are_matched_by_position() {
+    fn ffmpeg_indices_match_each_kind_without_attachments_shifting_audio() {
         let source = probed();
         assert_eq!(source.ffmpeg_indices(TrackKind::Video), vec![0]);
         assert_eq!(source.ffmpeg_indices(TrackKind::Audio), vec![1, 4]);
@@ -831,7 +831,7 @@ mod tests {
     /// mkvmerge reports subtitle tracks as `subtitles` and its button tracks
     /// are treated as video.
     #[test]
-    fn mkvmerge_track_types_are_mapped() {
+    fn mkvmerge_subtitles_map_to_subtitle_and_button_tracks_to_video() {
         assert_eq!(
             MkvmergeTrackInfo {
                 id: 1,
@@ -881,7 +881,7 @@ mod tests {
     /// Without mkvmerge the FFmpeg streams alone still describe the source,
     /// since the FFmpeg settings are keyed by stream index.
     #[test]
-    fn ffprobe_streams_alone_describe_a_source() {
+    fn ffprobe_only_source_preserves_kind_indices_without_inventing_mkvmerge_ids() {
         let FfprobeOutput { streams } =
             serde_json::from_str(ffprobe_json()).expect("ffprobe output parses");
         let source = ProbedSource {

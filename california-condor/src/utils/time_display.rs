@@ -16,37 +16,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn seconds_only() {
+    fn subminute_duration_omits_the_zero_hour_field() {
         assert_eq!(seconds_to_hms(5, false), "00:05");
     }
 
     #[test]
-    fn minutes_and_seconds() {
+    fn multiple_minutes_are_zero_padded_with_remaining_seconds() {
         assert_eq!(seconds_to_hms(130, false), "02:10");
     }
 
     #[test]
-    fn hours_minutes_seconds() {
+    fn duration_over_one_hour_includes_hours_minutes_and_seconds() {
         assert_eq!(seconds_to_hms(3661, false), "01:01:01");
     }
 
     #[test]
-    fn zero() {
+    fn zero_duration_without_forced_hours_formats_zero_minutes_and_seconds() {
         assert_eq!(seconds_to_hms(0, false), "00:00");
     }
 
     #[test]
-    fn always_include_hours_true() {
+    fn forced_hours_include_the_zero_hour_field() {
         assert_eq!(seconds_to_hms(5, true), "00:00:05");
     }
 
     #[test]
-    fn always_include_hours_false() {
-        assert_eq!(seconds_to_hms(5, false), "00:05");
-    }
-
-    #[test]
-    fn large_values() {
+    fn duration_over_one_day_does_not_wrap_the_hour_field() {
         assert_eq!(seconds_to_hms(90061, false), "25:01:01");
     }
 }

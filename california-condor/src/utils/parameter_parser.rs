@@ -151,7 +151,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_empty_string() {
+    fn empty_parameter_input_returns_an_empty_map() {
         let result = EncoderParamsParser::parse_string("");
         assert!(
             result.is_ok_and(|result| { result.is_empty() }),
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_single_dash_flag() {
+    fn long_flag_preserves_double_dash_prefix_and_true_value() {
         let result = EncoderParamsParser::parse_string("--flag");
         assert_matches!(result, Ok(_), "input should parse");
         let result = result.expect("input should parse");
@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_single_short_flag() {
+    fn short_flag_preserves_single_dash_prefix_and_true_value() {
         let result = EncoderParamsParser::parse_string("-f");
         assert!(result.is_ok(), "input should parse");
         let result = result.expect("input should parse");
@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_equals_pair_string() {
+    fn equals_string_pair_preserves_prefix_delimiter_and_value() {
         let result = EncoderParamsParser::parse_string("--key=value");
         assert!(result.is_ok(), "input should parse");
         let result = result.expect("input should parse");
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_equals_pair_number() {
+    fn equals_numeric_pair_preserves_prefix_delimiter_and_value() {
         let result = EncoderParamsParser::parse_string("--crf=23");
         assert!(result.is_ok(), "input should parse");
         let result = result.expect("input should parse");
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_space_pair_string() {
+    fn space_string_pair_preserves_prefix_delimiter_and_value() {
         let result = EncoderParamsParser::parse_string("--key value");
         assert!(result.is_ok(), "input should parse");
         let result = result.expect("input should parse");
@@ -220,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_space_pair_number() {
+    fn space_numeric_pair_preserves_prefix_delimiter_and_value() {
         let result = EncoderParamsParser::parse_string("--crf 30");
         assert!(result.is_ok(), "input should parse");
         let result = result.expect("input should parse");
@@ -248,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_dashless_space_pair() {
+    fn dashless_space_pair_preserves_empty_prefix_and_numeric_value() {
         let result = EncoderParamsParser::parse_string("crf 16").expect("parses");
         assert_matches!(
             result["crf"],
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_multiple_params() {
+    fn multiple_pairs_and_flag_produce_the_three_requested_keys() {
         let result = EncoderParamsParser::parse_string("--key1 val1 --key2=val2 -f");
         assert!(result.is_ok(), "input should parse");
         let result = result.expect("input should parse");
