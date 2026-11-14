@@ -5,3 +5,5 @@ mod fmetrics;
 mod metadata;
 mod plugin_parity;
 mod temporal;
+#[cfg(test)]
+mod vship;
