@@ -1,3 +1,5 @@
+mod format_conversion;
+
 use super::*;
 use andean_condor::vapoursynth::get_api;
 
