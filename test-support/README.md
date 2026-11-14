@@ -12,7 +12,7 @@ From the repository root in PowerShell:
 
 ```powershell
 $env:AV_METRICS_WINDOWS_CC = 'C:\msys64\mingw64\bin\gcc.exe'
-cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics -- loader_policy_tests windows_loader_tests bare_vsscript_does_not_select_media_cwd --include-ignored --nocapture
+cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics -- loader_policy_tests bare_vsscript_does_not_select_media_cwd --include-ignored --nocapture
 ```
 
 Each wrapper tests its **actual production load helper** against freshly built
@@ -26,10 +26,13 @@ not create relative directory candidates. Child-only CWD/PATH/environment settin
 avoid process-global mutations in the test runner. Temporary sources, import
 libraries, and DLLs are removed when the parent test exits normally or unwinds.
 
-The native test is ignored in ordinary suites because it requires this compiler;
-`--include-ignored` makes it a required, actionable gate on Windows. It is compiled
-only on Windows. Linux `loader_policy_tests` tests exercise production **path/policy selection**
-using native Linux paths, not Windows DLL loading or dependency precedence.
+The eight behavior-named DLL tests under
+`loader_policy_tests::internal_integration::windows_loader` are ignored in ordinary
+suites because they require this compiler; `--include-ignored` runs all eight for
+each wrapper. They compile only on Windows. Pure diagnostic checks live under
+`loader_policy_tests::unit`; host filesystem policy checks live under
+`loader_policy_tests::internal_integration`. On Linux these check path selection,
+not Windows DLL loading or dependency precedence.
 Native Windows execution is required before claiming Windows loader acceptance.
 
 ## Runtime-only native discovery retention (Unix)

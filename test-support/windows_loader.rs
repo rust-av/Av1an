@@ -93,11 +93,79 @@ fn compile(compiler: &std::ffi::OsStr, source: &Path, dll: &Path, extra: &[std::
 
 #[test]
 #[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
-fn windows_loader() {
+fn absolute_dll_path_loads_trusted_sibling_dependency_without_path() {
+    isolated_case(
+        "absolute_dll_path_loads_trusted_sibling_dependency_without_path",
+        "absolute",
+    );
+}
+
+#[test]
+#[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
+fn bare_dll_name_does_not_load_media_cwd_decoy() {
+    isolated_case("bare_dll_name_does_not_load_media_cwd_decoy", "bare");
+}
+
+#[test]
+#[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
+fn bare_dll_name_does_not_load_ordinary_path_decoy() {
+    isolated_case("bare_dll_name_does_not_load_ordinary_path_decoy", "path");
+}
+
+#[test]
+#[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
+fn absolute_directory_override_selects_trusted_production_candidate() {
+    isolated_case(
+        "absolute_directory_override_selects_trusted_production_candidate",
+        "override_absolute",
+    );
+}
+
+#[test]
+#[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
+fn relative_directory_override_selects_trusted_production_candidate() {
+    isolated_case(
+        "relative_directory_override_selects_trusted_production_candidate",
+        "override_relative",
+    );
+}
+
+#[test]
+#[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
+fn dll_filename_override_is_not_treated_as_a_directory() {
+    isolated_case(
+        "dll_filename_override_is_not_treated_as_a_directory",
+        "invalid",
+    );
+}
+
+#[test]
+#[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
+fn missing_dll_dependency_preserves_os_error_and_does_not_load_cwd_shadow() {
+    isolated_case(
+        "missing_dll_dependency_preserves_os_error_and_does_not_load_cwd_shadow",
+        "missing",
+    );
+}
+
+#[test]
+#[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
+fn trusted_sibling_dependency_wins_over_same_name_media_shadow() {
+    isolated_case(
+        "trusted_sibling_dependency_wins_over_same_name_media_shadow",
+        "shadow",
+    );
+}
+
+fn isolated_case(test: &str, expected_case: &str) {
     if let Ok(case) = std::env::var("WINDOWS_LOADER_FIXTURE_CASE") {
+        assert_eq!(case, expected_case, "case belongs to this contract");
         child_case(&case);
+        println!("Windows loader {case}: assertions completed");
         return;
     }
+    let module = module_path!().split_once("::").expect("test crate prefix").1;
+    let exact = format!("{module}::{test}");
     let compiler = std::env::var_os("AV_METRICS_WINDOWS_CC")
         .expect("set AV_METRICS_WINDOWS_CC to a native MinGW GCC-compatible C compiler; see test-support/README.md");
     let root = tempfile::tempdir().expect("DLL fixture directory");
@@ -169,78 +237,65 @@ fn windows_loader() {
     std::fs::copy(trusted.join(&name), trusted.join(&standard_name))
         .expect("explicit override fixture");
 
-    for case in [
-        "absolute",
-        "bare",
-        "path",
-        "override_absolute",
-        "override_relative",
-        "invalid",
-        "missing",
-        "shadow",
+    let case = expected_case;
+    let mut command = Command::new(std::env::current_exe().expect("test binary"));
+    command
+        .args(["--exact", &exact, "--ignored", "--nocapture"])
+        .current_dir(root.path().join("media"))
+        .env("WINDOWS_LOADER_FIXTURE_CASE", case)
+        .env("WINDOWS_LOADER_FIXTURE_ROOT", root.path())
+        .env("WINDOWS_LOADER_FIXTURE_NAME", &name)
+        .env("WINDOWS_LOADER_FIXTURE_STANDARD_NAME", &standard_name)
+        .env_remove("PATH")
+        .env("VSSCRIPT_PATH", "vsscript.dll")
+        .env_remove("VAPOURSYNTH_EXTRA_PLUGIN_PATH")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    for variable in [
+        "VMAF_LIB_DIR",
+        "VSHIP_PLUGIN_PATH",
+        "VSHIP_LIB_DIR",
+        "FMETRICS_LIB_PATH",
+        "FMETRICS_LIB_DIR",
     ] {
-        let mut command = Command::new(std::env::current_exe().expect("test binary"));
-        command
-            .args([
-                "--exact",
-                "ffi::windows_loader_tests::windows_loader",
-                "--ignored",
-                "--nocapture",
-            ])
-            .current_dir(root.path().join("media"))
-            .env("WINDOWS_LOADER_FIXTURE_CASE", case)
-            .env("WINDOWS_LOADER_FIXTURE_ROOT", root.path())
-            .env("WINDOWS_LOADER_FIXTURE_NAME", &name)
-            .env("WINDOWS_LOADER_FIXTURE_STANDARD_NAME", &standard_name)
-            .env_remove("PATH")
-            .env("VSSCRIPT_PATH", "vsscript.dll")
-            .env_remove("VAPOURSYNTH_EXTRA_PLUGIN_PATH")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        for variable in [
-            "VMAF_LIB_DIR",
-            "VSHIP_PLUGIN_PATH",
-            "VSHIP_LIB_DIR",
-            "FMETRICS_LIB_PATH",
-            "FMETRICS_LIB_DIR",
-        ] {
-            command.env_remove(variable);
-            if case == "override_absolute" {
-                command.env(variable, &trusted);
-            } else if case == "override_relative" {
-                command.env(variable, "../trusted");
-            } else if case == "invalid" {
-                command.env(variable, trusted.join(&name));
-            }
+        command.env_remove(variable);
+        if case == "override_absolute" {
+            command.env(variable, &trusted);
+        } else if case == "override_relative" {
+            command.env(variable, "../trusted");
+        } else if case == "invalid" {
+            command.env(variable, trusted.join(&name));
         }
-        if case == "path" {
-            command.env("PATH", root.path().join("path"));
-        }
-        let mut child = command.spawn().expect("isolated DLL test process");
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while child.try_wait().expect("poll DLL child").is_none() {
-            if Instant::now() >= deadline {
-                child.kill().expect("kill stalled DLL child");
-                let output = child.wait_with_output().expect("reap stalled DLL child");
-                panic!(
-                    "Windows loader {case} timed out: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let output = child.wait_with_output().expect("DLL child output");
-        assert!(
-            output.status.success(),
-            "Windows loader {case}: {}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
-            "Windows loader {case}: exact child must execute one test: {}",
-            String::from_utf8_lossy(&output.stdout)
-        );
-        println!("Windows loader native DLL case {case}: passed");
     }
+    if case == "path" {
+        command.env("PATH", root.path().join("path"));
+    }
+    let mut child = command.spawn().expect("isolated DLL test process");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while child.try_wait().expect("poll DLL child").is_none() {
+        if Instant::now() >= deadline {
+            child.kill().expect("kill stalled DLL child");
+            let output = child.wait_with_output().expect("reap stalled DLL child");
+            panic!(
+                "Windows loader {case} timed out: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let output = child.wait_with_output().expect("DLL child output");
+    assert!(
+        output.status.success(),
+        "Windows loader {case}: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed")
+            && String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("Windows loader {case}: assertions completed")),
+        "Windows loader {case}: exact child must execute one test: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    println!("Windows loader native DLL case {case}: passed");
 }

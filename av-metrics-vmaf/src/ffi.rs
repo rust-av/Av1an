@@ -838,10 +838,6 @@ unsafe fn load_library(candidate: &Path) -> std::io::Result<Library> {
 #[path = "../../test-support/loader_policy.rs"]
 mod loader_policy_tests;
 
-#[cfg(all(test, target_os = "windows"))]
-#[path = "../../test-support/windows_loader.rs"]
-mod windows_loader_tests;
-
 /// Candidate libvmaf paths, most specific first.
 fn library_candidates() -> Vec<PathBuf> {
     let names: &[&str] = if cfg!(target_os = "windows") {

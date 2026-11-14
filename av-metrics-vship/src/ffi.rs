@@ -1193,10 +1193,6 @@ fn script_parent(script: &Path) -> Option<&Path> {
 #[path = "../../test-support/loader_policy.rs"]
 mod loader_policy_tests;
 
-#[cfg(all(test, target_os = "windows"))]
-#[path = "../../test-support/windows_loader.rs"]
-mod windows_loader_tests;
-
 /// Candidate libvship paths, most specific first.
 ///
 /// The order is deliberate. Where libvship works it is the VapourSynth plugin

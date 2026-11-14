@@ -34,7 +34,7 @@ fn check_feature_policy(exact: &str, preference: &str) {
     }
     let (directory, library) = setup_fixture();
     for stage in [0, 7, 9] {
-        run_child(exact, stage, preference, &library, directory.path());
+        run_child(exact, stage, preference, &library, directory.path(), false);
     }
 }
 
@@ -48,6 +48,7 @@ fn cuda_availability_requires_feature() {
             "auto",
             &library,
             directory.path(),
+            false,
         );
         return;
     }
@@ -99,6 +100,7 @@ fn required_cuda_feature_precedes_loader_failure() {
             "require",
             &library,
             directory.path(),
+            false,
         );
         return;
     }
@@ -165,7 +167,7 @@ fn complete_backend_attempts() {
     // Start with a late CUDA failure: the old constructor cannot retry this.
     for stage in [7, 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14] {
         for preference in ["auto", "require", "cpu"] {
-            run_child(EXACT, stage, preference, &library, directory.path());
+            run_child(EXACT, stage, preference, &library, directory.path(), false);
         }
     }
 }
@@ -205,6 +207,7 @@ fn run_child(
     preference: &str,
     library: &std::path::Path,
     directory: &std::path::Path,
+    partial_setup: bool,
 ) {
     let mut command = Command::new(std::env::current_exe().expect("test executable"));
     command
@@ -212,14 +215,7 @@ fn run_child(
         .env("VMAF_SETUP_FIXTURE_CHILD", "1")
         .env(
             "VMAF_PARTIAL_SETUP_FIXTURE_CHILD",
-            if matches!(
-                exact.rsplit("::").next(),
-                Some("owned_partial_and_cpu_constructor_failures" | "blocking_pool_pressure")
-            ) {
-                "1"
-            } else {
-                "0"
-            },
+            if partial_setup { "1" } else { "0" },
         )
         .env("VMAF_SETUP_FIXTURE_STAGE", stage.to_string())
         .env("VMAF_SETUP_FIXTURE_PREFERENCE", preference)
@@ -485,6 +481,7 @@ fn owned_partial_and_cpu_constructor_failures() {
             "cpu",
             &library,
             directory.path(),
+            true,
         );
     }
     for stage in [6, 16] {
@@ -494,6 +491,7 @@ fn owned_partial_and_cpu_constructor_failures() {
             "auto",
             &library,
             directory.path(),
+            true,
         );
     }
 }
@@ -512,6 +510,7 @@ fn blocking_pool_pressure() {
             "cpu",
             &library,
             directory.path(),
+            true,
         );
     }
 }
