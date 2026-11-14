@@ -70,7 +70,7 @@ fn three_record_four_point_methods_use_bracketing_linear_not_midpoint() {
 }
 
 #[test]
-fn public_prediction_method_phase_matrix() {
+fn prediction_uses_midpoint_then_sparse_and_configured_interpolators_by_history_count() {
     // q = (score + 1)^2. Literal curve evaluations, not a second dispatch implementation.
     // Hermite at t=1/2 is (q0+q1)/2 + (m0-m1)/8.
     let history = [(1.0, 0.0), (4.0, 1.0), (9.0, 2.0), (16.0, 3.0), (25.0, 4.0), (36.0, 5.0)];
@@ -109,7 +109,7 @@ fn public_prediction_method_phase_matrix() {
 }
 
 #[test]
-fn public_prediction_windows_and_tuple_positions() {
+fn prediction_uses_phase_specific_interpolator_slots_and_all_bracketing_records() {
     use crate::models::sequence::target_quality::types::InterpolationMethod::*;
     let history = [(1.0, 0.0), (4.0, 1.0), (9.0, 2.0), (16.0, 3.0)];
     for (count, target, methods, want) in [
@@ -157,7 +157,7 @@ fn public_prediction_windows_and_tuple_positions() {
 }
 
 #[test]
-fn public_prediction_duplicate_flat_and_outside_fallback_matrix() {
+fn prediction_uses_bounded_midpoint_for_duplicate_flat_or_unbracketed_history() {
     let history = [(1.0, 0.0), (4.0, 1.0), (9.0, 2.0), (16.0, 3.0), (25.0, 4.0), (36.0, 5.0)];
     for method in PREDICTION_METHODS_METHODS {
         for count in 2..=6 {
@@ -275,7 +275,7 @@ fn public_prediction_rejects_nonfinite_inputs_even_before_midpoint() {
 }
 
 #[test]
-fn public_prediction_filters_algorithm_overflow_before_clamping() {
+fn prediction_falls_back_from_nonfinite_interpolators_before_clamping() {
     use crate::models::sequence::target_quality::types::InterpolationMethod::*;
     let tiny = [(1.0, 0.0), (4.0, 1e-200), (9.0, 2e-200), (16.0, 3e-200)];
     // Lagrange products underflow to zero; the nearest linear pair still gives 6.5.
@@ -365,8 +365,7 @@ fn duplicate_rounding_admits_an_untested_interior_probe() {
     );
 }
 
-#[test]
-fn grid_literal_matrix() {
+fn check_quantizer_grid(selected: &[&str]) {
     let cases = [
         (
             "quarter fallback",
@@ -476,7 +475,12 @@ fn grid_literal_matrix() {
             Some(2_147_483_647.25),
         ),
     ];
+    let mut checked = 0;
     for (name, bounds, predicted, step, history, expected) in cases {
+        if !selected.contains(&name) {
+            continue;
+        }
+        checked += 1;
         let actual = TargetQuality::untested_quantizer(bounds, predicted, history, step);
         assert_eq!(actual, expected, "{name}");
         if let Some(q) = actual {
@@ -485,6 +489,43 @@ fn grid_literal_matrix() {
             assert!(!history.iter().any(|(tested, _)| *tested == q), "{name}");
         }
     }
+    assert_eq!(
+        checked,
+        selected.len(),
+        "every selected grid scenario must run"
+    );
+}
+
+#[test]
+fn untested_quantizer_prefers_an_interior_prediction() {
+    check_quantizer_grid(&[
+        "interior interpolation first",
+        "untested endpoint loses to interior",
+        "outside uses midpoint",
+        "initial",
+        "equal initial",
+    ]);
+}
+
+#[test]
+fn untested_quantizer_uses_nearest_unmeasured_grid_point_with_lower_ties() {
+    check_quantizer_grid(&[
+        "quarter fallback",
+        "unsorted repeated tied history",
+        "midpoint tested lower tie",
+        "midpoint and lower tested",
+        "missing side configured endpoint",
+    ]);
+}
+
+#[test]
+fn untested_quantizer_returns_none_when_grid_is_exhausted() {
+    check_quantizer_grid(&["equal measured", "adjacent measured", "fully exhausted"]);
+}
+
+#[test]
+fn untested_quantizer_aligns_fractional_bounds_and_large_sparse_ranges() {
+    check_quantizer_grid(&["bounds not grid aligned", "no grid point", "large sparse range"]);
 }
 
 #[test]
@@ -942,7 +983,7 @@ fn inverse_bounds_use_nearest_probes() {
 }
 
 #[test]
-fn bounds_preserve_direction_defaults_strictness_and_stable_ties() {
+fn quantizer_bounds_use_strict_directional_neighbors_and_stable_ties_or_configured_fallback() {
     let cases = [
         (
             "inverse unsorted",
@@ -2830,7 +2871,7 @@ fn a_pass_is_complete_only_when_every_scene_recorded_it() {
 }
 
 #[test]
-fn tq_owning_group_rejects_missing_extra_and_nonfinite() {
+fn grouping_tq_scores_rejects_wrong_counts_or_nonfinite_values_without_mutating_tasks() {
     let mut tasks = [task_with_passes(3, 0), task_with_passes(7, 0)];
     for task in &mut tasks {
         task.frame_indices = vec![task.original_index];
@@ -2854,8 +2895,7 @@ fn tq_owning_group_rejects_missing_extra_and_nonfinite() {
     }
 }
 
-#[test]
-fn tq_route_admits_all_scenes_before_completion_and_never_retries_corruption() {
+fn check_score_batch_admission(corrupt: bool) {
     use crate::models::sequence::target_quality::types::ProbeStatistic;
     let mut tasks = [task_with_passes(3, 0), task_with_passes(7, 0)];
     for task in &mut tasks {
@@ -2863,73 +2903,86 @@ fn tq_route_admits_all_scenes_before_completion_and_never_retries_corruption() {
     }
     let mut config = TargetQualityConfig::default();
     config.probing.statistic = ProbeStatistic::Harmonic;
-    for scores in [
-        vec![],
-        vec![2.0; 3],
-        vec![2.0; 5],
-        vec![2.0, 2.0, 1.0, f64::NAN],
-        vec![2.0, 2.0, 1.0, f64::INFINITY],
-        vec![2.0, 2.0, 1.0, f64::NEG_INFINITY],
-        vec![2.0, 2.0, 1.0, -1.0],
-    ] {
-        for plugin in [false, true] {
-            let (tx, rx) = sync::mpsc::channel();
-            let (compare, relay) = spawn_compare_progress(tx);
-            let native = (!plugin).then(|| Ok(scores.clone()));
-            let error = TargetQuality::route_compare_scores(
-                native,
-                Some(Engine::Fmetrics),
-                &config.metric,
-                compare,
-                relay,
-                |tx| {
-                    assert!(plugin, "corruption retried plugin");
-                    drop(tx);
-                    Ok(scores.clone())
-                },
-                |values| TargetQuality::validate_task_scores(&config, &tasks, values),
-            )
-            .expect_err("invalid batch");
-            assert!(error.is::<MeasurementError>(), "{error:#}");
-            if scores == [2.0, 2.0, 1.0, -1.0] {
-                assert!(format!("{error:#}").contains("scene 7 pass 1"), "{error:#}");
+    if corrupt {
+        for scores in [
+            vec![],
+            vec![2.0; 3],
+            vec![2.0; 5],
+            vec![2.0, 2.0, 1.0, f64::NAN],
+            vec![2.0, 2.0, 1.0, f64::INFINITY],
+            vec![2.0, 2.0, 1.0, f64::NEG_INFINITY],
+            vec![2.0, 2.0, 1.0, -1.0],
+        ] {
+            for plugin in [false, true] {
+                let (tx, rx) = sync::mpsc::channel();
+                let (compare, relay) = spawn_compare_progress(tx);
+                let native = (!plugin).then(|| Ok(scores.clone()));
+                let error = TargetQuality::route_compare_scores(
+                    native,
+                    Some(Engine::Fmetrics),
+                    &config.metric,
+                    compare,
+                    relay,
+                    |tx| {
+                        assert!(plugin, "corruption retried plugin");
+                        drop(tx);
+                        Ok(scores.clone())
+                    },
+                    |values| TargetQuality::validate_task_scores(&config, &tasks, values),
+                )
+                .expect_err("invalid batch");
+                assert!(error.is::<MeasurementError>(), "{error:#}");
+                if scores == [2.0, 2.0, 1.0, -1.0] {
+                    assert!(format!("{error:#}").contains("scene 7 pass 1"), "{error:#}");
+                }
+                assert!(tasks.iter().all(|task| task.passes.is_empty()));
+                assert!(
+                    matches!(rx.try_recv(), Err(sync::mpsc::TryRecvError::Disconnected)),
+                    "no completed event; relay joined/disconnected"
+                );
             }
-            assert!(tasks.iter().all(|task| task.passes.is_empty()));
-            assert!(
-                matches!(rx.try_recv(), Err(sync::mpsc::TryRecvError::Disconnected)),
-                "no completed event; relay joined/disconnected"
-            );
         }
-    }
-    let (tx, rx) = sync::mpsc::channel();
-    let (compare, relay) = spawn_compare_progress(tx);
-    let mut fallbacks = 0;
-    let scores = TargetQuality::route_compare_scores(
-        Some(Err(anyhow::anyhow!(
-            av_metrics_fmetrics::FmetricsError::LibraryNotFound {
-                reason: "score validation test library absent".to_owned()
-            }
+    } else {
+        let (tx, rx) = sync::mpsc::channel();
+        let (compare, relay) = spawn_compare_progress(tx);
+        let mut fallbacks = 0;
+        let scores = TargetQuality::route_compare_scores(
+            Some(Err(anyhow::anyhow!(
+                av_metrics_fmetrics::FmetricsError::LibraryNotFound {
+                    reason: "score validation test library absent".to_owned()
+                }
+            )
+            .context("opening native library"))),
+            Some(Engine::Fmetrics),
+            &config.metric,
+            compare,
+            relay,
+            |tx| {
+                fallbacks += 1;
+                drop(tx);
+                Ok(vec![2.0; 4])
+            },
+            |values| TargetQuality::validate_task_scores(&config, &tasks, values),
         )
-        .context("opening native library"))),
-        Some(Engine::Fmetrics),
-        &config.metric,
-        compare,
-        relay,
-        |tx| {
-            fallbacks += 1;
-            drop(tx);
-            Ok(vec![2.0; 4])
-        },
-        |values| TargetQuality::validate_task_scores(&config, &tasks, values),
-    )
-    .expect("availability fallback")
-    .expect("complete");
-    assert_eq!(fallbacks, 1);
-    assert_eq!(scores.0, [2.0; 4]);
-    assert_eq!(scores.1, Engine::VapourSynth);
-    assert!(
-        matches!(rx.try_recv(), Ok(SequenceStatus::Whole(Status::Completed { id })) if id == "Compare")
-    );
+        .expect("availability fallback")
+        .expect("complete");
+        assert_eq!(fallbacks, 1);
+        assert_eq!(scores.0, [2.0; 4]);
+        assert_eq!(scores.1, Engine::VapourSynth);
+        assert!(
+            matches!(rx.try_recv(), Ok(SequenceStatus::Whole(Status::Completed { id })) if id == "Compare")
+        );
+    }
+}
+
+#[test]
+fn corrupt_native_or_plugin_score_batch_never_mutates_tasks_or_emits_completion() {
+    check_score_batch_admission(true);
+}
+
+#[test]
+fn preprogress_native_failure_falls_back_once_and_completes_only_an_admitted_batch() {
+    check_score_batch_admission(false);
 }
 
 #[test]
@@ -2991,7 +3044,7 @@ fn verified_quantizer_is_none_without_in_range_probe() {
 }
 
 #[test]
-fn verified_quantizer_handles_inverse_metric() {
+fn verified_quantizer_chooses_highest_quantizer_within_an_inverse_metric_target() {
     let butteraugli = QualityMetric::BUTTERAUGLI {
         target_range: (0.8, 1.2),
         resolution: None,
@@ -3007,14 +3060,9 @@ fn verified_quantizer_handles_inverse_metric() {
     );
 }
 
-/// A native pass must declare that comparing has begun.
-///
-/// The UI picks the compare bar over the encode bar from a report whose
-/// `completed` is 0. A metric that only reports after scoring each pair
-/// never sends one, so the bar stayed on the encode count and then
-/// jumped to the next pass.
+/// Models a local callback's event order, not a production or native scoring pass.
 #[test]
-fn a_native_pass_declares_the_compare_phase_before_reporting_scores() {
+fn local_compare_callback_emits_initial_zero_then_each_submission() {
     let (tx, rx) = sync::mpsc::channel();
     let total = 44_usize;
 
@@ -3076,10 +3124,9 @@ fn a_native_pass_declares_the_compare_phase_before_reporting_scores() {
     );
 }
 
-/// Probes are scored against the unfiltered reference, so a filter would
-/// corrupt the metric the same way it does for Quality Check.
+/// Psychovisual sanitization preserves an already-unfiltered probe encoder.
 #[test]
-fn a_probe_encoder_drops_the_ffmpeg_filter() {
+fn probe_encoder_without_an_ffmpeg_filter_stays_unfiltered() {
     let mut encoder = Encoder::default_from_base(&EncoderBase::X264, false);
     encoder.set_ffmpeg_filter(Some("crop=iw-16:ih-16".to_owned()));
     assert!(
