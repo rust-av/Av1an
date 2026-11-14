@@ -16,7 +16,7 @@ use av_metrics_vmaf::{
     Backend, BackendPreference, PlaneSource, PoolMethod, VideoFormat, VmafConfig, VmafError,
     VmafScorer, is_available, libvmaf_version,
 };
-use common::{Distortion, SyntheticPair};
+use common::{Distortion, SyntheticPair, reference_mean};
 use v_frame::chroma::ChromaSubsampling;
 
 /// Skip the test body when libvmaf is not installed.
@@ -54,13 +54,32 @@ fn small_pair(distortion: Distortion) -> SyntheticPair {
 
 /// Capture native stderr in an isolated process, never redirect production FDs.
 #[test]
-fn stock_cpu_stderr_and_scores() {
+fn serial_cpu_finalization_is_silent_and_matches_score_decoders() {
+    stock_cpu_finalization_case(
+        "serial_cpu_finalization_is_silent_and_matches_score_decoders",
+        0,
+    );
+}
+
+#[test]
+fn threaded_cpu_finalization_is_silent_and_matches_score_decoders() {
+    stock_cpu_finalization_case(
+        "threaded_cpu_finalization_is_silent_and_matches_score_decoders",
+        2,
+    );
+}
+
+fn stock_cpu_finalization_case(test: &str, threads: u32) {
     use std::{
         process::{Command, Stdio},
         time::{Duration, Instant},
     };
-    if let Ok(threads) = std::env::var("VMAF_FINALIZATION_FIXTURE_CPU_CHILD") {
-        let threads = threads.parse().expect("threads");
+    if let Ok(selected) = std::env::var("VMAF_FINALIZATION_FIXTURE_CPU_CHILD") {
+        assert_eq!(
+            selected,
+            threads.to_string(),
+            "child thread count belongs to this contract"
+        );
         let pair = small_pair(Distortion::Moderate);
         let format = VideoFormat {
             width: 64,
@@ -70,7 +89,11 @@ fn stock_cpu_stderr_and_scores() {
         };
         let config = model_config().with_backend(BackendPreference::CpuOnly).with_threads(threads);
         let mut scorer = VmafScorer::new(config.clone(), format).expect("required CPU stock model");
-        assert_eq!(scorer.backend(), Backend::Cpu);
+        assert_eq!(
+            scorer.backend(),
+            Backend::Cpu,
+            "finalization uses the required CPU backend"
+        );
         let mut reference = pair.reference.decoder();
         let mut distorted = pair.distorted.decoder();
         for index in 0..12 {
@@ -78,15 +101,30 @@ fn stock_cpu_stderr_and_scores() {
             let distorted = distorted.read_video_frame::<u8>().expect("distorted");
             assert_eq!(
                 scorer.submit_pair(&reference, &distorted).expect("submit"),
-                index
+                index,
+                "each accepted pair advances the submission index once"
             );
-            assert!(scorer.drain_scores(0).expect("pending scores").is_empty());
+            assert!(
+                scorer.drain_scores(0).expect("pending scores").is_empty(),
+                "scores remain pending before flush"
+            );
         }
         let scores = scorer.finish().expect("final scores");
-        assert_eq!(scores.len(), 12);
-        assert_eq!(scorer.finish().expect("repeat finish"), scores);
-        assert_eq!(scorer.drain_scores(0).expect("drain"), scores);
-        assert!(scorer.drain_scores(12).expect("advanced cursor").is_empty());
+        assert_eq!(scores.len(), 12, "all submitted pairs yield final scores");
+        assert_eq!(
+            scorer.finish().expect("repeat finish"),
+            scores,
+            "repeated finish is stable"
+        );
+        assert_eq!(
+            scorer.drain_scores(0).expect("drain"),
+            scores,
+            "drain returns the final vector"
+        );
+        assert!(
+            scorer.drain_scores(12).expect("advanced cursor").is_empty(),
+            "advanced cursor has no unread scores"
+        );
         let mut baseline = VmafScorer::new(config, format).expect("reference native path");
         let expected = baseline
             .score_decoders::<u8>(
@@ -103,7 +141,10 @@ fn stock_cpu_stderr_and_scores() {
         println!(
             "stock CPU threads={threads}: 12 finite scores, exact score_decoders match, repeated finish/drain stable"
         );
-        assert!(scores.iter().all(|score| score.is_finite()));
+        assert!(
+            scores.iter().all(|score| score.is_finite()),
+            "native scores must be finite"
+        );
         return;
     }
     if !is_available() {
@@ -114,37 +155,37 @@ fn stock_cpu_stderr_and_scores() {
         eprintln!("UNEXECUTED stock CPU gate: libvmaf unavailable");
         return;
     }
-    for threads in [0, 2] {
-        let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "stock_cpu_stderr_and_scores", "--nocapture"])
-            .env("VMAF_FINALIZATION_FIXTURE_CPU_CHILD", threads.to_string())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("CPU child");
-        let start = Instant::now();
-        while child.try_wait().expect("status").is_none() {
-            if start.elapsed() > Duration::from_secs(30) {
-                child.kill().expect("kill");
-                child.wait().expect("reap");
-                panic!("CPU child timeout");
-            }
-            std::thread::sleep(Duration::from_millis(10));
+    let mut child = Command::new(std::env::current_exe().expect("executable"))
+        .args(["--exact", test, "--nocapture"])
+        .env("VMAF_FINALIZATION_FIXTURE_CPU_CHILD", threads.to_string())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("CPU child");
+    let start = Instant::now();
+    while child.try_wait().expect("status").is_none() {
+        if start.elapsed() > Duration::from_secs(30) {
+            child.kill().expect("kill");
+            child.wait().expect("reap");
+            panic!("CPU child timeout");
         }
-        let output = child.wait_with_output().expect("output");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(output.status.success(), "{stdout}\n{stderr}");
-        assert!(
-            stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
-            "exact nonzero filter"
-        );
-        assert!(stderr.is_empty(), "native stderr must be empty: {stderr}");
-        eprintln!(
-            "{stdout}stock CPU threads={threads}: captured stderr={} bytes",
-            output.stderr.len()
-        );
+        std::thread::sleep(Duration::from_millis(10));
     }
+    let output = child.wait_with_output().expect("output");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}\n{stderr}");
+    assert!(
+        stdout.contains("running 1 test")
+            && stdout.contains("1 passed; 0 failed")
+            && stdout.contains(&format!("stock CPU threads={threads}: 12 finite scores")),
+        "exact nonzero filter"
+    );
+    assert!(stderr.is_empty(), "native stderr must be empty: {stderr}");
+    eprintln!(
+        "{stdout}stock CPU threads={threads}: captured stderr={} bytes",
+        output.stderr.len()
+    );
 }
 
 /// Manual hardware gate: no absence skip once explicitly requested.
@@ -237,7 +278,7 @@ fn native_cpu_threaded_matches_serial() {
 }
 
 #[test]
-fn native_cpu_malformed_model_then_valid_scorer() {
+fn native_cpu_model_parse_error_preserves_path_and_allows_later_scoring() {
     if std::env::var_os("AV_METRICS_REQUIRE_CPU").is_some() {
         assert!(
             is_available(),
@@ -289,20 +330,9 @@ fn native_cpu_malformed_model_then_valid_scorer() {
 }
 
 #[test]
-fn cpu_rejects_typed_u8_and_either_raw_side_for_ten_bit() {
+fn ten_bit_cpu_rejects_typed_u8_without_advancing_submission() {
     require_libvmaf!();
-    let format = VideoFormat {
-        width: 64,
-        height: 48,
-        bit_depth: 10,
-        chroma_sampling: ChromaSubsampling::Yuv420,
-    };
-    let mut scorer = VmafScorer::new(
-        model_config().with_backend(BackendPreference::CpuOnly),
-        format,
-    )
-    .expect("CPU scorer setup (native allocation/model calls are allowed)");
-    assert_eq!(scorer.backend(), Backend::Cpu);
+    let mut scorer = ten_bit_cpu_scorer();
     let frame = v_frame::frame::FrameBuilder::new(64, 48, ChromaSubsampling::Yuv420, 8)
         .build::<u8>()
         .expect("u8 frame");
@@ -310,7 +340,13 @@ fn cpu_rejects_typed_u8_and_either_raw_side_for_ten_bit() {
         scorer.submit_pair(&frame, &frame),
         Err(VmafError::InputMismatch { .. })
     ));
+    assert_first_ten_bit_submission_scores(&mut scorer);
+}
 
+#[test]
+fn ten_bit_cpu_rejects_narrow_raw_plane_on_either_side_without_advancing_submission() {
+    require_libvmaf!();
+    let mut scorer = ten_bit_cpu_scorer();
     let bytes = [0u8; 64 * 48];
     let words = [0u16; 64 * 48];
     let good = [(64, 48), (32, 24), (32, 24)].map(|(width, height)| {
@@ -334,6 +370,34 @@ fn cpu_rejects_typed_u8_and_either_raw_side_for_ten_bit() {
             );
         }
     }
+    assert_first_ten_bit_submission_scores(&mut scorer);
+}
+
+fn ten_bit_cpu_scorer() -> VmafScorer {
+    let format = VideoFormat {
+        width: 64,
+        height: 48,
+        bit_depth: 10,
+        chroma_sampling: ChromaSubsampling::Yuv420,
+    };
+    let scorer = VmafScorer::new(
+        model_config().with_backend(BackendPreference::CpuOnly),
+        format,
+    )
+    .expect("CPU scorer setup (native allocation/model calls are allowed)");
+    assert_eq!(
+        scorer.backend(),
+        Backend::Cpu,
+        "ten-bit rejection uses the CPU backend"
+    );
+    scorer
+}
+
+fn assert_first_ten_bit_submission_scores(scorer: &mut VmafScorer) {
+    let words = [0u16; 64 * 48];
+    let good = [(64, 48), (32, 24), (32, 24)].map(|(width, height)| {
+        PlaneSource::from_u16(&words, width, height, (width * 2) as isize, 0).unwrap()
+    });
     assert!(
         matches!(scorer.finish(), Err(VmafError::InvalidConfiguration { .. })),
         "rejected frames must not count as submitted"
@@ -341,32 +405,42 @@ fn cpu_rejects_typed_u8_and_either_raw_side_for_ten_bit() {
     // No invalid pair reaches vmaf_read_pictures. A valid pair still starts at zero.
     assert_eq!(
         scorer.submit_pair_raw(good, good).expect("valid wide pair"),
-        0
+        0,
+        "rejected pairs must not advance the first valid submission index"
     );
     let scores = scorer.finish().expect("finish the valid wide pair");
-    assert_eq!(scores.len(), 1);
-    assert!(scores[0].is_finite());
+    assert_eq!(scores.len(), 1, "only the valid wide pair yields a score");
+    assert!(
+        scores[0].is_finite(),
+        "the accepted pair yields a finite score"
+    );
 }
 
 #[test]
-fn availability_probe_is_consistent() {
-    if std::env::var_os("AV_METRICS_REQUIRE_CPU").is_some() {
-        assert!(is_available(), "required CPU-native checks need libvmaf");
-        for variable in ["VMAF_TEST_MODEL", "VMAF_TEST_Y4M"] {
-            let path = std::env::var(variable)
-                .unwrap_or_else(|_| panic!("required CPU-native checks need {variable}"));
-            assert!(
-                Path::new(&path).is_file(),
-                "{variable} is not a file: {path}"
-            );
-        }
-        let directory = std::env::var("VMAF_MODEL_PATH")
-            .expect("required CPU-native checks need VMAF_MODEL_PATH");
+fn required_cpu_gate_has_library_model_clip_and_model_directory() {
+    if std::env::var_os("AV_METRICS_REQUIRE_CPU").is_none() {
+        eprintln!("UNEXECUTED prerequisite gate: set AV_METRICS_REQUIRE_CPU=1");
+        return;
+    }
+    assert!(is_available(), "required CPU-native checks need libvmaf");
+    for variable in ["VMAF_TEST_MODEL", "VMAF_TEST_Y4M"] {
+        let path = std::env::var(variable)
+            .unwrap_or_else(|_| panic!("required CPU-native checks need {variable}"));
         assert!(
-            Path::new(&directory).is_dir(),
-            "VMAF_MODEL_PATH is not a directory: {directory}"
+            Path::new(&path).is_file(),
+            "{variable} is not a file: {path}"
         );
     }
+    let directory =
+        std::env::var("VMAF_MODEL_PATH").expect("required CPU-native checks need VMAF_MODEL_PATH");
+    assert!(
+        Path::new(&directory).is_dir(),
+        "VMAF_MODEL_PATH is not a directory: {directory}"
+    );
+}
+
+#[test]
+fn vmaf_availability_and_version_agree() {
     match is_available() {
         true => assert!(
             libvmaf_version().is_some(),
@@ -377,7 +451,7 @@ fn availability_probe_is_consistent() {
 }
 
 #[test]
-fn scoring_reports_the_backend_in_use() {
+fn auto_constructor_reports_cpu_or_cuda_backend() {
     require_libvmaf!();
 
     let pair = small_pair(Distortion::Mild);
@@ -451,7 +525,7 @@ fn identical_clips_score_at_or_near_the_maximum() {
     // against libvmaf's own CLI, an identical pair scores exactly 100 per
     // frame on smooth content but not on synthetic noise, so pinning an
     // absolute number here would be pinning our test content rather than
-    // the implementation. `matches_the_reference_tools_on_a_real_clip` is what
+    // the implementation. `native_fixture_scores_match_recorded_vmaf_cli_and_ffmpeg_values` is what
     // verifies absolute agreement with the reference tools.
     for frame in &scores {
         assert!(
@@ -552,7 +626,7 @@ fn frame_count_is_preserved_exactly() {
 }
 
 #[test]
-fn the_callback_sees_every_score() {
+fn score_decoders_calls_back_once_per_score_with_sequential_indices() {
     require_libvmaf!();
 
     let pair = small_pair(Distortion::Mild);
@@ -589,7 +663,7 @@ fn the_callback_sees_every_score() {
 }
 
 #[test]
-fn draining_reports_final_scores_once_and_matches_the_finished_ones() {
+fn final_score_drains_follow_the_callers_cursor_and_allow_rereading() {
     require_libvmaf!();
 
     let pair = small_pair(Distortion::Mild);
@@ -736,27 +810,7 @@ fn a_missing_model_file_is_reported_before_scoring_starts() {
 }
 
 #[test]
-fn unsupported_formats_are_rejected() {
-    for (bit_depth, chroma_sampling) in [
-        (9u32, ChromaSubsampling::Yuv420),
-        (14, ChromaSubsampling::Yuv420),
-        (8, ChromaSubsampling::Monochrome),
-    ] {
-        let format = VideoFormat {
-            width: 64,
-            height: 48,
-            bit_depth,
-            chroma_sampling,
-        };
-        assert!(
-            format.validate().is_err(),
-            "bit depth {bit_depth} with {chroma_sampling:?} must be rejected"
-        );
-    }
-}
-
-#[test]
-fn ten_bit_content_scores() {
+fn ten_bit_decoder_scoring_returns_six_finite_scores() {
     require_libvmaf!();
 
     let pair = SyntheticPair::generate(64, 48, 10, ChromaSubsampling::Yuv420, 6, Distortion::Mild);
@@ -787,7 +841,7 @@ fn ten_bit_content_scores() {
 }
 
 #[test]
-fn additional_features_are_reported() {
+fn requested_psnr_is_present_as_a_finite_pooled_feature() {
     require_libvmaf!();
 
     let pair = small_pair(Distortion::Moderate);
@@ -877,7 +931,7 @@ fn scoring_works_with_an_explicit_model_file() {
     );
 }
 
-/// Every model in the search path loads and produces usable scores.
+/// Report constructor failures and check finite scores for accepted models.
 ///
 /// The Windows installer ships all nine upstream models, but only four are
 /// reachable by name through [`av_metrics_vmaf::VmafModel`]. The `float`
@@ -886,12 +940,11 @@ fn scoring_works_with_an_explicit_model_file() {
 /// `-Denable_float=true` rejects them with `EINVAL`, which would otherwise
 /// surface as a confusing failure at scoring time rather than at install time.
 ///
-/// This scans `VMAF_MODEL_PATH` (or the resolved search paths) and asserts each
-/// model loads. Models that libvmaf was not built to support are reported but
-/// do not fail the run, so the test stays meaningful across build
-/// configurations.
+/// Scan only `VMAF_MODEL_PATH`. Rejected models are reported without failing the
+/// run; a model that loads but cannot score still fails.
 #[test]
-fn every_model_in_the_search_path_loads() {
+fn configured_model_directory_reports_load_failures_and_checks_finite_scores_for_supported_models()
+{
     if !is_available() {
         eprintln!("skipping: libvmaf is not installed");
         return;
@@ -976,28 +1029,6 @@ fn every_model_in_the_search_path_loads() {
     );
 }
 
-fn reference_mean(frame_count: usize) -> f64 {
-    assert!(frame_count > 0, "the reference fixture must contain frames");
-    // The independently measured first-frame deficit is spread over the whole fixture.
-    100.0 - (100.0 - 97.42837) / frame_count as f64
-}
-
-#[test]
-fn reference_mean_depends_on_the_fixture_frame_count() {
-    for (frames, expected) in [(48, 99.946424375), (72, 99.96428291666667)] {
-        assert!(
-            (reference_mean(frames) - expected).abs() < 1e-12,
-            "the {frames}-frame reference mean should be {expected}"
-        );
-    }
-}
-
-#[test]
-#[should_panic(expected = "the reference fixture must contain frames")]
-fn reference_mean_rejects_an_empty_fixture() {
-    reference_mean(0);
-}
-
 /// Scores a real clip against itself and compares with the reference tools.
 ///
 /// Set `VMAF_TEST_Y4M` to a y4m file and `VMAF_TEST_MODEL` to a model JSON.
@@ -1006,7 +1037,7 @@ fn reference_mean_rejects_an_empty_fixture() {
 /// values come from libvmaf's own CLI and FFmpeg's libvmaf filter run over the
 /// same bytes.
 #[test]
-fn matches_the_reference_tools_on_a_real_clip() {
+fn native_fixture_scores_match_recorded_vmaf_cli_and_ffmpeg_values() {
     if !is_available() {
         eprintln!("skipping: libvmaf is not installed");
         return;
@@ -1231,19 +1262,4 @@ fn a_stock_model_resolves_from_a_directory() {
             frame.score
         );
     }
-}
-
-/// Writes the synthetic test clip to disk so the reference tools can score it.
-///
-/// Used to confirm that scores on synthetic content agree with libvmaf's own
-/// CLI; not an assertion in itself. Gated on `VMAF_DUMP_SYNTHETIC`.
-#[test]
-fn dump_synthetic_clip_for_reference_comparison() {
-    let Ok(destination) = std::env::var("VMAF_DUMP_SYNTHETIC") else {
-        return;
-    };
-
-    let pair = small_pair(Distortion::None);
-    std::fs::write(&destination, &pair.reference.data).expect("the clip should be written");
-    eprintln!("wrote the synthetic clip to {destination}");
 }

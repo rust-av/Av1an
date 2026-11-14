@@ -3,6 +3,26 @@ mod internal_integration;
 
 use super::*;
 
+#[test]
+fn unsupported_formats_are_rejected() {
+    for (bit_depth, chroma_sampling) in [
+        (9u32, ChromaSubsampling::Yuv420),
+        (14, ChromaSubsampling::Yuv420),
+        (8, ChromaSubsampling::Monochrome),
+    ] {
+        let format = VideoFormat {
+            width: 64,
+            height: 48,
+            bit_depth,
+            chroma_sampling,
+        };
+        assert!(
+            format.validate().is_err(),
+            "bit depth {bit_depth} with {chroma_sampling:?} must be rejected"
+        );
+    }
+}
+
 // Only host buffers are used: no native library, model, GPU or native ownership.
 fn host_picture(buffers: &mut [Vec<u8>; 3], width: u32, height: u32) -> VmafPicture {
     let mut picture = VmafPicture::zeroed();

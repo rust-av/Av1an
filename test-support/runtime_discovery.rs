@@ -5,11 +5,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Exercise each override separately, then executable-relative release loading.
+/// Exercise the supplied override names or explicit `bundled` release mode.
 pub fn run(
     test: &str,
     library_name: &str,
-    overrides: &[&str],
+    modes: &[&str],
     bare_loader: bool,
     compile: impl FnOnce(&Path),
     configure: impl Fn(&mut Command, &Path),
@@ -32,7 +32,7 @@ pub fn run(
         &executable,
     )
     .expect("copy relocatable test artifact");
-    for mode in overrides.iter().copied().chain(std::iter::once("bundled")) {
+    for mode in modes.iter().copied() {
         // Keep the sibling absent in override cases so fmetrics cannot bypass
         // a broken override by discovering the same fixture beside the binary.
         let library = if mode == "bundled" {

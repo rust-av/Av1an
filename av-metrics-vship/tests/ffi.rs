@@ -416,7 +416,7 @@ fn runtime_overrides_and_staged_release() {
         } else {
             "libvship.so"
         },
-        &["VSHIP_PLUGIN_PATH", "VSHIP_LIB_DIR"],
+        &["VSHIP_PLUGIN_PATH", "VSHIP_LIB_DIR", "bundled"],
         true,
         |library| compile(library, false, &[]),
         |command, library| {

@@ -407,8 +407,14 @@ impl SyntheticClip {
     }
 }
 
+pub(super) fn reference_mean(frame_count: usize) -> f64 {
+    assert!(frame_count > 0, "the reference fixture must contain frames");
+    // The independently measured first-frame deficit is spread over the whole fixture.
+    100.0 - (100.0 - 97.42837) / frame_count as f64
+}
+
 #[cfg(test)]
-mod tests {
+mod unit {
     use super::*;
 
     #[test]
@@ -490,6 +496,58 @@ mod tests {
     }
 
     #[test]
+    fn stronger_distortion_produces_more_variation() {
+        let measure = |distortion: Distortion| {
+            let clip = SyntheticClip::generate(64, 64, 8, ChromaSubsampling::Yuv420, 4, distortion);
+            // Compare against the undistorted clip: more noise means a larger
+            // byte-level difference.
+            let clean =
+                SyntheticClip::generate(64, 64, 8, ChromaSubsampling::Yuv420, 4, Distortion::None);
+            clip.data
+                .iter()
+                .zip(clean.data.iter())
+                .map(|(a, b)| u64::from(a.abs_diff(*b)))
+                .sum::<u64>()
+        };
+
+        let mild = measure(Distortion::Mild);
+        let moderate = measure(Distortion::Moderate);
+        let severe = measure(Distortion::Severe);
+
+        assert!(mild > 0, "mild distortion must change the data");
+        assert!(moderate > mild, "moderate must exceed mild");
+        assert!(severe > moderate, "severe must exceed moderate");
+    }
+
+    #[test]
+    fn chroma_decimation_maps_420_422_and_444() {
+        assert_eq!(chroma_decimation(ChromaSubsampling::Yuv420), (2, 2));
+        assert_eq!(chroma_decimation(ChromaSubsampling::Yuv422), (2, 1));
+        assert_eq!(chroma_decimation(ChromaSubsampling::Yuv444), (1, 1));
+    }
+
+    #[test]
+    fn reference_mean_depends_on_the_fixture_frame_count() {
+        for (frames, expected) in [(48, 99.946424375), (72, 99.96428291666667)] {
+            assert!(
+                (reference_mean(frames) - expected).abs() < 1e-12,
+                "the {frames}-frame reference mean should be {expected}"
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "the reference fixture must contain frames")]
+    fn reference_mean_rejects_an_empty_fixture() {
+        reference_mean(0);
+    }
+}
+
+#[cfg(test)]
+mod decoder_integration {
+    use super::*;
+
+    #[test]
     fn generated_stream_decodes_to_the_requested_geometry() {
         let clip =
             SyntheticClip::generate(64, 48, 8, ChromaSubsampling::Yuv420, 3, Distortion::None);
@@ -532,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn all_frames_are_readable() {
+    fn five_generated_ten_bit_frames_decode_as_u16_then_reach_end() {
         let clip =
             SyntheticClip::generate(32, 32, 10, ChromaSubsampling::Yuv420, 5, Distortion::None);
         let mut decoder = clip.decoder();
@@ -549,36 +607,5 @@ mod tests {
             decoder.read_video_frame::<u16>().is_err(),
             "reading past the end must report an error"
         );
-    }
-
-    #[test]
-    fn stronger_distortion_produces_more_variation() {
-        let measure = |distortion: Distortion| {
-            let clip = SyntheticClip::generate(64, 64, 8, ChromaSubsampling::Yuv420, 4, distortion);
-            // Compare against the undistorted clip: more noise means a larger
-            // byte-level difference.
-            let clean =
-                SyntheticClip::generate(64, 64, 8, ChromaSubsampling::Yuv420, 4, Distortion::None);
-            clip.data
-                .iter()
-                .zip(clean.data.iter())
-                .map(|(a, b)| u64::from(a.abs_diff(*b)))
-                .sum::<u64>()
-        };
-
-        let mild = measure(Distortion::Mild);
-        let moderate = measure(Distortion::Moderate);
-        let severe = measure(Distortion::Severe);
-
-        assert!(mild > 0, "mild distortion must change the data");
-        assert!(moderate > mild, "moderate must exceed mild");
-        assert!(severe > moderate, "severe must exceed moderate");
-    }
-
-    #[test]
-    fn chroma_plane_sizes_follow_subsampling() {
-        assert_eq!(chroma_decimation(ChromaSubsampling::Yuv420), (2, 2));
-        assert_eq!(chroma_decimation(ChromaSubsampling::Yuv422), (2, 1));
-        assert_eq!(chroma_decimation(ChromaSubsampling::Yuv444), (1, 1));
     }
 }

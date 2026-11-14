@@ -24,8 +24,24 @@ const MARKERS: [&str; 5] = [
 mod runtime_discovery;
 
 #[test]
-fn runtime_overrides_and_staged_release() {
-    if std::env::var_os("RUNTIME_DISCOVERY_CHILD").is_some() {
+fn vmaf_lib_dir_loads_fixture_without_bundled_sibling() {
+    runtime_case(
+        "vmaf_lib_dir_loads_fixture_without_bundled_sibling",
+        "VMAF_LIB_DIR",
+    );
+}
+
+#[test]
+fn staged_vmaf_loads_via_runtime_loader_path_from_separate_media_cwd() {
+    runtime_case(
+        "staged_vmaf_loads_via_runtime_loader_path_from_separate_media_cwd",
+        "bundled",
+    );
+}
+
+fn runtime_case(test: &str, mode: &str) {
+    if let Ok(selected) = std::env::var("RUNTIME_DISCOVERY_CHILD") {
+        assert_eq!(selected, mode, "case belongs to this contract");
         // Load through production discovery before mapping fixture counters.
         assert_eq!(
             av_metrics_vmaf::libvmaf_version(),
@@ -36,13 +52,13 @@ fn runtime_overrides_and_staged_release() {
         return;
     }
     runtime_discovery::run(
-        "runtime_overrides_and_staged_release",
+        test,
         if cfg!(target_os = "macos") {
             "libvmaf.dylib"
         } else {
             "libvmaf.so"
         },
-        &["VMAF_LIB_DIR"],
+        &[mode],
         true,
         |library| compile(library, 0),
         |command, library| {
@@ -91,9 +107,9 @@ fn rejects_same_version_new_layout_markers_before_native_setup() {
 }
 
 #[test]
-fn accepts_verified_archive_runtime_and_scores() {
+fn accepted_vmaf_abi_fixture_reaches_scoring_and_cached_version() {
     run_cases(
-        "accepts_verified_archive_runtime_and_scores",
+        "accepted_vmaf_abi_fixture_reaches_scoring_and_cached_version",
         0,
         &["3.2.0"],
         true,

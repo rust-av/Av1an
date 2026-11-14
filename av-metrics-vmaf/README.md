@@ -284,7 +284,8 @@ Then confirm it works:
 cargo test -p av-metrics-vmaf
 ```
 
-`every_model_in_the_search_path_loads` reports which models the installed libvmaf
+`configured_model_directory_reports_load_failures_and_checks_finite_scores_for_supported_models`
+reports which models the installed libvmaf
 actually accepts, so a build that cannot use some of them is visible immediately
 rather than at scoring time.
 
@@ -532,6 +533,14 @@ Which of the nine models a build can use depends on its feature extractors: the
 [which models work](#which-models-work).
 
 ## Testing and benchmarking
+
+To export the synthetic clip for manual comparison with reference tools (not an
+automated scoring assertion), choose a destination file and run from the repository root.
+The exporter overwrites that file; remove it after the comparison.
+
+```sh
+VMAF_DUMP_SYNTHETIC=synthetic.y4m cargo +stable run --profile ci -p av-metrics-vmaf --example dump_synthetic_clip
+```
 
 **No media files are required.** All test content is generated in memory at runtime
 by `tests/common`, as a deterministic y4m stream fed through `av-decoders`'

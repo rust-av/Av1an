@@ -41,6 +41,11 @@ bench = false
 name = "scoring"
 harness = false
 
+[[example]]
+name = "dump_synthetic_clip"
+# The correctness target registers shared fixture checks; this is only an exporter.
+test = false
+
 [lints.clippy]
 # Performance
 clear_with_drain = "warn"

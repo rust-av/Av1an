@@ -38,7 +38,7 @@ Native Windows execution is required before claiming Windows loader acceptance.
 ## Runtime-only native discovery retention (Unix)
 
 ```sh
-cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics runtime_overrides_and_staged_release -- --nocapture
+cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics --test ffi -- runtime_overrides_and_staged_release vmaf_lib_dir_loads_fixture_without_bundled_sibling staged_vmaf_loads_via_runtime_loader_path_from_separate_media_cwd --nocapture
 ```
 
 These tests reuse the pinned C ABI fixtures and production scorers. Fresh children

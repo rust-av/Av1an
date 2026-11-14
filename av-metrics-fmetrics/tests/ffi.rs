@@ -38,7 +38,7 @@ fn runtime_overrides_and_staged_release() {
         } else {
             "libfmetrics.so"
         },
-        &["FMETRICS_LIB_PATH", "FMETRICS_LIB_DIR"],
+        &["FMETRICS_LIB_PATH", "FMETRICS_LIB_DIR", "bundled"],
         false,
         |library| compile(library, false, &[]),
         |command, library| {

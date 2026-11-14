@@ -119,8 +119,9 @@ jobs:
         run: |
           cargo +stable test --profile ci -p av-metrics-fmetrics --test correctness \
             loads_and_reports_its_version -- --exact --nocapture
-          cargo +stable test --profile ci -p av-metrics-vmaf --test correctness \
-            availability_probe_is_consistent -- --exact --nocapture
+          cargo +stable test --profile ci -p av-metrics-vmaf --test correctness -- \
+            vmaf_availability_and_version_agree \
+            required_cpu_gate_has_library_model_clip_and_model_directory --exact --nocapture
 
       - name: Build Condor
         run: |
@@ -143,7 +144,7 @@ jobs:
           # without -Denable_float=true rejects the float and BOUND models, and
           # that is otherwise only visible by reading the test output.
           cargo test --profile ci --test correctness \
-            every_model_in_the_search_path_loads -- --nocapture
+            configured_model_directory_reports_load_failures_and_checks_finite_scores_for_supported_models -- --exact --nocapture
 
       # The runner has no GPU and no vship binary is installed, so the crate's
       # GPU-gated tests skip themselves; its non-GPU tests still run.
@@ -251,8 +252,9 @@ jobs:
         run: |
           cargo +stable test --profile ci -p av-metrics-fmetrics --test correctness \
             loads_and_reports_its_version -- --exact --nocapture
-          cargo +stable test --profile ci -p av-metrics-vmaf --test correctness \
-            availability_probe_is_consistent -- --exact --nocapture
+          cargo +stable test --profile ci -p av-metrics-vmaf --test correctness -- \
+            vmaf_availability_and_version_agree \
+            required_cpu_gate_has_library_model_clip_and_model_directory --exact --nocapture
 
       - name: Generate code coverage
         run: cargo llvm-cov --profile ci --workspace --lcov --output-path lcov.log --ignore-filename-regex 'tests\.rs|(^|[/\\])(tests|test-support)([/\\]|$)'
