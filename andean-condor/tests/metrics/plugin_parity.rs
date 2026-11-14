@@ -37,7 +37,7 @@ d = core.std.Splice([picture(n,s) for n,s in enumerate([1,30,7])]).std.SetFrameP
     }
 
     #[test]
-    fn parity_fixture_decoder_inputs_match_plugin_assumptions() {
+    fn cvvdp_parity_fixture_decodes_expected_bt709_yuv444_samples() {
         // Fixture setup only: no metric/plugin/GPU is invoked by this check.
         for (output, shifts) in [("r", [0, 0, 0]), ("d", [1, 30, 7])] {
             let mut decoder = decoder(&format!("{output}.set_output()")).expect("real fixture");
@@ -193,7 +193,7 @@ d = core.std.Splice([picture(n,s) for n,s in enumerate([1,30,7])]).std.SetFrameP
     }
 
     #[test]
-    fn native_vs_plugin() {
+    fn cvvdp_native_and_plugin_scores_agree_with_temporal_processing_enabled_and_disabled() {
         if !av_metrics_vship::is_available() {
             assert!(
                 std::env::var_os("AV_METRICS_REQUIRE_CVVDP_PARITY").is_none(),

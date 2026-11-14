@@ -241,7 +241,7 @@ accuracy. Real native-vs-VapourSynth parity is covered by Andean's plugin-parity
 test. Run it on a supported GPU/plugin host with:
 
 ```sh
-AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor --test metrics metrics::plugin_parity::tests::native_vs_plugin -- --exact --nocapture
+AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor --test metrics metrics::plugin_parity::tests::cvvdp_native_and_plugin_scores_agree_with_temporal_processing_enabled_and_disabled -- --exact --nocapture
 ```
 
 That required gate fails if the runtime/plugin is missing; ordinary suites report

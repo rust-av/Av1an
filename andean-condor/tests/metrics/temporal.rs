@@ -17,37 +17,43 @@ mod tests {
     use av_metrics_fmetrics::{ColorInfo, FmetricsConfig, FmetricsMetric, FmetricsScorer};
     use av_metrics_vship::{VideoFormat, VshipConfig, VshipMetric, VshipScorer};
 
-    #[test]
-    fn independent_config_flags() {
-        for disabled in [false, true] {
-            for gap in [false, true] {
-                let f = FmetricsConfig::new(FmetricsMetric::Cvvdp)
-                    .with_reset_on_discontinuity(gap)
-                    .with_disable_temporal(disabled);
-                let v = VshipConfig::new()
-                    .with_reset_on_discontinuity(gap)
-                    .with_disable_temporal(disabled);
-                assert_eq!(f.reset_on_discontinuity, gap);
-                assert_eq!(v.cvvdp().reset_on_discontinuity, gap);
-                assert_eq!(f.disable_temporal, disabled);
-                assert_eq!(v.cvvdp().disable_temporal, disabled);
-                assert_eq!(
-                    f.with_reset_on_discontinuity(!gap).disable_temporal,
-                    disabled
-                );
-                assert_eq!(
-                    v.with_reset_on_discontinuity(!gap).cvvdp().disable_temporal,
-                    disabled
-                );
-            }
-        }
-        assert!(!FmetricsConfig::new(FmetricsMetric::Cvvdp).disable_temporal);
-        assert!(!VshipConfig::new().cvvdp().disable_temporal);
+    macro_rules! state_case {
+        ($name:ident, [$($scope:expr),+ $(,)?]) => {
+            #[test]
+            fn $name() { state_cases(concat!("metrics::temporal::tests::",stringify!($name)), &[$($scope),+]); }
+        };
     }
 
-    #[test]
-    fn stateful_native_boundary_and_drivers() {
+    state_case!(
+        fmetrics_temporal_disable_resets_combined_history_and_score_each_frame,
+        [("f", "")]
+    );
+    state_case!(
+        vship_temporal_disable_resets_history_and_score_each_frame,
+        [("v", "")]
+    );
+    state_case!(
+        metric_drivers_preserve_temporal_history_and_source_gap_policy,
+        [("drivers", "")]
+    );
+    state_case!(
+        temporal_reset_failures_return_typed_errors_without_success_callbacks,
+        [
+            ("failures", "fr"),
+            ("failures", "vr"),
+            ("failures", "vs"),
+            ("gap-failure", "vr")
+        ]
+    );
+
+    fn state_cases(test: &str, scopes: &[(&str, &str)]) {
         if std::env::var_os("TEMPORAL_FIXTURE_CHILD").is_some() {
+            let scope = std::env::var("TEMPORAL_FIXTURE_SCOPE").unwrap();
+            let failure = std::env::var("TEMPORAL_FIXTURE_FAIL").unwrap();
+            assert!(
+                scopes.contains(&(scope.as_str(), failure.as_str())),
+                "selected temporal scope belongs to this contract"
+            );
             if std::env::var("TEMPORAL_FIXTURE_FAIL").unwrap().is_empty() {
                 if std::env::var("TEMPORAL_FIXTURE_SCOPE").unwrap() == "drivers" {
                     drivers();
@@ -57,35 +63,57 @@ mod tests {
             } else {
                 failures();
             }
+            println!("temporal scope={scope} failure={failure:?}: assertions completed");
             return;
         }
-        native_children(
-            "metrics::temporal::tests::stateful_native_boundary_and_drivers",
-            &[
-                ("f", ""),
-                ("v", ""),
-                ("drivers", ""),
-                ("failures", "fr"),
-                ("failures", "vr"),
-                ("failures", "vs"),
-                ("gap-failure", "vr"),
-            ],
-        );
+        native_children(test, scopes, false);
     }
 
-    #[test]
-    fn frame_rate_native_boundary() {
+    macro_rules! fps_case {
+        ($name:ident, $scope:literal, $phase:literal) => {
+            #[test]
+            fn $name() {
+                fps_case(
+                    concat!("metrics::temporal::tests::", stringify!($name)),
+                    $scope,
+                    $phase,
+                );
+            }
+        };
+    }
+
+    fps_case!(
+        cvvdp_invalid_frame_rates_fail_before_native_context_creation,
+        "invalid-fps",
+        "invalid"
+    );
+    fps_case!(
+        cvvdp_native_constructors_receive_exact_configured_frame_rates,
+        "fps",
+        "constructors"
+    );
+    fps_case!(
+        cvvdp_drivers_forward_the_source_frame_rate,
+        "fps",
+        "drivers"
+    );
+    fps_case!(
+        stateless_metrics_do_not_initialize_temporal_frame_rate_state,
+        "fps",
+        "stateless"
+    );
+
+    fn fps_case(test: &str, scope: &str, phase: &str) {
         if std::env::var_os("TEMPORAL_FIXTURE_CHILD").is_some() {
-            fps();
+            assert_eq!(std::env::var("TEMPORAL_FIXTURE_SCOPE").unwrap(), scope);
+            fps(phase);
+            println!("temporal scope={scope} failure=\"\": assertions completed");
             return;
         }
-        native_children(
-            "metrics::temporal::tests::frame_rate_native_boundary",
-            &[("invalid-fps", ""), ("fps", "")],
-        );
+        native_children(test, &[(scope, "")], true);
     }
 
-    fn native_children(test: &str, scopes: &[(&str, &str)]) {
+    fn native_children(test: &str, scopes: &[(&str, &str)], fps_audit: bool) {
         let directory = tempfile::tempdir().expect("native boundary fixture");
         let library = directory.path().join(if cfg!(target_os = "macos") {
             "libfmetrics.dylib"
@@ -124,11 +152,7 @@ mod tests {
                 .env("TEMPORAL_FIXTURE_SCOPE", scope)
                 .env(
                     "FRAME_RATE_FIXTURE_FPS_AUDIT",
-                    if test.ends_with("frame_rate_native_boundary") {
-                        "1"
-                    } else {
-                        ""
-                    },
+                    if fps_audit { "1" } else { "" },
                 )
                 .env("TEMPORAL_FIXTURE_LOG", directory.path().join("calls"))
                 .env("FMETRICS_LIB_PATH", directory.path())
@@ -149,20 +173,26 @@ mod tests {
             let output = child.wait_with_output().unwrap();
             if !output.status.success()
                 || !String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed")
+                || !String::from_utf8_lossy(&output.stdout).contains(&format!(
+                    "temporal scope={scope} failure={failure:?}: assertions completed"
+                ))
             {
                 errors.push(format!(
                     "{scope}/{failure}: {}\n{}",
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 ));
-            } else if test.ends_with("frame_rate_native_boundary") {
+            } else if fps_audit {
                 print!("{}", String::from_utf8_lossy(&output.stdout));
+            } else {
+                println!("temporal scope={scope} failure={failure:?}: assertions completed");
             }
         }
         assert!(errors.is_empty(), "{}", errors.join("\n"));
     }
 
-    fn fps() {
+    fn fps(phase: &str) {
+        assert!(["invalid", "constructors", "drivers", "stateless"].contains(&phase));
         let source = decoder();
         let color = ColorInfo::from_details(source.get_video_details()).unwrap();
         let format = VideoFormat::from_details(source.get_video_details());
@@ -228,120 +258,127 @@ mod tests {
             );
             return;
         }
-        let frame = FrameBuilder::new(32, 32, ChromaSubsampling::Yuv420, 8).build::<u8>().unwrap();
-        for disabled in [false, true] {
-            // The ABI sink allocates only State, even at the inclusive maximum.
-            for rate in [None, Some(24.0), Some(24_000.0 / 1001.0), Some(100_000.0)] {
-                let expected: f32 = rate.unwrap_or(60.0);
-                clear();
-                let mut config =
-                    FmetricsConfig::new(FmetricsMetric::Cvvdp).with_disable_temporal(disabled);
-                if let Some(rate) = rate {
-                    config = config.with_frame_rate(rate);
+        if phase == "constructors" {
+            let frame =
+                FrameBuilder::new(32, 32, ChromaSubsampling::Yuv420, 8).build::<u8>().unwrap();
+            for disabled in [false, true] {
+                // The ABI sink allocates only State, even at the inclusive maximum.
+                for rate in [None, Some(24.0), Some(24_000.0 / 1001.0), Some(100_000.0)] {
+                    let expected: f32 = rate.unwrap_or(60.0);
+                    clear();
+                    let mut config =
+                        FmetricsConfig::new(FmetricsMetric::Cvvdp).with_disable_temporal(disabled);
+                    if let Some(rate) = rate {
+                        config = config.with_frame_rate(rate);
+                    }
+                    let mut scorer = FmetricsScorer::new(config, color).unwrap();
+                    let planes = av_metrics_fmetrics::PlaneSet::from_frame(&frame).unwrap();
+                    scorer.submit_pair_temporal(&planes, &planes).unwrap();
+                    drop(scorer);
+                    assert!(
+                        calls().contains(&format!("ffps={:08x}\n", expected.to_bits())),
+                        "{}",
+                        calls()
+                    );
+                    clear();
+                    let mut config = VshipConfig::new()
+                        .with_metric(VshipMetric::Cvvdp)
+                        .with_disable_temporal(disabled);
+                    if let Some(rate) = rate {
+                        config = config.with_fps(rate);
+                    }
+                    let mut scorer = VshipScorer::new(config, format, format, None).unwrap();
+                    scorer.submit_pair(&frame, &frame).unwrap();
+                    drop(scorer);
+                    assert!(
+                        calls().contains(&format!("vfps={:08x}\n", expected.to_bits())),
+                        "{}",
+                        calls()
+                    );
+                    println!(
+                        "frame-rate: both native FPS={expected} bits={:08x} disabled={disabled}",
+                        expected.to_bits()
+                    );
                 }
-                let mut scorer = FmetricsScorer::new(config, color).unwrap();
-                let planes = av_metrics_fmetrics::PlaneSet::from_frame(&frame).unwrap();
-                scorer.submit_pair_temporal(&planes, &planes).unwrap();
-                drop(scorer);
-                assert!(
-                    calls().contains(&format!("ffps={:08x}\n", expected.to_bits())),
-                    "{}",
-                    calls()
-                );
-                clear();
-                let mut config = VshipConfig::new()
-                    .with_metric(VshipMetric::Cvvdp)
-                    .with_disable_temporal(disabled);
-                if let Some(rate) = rate {
-                    config = config.with_fps(rate);
-                }
-                let mut scorer = VshipScorer::new(config, format, format, None).unwrap();
-                scorer.submit_pair(&frame, &frame).unwrap();
-                drop(scorer);
-                assert!(
-                    calls().contains(&format!("vfps={:08x}\n", expected.to_bits())),
-                    "{}",
-                    calls()
-                );
-                println!(
-                    "frame-rate: both native FPS={expected} bits={:08x} disabled={disabled}",
-                    expected.to_bits()
-                );
             }
         }
-        // Real decoding and drivers must preserve the rational source rate too.
-        for gpu in [false, true] {
-            clear();
-            let script = "import vapoursynth as vs\nvs.core.std.BlankClip(width=32, height=32, length=1, fpsnum=24000, fpsden=1001, format=vs.YUV420P8).std.SetFrameProps(_Matrix=1, _Transfer=13, _Primaries=1, _Range=1).set_output()";
-            let mut a = av_decoders::Decoder::from_script(script, Default::default()).unwrap();
-            let mut b = av_decoders::Decoder::from_script(script, Default::default()).unwrap();
-            let scores = if gpu {
-                vship::score_probed_frames(
-                    &mut a,
-                    &mut b,
-                    &metric(false),
-                    &[0],
-                    OutputIndexing::Aligned,
-                    None,
-                    |_, _| {},
-                )
-            } else {
-                fmetrics::score_probed_frames(
-                    &mut a,
-                    &mut b,
-                    &metric(false),
-                    &[0],
-                    OutputIndexing::Aligned,
-                    None,
-                    |_, _| {},
-                )
-            }
-            .unwrap();
-            assert_eq!(scores.len(), 1);
-            assert!(
-                calls().contains(if gpu {
-                    "vfps=41bfcee6\n"
-                } else {
-                    "ffps=41bfcee6\n"
-                }),
-                "{}",
-                calls()
-            );
-        }
-        for rate in [0.0, f32::NAN, f32::MAX] {
-            for metric in [
-                FmetricsMetric::Ssimulacra2,
-                FmetricsMetric::Butteraugli,
-                FmetricsMetric::Iwssim,
-                FmetricsMetric::Msssim,
-            ] {
+        if phase == "drivers" {
+            // Real decoding and drivers must preserve the rational source rate too.
+            for gpu in [false, true] {
                 clear();
-                drop(
-                    FmetricsScorer::new(
-                        FmetricsConfig::new(metric).with_threads(1).with_frame_rate(rate),
-                        color,
-                    )
-                    .unwrap(),
-                );
-                assert!(calls().contains("fw+\n"));
-                assert!(!calls().contains("fc+\n"));
-            }
-            for metric in [VshipMetric::Ssimulacra2, VshipMetric::Butteraugli] {
-                clear();
-                drop(
-                    VshipScorer::new(
-                        VshipConfig::new()
-                            .with_metric(metric)
-                            .with_handler_threads(1)
-                            .with_fps(rate),
-                        format,
-                        format,
+                let script = "import vapoursynth as vs\nvs.core.std.BlankClip(width=32, height=32, length=1, fpsnum=24000, fpsden=1001, format=vs.YUV420P8).std.SetFrameProps(_Matrix=1, _Transfer=13, _Primaries=1, _Range=1).set_output()";
+                let mut a = av_decoders::Decoder::from_script(script, Default::default()).unwrap();
+                let mut b = av_decoders::Decoder::from_script(script, Default::default()).unwrap();
+                let scores = if gpu {
+                    vship::score_probed_frames(
+                        &mut a,
+                        &mut b,
+                        &metric(false),
+                        &[0],
+                        OutputIndexing::Aligned,
                         None,
+                        |_, _| {},
                     )
-                    .unwrap(),
+                } else {
+                    fmetrics::score_probed_frames(
+                        &mut a,
+                        &mut b,
+                        &metric(false),
+                        &[0],
+                        OutputIndexing::Aligned,
+                        None,
+                        |_, _| {},
+                    )
+                }
+                .unwrap();
+                assert_eq!(scores.len(), 1);
+                assert!(
+                    calls().contains(if gpu {
+                        "vfps=41bfcee6\n"
+                    } else {
+                        "ffps=41bfcee6\n"
+                    }),
+                    "{}",
+                    calls()
                 );
-                assert!(calls().contains("vc+\n"));
-                assert!(!calls().contains("vfps="));
+            }
+        }
+        if phase == "stateless" {
+            for rate in [0.0, f32::NAN, f32::MAX] {
+                for metric in [
+                    FmetricsMetric::Ssimulacra2,
+                    FmetricsMetric::Butteraugli,
+                    FmetricsMetric::Iwssim,
+                    FmetricsMetric::Msssim,
+                ] {
+                    clear();
+                    drop(
+                        FmetricsScorer::new(
+                            FmetricsConfig::new(metric).with_threads(1).with_frame_rate(rate),
+                            color,
+                        )
+                        .unwrap(),
+                    );
+                    assert!(calls().contains("fw+\n"));
+                    assert!(!calls().contains("fc+\n"));
+                }
+                for metric in [VshipMetric::Ssimulacra2, VshipMetric::Butteraugli] {
+                    clear();
+                    drop(
+                        VshipScorer::new(
+                            VshipConfig::new()
+                                .with_metric(metric)
+                                .with_handler_threads(1)
+                                .with_fps(rate),
+                            format,
+                            format,
+                            None,
+                        )
+                        .unwrap(),
+                    );
+                    assert!(calls().contains("vc+\n"));
+                    assert!(!calls().contains("vfps="));
+                }
             }
         }
     }

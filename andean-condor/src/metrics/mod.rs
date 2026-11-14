@@ -265,6 +265,8 @@ const fn plugin_available(metric: &QualityMetric) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    mod temporal_config;
     use super::*;
 
     fn ssimulacra2() -> QualityMetric {

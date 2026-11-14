@@ -142,7 +142,7 @@ native probes/allocations using harmless ABI sinks, not real temporal rings.
 Real Vship-vs-plugin parity requires a supported GPU and plugin. On that host, run:
 
 ```sh
-AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor --test metrics metrics::plugin_parity::tests::native_vs_plugin -- --exact --nocapture
+AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor --test metrics metrics::plugin_parity::tests::cvvdp_native_and_plugin_scores_agree_with_temporal_processing_enabled_and_disabled -- --exact --nocapture
 ```
 
 Missing runtime/plugin fails that required gate; ordinary suites report it UNEXECUTED.
