@@ -6,5 +6,6 @@ mod quality_check;
 mod scene_concatenator;
 #[cfg(target_os = "linux")]
 mod serial_encoder;
+mod target_quality;
 #[cfg(target_os = "linux")]
 mod zone_encoder;
