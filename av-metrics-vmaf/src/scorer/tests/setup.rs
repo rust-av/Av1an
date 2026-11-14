@@ -7,43 +7,25 @@ use std::{
 use super::*;
 use crate::config::{BackendPreference, VmafFeature};
 
-const EXACT: &str = "scorer::tests::setup::complete_backend_attempts";
-
 #[test]
-fn auto_feature_policy() {
-    check_feature_policy("scorer::tests::setup::auto_feature_policy", "auto");
-}
-
-#[test]
-fn cpu_only_feature_policy() {
-    check_feature_policy("scorer::tests::setup::cpu_only_feature_policy", "cpu");
-}
-
-#[test]
-fn require_cuda_feature_policy() {
-    check_feature_policy(
-        "scorer::tests::setup::require_cuda_feature_policy",
-        "require",
+fn cuda_availability_requires_feature_and_verified_allocator_without_initializing_state() {
+    check_availability(
+        "cuda_availability_requires_feature_and_verified_allocator_without_initializing_state",
+        false,
     );
 }
 
-fn check_feature_policy(exact: &str, preference: &str) {
-    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
-        check_attempt();
-        return;
-    }
-    let (directory, library) = setup_fixture();
-    for stage in [0, 7, 9] {
-        run_child(exact, stage, preference, &library, directory.path(), false);
-    }
+#[test]
+fn missing_native_release_disables_cuda_availability() {
+    check_availability("missing_native_release_disables_cuda_availability", true);
 }
 
-#[test]
-fn cuda_availability_requires_feature() {
+fn check_availability(test: &str, missing_release: bool) {
     if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_none() {
         let (directory, library) = setup_fixture();
+        let module = module_path!().split_once("::").expect("test crate prefix").1;
         run_child(
-            "scorer::tests::setup::cuda_availability_requires_feature",
+            &format!("{module}::{test}"),
             0,
             "auto",
             &library,
@@ -83,19 +65,23 @@ fn cuda_availability_requires_feature() {
         cfg!(all(feature = "cuda", target_os = "linux")),
         "public availability also requires verified allocator support"
     );
-    api.cuda.release = None;
-    assert!(
-        !api.cuda_available(),
-        "the feature cannot replace native cleanup capability"
-    );
+    if missing_release {
+        api.cuda.release = None;
+        assert!(
+            !api.cuda_available(),
+            "the feature cannot replace native cleanup capability"
+        );
+    }
+    println!("setup fixture assertions completed");
 }
 
 #[test]
-fn required_cuda_feature_precedes_loader_failure() {
+fn require_cuda_feature_validation_precedes_injected_loader_failure() {
     if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_none() {
         let (directory, library) = setup_fixture();
+        let module = module_path!().split_once("::").expect("test crate prefix").1;
         run_child(
-            "scorer::tests::setup::required_cuda_feature_precedes_loader_failure",
+            &format!("{module}::require_cuda_feature_validation_precedes_injected_loader_failure"),
             0,
             "require",
             &library,
@@ -141,6 +127,7 @@ fn required_cuda_feature_precedes_loader_failure() {
         );
         assert_missing_cuda_feature(&error);
     }
+    println!("setup fixture assertions completed");
 }
 
 fn assert_missing_cuda_feature(error: &VmafError) {
@@ -157,19 +144,311 @@ fn assert_missing_cuda_feature(error: &VmafError) {
     );
 }
 
-#[test]
-fn complete_backend_attempts() {
+// Keep the full stage/preference table individually selectable without repeating process setup.
+macro_rules! constructor_case {
+    ($name:ident, $stage:literal, $preference:literal, $partial:literal) => {
+        #[test]
+        fn $name() {
+            run_constructor_case(stringify!($name), $stage, $preference, $partial);
+        }
+    };
+}
+
+constructor_case!(
+    auto_scores_with_complete_feature_selected_backend,
+    0,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_scores_only_with_feature_and_complete_setup,
+    0,
+    "require",
+    false
+);
+constructor_case!(cpu_only_scores_without_cuda_initialization, 0, "cpu", false);
+constructor_case!(auto_uses_cpu_at_cuda_state_init_failure, 1, "auto", false);
+constructor_case!(
+    require_cuda_state_init_failure_never_falls_back,
+    1,
+    "require",
+    false
+);
+constructor_case!(cpu_only_ignores_cuda_state_init_failure, 1, "cpu", false);
+constructor_case!(auto_uses_cpu_at_cuda_context_init_failure, 2, "auto", false);
+constructor_case!(
+    require_cuda_context_init_failure_never_falls_back,
+    2,
+    "require",
+    false
+);
+constructor_case!(cpu_only_ignores_cuda_context_init_failure, 2, "cpu", false);
+constructor_case!(auto_uses_cpu_at_cuda_import_failure, 3, "auto", false);
+constructor_case!(
+    require_cuda_import_failure_never_falls_back,
+    3,
+    "require",
+    false
+);
+constructor_case!(cpu_only_ignores_cuda_import_failure, 3, "cpu", false);
+constructor_case!(auto_uses_cpu_at_cuda_device_pool_failure, 4, "auto", false);
+constructor_case!(
+    require_cuda_device_pool_failure_never_falls_back,
+    4,
+    "require",
+    false
+);
+constructor_case!(cpu_only_ignores_cuda_device_pool_failure, 4, "cpu", false);
+constructor_case!(auto_uses_cpu_at_cuda_host_pool_failure, 5, "auto", false);
+constructor_case!(
+    require_cuda_host_pool_failure_never_falls_back,
+    5,
+    "require",
+    false
+);
+constructor_case!(cpu_only_ignores_cuda_host_pool_failure, 5, "cpu", false);
+constructor_case!(auto_uses_cpu_after_cuda_owned_model_error, 6, "auto", false);
+constructor_case!(
+    require_cuda_owned_model_error_never_falls_back,
+    6,
+    "require",
+    false
+);
+constructor_case!(cpu_only_ignores_cuda_only_model_error, 6, "cpu", false);
+constructor_case!(
+    auto_uses_cpu_at_cuda_required_feature_failure,
+    7,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_required_feature_failure_never_falls_back,
+    7,
+    "require",
+    false
+);
+constructor_case!(
+    cpu_only_ignores_cuda_required_feature_failure,
+    7,
+    "cpu",
+    false
+);
+constructor_case!(
+    auto_uses_cpu_at_first_cuda_picture_fetch_failure,
+    8,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_first_picture_fetch_failure_never_falls_back,
+    8,
+    "require",
+    false
+);
+constructor_case!(
+    cpu_only_ignores_first_cuda_picture_fetch_failure,
+    8,
+    "cpu",
+    false
+);
+constructor_case!(
+    auto_uses_cpu_at_second_cuda_picture_fetch_failure,
+    9,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_second_picture_fetch_failure_never_falls_back,
+    9,
+    "require",
+    false
+);
+constructor_case!(
+    cpu_only_ignores_second_cuda_picture_fetch_failure,
+    9,
+    "cpu",
+    false
+);
+constructor_case!(
+    auto_optional_feature_failure_does_not_reject_selected_backend,
+    10,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_optional_feature_failure_is_nonfatal_when_feature_enabled,
+    10,
+    "require",
+    false
+);
+constructor_case!(
+    cpu_only_optional_feature_failure_is_nonfatal,
+    10,
+    "cpu",
+    false
+);
+constructor_case!(
+    auto_preserves_cpu_required_feature_error_after_available_attempts,
+    11,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_required_feature_failure_reports_cuda_error_without_cpu_retry,
+    11,
+    "require",
+    false
+);
+constructor_case!(cpu_only_preserves_required_feature_error, 11, "cpu", false);
+constructor_case!(
+    auto_uses_cpu_after_cuda_success_null_model,
+    12,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_success_null_model_never_falls_back,
+    12,
+    "require",
+    false
+);
+constructor_case!(
+    cpu_only_ignores_cuda_only_success_null_model,
+    12,
+    "cpu",
+    false
+);
+constructor_case!(
+    auto_uses_cpu_after_cuda_state_error_with_allocated_wrapper,
+    13,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_allocated_state_error_never_falls_back,
+    13,
+    "require",
+    false
+);
+constructor_case!(
+    cpu_only_ignores_allocated_cuda_state_error,
+    13,
+    "cpu",
+    false
+);
+constructor_case!(
+    auto_destroys_builtin_model_partial_before_file_fallback,
+    14,
+    "auto",
+    false
+);
+constructor_case!(
+    require_cuda_destroys_builtin_model_partial_before_file_fallback_when_enabled,
+    14,
+    "require",
+    false
+);
+constructor_case!(
+    cpu_only_destroys_builtin_model_partial_before_file_fallback,
+    14,
+    "cpu",
+    false
+);
+constructor_case!(cpu_model_error_destroys_owned_partial, 6, "cpu", true);
+constructor_case!(
+    cpu_required_feature_error_destroys_model_before_close,
+    7,
+    "cpu",
+    true
+);
+constructor_case!(
+    cpu_first_picture_fetch_error_closes_without_adopting_output,
+    8,
+    "cpu",
+    true
+);
+constructor_case!(
+    cpu_second_picture_fetch_error_returns_first_picture,
+    9,
+    "cpu",
+    true
+);
+constructor_case!(cpu_success_null_model_is_rejected, 12, "cpu", true);
+constructor_case!(
+    cpu_model_error_with_null_output_preserves_loader_status,
+    15,
+    "cpu",
+    true
+);
+constructor_case!(
+    cpu_builtin_failure_destroys_partial_before_file_fallback,
+    14,
+    "cpu",
+    true
+);
+constructor_case!(
+    cpu_file_fallback_failure_destroys_both_model_partials,
+    16,
+    "cpu",
+    true
+);
+constructor_case!(
+    auto_model_partial_failure_is_cleaned_before_fresh_cpu_attempt,
+    6,
+    "auto",
+    true
+);
+constructor_case!(
+    auto_builtin_and_file_partials_are_cleaned_before_cpu_retry,
+    16,
+    "auto",
+    true
+);
+constructor_case!(
+    blocked_second_constructor_fetch_completes_after_reserved_slots_release,
+    17,
+    "cpu",
+    true
+);
+constructor_case!(
+    blocked_second_constructor_fetch_failure_returns_first_picture_before_close,
+    18,
+    "cpu",
+    true
+);
+
+fn run_constructor_case(test: &str, stage: u32, preference: &str, partial_setup: bool) {
     if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
-        check_attempt();
+        assert_eq!(
+            std::env::var("VMAF_SETUP_FIXTURE_STAGE").expect("stage"),
+            stage.to_string()
+        );
+        assert_eq!(
+            std::env::var("VMAF_SETUP_FIXTURE_PREFERENCE").expect("preference"),
+            preference
+        );
+        assert_eq!(
+            std::env::var("VMAF_PARTIAL_SETUP_FIXTURE_CHILD").expect("mode"),
+            if partial_setup { "1" } else { "0" }
+        );
+        if partial_setup {
+            check_partial_setup_attempt();
+        } else {
+            check_attempt();
+        }
+        println!("setup fixture assertions completed");
         return;
     }
     let (directory, library) = setup_fixture();
-    // Start with a late CUDA failure: the old constructor cannot retry this.
-    for stage in [7, 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14] {
-        for preference in ["auto", "require", "cpu"] {
-            run_child(EXACT, stage, preference, &library, directory.path(), false);
-        }
-    }
+    let module = module_path!().split_once("::").expect("test crate prefix").1;
+    run_child(
+        &format!("{module}::{test}"),
+        stage,
+        preference,
+        &library,
+        directory.path(),
+        partial_setup,
+    );
 }
 
 fn setup_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -247,7 +526,9 @@ fn run_child(
         "{stage}/{preference}: {stdout}\n{stderr}"
     );
     assert!(
-        stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
+        stdout.contains("running 1 test")
+            && stdout.contains("1 passed; 0 failed")
+            && stdout.contains("setup fixture assertions completed"),
         "{stdout}"
     );
     eprintln!("{stage}/{preference}: {stderr}");
@@ -465,54 +746,6 @@ fn check_attempt() {
         globals, expected_global,
         "one release owner and one wrapper free"
     );
-}
-
-#[test]
-fn owned_partial_and_cpu_constructor_failures() {
-    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
-        check_partial_setup_attempt();
-        return;
-    }
-    let (directory, library) = setup_fixture();
-    for stage in [6, 7, 8, 9, 12, 15, 14, 16] {
-        run_child(
-            "scorer::tests::setup::owned_partial_and_cpu_constructor_failures",
-            stage,
-            "cpu",
-            &library,
-            directory.path(),
-            true,
-        );
-    }
-    for stage in [6, 16] {
-        run_child(
-            "scorer::tests::setup::owned_partial_and_cpu_constructor_failures",
-            stage,
-            "auto",
-            &library,
-            directory.path(),
-            true,
-        );
-    }
-}
-
-#[test]
-fn blocking_pool_pressure() {
-    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
-        check_partial_setup_attempt();
-        return;
-    }
-    let (directory, library) = setup_fixture();
-    for stage in [17, 18] {
-        run_child(
-            "scorer::tests::setup::blocking_pool_pressure",
-            stage,
-            "cpu",
-            &library,
-            directory.path(),
-            true,
-        );
-    }
 }
 
 fn check_partial_setup_attempt() {

@@ -592,7 +592,8 @@ and failed fetch/read cleanup; it does not execute real CUDA or a native thread
 pool. `native_cpu_threaded_matches_serial` separately exercises installed
 libvmaf's CPU workers when available.
 
-On Unix, `backend::tests::cuda::cuda_ownership` always runs isolated production `Context` paths
+On Unix, the behavior-named tests under `backend::tests::internal_integration::cuda`
+run isolated production `Context` paths
 against a C ABI fixture, checking state-init, context-init, import and pool
 failures, missing cleanup symbols, CPU fallback and successful teardown. It
 counts wrapper allocations/frees separately from resource releases; it does not
@@ -604,24 +605,24 @@ construction/teardown while another independent GPU user remains active, with
 no abort or disruption to that user, plus native sanitizer checks. Those gates
 must be run on suitable hardware; passing the fixture does not establish them.
 
-`scorer::tests::setup` checks both availability APIs and all three preferences at the native
+`scorer::tests::internal_integration::setup` checks both availability APIs and all three preferences at the native
 constructor boundary, with complete symbols and late setup failures. Without the
 feature, CUDA entry-point counters stay zero and required CUDA fails before even
 calling a failing API loader. With the feature, CUDA selection and fresh CPU retry
 retain the complete-attempt contract. Run both Cargo configurations above.
 
-`complete_backend_attempts` adds non-skipping full-constructor C-boundary checks
+Its individually named full-constructor cases provide non-skipping C-boundary checks
 for each setup failure under all three preferences: feature-enabled CUDA attempts
 and fresh CPU retry, or feature-disabled CPU/rejection policy, plus model/picture
-cleanup, separate host/device allocation and untouched device canaries. Its marker
+cleanup, separate host/device allocation and untouched device canaries. Their marker
 scores prove submission/flush routing, **not** CPU/CUDA numerical equivalence.
 
-`owned_partial_and_cpu_constructor_failures` checks owned partial JSON models,
+Separate partial-constructor cases check owned partial JSON models,
 file fallback, fresh CPU retry and CPU-only feature/fetch failures. The shared
 fixture counts each allocation/destruction and checkout/return before close.
-`blocking_pool_pressure` reserves host slots, waits for a genuinely blocked
-second fetch, then releases the slots through a condition-variable handshake.
-It checks both successful construction and allocation failure after release,
+The two `blocked_second_constructor_fetch` cases reserve host slots, wait for a genuinely blocked
+second fetch, then release the slots through a condition-variable handshake.
+They check both successful construction and allocation failure after release,
 without real GPU execution. Installed-CPU malformed-model checks additionally
 exercise repeated parser errors followed by valid scoring; they are not sanitizer
 or leak-detector evidence.

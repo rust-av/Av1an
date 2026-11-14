@@ -1,5 +1,5 @@
 #[cfg(unix)]
-mod setup;
+mod internal_integration;
 
 use super::*;
 
