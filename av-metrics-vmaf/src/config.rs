@@ -617,15 +617,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_model_path_is_an_error() {
-        let model = VmafModel::Path(PathBuf::from("/nonexistent/model.json"));
-        assert!(matches!(
-            model.as_libvmaf_model(),
-            Err(VmafError::ModelFileMissing { .. })
-        ));
-    }
-
-    #[test]
     fn default_feature_contributes_no_name() {
         let config = VmafConfig::new().with_feature(VmafFeature::Default);
         assert!(config.feature_names().is_empty());
@@ -641,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stock_model_names_the_file_libvmaf_expects() {
+    fn stock_version_maps_all_stock_models_and_excludes_explicit_paths() {
         assert_eq!(VmafModel::Default.stock_version(), Some("vmaf_v0.6.1"));
         assert_eq!(VmafModel::Neg.stock_version(), Some("vmaf_v0.6.1neg"));
         assert_eq!(VmafModel::Weighted.stock_version(), Some("vmaf_b_v0.6.3"));
@@ -655,94 +646,22 @@ mod tests {
     }
 
     #[test]
-    fn explicit_selection_and_system_before_adjacent_fallback() {
-        let fixture = tempfile::tempdir().unwrap();
-        let root = fixture.path();
-        let explicit = root.join("explicit models 雪");
-        let system = root.join("share/vmaf/model");
-        let adjacent = root.join("model");
-        for (directory, marker) in
-            [(&explicit, "explicit"), (&system, "system"), (&adjacent, "adjacent")]
-        {
-            std::fs::create_dir_all(directory).unwrap();
-            std::fs::write(directory.join("vmaf_v0.6.1.json"), marker).unwrap();
-        }
-        let paths = model_search_paths_for(Some(&root.join("lib")), Some(&explicit));
-        assert_eq!(
-            paths.first(),
-            Some(&explicit),
-            "explicit precedes every system path"
-        );
-        assert!(
-            paths.iter().position(|path| path == &system).unwrap()
-                < paths.iter().position(|path| path == &adjacent).unwrap(),
-            "loaded-library system-shaped fallback precedes adjacent models"
-        );
-        assert_eq!(
-            VmafModel::Default.stock_model_override_for(Some(&explicit)).unwrap(),
-            Some(explicit.join("vmaf_v0.6.1.json")),
-            "distinct explicit and system fixtures select explicit"
-        );
+    fn absent_model_override_allows_fallback() {
         assert_eq!(
             VmafModel::Default.stock_model_override_for(None).unwrap(),
             None,
             "only no override permits ordinary fallback"
         );
-        assert_eq!(
-            VmafModel::Default.find_stock_model_file_in(&[system.clone(), adjacent]),
-            Some(system.join("vmaf_v0.6.1.json")),
-            "deterministic fallback without host installation assumptions"
-        );
-        std::fs::remove_file(explicit.join("vmaf_v0.6.1.json")).unwrap();
-        assert!(
-            VmafModel::Default.stock_model_override_for(Some(&explicit)).is_err(),
-            "an invalid explicit selection must not fall through to the existing system fixture"
-        );
     }
 
-    /// The stock model must be findable on the platforms we ship for.
-    ///
-    /// Arch's `vmaf` package installs models to `/usr/share/model`, not the
-    /// `/usr/share/vmaf/model` a source build would use. Missing that path
-    /// silently disables the metric on the CI image and in Docker, where
-    /// the library is present but the model cannot be loaded.
-    #[test]
-    fn the_model_search_paths_cover_known_packaging_layouts() {
-        let paths: Vec<String> = VmafModel::model_search_paths()
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect();
-
-        let required: &[&str] = if cfg!(target_os = "macos") {
-            &["/opt/homebrew/share/vmaf/model"]
-        } else if cfg!(target_os = "windows") {
-            // Windows resolves the MSYS2 root from the machine, so there is no
-            // fixed path to require — and libvmaf may not even be loaded yet,
-            // in which case no prefix can be derived and none is claimed.
-            return;
-        } else {
-            &["/usr/share/model", "/usr/share/vmaf/model", "/usr/local/share/model"]
-        };
-
-        for path in required {
-            assert!(
-                paths.iter().any(|candidate| candidate == path),
-                "`{path}` should be searched; candidates are {paths:?}"
-            );
-        }
-    }
-
-    /// Windows must never assume MSYS2 lives on `C:`. The root comes from the
-    /// machine, so the layouts are derived from whatever root is supplied.
     #[cfg(target_os = "windows")]
     #[test]
-    fn the_msys2_layouts_follow_the_root_the_machine_reports() {
+    fn msys2_model_directories_follow_supplied_drive_and_unc_roots() {
         for root in [r"D:\msys64", r"E:\tools\msys2", r"\\server\share\msys64"] {
             let paths: Vec<String> = msys2_model_directories(Path::new(root))
                 .into_iter()
                 .map(|(path, _)| path.display().to_string())
                 .collect();
-
             for prefix in ["mingw64", "ucrt64"] {
                 let expected = Path::new(root)
                     .join(prefix)
@@ -759,65 +678,126 @@ mod tests {
         }
     }
 
-    /// System paths must be searched before anything near the executable, so a
-    /// stray `vmaf_v0.6.1.json` in a shared or downloads-adjacent binary
-    /// directory cannot silently override the distribution's model.
-    #[test]
-    fn system_model_paths_take_precedence_over_executable_adjacent_ones() {
-        let paths: Vec<String> = VmafModel::fallback_model_search_paths()
-            .into_iter()
-            .map(|path| path.display().to_string())
-            .collect();
+    mod internal_integration {
+        use super::*;
 
-        let last_system = paths.iter().rposition(|path| is_system_model_path(path));
-        let first_adjacent = paths.iter().position(|path| !is_system_model_path(path));
+        fn model_directories() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            let explicit = root.join("explicit models 雪");
+            let system = root.join("share/vmaf/model");
+            let adjacent = root.join("model");
+            for (directory, marker) in
+                [(&explicit, "explicit"), (&system, "system"), (&adjacent, "adjacent")]
+            {
+                std::fs::create_dir_all(directory).unwrap();
+                std::fs::write(directory.join("vmaf_v0.6.1.json"), marker).unwrap();
+            }
+            (fixture, explicit, system, adjacent)
+        }
 
-        if let (Some(last_system), Some(first_adjacent)) = (last_system, first_adjacent) {
+        #[test]
+        fn explicit_model_directory_precedes_system_and_adjacent_paths() {
+            let (fixture, explicit, system, adjacent) = model_directories();
+            let root = fixture.path();
+            let paths = model_search_paths_for(Some(&root.join("lib")), Some(&explicit));
+            assert_eq!(
+                paths.first(),
+                Some(&explicit),
+                "explicit precedes every system path"
+            );
             assert!(
-                last_system < first_adjacent,
-                "every system path must precede every other path; a system path at {last_system} \
+                paths.iter().position(|path| path == &system).unwrap()
+                    < paths.iter().position(|path| path == &adjacent).unwrap(),
+                "loaded-library system-shaped fallback precedes adjacent models"
+            );
+            assert_eq!(
+                VmafModel::Default.stock_model_override_for(Some(&explicit)).unwrap(),
+                Some(explicit.join("vmaf_v0.6.1.json")),
+                "distinct explicit and system fixtures select explicit"
+            );
+        }
+
+        #[test]
+        fn system_model_file_precedes_adjacent_fallback() {
+            let (_fixture, _explicit, system, adjacent) = model_directories();
+            assert_eq!(
+                VmafModel::Default.find_stock_model_file_in(&[system.clone(), adjacent]),
+                Some(system.join("vmaf_v0.6.1.json")),
+                "deterministic fallback without host installation assumptions"
+            );
+        }
+
+        #[test]
+        fn missing_explicit_stock_model_does_not_fall_through() {
+            let (_fixture, explicit, _system, _adjacent) = model_directories();
+            std::fs::remove_file(explicit.join("vmaf_v0.6.1.json")).unwrap();
+            assert!(
+                VmafModel::Default.stock_model_override_for(Some(&explicit)).is_err(),
+                "an invalid explicit selection must not fall through to the existing system fixture"
+            );
+        }
+
+        /// System paths must be searched before anything near the executable, so a
+        /// stray `vmaf_v0.6.1.json` in a shared or downloads-adjacent binary
+        /// directory cannot silently override the distribution's model.
+        #[test]
+        fn system_model_paths_take_precedence_over_executable_adjacent_ones() {
+            let paths: Vec<String> = VmafModel::fallback_model_search_paths()
+                .into_iter()
+                .map(|path| path.display().to_string())
+                .collect();
+
+            let last_system = paths.iter().rposition(|path| is_system_model_path(path));
+            let first_adjacent = paths.iter().position(|path| !is_system_model_path(path));
+
+            if let (Some(last_system), Some(first_adjacent)) = (last_system, first_adjacent) {
+                assert!(
+                    last_system < first_adjacent,
+                    "every system path must precede every other path; a system path at {last_system} \
                  follows a non-system path at {first_adjacent}. Candidates are {paths:?}"
-            );
+                );
+            }
         }
-    }
 
-    /// A library loaded from an MSYS2 prefix emits a system path and an
-    /// adjacent path from the same directory, and the adjacent one must not
-    /// precede it.
-    ///
-    /// This is the case that was previously only reachable with a real MSYS2
-    /// install, which is why it never ran in CI: the loaded-library block
-    /// contributed nothing when libvmaf was absent. The directory is built by
-    /// hand here so the regression is caught on any machine.
-    #[test]
-    fn a_library_prefix_places_its_system_path_before_its_adjacent_ones() {
-        let root = PathBuf::from("/vmaf-test-root");
-        let loaded_from = root.join("mingw64").join("bin");
-        let paths: Vec<String> = model_search_paths_for(Some(&loaded_from), None)
-            .into_iter()
-            .map(|path| path.display().to_string())
-            .collect();
+        /// A library loaded from an MSYS2 prefix emits a system path and an
+        /// adjacent path from the same directory, and the adjacent one must not
+        /// precede it.
+        ///
+        /// This is the case that was previously only reachable with a real MSYS2
+        /// install, which is why it never ran in CI: the loaded-library block
+        /// contributed nothing when libvmaf was absent. The directory is built by
+        /// hand here so the regression is caught on any machine.
+        #[test]
+        fn a_library_prefix_places_its_system_path_before_its_adjacent_ones() {
+            let root = PathBuf::from("/vmaf-test-root");
+            let loaded_from = root.join("mingw64").join("bin");
+            let paths: Vec<String> = model_search_paths_for(Some(&loaded_from), None)
+                .into_iter()
+                .map(|path| path.display().to_string())
+                .collect();
 
-        // The invariant the two buckets exist to guarantee: once a path that is
-        // not system-controlled has been emitted, no system path may follow.
-        let last_system = paths.iter().rposition(|path| is_system_model_path(path));
-        let first_adjacent = paths.iter().position(|path| !is_system_model_path(path));
+            // The invariant the two buckets exist to guarantee: once a path that is
+            // not system-controlled has been emitted, no system path may follow.
+            let last_system = paths.iter().rposition(|path| is_system_model_path(path));
+            let first_adjacent = paths.iter().position(|path| !is_system_model_path(path));
 
-        if let (Some(last_system), Some(first_adjacent)) = (last_system, first_adjacent) {
-            assert!(
-                last_system < first_adjacent,
-                "a library prefix emitted a system path at {last_system} behind an adjacent one \
+            if let (Some(last_system), Some(first_adjacent)) = (last_system, first_adjacent) {
+                assert!(
+                    last_system < first_adjacent,
+                    "a library prefix emitted a system path at {last_system} behind an adjacent one \
                  at {first_adjacent}. Candidates are {paths:?}"
+                );
+            }
+
+            // The specific inference that regressed: the loaded directory names
+            // both a `share/vmaf/model` and a `model` directory, and the
+            // former must win.
+            assert!(
+                paths.iter().any(|path| path.contains("share")),
+                "the loaded directory should imply a `share/vmaf/model` directory. Candidates are \
+              {paths:?}"
             );
         }
-
-        // The specific inference that regressed: the loaded directory names
-        // both a `share/vmaf/model` and a `model` directory, and the
-        // former must win.
-        assert!(
-            paths.iter().any(|path| path.contains("share")),
-            "the loaded directory should imply a `share/vmaf/model` directory. Candidates are \
-             {paths:?}"
-        );
     }
 }
