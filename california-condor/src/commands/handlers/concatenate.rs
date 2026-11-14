@@ -886,14 +886,17 @@ mod tests {
     /// container to probe, so both are reported and skipped instead of failing.
     #[test]
     fn apply_discard_skips_the_ivf_method() {
-        let test_video = get_test_video();
-        let temp = tempfile::tempdir().expect("temp directory");
-        let output = temp.path().join("out.mkv");
-        let temp_abs = path_abs::PathAbs::new(temp.path())
-            .expect("path_abs should succeed")
-            .as_path()
-            .to_path_buf();
-        let mut config = default_config(&test_video, &output, &temp_abs);
+        let root = std::env::temp_dir().join("condor-ivf-discard-model-only");
+        let test_video = crate::test_helpers::TestVideo {
+            path: root.join("not-opened-input.mkv"),
+            width: 2,
+            height: 2,
+            frames: 2,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![],
+        };
+        let mut config = default_config(&test_video, &root.join("out.mkv"), &root);
         config.condor.sequence_config.scene_concatenator.method = ConcatMethod::Ivf;
 
         apply_discard(&mut config, &[DiscardCategory::Audio])

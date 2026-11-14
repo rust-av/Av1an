@@ -12,7 +12,6 @@ use super::{
     Commands, ConcatenationMethod, CondorCli, DecoderMethod, DiscardCategory, EncoderMethod,
     QualityMetric, QualityProfile, SceneDetectionMethod,
 };
-use crate::test_helpers::get_test_video;
 
 mod cli_parser {
     use super::*;
@@ -137,16 +136,12 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
-            let test_video = get_test_video();
-            let temp = tempfile::tempdir().expect("temp directory");
-            let output = temp.path().join("out.mkv");
-
+        fn init_with_input_and_output_parses_init_command() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
-                test_video.path.to_str().expect("test_video path is valid"),
-                output.to_str().expect("output path is valid"),
+                "./not-opened-input.mkv",
+                "./out.mkv",
             ]);
             assert_matches!(
                 result,
@@ -177,24 +172,18 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_optional_flags() {
-            let test_video = get_test_video();
-            let temp = tempfile::tempdir().expect("temp directory");
-            let output = temp.path().join("out.mkv");
-            let config_path = temp.path().join("condor.json");
-            let logs_path = temp.path().join("condor.log");
-
+        fn init_with_paths_encoder_workers_noise_and_global_paths_parses() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--config-file",
-                config_path.to_str().expect("config path is valid"),
+                "./condor.json",
                 "--temp",
-                temp.path().to_str().expect("temp path is valid"),
+                "./not-opened-work",
                 "--logs",
-                logs_path.to_str().expect("log path is valid"),
+                "./condor.log",
                 "init",
-                test_video.path.to_str().expect("test_video path is valid"),
-                output.to_str().expect("output path is valid"),
+                "./not-opened-input.mkv",
+                "./out.mkv",
                 "--encoder",
                 "x264",
                 "--workers",
@@ -217,14 +206,8 @@ mod cli_parser {
         /// carries `info`/`set`/`reset`; the missing one is reported by the
         /// command itself (see `handlers::init::require_paths`).
         #[test]
-        fn without_output() {
-            let test_video = get_test_video();
-
-            let result = CondorCli::try_parse_from([
-                "condor",
-                "init",
-                test_video.path.to_str().expect("test_video path is valid"),
-            ]);
+        fn init_with_input_only_parses_with_output_unset() {
+            let result = CondorCli::try_parse_from(["condor", "init", "./not-opened-input.mkv"]);
             assert_matches!(
                 result,
                 Ok(CondorCli {
@@ -241,16 +224,12 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_disable_color_data() {
-            let test_video = get_test_video();
-            let temp = tempfile::tempdir().expect("temp directory");
-            let output = temp.path().join("out.mkv");
-
+        fn init_disable_color_data_parses_as_true() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
-                test_video.path.to_str().expect("test_video path is valid"),
-                output.to_str().expect("output path is valid"),
+                "./not-opened-input.mkv",
+                "./out.mkv",
                 "--disable-color-data",
             ]);
             assert_matches!(
@@ -318,16 +297,12 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_discard() {
-            let test_video = get_test_video();
-            let temp = tempfile::tempdir().expect("temp directory");
-            let output = temp.path().join("out.mkv");
-
+        fn init_comma_delimited_discard_parses_audio_and_subtitle_in_order() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
-                test_video.path.to_str().expect("test_video path is valid"),
-                output.to_str().expect("output path is valid"),
+                "./not-opened-input.mkv",
+                "./out.mkv",
                 "--discard",
                 "audio,subtitle",
             ]);
@@ -352,8 +327,8 @@ mod cli_parser {
             }) = CondorCli::try_parse_from([
                 "condor",
                 "init",
-                test_video.path.to_str().expect("test_video path is valid"),
-                output.to_str().expect("output path is valid"),
+                "./not-opened-input.mkv",
+                "./out.mkv",
                 "--discard",
                 "audio,subtitle",
             ]) {
@@ -386,13 +361,11 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
-            let test_video = get_test_video();
-
+        fn root_input_and_output_parse_without_subcommand() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--input",
-                test_video.path.to_str().expect("test_video path is valid"),
+                "./not-opened-input.mkv",
                 "--output",
                 "./out.mkv",
             ]);
@@ -414,14 +387,8 @@ mod cli_parser {
         }
 
         #[test]
-        fn without_output() {
-            let test_video = get_test_video();
-
-            let result = CondorCli::try_parse_from([
-                "condor",
-                "--input",
-                test_video.path.to_str().expect("test_video path exists"),
-            ]);
+        fn root_input_without_output_parses_without_subcommand() {
+            let result = CondorCli::try_parse_from(["condor", "--input", "./not-opened-input.mkv"]);
             assert_matches!(
                 result,
                 Ok(CondorCli { command: None, .. }),
@@ -440,13 +407,11 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_ffmpeg_filter() {
-            let test_video = get_test_video();
-
+        fn root_ffmpeg_filter_parses_as_present() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--input",
-                test_video.path.to_str().expect("test_video path is valid"),
+                "./not-opened-input.mkv",
                 "--output",
                 "./out.mkv",
                 "--ffmpeg-filter",
@@ -464,13 +429,11 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_disable_color_data() {
-            let test_video = get_test_video();
-
+        fn root_disable_color_data_parses_as_true() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--input",
-                test_video.path.to_str().expect("test_video path is valid"),
+                "./not-opened-input.mkv",
                 "--output",
                 "./out.mkv",
                 "--disable-color-data",

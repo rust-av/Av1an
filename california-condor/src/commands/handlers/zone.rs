@@ -128,14 +128,17 @@ mod tests {
 
     #[test]
     fn configure_zoner_preserves_requested_executable() {
-        let test_video = get_test_video();
-        let temp = tempfile::tempdir().expect("temp directory");
-        let temp_abs = path_abs::PathAbs::new(temp.path())
-            .expect("path_abs should succeed")
-            .as_path()
-            .to_path_buf();
-        let mut configuration =
-            default_config(&test_video, &temp.path().join("out.mkv"), &temp_abs);
+        let root = std::env::temp_dir().join("condor-zone-executable-model-only");
+        let test_video = crate::test_helpers::TestVideo {
+            path: root.join("not-opened-input.mkv"),
+            width: 2,
+            height: 2,
+            frames: 240,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![],
+        };
+        let mut configuration = default_config(&test_video, &root.join("out.mkv"), &root);
         let binary = PathBuf::from("missing-zone-encoder");
 
         configure_zoner(
