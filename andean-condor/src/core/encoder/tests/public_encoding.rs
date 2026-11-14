@@ -51,7 +51,7 @@ fn bounded(case: &str) {
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("fixtures/fake_encoder.rs"),
+        include_str!("../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("watchdog source");
     crate::core::encoder::tests::support::run_bounded(
@@ -342,7 +342,7 @@ fi
         let root = temp.path();
         fs::write(
             root.join("watchdog.rs"),
-            include_str!("fixtures/fake_encoder.rs"),
+            include_str!("../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
         )
         .expect("watchdog source");
         crate::core::encoder::tests::support::run_bounded(

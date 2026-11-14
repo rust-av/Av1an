@@ -38,7 +38,7 @@ fn public_stream_failures_retain_primary_and_secondary_causes() {
     let root = dir.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("supervisor source");
     let compiled = Command::new("rustc")

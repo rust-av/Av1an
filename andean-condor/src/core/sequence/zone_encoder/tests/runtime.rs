@@ -31,7 +31,7 @@ fn native_probe_parity(bases: &[&str]) {
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("existing watchdog");
     let compiled = Command::new("rustc")
@@ -580,7 +580,7 @@ fn sequence_failures_report_status_and_cleanup_owned_outputs() {
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("watchdog source");
     let compiled = Command::new("rustc")

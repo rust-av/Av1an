@@ -98,7 +98,7 @@ fn index_publication_validates_artifacts_and_cleans_owned_processes() {
     let dir = tempfile::tempdir().expect("fixture");
     fs::write(
         dir.path().join("fake.rs"),
-        include_str!("../../../encoder/tests/fixtures/lifecycle_process.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/lifecycle_process.rs"),
     )
     .expect("fixture source");
     let status = Command::new("rustc")

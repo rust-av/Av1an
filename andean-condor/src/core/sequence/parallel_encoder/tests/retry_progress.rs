@@ -184,7 +184,7 @@ fn encoded_probe_rate_preserves_bits_per_second() {
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("supervisor");
     assert!(
@@ -541,7 +541,7 @@ fn retries_respect_attempt_budget_and_cleanup_failed_outputs() {
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("supervisor");
     assert!(
@@ -666,7 +666,7 @@ fn progress_credits_committed_frames_without_retry_inflation() {
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("supervisor");
     assert!(

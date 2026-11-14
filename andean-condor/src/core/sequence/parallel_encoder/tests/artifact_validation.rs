@@ -45,7 +45,7 @@ case "$ENCODER_FIXTURE_CASE" in artifact-validation-native-status|artifact-valid
         let root = dir.path();
         fs::write(
             root.join("watchdog.rs"),
-            include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+            include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
         )
         .expect("supervisor");
         assert!(
@@ -729,7 +729,7 @@ exit "$status"
         let dir = tempfile::tempdir().expect("fixture");
         fs::write(
             dir.path().join("watchdog.rs"),
-            include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+            include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
         )
         .expect("supervisor");
         assert!(

@@ -254,7 +254,7 @@ fn dispatch_cancellation_stops_admission_and_joins_workers() {
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("watchdog");
     let compiled = Command::new("rustc")

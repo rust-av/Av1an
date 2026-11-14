@@ -24,7 +24,7 @@ fn scene_cancellation_reaps_owned_processes_and_preserves_outputs() {
     let dir = tempfile::tempdir().expect("fixture");
     fs::write(
         dir.path().join("fake.rs"),
-        include_str!("fixtures/lifecycle_process.rs"),
+        include_str!("../../../../tests/core/encoder/fixtures/lifecycle_process.rs"),
     )
     .expect("source");
     crate::core::encoder::tests::support::run_bounded(
@@ -133,7 +133,7 @@ fn forced_cancellation_with_full_producer_retains_raw_diagnostics() {
     let root = dir.path();
     fs::write(
         root.join("fake.rs"),
-        include_str!("fixtures/lifecycle_process.rs"),
+        include_str!("../../../../tests/core/encoder/fixtures/lifecycle_process.rs"),
     )
     .expect("source");
     crate::core::encoder::tests::support::run_bounded(

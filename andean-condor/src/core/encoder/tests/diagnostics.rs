@@ -78,7 +78,7 @@ fn run_diagnostics_cases(cases: &[&str]) {
     let root = temp.path();
     fs::write(
         root.join("fake.rs"),
-        include_str!("fixtures/fake_encoder.rs"),
+        include_str!("../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
     )
     .expect("fixture source");
     crate::core::encoder::tests::support::run_bounded(

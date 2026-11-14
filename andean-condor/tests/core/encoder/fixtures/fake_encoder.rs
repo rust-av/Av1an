@@ -1,4 +1,4 @@
-// Compiled as a finite fake encoder by diagnostics tests, not a native codec acceptance test.
+// Compiled as a finite fake encoder by process tests, not a native codec acceptance test.
 use std::{
     fs,
     fs::OpenOptions,

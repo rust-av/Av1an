@@ -21,7 +21,7 @@ pub(super) fn isolated(module: &str, test: &str, cases: &[&str], check: impl FnO
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../../src/core/encoder/tests/fixtures/fake_encoder.rs"),
+        include_str!("../../encoder/fixtures/fake_encoder.rs"),
     )
     .expect("watchdog source");
     let compiled = Command::new("rustc")
