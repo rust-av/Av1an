@@ -15,9 +15,7 @@ use assert_cmd::Command;
 ///
 /// # Panics
 ///
-/// If the command fails. `print_version` returns early on a VapourSynth
-/// error, so a machine that cannot build a VS core exits non-zero and has
-/// nothing to assert about — the caller skips instead.
+/// If the command fails, including when VapourSynth cannot build a core.
 fn version_output(extra_args: &[&str]) -> String {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
     let mut cmd: Command = condor_cmd(&temp);
@@ -84,7 +82,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn help_and_version_report_av1an_1_0_0() {
+    fn help_reports_av1an_usage_identity() {
         let temp = tempfile::tempdir().expect("failed to create temp dir");
         let help = condor_cmd(&temp).arg("--help").assert().success();
         let help = String::from_utf8_lossy(&help.get_output().stdout);
@@ -92,7 +90,10 @@ mod tests {
             help.contains("Usage: av1an"),
             "unexpected CLI identity:\n{help}"
         );
+    }
 
+    #[test]
+    fn version_output_starts_with_one_point_zero_point_zero() {
         let version = strip_ansi(&version_output(&[]));
         assert!(
             version.starts_with("1.0.0"),
@@ -123,7 +124,7 @@ mod tests {
     /// An absent library must never carry a version or detail suffix, since
     /// there is nothing loaded to describe.
     #[test]
-    fn an_absent_library_reports_no_version() {
+    fn absent_metric_library_rows_do_not_claim_a_version_or_details() {
         let output = strip_ansi(&version_output(&["--verbose"]));
 
         for line in metric_library_section(&output).lines() {
@@ -143,22 +144,24 @@ mod tests {
         }
     }
 
-    /// Under `--verbose`, a library that loaded reports its version, plus the
-    /// details that explain how it will behave.
+    /// Only loaded libraries have backend details to report.
     #[test]
-    fn verbose_reports_version_and_details_for_loaded_libraries() {
+    fn verbose_loaded_libvship_reports_backend_detail() {
         let output = strip_ansi(&version_output(&["--verbose"]));
         let section = metric_library_section(&output);
 
-        // Each of these is knowable for any loaded library, so they assert only
-        // on a machine that actually has the library.
         if row_reports_available(&output, "libvship") {
             assert!(
                 section.contains("backend:"),
                 "a loaded libvship reports its compute backend under --verbose, got:\n{section}"
             );
         }
+    }
 
+    #[test]
+    fn verbose_loaded_libvmaf_reports_cuda_support_detail() {
+        let output = strip_ansi(&version_output(&["--verbose"]));
+        let section = metric_library_section(&output);
         if row_reports_available(&output, "libvmaf") {
             assert!(
                 section.contains("cuda"),
@@ -175,7 +178,7 @@ mod tests {
     /// runs it. That needs no new dependency: `andean-condor` is already a
     /// dev-time dependency and re-exports the same probe.
     #[test]
-    fn verbose_lists_every_compute_device_with_its_index() {
+    fn verbose_lists_each_enumerated_libvship_device_index_and_name() {
         let output = strip_ansi(&version_output(&["--verbose"]));
         let section = metric_library_section(&output);
 
@@ -187,7 +190,7 @@ mod tests {
 
         if devices.is_empty() {
             // Nothing to report means nothing to assert; the absence of a
-            // table is covered by `exactly_one_device_is_marked_default`.
+            // table is covered by `device_table_marks_one_default_or_none_without_devices`.
             return;
         }
 
@@ -216,7 +219,7 @@ mod tests {
     /// is actually listed -- a default pointing at an absent device would send
     /// a user to configure something unusable.
     #[test]
-    fn exactly_one_device_is_marked_default() {
+    fn device_table_marks_one_default_or_none_without_devices() {
         let output = strip_ansi(&version_output(&["--verbose"]));
         let section = metric_library_section(&output);
 
@@ -238,7 +241,7 @@ mod tests {
     /// The VapourSynth plugin table must still be printed: the metric libraries
     /// are an addition to it, not a replacement.
     #[test]
-    fn the_existing_sections_are_still_printed() {
+    fn version_report_includes_vapoursynth_plugin_and_encoder_sections() {
         let output = strip_ansi(&version_output(&[]));
 
         for header in ["VapourSynth Plugins Installed", "Encoders Installed"] {
