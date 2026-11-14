@@ -250,7 +250,7 @@ fn actual_rate_child() {
     fs::write(root.join("executed"), case).expect("handshake");
     let mut input = if path == "native" {
         // The real FFMS2 source has 96 frames; repeated selections still encode 240 frames.
-        shutdown::input(&root, true)
+        shutdown::internal_integration::input(&root, true)
     } else {
         let script = root.join("source.vpy");
         fs::write(&script, "from vapoursynth import core,YUV420P8\ncore.std.BlankClip(width=64,height=64,length=240,format=YUV420P8,fpsnum=24,fpsden=1).set_output()\n").expect("source");
@@ -809,7 +809,7 @@ fn retry_progress_child() {
         })
         .expect("real nonstream source")
     } else {
-        shutdown::input(&root, path == "native")
+        shutdown::internal_integration::input(&root, path == "native")
     };
     let index_before = fs::read(root.join("native.ffindex")).ok();
     let scenes = root.join("scenes");

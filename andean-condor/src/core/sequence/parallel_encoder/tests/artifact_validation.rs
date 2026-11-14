@@ -214,7 +214,7 @@ esac
         fs::write(root.join("encoder"), ENCODER).expect("encoder");
         fs::set_permissions(root.join("encoder"), fs::Permissions::from_mode(0o755))
             .expect("executable");
-        let input = shutdown::input(&root, path == "native");
+        let input = shutdown::internal_integration::input(&root, path == "native");
         let index_before = fs::read(root.join("native.ffindex")).ok();
         let scenes = root.join("scenes");
         fs::create_dir_all(&scenes).expect("scenes");
@@ -864,7 +864,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
         if case.starts_with("worker-") {
             encoder.set_ffmpeg_filter(Some("select=not(mod(n\\,2))".into()));
         }
-        let input = shutdown::input(&root, case != "observer-vs");
+        let input = shutdown::internal_integration::input(&root, case != "observer-vs");
         let scenes_dir = root.join("scenes");
         fs::create_dir_all(scenes_dir.join("Benchmarker")).expect("scratch");
         fs::write(scenes_dir.join("Benchmarker/sentinel"), "caller-owned")

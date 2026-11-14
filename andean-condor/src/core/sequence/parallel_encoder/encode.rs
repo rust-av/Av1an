@@ -77,7 +77,7 @@ pub(super) fn finalize_scene(
 ) -> Result<()> {
     if outcome.usable {
         #[cfg(all(test, target_os = "linux"))]
-        super::tests::shutdown::fault("size", progress.scene())?;
+        super::tests::shutdown::internal_integration::fault("size", progress.scene())?;
         super::artifact::protect_existing(output)?;
         fs::rename(outcome.temp_output, output)?;
         #[cfg(all(test, target_os = "linux"))]
@@ -103,7 +103,9 @@ pub(super) fn consume_frames(
     window: usize,
 ) -> Result<EncoderResult> {
     #[cfg(all(test, target_os = "linux"))]
-    if let Some(result) = super::tests::dispatch::consume(task, &frames, temp, stop) {
+    if let Some(result) =
+        super::tests::dispatch::internal_integration::consume(task, &frames, temp, stop)
+    {
         return result;
     }
     let cancellation = &stop.cancellation.active();
@@ -115,14 +117,17 @@ pub(super) fn consume_frames(
                 &format!("Scene {} progress relay", task.original_index),
                 || {
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::shutdown::fault("relay", task.original_index)?;
+                    super::tests::shutdown::internal_integration::fault(
+                        "relay",
+                        task.original_index,
+                    )?;
                     relay_progress(rx, progress)
                 },
             )
         });
         let encoded = stop.attempt(&format!("Scene {} encoder", task.original_index), || {
             #[cfg(all(test, target_os = "linux"))]
-            super::tests::shutdown::fault("worker", task.original_index)?;
+            super::tests::shutdown::internal_integration::fault("worker", task.original_index)?;
             let result = task
                 .encoder
                 // encode_attempts retains the exclusive TempDir through this call.
@@ -135,7 +140,7 @@ pub(super) fn consume_frames(
                     }
                 });
             #[cfg(all(test, target_os = "linux"))]
-            super::tests::dispatch::consumer_closed("encoder");
+            super::tests::dispatch::internal_integration::consumer_closed("encoder");
             result
         });
         let filtered = filter.as_mut().map_or(Ok(()), |stage| stage.check()).map_err(|err| {
@@ -145,7 +150,7 @@ pub(super) fn consume_frames(
             ))
         });
         #[cfg(all(test, target_os = "linux"))]
-        super::tests::dispatch::consumer_closed("filter");
+        super::tests::dispatch::internal_integration::consumer_closed("filter");
         let relayed = relay.join().unwrap_or_else(|_| {
             Err(anyhow::anyhow!(
                 "Scene {} progress relay panicked",
@@ -534,7 +539,7 @@ impl ParallelEncoder {
                 let finished = Arc::clone(&stream.finished_scenes);
                 handles.push(scope.spawn(move || stop.catch_panic(&format!("Parallel worker {worker}"), || {
                     #[cfg(all(test, target_os = "linux"))]
-                    let _worker_count = super::tests::dispatch::worker_started();
+                    let _worker_count = super::tests::dispatch::internal_integration::worker_started();
                     let mut done = Vec::new();
                     loop {
                         let (task, frames_rx, _permit, decoded) = crossbeam_channel::select! {
@@ -542,14 +547,14 @@ impl ParallelEncoder {
                             recv(jobs_rx) -> job => match job { Ok(job) => job, Err(_) => break },
                         };
                         #[cfg(all(test, target_os = "linux"))]
-                        super::tests::dispatch::worker_received();
+                        super::tests::dispatch::internal_integration::worker_received();
                         if stop.stopped(cancelled) { break; }
                         #[cfg(all(test, target_os = "linux"))]
-                        super::tests::dispatch::worker_admitted();
+                        super::tests::dispatch::internal_integration::worker_admitted();
                         let result = stop.catch(&format!("Scene {} worker", task.original_index), || {
                             let mut guard = stop.guard();
                             #[cfg(all(test, target_os = "linux"))]
-                            super::tests::shutdown::fault("gate", task.original_index)?;
+                            super::tests::shutdown::internal_integration::fault("gate", task.original_index)?;
                             debug!("Encoding Scene {}", task.original_index);
                             let started = std::time::SystemTime::now();
                              let mut direct = Some(frames_rx);
@@ -594,14 +599,14 @@ impl ParallelEncoder {
                             Ok(Some(result))
                         });
                         #[cfg(all(test, target_os = "linux"))]
-                        if result.is_err() { super::tests::shutdown::collected_error(); }
+                        if result.is_err() { super::tests::shutdown::internal_integration::collected_error(); }
                         if let Some(result) = result? { done.push((task.index, result)); }
                     }
                     Ok(done)
                 })));
             }
             #[cfg(all(test, target_os = "linux"))]
-            if tasks.len() > 1 { super::tests::shutdown::fault("schedule", 7)?; }
+            if tasks.len() > 1 { super::tests::shutdown::internal_integration::fault("schedule", 7)?; }
             Ok(())
             });
             // Callback errors stop admission immediately, but remain secondary
@@ -619,7 +624,7 @@ impl ParallelEncoder {
             let scheduled = stop.catch("Scene decoding/persistence", || {
                 for task in &tasks {
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::dispatch::before_admission(&stop, task);
+                    super::tests::dispatch::internal_integration::before_admission(&stop, task);
                     // Reserve a real worker before creating/decoding its input.
                     // The worker owns this permit through completion, never reacquires it.
                     let Some(permit) = stop.workers.acquire_owned_cancel(&cancelled) else {
@@ -642,15 +647,15 @@ impl ParallelEncoder {
                         },
                     }
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::dispatch::after_handoff(&cancelled.legacy_flag());
+                    super::tests::dispatch::internal_integration::after_handoff(&cancelled.legacy_flag());
                     // The worker owns the stop check after handoff. If it has
                     // started, graceful cancellation must still feed its input.
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::shutdown::fault("header", task.original_index)?;
+                    super::tests::shutdown::internal_integration::fault("header", task.original_index)?;
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::dispatch::header(task);
+                    super::tests::dispatch::internal_integration::header(task);
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::dispatch::before_header();
+                    super::tests::dispatch::internal_integration::before_header();
                     let header = input.y4m_header(Some(task.frame_indices.len()))?;
                     if let Err(err) = frames_tx.send(Cursor::new(header.into_bytes())) {
                         if stop.stopped(&cancelled) {
@@ -660,12 +665,12 @@ impl ParallelEncoder {
                         return Err(err.into());
                     }
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::shutdown::fault("decode", task.original_index)?;
+                    super::tests::shutdown::internal_integration::fault("decode", task.original_index)?;
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::dispatch::before_frames(&stop);
+                    super::tests::dispatch::internal_integration::before_frames(&stop);
                     let produced = input.y4m_frames_cancel(frames_tx.clone(), &task.frame_indices, &cancelled);
                     #[cfg(all(test, target_os = "linux"))]
-                    super::tests::dispatch::producer_returned(&produced);
+                    super::tests::dispatch::internal_integration::producer_returned(&produced);
                     if let Err(err) = produced {
                         if stop.stopped(&cancelled)
                             && err.is::<crossbeam_channel::SendError<Cursor<Vec<u8>>>>()
@@ -689,12 +694,12 @@ impl ParallelEncoder {
                 Ok(())
             });
             #[cfg(all(test, target_os = "linux"))]
-            super::tests::dispatch::scheduled_finished();
+            super::tests::dispatch::internal_integration::scheduled_finished();
             // EOF and admission closure precede every join, including decode or
             // callback failure. No pool-owned sender can keep a consumer alive.
             drop(jobs_tx);
             #[cfg(all(test, target_os = "linux"))]
-            super::tests::dispatch::before_joins();
+            super::tests::dispatch::internal_integration::before_joins();
             // The final batch can finish after decoding ends. Observe callback
             // failures before blocking on any still-active peer (as streaming does).
             while !stop.stopped(&cancelled)
@@ -745,7 +750,7 @@ impl ParallelEncoder {
             }
             if let Some(err) = frame_send_error { retain_error(&mut error, err); }
             #[cfg(all(test, target_os = "linux"))]
-            super::tests::shutdown::verify_pools(&stop, workers.into());
+            super::tests::shutdown::internal_integration::verify_pools(&stop, workers.into());
             scheduling.success();
             error.map_or_else(|| Ok(results), Err)
         }));

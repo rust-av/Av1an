@@ -98,7 +98,7 @@ impl ParallelEncoder {
                             let result = stop.catch(&format!("Streaming worker {worker}"), || {
                                 let mut guard = stop.guard();
                                 #[cfg(all(test, target_os = "linux"))]
-                                super::tests::shutdown::fault("open", 7)?;
+                                super::tests::shutdown::internal_integration::fault("open", 7)?;
                                 let mut reader = source.open()?;
                                 let mut done = Vec::new();
                                 while !stop.stopped(cancelled) {
@@ -157,7 +157,7 @@ impl ParallelEncoder {
                                                                         test,
                                                                         target_os = "linux"
                                                                     ))]
-                                                                    super::tests::shutdown::fault(
+                                                                    super::tests::shutdown::internal_integration::fault(
                                                                         "produce",
                                                                         task.original_index,
                                                                     )?;
@@ -276,7 +276,7 @@ impl ParallelEncoder {
                     }
                 }
                 #[cfg(all(test, target_os = "linux"))]
-                super::tests::shutdown::verify_pools(&stop, workers);
+                super::tests::shutdown::internal_integration::verify_pools(&stop, workers);
                 scheduling.success();
                 error.map_or_else(|| Ok(ordered), Err)
             })
