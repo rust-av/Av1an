@@ -10,4 +10,6 @@ mod plugin_parity;
 mod probe;
 mod temporal;
 #[cfg(test)]
+mod vmaf;
+#[cfg(test)]
 mod vship;
