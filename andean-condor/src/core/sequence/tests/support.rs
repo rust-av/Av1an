@@ -294,230 +294,255 @@ pub(in crate::core::sequence) mod native_scoring {
         }
     }
 
-    pub(in crate::core::sequence) fn native_consumers(engine: Engine) {
+    pub(in crate::core::sequence) fn native_consumers(engine: Engine, phase: &str) {
+        assert!(["sessions", "cancellation", "admission", "independent", "gaps"].contains(&phase));
         let prefix = if engine == Engine::Fmetrics { "f" } else { "v" };
-        for second in [[2, 3], [4, 5]] {
-            let scenes: &[&[usize]] = &[&[0, 1], &second];
-            let selected = [0, 1, second[0], second[1]];
-            for qc in [true, false] {
-                if qc != std::env::var("TEMPORAL_FIXTURE_SCOPE").unwrap().ends_with("-qc") {
-                    continue;
-                }
-                let distorted = if qc {
-                    vec![10, 20, 30, 40, 50, 60]
-                } else {
-                    vec![10, 20, second[0] as u8 * 10 + 10, second[1] as u8 * 10 + 10]
-                };
-                for disabled in [None, Some(false)] {
-                    let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
-                    let mut b = decoder(&distorted);
-                    let cancel = AtomicBool::new(false);
-                    let (tx, rx) = mpsc::channel();
-                    clear();
-                    let values = if qc {
-                        QualityCheck::score_native_scenes(
-                            engine,
-                            &mut a,
-                            &mut b,
-                            &metric(disabled),
-                            scenes,
-                            &tx,
-                            &cancel,
-                        )
-                    } else {
-                        TargetQuality::score_native_scenes(
-                            engine,
-                            &mut a,
-                            &mut b,
-                            &metric(disabled),
-                            scenes,
-                            &tx,
-                            &cancel,
-                        )
+        if phase == "sessions" {
+            for second in [[2, 3], [4, 5]] {
+                let scenes: &[&[usize]] = &[&[0, 1], &second];
+                let selected = [0, 1, second[0], second[1]];
+                for qc in [true, false] {
+                    if qc != std::env::var("TEMPORAL_FIXTURE_SCOPE").unwrap().ends_with("-qc") {
+                        continue;
                     }
-                    .unwrap();
-                    let expected = if second == [2, 3] {
-                        [31.0, 31372.0, 93.0, 94054.0]
+                    let distorted = if qc {
+                        vec![10, 20, 30, 40, 50, 60]
                     } else {
-                        [31.0, 31372.0, 155.0, 156736.0]
+                        vec![10, 20, second[0] as u8 * 10 + 10, second[1] as u8 * 10 + 10]
                     };
-                    assert_eq!(
-                        values, expected,
-                        "each scene is an independent prefix vector; QC={qc} {second:?}"
-                    );
-                    let log = calls();
-                    assert_eq!(
-                        log.lines().filter(|s| *s == format!("{prefix}c+")).count(),
-                        2,
-                        "{log}"
-                    );
-                    assert_eq!(
-                        log.lines().filter(|s| *s == format!("{prefix}c-")).count(),
-                        2,
-                        "{log}"
-                    );
-                    // Independently submitted scene sessions have identical prefixes.
-                    let mut standalone = Vec::new();
-                    for scene in scenes {
-                        let mut reference = decoder(&[1, 2, 3, 4, 5, 6]);
-                        let samples: Vec<_> = scene.iter().map(|i| (*i as u8 + 1) * 10).collect();
-                        let mut output = decoder(&samples);
-                        let values = if engine == Engine::Fmetrics {
-                            metrics::fmetrics::score_probed_frames(
-                                &mut reference,
-                                &mut output,
-                                &metric(disabled),
-                                scene,
-                                OutputIndexing::Compacted,
-                                None,
-                                |_, _| {},
-                            )
-                        } else {
-                            metrics::vship::score_probed_frames(
-                                &mut reference,
-                                &mut output,
-                                &metric(disabled),
-                                scene,
-                                OutputIndexing::Compacted,
-                                None,
-                                |_, _| {},
-                            )
-                        }
-                        .unwrap();
-                        standalone.extend(values);
-                    }
-                    assert_eq!(values, standalone);
-                    for (scene_index, scores) in values.as_chunks::<2>().0.iter().enumerate() {
-                        let final_score = expected[scene_index * 2 + 1];
-                        let mut model = metric(disabled);
-                        *model.target_range_mut() = (final_score - 0.5, final_score + 0.5);
-                        assert_eq!(
-                            model.calculate_score(ProbeStatistic::Mean, scores).expect("score"),
-                            final_score
-                        );
-                        assert!(model.score_within_target(
-                            model.calculate_score(ProbeStatistic::Mean, scores).expect("score")
-                        ));
-                        assert!(!model.score_within_target(
-                            ProbeStatistic::Mean.calculate(scores).expect("mean")
-                        ));
-                    }
-                    let progress: Vec<_> = rx.try_iter().collect();
-                    if qc {
-                        let events: Vec<_> = progress
-                            .into_iter()
-                            .map(|event| match event {
-                                SequenceStatus::Subprocess {
-                                    parent:
-                                        Status::Processing {
-                                            completion:
-                                                SequenceCompletion::Custom {
-                                                    completed, total, ..
-                                                },
-                                            ..
-                                        },
-                                    child:
-                                        Status::Processing {
-                                            completion:
-                                                SequenceCompletion::FrameScore { frame, score },
-                                            ..
-                                        },
-                                } => (completed, total, frame, score),
-                                other => panic!("unexpected QC progress {other:?}"),
-                            })
-                            .collect();
-                        assert_eq!(
-                            events,
-                            (0..4)
-                                .map(|i| ((i + 1) as f64, 4.0, selected[i] as u64, expected[i]))
-                                .collect::<Vec<_>>()
-                        );
-                    } else {
-                        let counts: Vec<_> = progress
-                            .into_iter()
-                            .map(|event| match event {
-                                SequenceStatus::Whole(Status::Processing {
-                                    completion: SequenceCompletion::Frames { completed, total },
-                                    ..
-                                }) => (completed, total),
-                                other => panic!("unexpected TQ progress {other:?}"),
-                            })
-                            .collect();
-                        assert_eq!(counts, vec![(0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]);
-                    }
-                    // A direct clip-wide API intentionally still has one accumulating session.
-                    if second == [2, 3] {
-                        clear();
+                    for disabled in [None, Some(false)] {
                         let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
                         let mut b = decoder(&distorted);
-                        let direct = if engine == Engine::Fmetrics {
-                            metrics::fmetrics::score_probed_frames(
+                        let cancel = AtomicBool::new(false);
+                        let (tx, rx) = mpsc::channel();
+                        clear();
+                        let values = if qc {
+                            QualityCheck::score_native_scenes(
+                                engine,
                                 &mut a,
                                 &mut b,
                                 &metric(disabled),
-                                &selected,
-                                OutputIndexing::Aligned,
-                                None,
-                                |_, _| {},
+                                scenes,
+                                &tx,
+                                &cancel,
                             )
                         } else {
-                            metrics::vship::score_probed_frames(
+                            TargetQuality::score_native_scenes(
+                                engine,
                                 &mut a,
                                 &mut b,
                                 &metric(disabled),
-                                &selected,
-                                OutputIndexing::Aligned,
-                                None,
-                                |_, _| {},
+                                scenes,
+                                &tx,
+                                &cancel,
                             )
                         }
                         .unwrap();
-                        assert_ne!(direct[2], values[2]);
+                        let expected = if second == [2, 3] {
+                            [31.0, 31372.0, 93.0, 94054.0]
+                        } else {
+                            [31.0, 31372.0, 155.0, 156736.0]
+                        };
                         assert_eq!(
-                            calls().lines().filter(|s| *s == format!("{prefix}c+")).count(),
-                            1
+                            values, expected,
+                            "each scene is an independent prefix vector; QC={qc} {second:?}"
                         );
+                        let log = calls();
+                        assert_eq!(
+                            log.lines().filter(|s| *s == format!("{prefix}c+")).count(),
+                            2,
+                            "{log}"
+                        );
+                        assert_eq!(
+                            log.lines().filter(|s| *s == format!("{prefix}c-")).count(),
+                            2,
+                            "{log}"
+                        );
+                        // Independently submitted scene sessions have identical prefixes.
+                        let mut standalone = Vec::new();
+                        for scene in scenes {
+                            let mut reference = decoder(&[1, 2, 3, 4, 5, 6]);
+                            let samples: Vec<_> =
+                                scene.iter().map(|i| (*i as u8 + 1) * 10).collect();
+                            let mut output = decoder(&samples);
+                            let values = if engine == Engine::Fmetrics {
+                                metrics::fmetrics::score_probed_frames(
+                                    &mut reference,
+                                    &mut output,
+                                    &metric(disabled),
+                                    scene,
+                                    OutputIndexing::Compacted,
+                                    None,
+                                    |_, _| {},
+                                )
+                            } else {
+                                metrics::vship::score_probed_frames(
+                                    &mut reference,
+                                    &mut output,
+                                    &metric(disabled),
+                                    scene,
+                                    OutputIndexing::Compacted,
+                                    None,
+                                    |_, _| {},
+                                )
+                            }
+                            .unwrap();
+                            standalone.extend(values);
+                        }
+                        assert_eq!(values, standalone);
+                        for (scene_index, scores) in values.as_chunks::<2>().0.iter().enumerate() {
+                            let final_score = expected[scene_index * 2 + 1];
+                            let mut model = metric(disabled);
+                            *model.target_range_mut() = (final_score - 0.5, final_score + 0.5);
+                            assert_eq!(
+                                model.calculate_score(ProbeStatistic::Mean, scores).expect("score"),
+                                final_score
+                            );
+                            assert!(model.score_within_target(
+                                model.calculate_score(ProbeStatistic::Mean, scores).expect("score")
+                            ));
+                            assert!(!model.score_within_target(
+                                ProbeStatistic::Mean.calculate(scores).expect("mean")
+                            ));
+                        }
+                        let progress: Vec<_> = rx.try_iter().collect();
+                        if qc {
+                            let events: Vec<_> = progress
+                                .into_iter()
+                                .map(|event| match event {
+                                    SequenceStatus::Subprocess {
+                                        parent:
+                                            Status::Processing {
+                                                completion:
+                                                    SequenceCompletion::Custom {
+                                                        completed, total, ..
+                                                    },
+                                                ..
+                                            },
+                                        child:
+                                            Status::Processing {
+                                                completion:
+                                                    SequenceCompletion::FrameScore { frame, score },
+                                                ..
+                                            },
+                                    } => (completed, total, frame, score),
+                                    other => panic!("unexpected QC progress {other:?}"),
+                                })
+                                .collect();
+                            assert_eq!(
+                                events,
+                                (0..4)
+                                    .map(|i| ((i + 1) as f64, 4.0, selected[i] as u64, expected[i]))
+                                    .collect::<Vec<_>>()
+                            );
+                        } else {
+                            let counts: Vec<_> = progress
+                                .into_iter()
+                                .map(|event| match event {
+                                    SequenceStatus::Whole(Status::Processing {
+                                        completion: SequenceCompletion::Frames { completed, total },
+                                        ..
+                                    }) => (completed, total),
+                                    other => panic!("unexpected TQ progress {other:?}"),
+                                })
+                                .collect();
+                            assert_eq!(counts, vec![(0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]);
+                        }
+                        // A direct clip-wide API intentionally still has one accumulating session.
+                        if second == [2, 3] {
+                            clear();
+                            let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
+                            let mut b = decoder(&distorted);
+                            let direct = if engine == Engine::Fmetrics {
+                                metrics::fmetrics::score_probed_frames(
+                                    &mut a,
+                                    &mut b,
+                                    &metric(disabled),
+                                    &selected,
+                                    OutputIndexing::Aligned,
+                                    None,
+                                    |_, _| {},
+                                )
+                            } else {
+                                metrics::vship::score_probed_frames(
+                                    &mut a,
+                                    &mut b,
+                                    &metric(disabled),
+                                    &selected,
+                                    OutputIndexing::Aligned,
+                                    None,
+                                    |_, _| {},
+                                )
+                            }
+                            .unwrap();
+                            assert_ne!(direct[2], values[2]);
+                            assert_eq!(
+                                calls().lines().filter(|s| *s == format!("{prefix}c+")).count(),
+                                1
+                            );
+                        }
                     }
                 }
             }
         }
         // A callback cancellation must prevent both later frames and the next context.
-        for cancel_at in [0, 1] {
-            clear();
-            let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
-            let mut b = decoder(&[10, 20, 30, 40]);
-            let cancelled = Arc::new(AtomicBool::new(false));
-            let mut positions = Vec::new();
-            let result = metrics::score_scene_frames(
-                engine,
-                &mut a,
-                &mut b,
-                &metric(None),
-                &[&[0, 1], &[4, 5]],
-                OutputIndexing::Compacted,
-                Some(&cancelled),
-                |position, _| {
-                    positions.push(position);
-                    if position == cancel_at {
-                        cancelled.store(true, Ordering::Relaxed);
+        if phase == "cancellation" {
+            for cancel_at in [0, 1] {
+                clear();
+                let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
+                let mut b = decoder(&[10, 20, 30, 40]);
+                let cancelled = Arc::new(AtomicBool::new(false));
+                let mut positions = Vec::new();
+                let result = metrics::score_scene_frames(
+                    engine,
+                    &mut a,
+                    &mut b,
+                    &metric(None),
+                    &[&[0, 1], &[4, 5]],
+                    OutputIndexing::Compacted,
+                    Some(&cancelled),
+                    |position, _| {
+                        positions.push(position);
+                        if position == cancel_at {
+                            cancelled.store(true, Ordering::Relaxed);
+                        }
+                    },
+                );
+                let error = result.unwrap_err();
+                assert!(error.is::<metrics::probe::Cancelled>());
+                assert_eq!(positions, if cancel_at == 0 { vec![0] } else { vec![0, 1] });
+                assert_eq!(
+                    calls(),
+                    if cancel_at == 0 {
+                        format!("{prefix}c+\n{prefix}p\n{prefix}c-\n")
+                    } else {
+                        format!("{prefix}c+\n{prefix}p\n{prefix}p\n{prefix}c-\n")
                     }
-                },
-            );
-            let error = result.unwrap_err();
-            assert!(error.is::<metrics::probe::Cancelled>());
-            assert_eq!(positions, if cancel_at == 0 { vec![0] } else { vec![0, 1] });
-            assert_eq!(
-                calls(),
-                if cancel_at == 0 {
-                    format!("{prefix}c+\n{prefix}p\n{prefix}c-\n")
-                } else {
-                    format!("{prefix}c+\n{prefix}p\n{prefix}p\n{prefix}c-\n")
-                }
-            );
+                );
+            }
         }
-        for scenes in
-            [&[&[1, 0][..]][..], &[&[0, 1][..], &[1, 2][..]][..], &[&[usize::MAX][..]][..]]
-        {
+        if phase == "admission" {
+            for scenes in
+                [&[&[1, 0][..]][..], &[&[0, 1][..], &[1, 2][..]][..], &[&[usize::MAX][..]][..]]
+            {
+                clear();
+                let mut a = decoder(&[1]);
+                let mut b = decoder(&[10]);
+                assert!(
+                    metrics::score_scene_frames(
+                        engine,
+                        &mut a,
+                        &mut b,
+                        &metric(None),
+                        scenes,
+                        OutputIndexing::Compacted,
+                        None,
+                        |_, _| panic!("invalid scene scored")
+                    )
+                    .is_err()
+                );
+                assert_eq!(calls(), "");
+            }
             clear();
             let mut a = decoder(&[1]);
             let mut b = decoder(&[10]);
@@ -527,101 +552,89 @@ pub(in crate::core::sequence) mod native_scoring {
                     &mut a,
                     &mut b,
                     &metric(None),
-                    scenes,
+                    &[&[], &[]],
                     OutputIndexing::Compacted,
                     None,
-                    |_, _| panic!("invalid scene scored")
+                    |_, _| panic!("empty scene scored")
                 )
-                .is_err()
+                .unwrap()
+                .is_empty()
+            );
+            assert_eq!(calls(), "");
+            let cancelled = AtomicBool::new(true);
+            assert!(
+                metrics::score_scene_frames(
+                    engine,
+                    &mut a,
+                    &mut b,
+                    &metric(None),
+                    &[&[0]],
+                    OutputIndexing::Aligned,
+                    Some(&cancelled),
+                    |_, _| panic!("cancelled scene scored")
+                )
+                .unwrap_err()
+                .is::<metrics::probe::Cancelled>()
             );
             assert_eq!(calls(), "");
         }
-        clear();
-        let mut a = decoder(&[1]);
-        let mut b = decoder(&[10]);
-        assert!(
-            metrics::score_scene_frames(
+        // Independent-frame CVVDP keeps a single session and resets after each pair.
+        if phase == "independent" {
+            clear();
+            let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
+            let mut b = decoder(&[10, 20, 50, 60]);
+            let values = metrics::score_scene_frames(
                 engine,
                 &mut a,
                 &mut b,
-                &metric(None),
-                &[&[], &[]],
+                &metric(Some(true)),
+                &[&[0, 1], &[4, 5]],
                 OutputIndexing::Compacted,
                 None,
-                |_, _| panic!("empty scene scored")
+                |_, _| {},
             )
-            .unwrap()
-            .is_empty()
-        );
-        assert_eq!(calls(), "");
-        let cancelled = AtomicBool::new(true);
-        assert!(
-            metrics::score_scene_frames(
+            .unwrap();
+            assert_eq!(values, [31.0, 62.0, 155.0, 186.0]);
+            assert_eq!(
+                metric(Some(true))
+                    .calculate_score(ProbeStatistic::Mean, &values[..2])
+                    .expect("score"),
+                46.5
+            );
+            assert_eq!(
+                metric(Some(true))
+                    .calculate_score(ProbeStatistic::Mean, &values[2..])
+                    .expect("score"),
+                170.5
+            );
+            assert_eq!(
+                calls().lines().filter(|s| *s == format!("{prefix}c+")).count(),
+                1
+            );
+        }
+        // Within-scene gaps still use the temporal capability rules.
+        if phase == "gaps" {
+            clear();
+            let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
+            let mut b = decoder(&[10, 30, 50, 60]);
+            let values = metrics::score_scene_frames(
                 engine,
                 &mut a,
                 &mut b,
                 &metric(None),
-                &[&[0]],
-                OutputIndexing::Aligned,
-                Some(&cancelled),
-                |_, _| panic!("cancelled scene scored")
-            )
-            .unwrap_err()
-            .is::<metrics::probe::Cancelled>()
-        );
-        assert_eq!(calls(), "");
-        // Independent-frame CVVDP keeps a single session and resets after each pair.
-        let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
-        let mut b = decoder(&[10, 20, 50, 60]);
-        let values = metrics::score_scene_frames(
-            engine,
-            &mut a,
-            &mut b,
-            &metric(Some(true)),
-            &[&[0, 1], &[4, 5]],
-            OutputIndexing::Compacted,
-            None,
-            |_, _| {},
-        )
-        .unwrap();
-        assert_eq!(values, [31.0, 62.0, 155.0, 186.0]);
-        assert_eq!(
-            metric(Some(true))
-                .calculate_score(ProbeStatistic::Mean, &values[..2])
-                .expect("score"),
-            46.5
-        );
-        assert_eq!(
-            metric(Some(true))
-                .calculate_score(ProbeStatistic::Mean, &values[2..])
-                .expect("score"),
-            170.5
-        );
-        assert_eq!(
-            calls().lines().filter(|s| *s == format!("{prefix}c+")).count(),
-            1
-        );
-        // Within-scene gaps still use the temporal capability rules.
-        clear();
-        let mut a = decoder(&[1, 2, 3, 4, 5, 6]);
-        let mut b = decoder(&[10, 30, 50, 60]);
-        let values = metrics::score_scene_frames(
-            engine,
-            &mut a,
-            &mut b,
-            &metric(None),
-            &[&[0, 2], &[4, 5]],
-            OutputIndexing::Compacted,
-            None,
-            |_, _| {},
-        );
-        if engine == Engine::Fmetrics {
-            let error = values.unwrap_err();
-            assert!(format!("{error:#}").contains("history-only"), "{error:#}");
-            assert_eq!(calls(), "");
-        } else {
-            assert_eq!(values.unwrap(), [31.0, 403.0, 155.0, 156736.0]);
-            assert_eq!(calls(), "vc+\nvp\nvr\nvp\nvc-\nvc+\nvp\nvp\nvc-\n");
+                &[&[0, 2], &[4, 5]],
+                OutputIndexing::Compacted,
+                None,
+                |_, _| {},
+            );
+            if engine == Engine::Fmetrics {
+                let error = values.unwrap_err();
+                assert!(format!("{error:#}").contains("history-only"), "{error:#}");
+                assert_eq!(calls(), "");
+            } else {
+                assert_eq!(values.unwrap(), [31.0, 403.0, 155.0, 156736.0]);
+                assert_eq!(calls(), "vc+\nvp\nvr\nvp\nvc-\nvc+\nvp\nvp\nvc-\n");
+            }
         }
     }
 }

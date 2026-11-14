@@ -49,121 +49,78 @@ use std::{
     time::Duration,
 };
 
-#[test]
-fn native_scene_consumers() {
-    native_children(
-        "core::sequence::quality_check::tests::native_scoring::native_scene_consumers",
-        &[
-            ("scene-f-qc", ""),
-            ("scene-v-qc", ""),
-            ("scene-f-tq", ""),
-            ("scene-v-tq", ""),
-            ("scene-f-qc", "fp"),
-            ("scene-v-qc", "vp"),
-            ("scene-f-qc", "fp2"),
-            ("scene-v-qc", "vp2"),
-        ],
-        || {
-            let engine = if std::env::var("TEMPORAL_FIXTURE_SCOPE").unwrap().contains("-f-") {
-                Engine::Fmetrics
-            } else {
-                Engine::Vship
-            };
-            let failure = std::env::var("TEMPORAL_FIXTURE_FAIL").unwrap();
-            if failure.is_empty() {
-                native_consumers(engine);
-                sequential_decoders(engine);
-            } else {
-                native_failure(engine, &failure);
-            }
-        },
-    );
-}
-
-#[test]
-fn native_scene_final_reduction() {
-    native_children(
-        "core::sequence::quality_check::tests::native_scoring::native_scene_final_reduction",
-        &[("scene-f-qc", ""), ("scene-v-qc", ""), ("scene-f-tq", ""), ("scene-v-tq", "")],
-        || {
-            let engine = if std::env::var("TEMPORAL_FIXTURE_SCOPE").unwrap().contains("-f-") {
-                Engine::Fmetrics
-            } else {
-                Engine::Vship
-            };
-            native_consumers(engine);
-        },
-    );
-}
-
-pub(in crate::core::sequence) fn qc_native_caller(
-    test: &str,
-    measure: impl Fn(
-        &mut crate::core::input::Input,
-        &std::path::Path,
-        &crate::models::sequence::quality_check::QualityCheckConfig,
-        &[(usize, Vec<usize>)],
-        &mpsc::Sender<SequenceStatus>,
-        &AtomicBool,
-    ) -> anyhow::Result<bool>,
-) {
-    native_children(
-        test,
-        &[("scene-f-qc", "fp2"), ("scene-v-qc", "vp2")],
-        || {
-            use crate::models::input::{ImportMethod, Input as InputModel};
-            let source = y4m_fixture(&[32, 48, 64, 80, 96, 112]);
-            let output = y4m_fixture(&[40, 56, 72, 88, 104, 120]);
-            let config = crate::models::sequence::quality_check::QualityCheckConfig {
-                metric: metric(None),
-                ..Default::default()
-            };
-            for (cancel, closed) in [(false, false), (true, false), (false, true), (true, true)] {
-                let mut input = crate::core::input::Input::from_video(&InputModel::Video {
-                    path: source.path().to_owned(),
-                    import_method: ImportMethod::FFMS2 {
-                        index: None,
-                        cache_path: None,
-                    },
-                    filters: Vec::new(),
-                })
-                .unwrap();
-                let (tx, rx) = mpsc::channel();
-                let receiver = (!closed).then_some(rx);
-                clear();
-                let error = measure(
-                    &mut input,
-                    output.path(),
-                    &config,
-                    &[(0, vec![0, 1]), (1, vec![4, 5])],
-                    &tx,
-                    &AtomicBool::new(cancel),
-                )
-                .expect_err("partial failure/cancel cannot request a plugin fallback");
-                assert_eq!(error.is::<metrics::probe::Cancelled>(), cancel);
-                if !cancel {
-                    assert_native_failure(&error);
-                }
-                if let Some(receiver) = receiver {
-                    let events = receiver.try_iter().collect::<Vec<_>>();
-                    assert_eq!(events.len(), usize::from(!cancel));
+pub(in crate::core::sequence) mod native_caller {
+    use super::*;
+    pub(in crate::core::sequence) fn qc_native_caller(
+        test: &str,
+        cancel: bool,
+        measure: impl Fn(
+            &mut crate::core::input::Input,
+            &std::path::Path,
+            &crate::models::sequence::quality_check::QualityCheckConfig,
+            &[(usize, Vec<usize>)],
+            &mpsc::Sender<SequenceStatus>,
+            &AtomicBool,
+        ) -> anyhow::Result<bool>,
+    ) {
+        native_children(
+            test,
+            &[("scene-f-qc", "fp2"), ("scene-v-qc", "vp2")],
+            || {
+                use crate::models::input::{ImportMethod, Input as InputModel};
+                let source = y4m_fixture(&[32, 48, 64, 80, 96, 112]);
+                let output = y4m_fixture(&[40, 56, 72, 88, 104, 120]);
+                let config = crate::models::sequence::quality_check::QualityCheckConfig {
+                    metric: metric(None),
+                    ..Default::default()
+                };
+                for closed in [false, true] {
+                    let mut input = crate::core::input::Input::from_video(&InputModel::Video {
+                        path: source.path().to_owned(),
+                        import_method: ImportMethod::FFMS2 {
+                            index: None,
+                            cache_path: None,
+                        },
+                        filters: Vec::new(),
+                    })
+                    .unwrap();
+                    let (tx, rx) = mpsc::channel();
+                    let receiver = (!closed).then_some(rx);
+                    clear();
+                    let error = measure(
+                        &mut input,
+                        output.path(),
+                        &config,
+                        &[(0, vec![0, 1]), (1, vec![4, 5])],
+                        &tx,
+                        &AtomicBool::new(cancel),
+                    )
+                    .expect_err("partial failure/cancel cannot request a plugin fallback");
+                    assert_eq!(error.is::<metrics::probe::Cancelled>(), cancel);
                     if !cancel {
-                        assert!(matches!(
-                            &events[0],
-                            SequenceStatus::Subprocess {
-                                child: Status::Processing {
-                                    completion: SequenceCompletion::FrameScore { frame: 0, .. },
-                                    ..
-                                },
-                                ..
-                            }
-                        ));
+                        assert_native_failure(&error);
                     }
+                    if let Some(receiver) = receiver {
+                        let events = receiver.try_iter().collect::<Vec<_>>();
+                        assert_eq!(events.len(), usize::from(!cancel));
+                        if !cancel {
+                            assert!(matches!(
+                                &events[0],
+                                SequenceStatus::Subprocess {
+                                    child: Status::Processing {
+                                        completion: SequenceCompletion::FrameScore { frame: 0, .. },
+                                        ..
+                                    },
+                                    ..
+                                }
+                            ));
+                        }
+                    }
+                    assert_native_calls(cancel);
                 }
-                assert_native_calls(cancel);
-            }
-        },
-    );
+            },
+        );
+    }
 }
 
 #[test]

@@ -295,15 +295,34 @@ fn live_scene_quality_producer_uses_final_prefix() {
 
 use super::*;
 
-#[test]
-fn qc_native_caller_failure_and_cancel_do_not_fallback() {
-    native_scoring::qc_native_caller(
-        "core::sequence::quality_check::tests::qc_native_caller_failure_and_cancel_do_not_fallback",
-        |input, output, config, scenes, progress, cancelled| {
-            QualityCheck::measure_native(input, output, config, scenes, progress, cancelled)
-                .map(|scores| scores.is_some())
-        },
-    );
+mod internal_integration {
+    use super::*;
+    fn native_caller(test: &str, cancel: bool) {
+        native_scoring::native_caller::qc_native_caller(
+            test,
+            cancel,
+            |input, output, config, scenes, progress, cancelled| {
+                QualityCheck::measure_native(input, output, config, scenes, progress, cancelled)
+                    .map(|scores| scores.is_some())
+            },
+        );
+    }
+
+    #[test]
+    fn qc_native_failure_after_progress_retains_typed_cause_without_plugin_fallback() {
+        native_caller(
+            "core::sequence::quality_check::tests::internal_integration::qc_native_failure_after_progress_retains_typed_cause_without_plugin_fallback",
+            false,
+        );
+    }
+
+    #[test]
+    fn qc_native_cancellation_does_not_request_plugin_fallback() {
+        native_caller(
+            "core::sequence::quality_check::tests::internal_integration::qc_native_cancellation_does_not_request_plugin_fallback",
+            true,
+        );
+    }
 }
 
 #[test]
