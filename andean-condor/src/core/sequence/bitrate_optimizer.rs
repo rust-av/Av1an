@@ -534,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn no_work_controls_leave_scenes_unchanged_without_saving() {
+    fn disabled_or_ineligible_bitrate_optimization_preserves_scenes_without_saving() {
         for control in [
             "empty",
             "no-q",

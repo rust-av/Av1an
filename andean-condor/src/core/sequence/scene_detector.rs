@@ -566,7 +566,7 @@ mod tests {
     /// Regression: a cancelled run must not persist a scene over frames it did
     /// not analyse, so it gets no tail range even though the clip continues.
     #[test]
-    fn cancelled_run_persists_no_scene_past_the_analyzed_prefix() {
+    fn cancelled_detection_ranges_cover_only_the_analyzed_prefix() {
         // No cut was found before the run was cancelled.
         let (interior, tail) = scene_ranges(&[0], 100, 1000, true);
         assert!(interior.is_empty());

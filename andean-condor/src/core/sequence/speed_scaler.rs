@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn unsorted_fractional_endpoints_outside_and_descending_speeds() {
+    fn speed_scaling_sorts_fractional_knots_and_clamps_outside_queries() {
         assert_speeds(
             vec![(4, 40.5), (8, 20.5)],
             &[0.0, 20.5, 30.5, 39.5, 40.5, 60.0],
@@ -344,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn natural_three_and_four_point_curves_are_retained_and_bounded() {
+    fn natural_speed_spline_rounds_estimates_and_clamps_overshoot() {
         // Natural spline at q30 is 4.875, not PCHIP's 3.75. At q10 it is -1.125.
         assert_speeds(
             vec![(0, 0.0), (0, 20.0), (12, 40.0)],
@@ -467,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn known_speed_limits_and_named_presets_use_existing_settings_contracts() {
+    fn speed_scaling_uses_named_presets_and_rejects_out_of_range_codec_speeds() {
         for (base, points, query, expected) in [
             (EncoderBase::RAV1E, vec![(0, 0.0), (10, 40.0)], 20.0, "5"),
             (EncoderBase::SVTAV1, vec![(-1, 0.0), (13, 40.0)], 20.0, "6"),

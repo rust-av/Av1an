@@ -196,20 +196,24 @@ mod tests {
         assert!(candidates_from(None, None, None).is_empty());
     }
 
-    #[test]
-    fn an_existing_configured_path_is_used_as_is() {
-        let existing = std::env::current_exe().expect("current_exe");
-        assert_eq!(resolve(Some(&existing)).expect("resolve"), existing);
-    }
+    mod internal_integration {
+        use super::*;
 
-    #[test]
-    fn a_missing_configured_path_is_an_error() {
-        let missing = Path::new("no-such-transnetv2-model.onnx");
-        let error = resolve(Some(missing)).expect_err("missing path should error");
-        let message = error.to_string();
-        assert!(
-            message.contains("no-such-transnetv2-model.onnx"),
-            "error was {message}"
-        );
+        #[test]
+        fn an_existing_configured_path_is_used_as_is() {
+            let existing = std::env::current_exe().expect("current_exe");
+            assert_eq!(resolve(Some(&existing)).expect("resolve"), existing);
+        }
+
+        #[test]
+        fn a_missing_configured_path_is_an_error() {
+            let missing = Path::new("no-such-transnetv2-model.onnx");
+            let error = resolve(Some(missing)).expect_err("missing path should error");
+            let message = error.to_string();
+            assert!(
+                message.contains("no-such-transnetv2-model.onnx"),
+                "error was {message}"
+            );
+        }
     }
 }

@@ -1,8 +1,8 @@
 #[cfg(unix)]
 pub(in crate::core::sequence) mod native_scoring;
 
-#[test]
-fn qc_attachment_is_atomic_for_the_whole_batch() {
+fn check_qc_attachment(phase: &str) {
+    assert!(["invalid", "count", "valid"].contains(&phase));
     use crate::models::{
         scene::Scene,
         sequence::{DefaultSequenceData, target_quality::types::ProbeStatistic},
@@ -18,75 +18,101 @@ fn qc_attachment_is_atomic_for_the_whole_batch() {
         .collect::<Vec<_>>();
     let before = serde_json::to_value(&original).expect("scenes");
     let selection = [(0, vec![0, 1]), (1, vec![2, 3])];
-    for bad in [
-        vec![],
-        vec![1.0],
-        vec![1.0, 2.0, 3.0],
-        vec![1.0, f64::NAN],
-        vec![1.0, f64::INFINITY],
-        vec![1.0, f64::NEG_INFINITY],
-        vec![1.0, -1.0],
-    ] {
-        let mut scenes = original.clone();
-        let config = QualityCheckConfig {
-            statistic: ProbeStatistic::Harmonic,
-            ..Default::default()
-        };
-        let measurements = [vec![2.0, 2.0], bad]
-            .into_iter()
-            .map(|scores| SceneMeasurement {
-                scores,
+    if phase == "invalid" {
+        for bad in [
+            vec![],
+            vec![1.0],
+            vec![1.0, 2.0, 3.0],
+            vec![1.0, f64::NAN],
+            vec![1.0, f64::INFINITY],
+            vec![1.0, f64::NEG_INFINITY],
+            vec![1.0, -1.0],
+        ] {
+            let mut scenes = original.clone();
+            let config = QualityCheckConfig {
+                statistic: ProbeStatistic::Harmonic,
+                ..Default::default()
+            };
+            let measurements = [vec![2.0, 2.0], bad]
+                .into_iter()
+                .map(|scores| SceneMeasurement {
+                    scores,
+                    started_on: 1,
+                    completed_on: 2,
+                })
+                .collect();
+            let error =
+                QualityCheck::attach_measurements(&mut scenes, &config, &selection, measurements)
+                    .expect_err("bad final scene");
+            assert!(error.is::<MeasurementError>(), "{error:#}");
+            let message = format!("{error:#}");
+            assert!(message.contains("SSIMULACRA2 scene 1 pass 1"), "{message}");
+            assert_eq!(
+                serde_json::to_value(&scenes).expect("unchanged scenes"),
+                before
+            );
+        }
+    }
+    if phase == "count" {
+        for count in [0, 1, 3] {
+            let mut scenes = original.clone();
+            let measurements = std::iter::repeat_with(|| SceneMeasurement {
+                scores: vec![2.0, 2.0],
                 started_on: 1,
                 completed_on: 2,
             })
+            .take(count)
             .collect();
-        let error =
-            QualityCheck::attach_measurements(&mut scenes, &config, &selection, measurements)
-                .expect_err("bad final scene");
-        assert!(error.is::<MeasurementError>(), "{error:#}");
-        let message = format!("{error:#}");
-        assert!(message.contains("SSIMULACRA2 scene 1 pass 1"), "{message}");
-        assert_eq!(
-            serde_json::to_value(&scenes).expect("unchanged scenes"),
-            before
-        );
+            let error = QualityCheck::attach_measurements(
+                &mut scenes,
+                &Default::default(),
+                &selection,
+                measurements,
+            )
+            .expect_err("measurement count");
+            assert!(
+                matches!(error.downcast_ref::<MeasurementError>(), Some(MeasurementError::Count { expected: 2, actual }) if *actual == count)
+            );
+            assert_eq!(serde_json::to_value(&scenes).expect("scenes"), before);
+        }
     }
-    for count in [0, 1, 3] {
-        let mut scenes = original.clone();
+    if phase == "valid" {
+        let mut scenes = original;
         let measurements = std::iter::repeat_with(|| SceneMeasurement {
-            scores: vec![2.0, 2.0],
+            scores: vec![-1.0, 2.0],
             started_on: 1,
             completed_on: 2,
         })
-        .take(count)
+        .take(2)
         .collect();
-        let error = QualityCheck::attach_measurements(
+        QualityCheck::attach_measurements(
             &mut scenes,
             &Default::default(),
             &selection,
             measurements,
         )
-        .expect_err("measurement count");
-        assert!(
-            matches!(error.downcast_ref::<MeasurementError>(), Some(MeasurementError::Count { expected: 2, actual }) if *actual == count)
-        );
-        assert_eq!(serde_json::to_value(&scenes).expect("scenes"), before);
-    }
-    let mut scenes = original;
-    let measurements = std::iter::repeat_with(|| SceneMeasurement {
-        scores: vec![-1.0, 2.0],
-        started_on: 1,
-        completed_on: 2,
-    })
-    .take(2)
-    .collect();
-    QualityCheck::attach_measurements(&mut scenes, &Default::default(), &selection, measurements)
         .expect("valid batch");
-    assert!(
-        scenes
-            .iter()
-            .all(|scene| scene.sequence_data.quality_check.quality.completed_on == 2)
-    );
+        assert!(
+            scenes
+                .iter()
+                .all(|scene| scene.sequence_data.quality_check.quality.completed_on == 2)
+        );
+    }
+}
+
+#[test]
+fn invalid_scene_measurements_leave_the_entire_qc_batch_unchanged() {
+    check_qc_attachment("invalid");
+}
+
+#[test]
+fn wrong_measurement_batch_size_leaves_qc_scenes_unchanged() {
+    check_qc_attachment("count");
+}
+
+#[test]
+fn valid_qc_measurements_attach_completion_for_every_scene() {
+    check_qc_attachment("valid");
 }
 
 #[test]
@@ -194,7 +220,7 @@ fn plugin_callback_validates_before_index_progress_or_completion() {
     );
 }
 #[test]
-fn qc_owning_group_rejects_missing_extra_and_nonfinite() {
+fn grouping_native_qc_scores_rejects_wrong_counts_and_nonfinite_values() {
     let scenes = [(3, vec![0]), (7, vec![2])];
     for scores in [
         vec![],

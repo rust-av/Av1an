@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_interval_and_optional_chroma_save_once() {
+    fn noise_scaling_maps_recorded_noise_to_iso_and_saves_once_with_optional_chroma() {
         for scale_chroma in [true, false] {
             let mut config = config();
             config.scale_chroma = scale_chroma;
@@ -457,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn all_recorded_population_and_encoder_exclusions_are_retained() {
+    fn noise_scaling_uses_all_recorded_noise_but_changes_only_eligible_encoders() {
         let mut scenes = vec![
             scene(EncoderBase::AOM, Some(0.2)),
             scene(EncoderBase::RAV1E, Some(0.4)),
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_factor_is_explicit_and_save_error_restores_memory() {
+    fn zero_noise_scale_clears_luma_and_chroma_iso_and_saves_once() {
         let mut zero_config = config();
         zero_config.minimum_scaler = 0.0;
         zero_config.maximum_scaler = 0.0;
@@ -627,7 +627,10 @@ mod tests {
             0.0
         );
         assert_eq!(saved.borrow().as_slice(), &[snapshot(&condor)]);
+    }
 
+    #[test]
+    fn noise_scale_save_failure_restores_encoder_and_metadata() {
         let (mut condor, saved) = fixture(Some(config()), vec![scene(EncoderBase::AOM, Some(0.6))]);
         let before = snapshot(&condor);
         condor.save_callback = Box::new(|_| anyhow::bail!("noise-scaler atomic save failed"));
