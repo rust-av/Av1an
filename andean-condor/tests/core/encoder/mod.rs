@@ -7,6 +7,7 @@ mod preflight;
 #[cfg(target_os = "linux")]
 mod public_encoding;
 mod rav1e;
+mod statistics;
 mod svt_av1;
 mod vpx;
 
