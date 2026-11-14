@@ -587,8 +587,7 @@ fn final_selection_prefers_verified_then_closest_measured_with_higher_q_ties() {
 // Finite explicit binaries exercise the actual cached capability probe;
 // they establish step routing, not native SVT acceptance.
 #[cfg(unix)]
-#[test]
-fn actual_svt_step_resolver_uses_requested_binary_cache_and_forced_cancellation() {
+fn check_svt_step_resolver() {
     use crate::{
         models::sequence::target_quality::TargetQualityConfig,
         utils::cancellation::{Cancellation, Cancelled},
@@ -652,6 +651,15 @@ fn actual_svt_step_resolver_uses_requested_binary_cache_and_forced_cancellation(
             .expect("quarter step"),
             Some(26.5)
         );
+    }
+}
+
+#[cfg(unix)]
+mod internal_integration {
+    use super::*;
+    #[test]
+    fn actual_svt_step_resolver_uses_requested_binary_cache_and_forced_cancellation() {
+        check_svt_step_resolver();
     }
 }
 
@@ -1333,9 +1341,8 @@ mod probe_resume {
 
     type SavedScenes = std::rc::Rc<std::cell::RefCell<Vec<Vec<Scene<DefaultSequenceData>>>>>;
 
-    #[test]
-    fn publication_rechecks_model_source_and_backend_after_work() {
-        for edit in ["model", "source", "backend", "matching"] {
+    fn check_probe_publication(edits: &[&str]) {
+        for &edit in edits {
             let (temp, mut condor, saved) = probe_execution_fixture(&[0, 0], 1);
             let model = temp.path().join("custom.json");
             std::fs::write(&model, b"AAA").expect("model identity fixture");
@@ -1416,8 +1423,7 @@ mod probe_resume {
         }
     }
 
-    #[test]
-    fn fallback_router_stamps_actual_branch_at_owning_attachment() {
+    fn check_fallback_attachment() {
         let (_temp, mut condor, saved) = probe_execution_fixture(&[0], 1);
         let config = condor.sequence_config.target_quality.as_mut().expect("TQ");
         config.metric = QualityMetric::default();
@@ -1586,9 +1592,12 @@ mod probe_resume {
             .collect()
     }
 
-    #[test]
-    fn maximum_probe_execution_is_bounded() {
+    fn check_probe_budget(test: &str, cases: &[&str]) {
         if let Ok(case) = std::env::var("PROBE_EXECUTION_CASE") {
+            assert!(
+                cases.contains(&case.as_str()),
+                "budget case belongs to this contract"
+            );
             let (maximum, expected, expected_calls) = match case.as_str() {
                 "max-1" => (1, 1, 1),
                 "max-2" => (2, 2, 2),
@@ -1706,11 +1715,49 @@ mod probe_resume {
             assert_eq!(quality, (1..=expected).collect::<Vec<u8>>());
             assert!(!temp.path().join("Target Quality/0").exists());
             assert!(!temp.path().join("Target Quality/256").exists());
+            println!("probe-budget {case}: assertions completed");
             return;
         }
-        for case in ["max-1", "max-2", "max-255", "early-hit", "failure", "cancel", "forced"] {
-            probe_budget_watchdog(case, "maximum_probe_execution_is_bounded");
+        for case in cases {
+            let stdout = probe_budget_watchdog(case, test);
+            assert!(stdout.contains(&format!("probe-budget {case}: assertions completed")));
         }
+    }
+
+    mod internal_integration {
+        use super::*;
+
+        #[test]
+        fn changed_model_source_or_backend_refuses_probe_publication_atomically() {
+            check_probe_publication(&["model", "source", "backend"]);
+        }
+        #[test]
+        fn matching_probe_batch_stamps_provenance_with_one_identity_capture_per_boundary() {
+            check_probe_publication(&["matching"]);
+        }
+        #[test]
+        fn fallback_router_stamps_actual_branch_at_owning_attachment() {
+            check_fallback_attachment();
+        }
+
+        macro_rules! budget_contract {
+            ($name:ident, [$($case:literal),+ $(,)?]) => {
+                #[test]
+                fn $name() { check_probe_budget(concat!("internal_integration::",stringify!($name)), &[$($case),+]); }
+            };
+        }
+        budget_contract!(
+            probe_budget_one_two_and_255_never_wraps_ordinals_or_exceeds_maximum,
+            ["max-1", "max-2", "max-255"]
+        );
+        budget_contract!(
+            early_target_hit_stops_before_unused_probe_budget,
+            ["early-hit"]
+        );
+        budget_contract!(
+            probe_failure_or_cancellation_preserves_only_accepted_records,
+            ["failure", "cancel", "forced"]
+        );
     }
 
     // Removing the normal wrapper's probe call or the last save must fail this test.
@@ -1832,7 +1879,7 @@ mod probe_resume {
         (rounds, quality)
     }
 
-    fn probe_budget_watchdog(case: &str, test: &str) {
+    fn probe_budget_watchdog(case: &str, test: &str) -> String {
         use std::{
             process::{Command, Stdio},
             time::{Duration, Instant},
@@ -1882,6 +1929,7 @@ mod probe_resume {
             stdout.contains("1 passed; 0 failed"),
             "child must execute its oracle"
         );
+        stdout
     }
 
     #[test]
