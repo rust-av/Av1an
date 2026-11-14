@@ -1320,9 +1320,9 @@ mod tests {
             let len = (scene.end_frame - scene.start_frame) as u64;
             if *index < 20 {
                 assert_eq!(*processed, len);
-                assert!(scene.sequence_data.parallel_encoder.bytes.is_some_and(|bytes| bytes > 0));
+                assert!(scene.bytes.is_some_and(|bytes| bytes > 0));
             } else {
-                assert_eq!(scene.sequence_data.parallel_encoder.bytes, None);
+                assert_eq!(scene.bytes, None);
                 if let Some(active) = state.active_encoders.get(index) {
                     assert_eq!(*processed, len / 2);
                     assert_eq!(active.frames_processed, *processed);
@@ -1489,7 +1489,7 @@ mod tests {
     /// Both extended SGR colour forms (`38;5;n` and `38;2;r;g;b`) resolve to
     /// the colours the rasterizer understands.
     #[test]
-    fn extended_colours_resolve() {
+    fn ansi_indexed_and_rgb_colors_style_spans_and_reset_clears_color() {
         let lines = ansi_lines("\x1b[38;5;120m256\x1b[38;2;10;20;30mtrue\x1b[0m plain");
         let spans = lines[0].spans.as_slice();
         assert_eq!(spans[0].style.fg, Some(Color::Indexed(120)));
@@ -1509,7 +1509,7 @@ mod tests {
 
     /// Newlines split lines; a trailing newline does not add an empty one.
     #[test]
-    fn newlines_split_lines() {
+    fn ansi_trailing_newline_keeps_two_content_lines_without_an_empty_tail() {
         let lines = ansi_lines("one\ntwo\n");
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].spans[0].content.as_ref(), "one");

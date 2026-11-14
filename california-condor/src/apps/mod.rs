@@ -1747,7 +1747,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_writer_errors_are_not_retried_on_another_stream() {
+    fn restore_commands_return_the_selected_writer_write_and_flush_errors() {
         for finish in [false, true] {
             for fail_flush in [false, true] {
                 let mut recorder = Recorder::default();
