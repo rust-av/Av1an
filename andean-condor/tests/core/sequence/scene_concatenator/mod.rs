@@ -33,6 +33,7 @@ mod ffmpeg_tracks;
 #[cfg(unix)]
 #[path = "fixtures/final_mux.rs"]
 mod final_mux;
+mod ivf;
 #[cfg(unix)]
 mod mux_status;
 mod preflight;
