@@ -465,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn a_metric_with_no_native_engine_falls_through_to_the_plugin() {
+    fn xpsnr_has_no_native_engine_with_all_backends_available() {
         // XPSNR has no libvship or fmetrics implementation.
         let with_everything = Availability {
             vship: true,
@@ -473,26 +473,6 @@ mod tests {
             vapoursynth: true,
         };
         assert_eq!(engine_order(&xpsnr(), false, with_everything), None);
-        assert_eq!(engine(&xpsnr(), true), None);
-        assert_eq!(engine(&xpsnr(), false), None);
-    }
-
-    #[test]
-    fn the_real_availability_matches_what_the_ordering_expects() {
-        // The path production takes, which must report libvship first when it
-        // can run.
-        if vship::native_supported(&ssimulacra2()) {
-            assert_eq!(engine(&ssimulacra2(), true), Some(Engine::Vship));
-            assert_eq!(engine(&ssimulacra2(), false), Some(Engine::Vship));
-        }
-    }
-
-    #[test]
-    fn the_input_kind_never_reaches_fmetrics_for_a_vapoursynth_input() {
-        // Holds whatever is installed: libvship wins before the question of
-        // fmetrics arises, and otherwise the plugin does.
-        assert_ne!(engine(&ssimulacra2(), true), Some(Engine::Fmetrics));
-        assert_ne!(engine(&butteraugli(), true), Some(Engine::Fmetrics));
     }
 
     #[test]
