@@ -1,4 +1,8 @@
 mod cli;
+#[cfg(unix)]
+mod executable_resolution;
+#[cfg(unix)]
+mod preflight;
 #[cfg(target_os = "linux")]
 mod public_encoding;
 

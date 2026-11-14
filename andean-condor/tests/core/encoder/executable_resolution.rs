@@ -1,4 +1,9 @@
 use super::*;
+use andean_condor::core::{
+    encoder::{Container, EncoderCapability},
+    input::Input,
+};
+use std::{collections::HashMap, io::Cursor, path::PathBuf, sync::mpsc};
 use std::{fs, os::unix::ffi::OsStringExt, os::unix::fs::PermissionsExt, time::Duration};
 
 const CUSTOM: &str = r#"#!/bin/sh
@@ -16,38 +21,70 @@ fn executable(path: &Path, source: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("permissions");
 }
 
-// Restoring exists()+stock fallback, resolving lossy strings, or moving preflight
-// after decode/receive must fail in an isolated child, never hang the test runner.
 #[test]
-fn executable_resolution_preserves_public_boundaries() {
+fn explicit_encoder_paths_resolve_without_stock_fallback() {
+    resolution_cases(
+        "explicit_encoder_paths_resolve_without_stock_fallback",
+        &["path", "absolute", "relative", "nonutf8", "default"],
+    );
+}
+
+#[test]
+fn invalid_encoder_paths_fail_before_input_or_progress() {
+    resolution_cases(
+        "invalid_encoder_paths_fail_before_input_or_progress",
+        &[
+            "missing",
+            "missing-absolute",
+            "missing-relative",
+            "nonexec",
+            "directory",
+            "nul",
+            "input",
+            "input-pass",
+            "stream",
+            "stream-pass",
+            "nonexec-input",
+            "nonexec-stream-pass",
+            "directory-input-pass",
+            "nul-stream",
+            "two-input",
+            "two-stream",
+        ],
+    );
+}
+
+#[test]
+fn missing_optional_encoder_queries_return_no_capability() {
+    resolution_cases(
+        "missing_optional_encoder_queries_return_no_capability",
+        &["optional"],
+    );
+}
+
+#[test]
+fn encoder_spawn_errors_preserve_the_requested_os_path() {
+    resolution_cases(
+        "encoder_spawn_errors_preserve_the_requested_os_path",
+        &["spawn-input", "spawn-stream"],
+    );
+}
+
+// Re-execution isolates PATH/CWD and bounds regressions that receive before validation.
+fn resolution_cases(test: &str, cases: &[&str]) {
+    if std::env::var_os("EXECUTABLE_RESOLUTION_ROOT").is_some() {
+        let selected = std::env::var("EXECUTABLE_RESOLUTION_CASE").expect("case");
+        assert!(
+            cases.contains(&selected.as_str()),
+            "selected executable case belongs to this contract"
+        );
+        assert_requested_encoder_path();
+        println!("encoder path {selected}: assertions completed");
+        return;
+    }
     let temp = tempfile::tempdir().expect("fixture");
     let mut failures = Vec::new();
-    for case in [
-        "path",
-        "absolute",
-        "relative",
-        "nonutf8",
-        "default",
-        "missing",
-        "missing-absolute",
-        "missing-relative",
-        "nonexec",
-        "directory",
-        "nul",
-        "optional",
-        "input",
-        "input-pass",
-        "stream",
-        "stream-pass",
-        "nonexec-input",
-        "nonexec-stream-pass",
-        "directory-input-pass",
-        "nul-stream",
-        "two-input",
-        "two-stream",
-        "spawn-input",
-        "spawn-stream",
-    ] {
+    for &case in cases {
         let root = temp.path().join(case);
         let bin = root.join("bin");
         fs::create_dir_all(&bin).expect("bin");
@@ -65,7 +102,7 @@ fn executable_resolution_preserves_public_boundaries() {
         let mut child = Command::new(std::env::current_exe().expect("test binary"))
             .args([
                 "--exact",
-                "core::encoder::tests::executable_resolution::executable_resolution_child",
+                &format!("core::encoder::executable_resolution::{test}"),
                 "--nocapture",
             ])
             .env("PATH", &bin)
@@ -89,9 +126,13 @@ fn executable_resolution_preserves_public_boundaries() {
             thread::sleep(Duration::from_millis(10));
         };
         let log = fs::read_to_string(log_path).expect("log");
-        if !status.is_some_and(|status| status.success()) || !log.contains("1 passed; 0 failed") {
+        if !status.is_some_and(|status| status.success())
+            || !log.contains("1 passed; 0 failed")
+            || !log.contains(&format!("encoder path {case}: assertions completed"))
+        {
             failures.push(format!("{case}: {status:?}\n{log}"));
         }
+        print!("{log}");
         if case != "default" && root.join("stock").exists() {
             failures.push(format!("{case}: stock fallback ran"));
         }
@@ -103,8 +144,8 @@ fn executable_resolution_preserves_public_boundaries() {
 }
 
 fn input() -> Input {
-    Input::from_data(&crate::models::input::Input::VapourSynthScript {
-        source: crate::models::input::VapourSynthScriptSource::Text(
+    Input::from_data(&andean_condor::models::input::Input::VapourSynthScript {
+        source: andean_condor::models::input::VapourSynthScriptSource::Text(
             "from vapoursynth import core, YUV420P8\nimport os\nclip = core.std.BlankClip(width=64,height=64,length=1,format=YUV420P8)\ndef decode(n):\n    open(os.path.join(os.environ['EXECUTABLE_RESOLUTION_ROOT'], 'decoded'), 'w').close()\n    return clip\ncore.std.FrameEval(clip, decode).set_output()\n".into(),
         ),
         variables: HashMap::new(),
@@ -114,12 +155,11 @@ fn input() -> Input {
     }).expect("blank input")
 }
 
-#[test]
 #[allow(
     clippy::unnecessary_debug_formatting,
     reason = "Check escaped OS paths, including NUL, in diagnostics"
 )]
-fn executable_resolution_child() {
+fn assert_requested_encoder_path() {
     let Some(root) = std::env::var_os("EXECUTABLE_RESOLUTION_ROOT") else {
         return;
     };
@@ -175,12 +215,7 @@ fn executable_resolution_child() {
             .expect("frame");
         drop(sender);
         encoder
-            .encode_with_stream(
-                frames,
-                &root.join("out.264"),
-                progress,
-                &crate::core::encoder::tests::clip_info(),
-            )
+            .encode_with_stream(frames, &root.join("out.264"), progress, &super::clip_info())
             .expect("custom spawn");
         if case != "default" {
             assert_eq!(
@@ -225,16 +260,11 @@ fn executable_resolution_child() {
                     frames,
                     &output,
                     progress,
-                    &crate::core::encoder::tests::clip_info(),
+                    &super::clip_info(),
                     None,
                 )
             } else {
-                encoder.encode_with_stream(
-                    frames,
-                    &output,
-                    progress,
-                    &crate::core::encoder::tests::clip_info(),
-                )
+                encoder.encode_with_stream(frames, &output, progress, &super::clip_info())
             };
             drop(sender);
             result
