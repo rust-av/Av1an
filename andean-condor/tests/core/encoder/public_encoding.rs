@@ -1,5 +1,13 @@
 use super::*;
-use std::{fs, os::unix::fs::PermissionsExt};
+use andean_condor::core::{
+    encoder::{EncoderResult, StringOrBytes},
+    input::Input,
+};
+use std::{
+    collections::HashMap, fs, io::Cursor, os::unix::fs::PermissionsExt, path::PathBuf, sync::mpsc,
+};
+
+const NULL_OUTPUT: &str = "/dev/null";
 
 const HEADER: &str = "YUV4MPEG2 C420 W64 H64 F30000:1001 Ip A0:0 XLENGTH=3\n";
 
@@ -38,23 +46,36 @@ fi
 
 #[test]
 fn public_input_and_stream_execute_each_pass_once() {
-    bounded("fake");
+    bounded("public_input_and_stream_execute_each_pass_once", "fake");
 }
 
 #[test]
 fn installed_rav1e_public_two_pass_jobs_decode_exactly_three_frames() {
-    bounded("native");
+    bounded(
+        "installed_rav1e_public_two_pass_jobs_decode_exactly_three_frames",
+        "native",
+    );
 }
 
-fn bounded(case: &str) {
+fn bounded(test: &str, case: &str) {
+    if let Some(root) = std::env::var_os("ENCODER_FIXTURE_ROOT") {
+        assert_eq!(
+            std::env::var("ENCODER_FIXTURE_CASE").expect("case"),
+            case,
+            "selected public contract"
+        );
+        assert_public_pass_execution(&PathBuf::from(root), case == "native");
+        println!("public pass {case}: assertions completed");
+        return;
+    }
     let temp = tempfile::tempdir().expect("fixture");
     let root = temp.path();
     fs::write(
         root.join("watchdog.rs"),
-        include_str!("../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
+        include_str!("fixtures/fake_encoder.rs"),
     )
     .expect("watchdog source");
-    crate::core::encoder::tests::support::run_bounded(
+    super::support::run_bounded(
         Command::new("rustc")
             .arg(root.join("watchdog.rs"))
             .arg("-o")
@@ -64,19 +85,24 @@ fn bounded(case: &str) {
     let cwd = root.join("cwd");
     fs::create_dir_all(&cwd).expect("isolated cwd");
     fs::write(cwd.join("scene0.stat"), "unrelated CWD sentinel").expect("sentinel");
-    let log = crate::core::encoder::tests::support::run_bounded(
+    let log = super::support::run_bounded(
         Command::new(root.join("watchdog"))
             .arg("--encoder-fixture-watchdog")
             .arg(std::env::current_exe().expect("test binary"))
             .arg(root)
             .arg(case)
-            .arg("core::encoder::tests::public_encoding::public_encoding_child")
+            .arg(format!("core::encoder::public_encoding::{test}"))
             .current_dir(&cwd),
         &root.join("child.log"),
     );
     assert!(
         log.lines()
             .any(|line| line == "encoder fixture watchdog reaped 0 descendants; timeout=false")
+    );
+    assert!(
+        log.contains("1 passed; 0 failed")
+            && log.contains(&format!("public pass {case}: assertions completed")),
+        "exact public pass contract executed: {log}"
     );
     assert_eq!(fs::read_dir(&cwd).expect("cwd listing").count(), 1);
     assert_eq!(
@@ -130,13 +156,7 @@ pub(super) fn frames(input: &mut Input) -> crossbeam_channel::Receiver<Cursor<Ve
     rx
 }
 
-#[test]
-fn public_encoding_child() {
-    let Some(root) = std::env::var_os("ENCODER_FIXTURE_ROOT") else {
-        return;
-    };
-    let root = PathBuf::from(root);
-    let native = std::env::var("ENCODER_FIXTURE_CASE").expect("case") == "native";
+fn assert_public_pass_execution(root: &Path, native: bool) {
     let executable = if native {
         which::which("rav1e").expect("installed rav1e is required for public encoding")
     } else {
@@ -146,7 +166,7 @@ fn public_encoding_child() {
         path
     };
     if native {
-        let version = crate::core::encoder::tests::support::run_bounded(
+        let version = super::support::run_bounded(
             Command::new(&executable).arg("--version"),
             &root.join("version.log"),
         );
@@ -157,8 +177,8 @@ fn public_encoding_child() {
     }
     let script = root.join("five frames.vpy");
     fs::write(&script, "from vapoursynth import core, YUV420P8\ncore.std.Splice([core.std.BlankClip(width=64,height=64,length=1,format=YUV420P8,fpsnum=30000,fpsden=1001,color=[y,128,128]) for y in [16,48,80,112,144]]).set_output()\n").expect("finite VS input");
-    let model = crate::models::input::Input::VapourSynthScript {
-        source: crate::models::input::VapourSynthScriptSource::Path(script),
+    let model = andean_condor::models::input::Input::VapourSynthScript {
+        source: andean_condor::models::input::VapourSynthScriptSource::Path(script),
         variables: HashMap::new(),
         index: 0,
         filters: vec![],
@@ -238,7 +258,7 @@ fn public_encoding_child() {
                     }
                 );
             } else {
-                let probe = crate::core::encoder::tests::support::run_bounded(
+                let probe = super::support::run_bounded(
                     Command::new(which::which("ffprobe").expect("installed ffprobe required"))
                         .args([
                             "-v",
@@ -337,15 +357,46 @@ fi
 "#;
 
     #[test]
-    fn public_encoding_preserves_pass_failures_and_raw_diagnostics() {
+    fn first_pass_failure_prevents_the_final_pass() {
+        failure_cases("first_pass_failure_prevents_the_final_pass", &["first"]);
+    }
+
+    #[test]
+    fn final_pass_failure_preserves_status_bytes_and_progress() {
+        failure_cases(
+            "final_pass_failure_preserves_status_bytes_and_progress",
+            &["final", "single"],
+        );
+    }
+
+    #[test]
+    fn manual_pass_failure_preserves_caller_statistics() {
+        failure_cases(
+            "manual_pass_failure_preserves_caller_statistics",
+            &["specific1", "specific2", "direct1", "direct2"],
+        );
+    }
+
+    fn failure_cases(test: &str, cases: &[&str]) {
+        if std::env::var_os("ENCODER_FIXTURE_ROOT").is_some() {
+            let selected = std::env::var("ENCODER_FIXTURE_CASE").expect("case");
+            let (_, case) = selected.split_once('-').expect("api-case");
+            assert!(
+                cases.contains(&case),
+                "selected failure belongs to this contract"
+            );
+            assert_public_pass_failure();
+            println!("public failure {selected}: assertions completed");
+            return;
+        }
         let temp = tempfile::tempdir().expect("fixture");
         let root = temp.path();
         fs::write(
             root.join("watchdog.rs"),
-            include_str!("../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
+            include_str!("fixtures/fake_encoder.rs"),
         )
         .expect("watchdog source");
-        crate::core::encoder::tests::support::run_bounded(
+        super::super::support::run_bounded(
             Command::new("rustc")
                 .arg(root.join("watchdog.rs"))
                 .arg("-o")
@@ -354,29 +405,31 @@ fi
         );
         let mut failures = Vec::new();
         for api in ["input", "stream"] {
-            for case in ["first", "final", "single", "specific1", "specific2", "direct1", "direct2"]
-            {
+            for case in cases {
                 let job = root.join(format!("{api}-{case} space 映像"));
                 let cwd = job.join("cwd");
                 fs::create_dir_all(&cwd).expect("independent job");
                 fs::write(cwd.join("scene0.stat"), "CWD sentinel").expect("sentinel");
                 let file = fs::File::create(job.join("child.log")).expect("log");
                 let status = Command::new(root.join("watchdog"))
-                .arg("--encoder-fixture-watchdog")
-                .arg(std::env::current_exe().expect("test binary"))
-                .arg(&job)
-                .arg(format!("{api}-{case}"))
-                .arg("core::encoder::tests::public_encoding::failures::public_encoding_failure_child")
-                .current_dir(&cwd)
-                .stdout(file.try_clone().expect("clone log"))
-                .stderr(file)
-                .status()
-                .expect("bounded child");
+                    .arg("--encoder-fixture-watchdog")
+                    .arg(std::env::current_exe().expect("test binary"))
+                    .arg(&job)
+                    .arg(format!("{api}-{case}"))
+                    .arg(format!("core::encoder::public_encoding::failures::{test}"))
+                    .current_dir(&cwd)
+                    .stdout(file.try_clone().expect("clone log"))
+                    .stderr(file)
+                    .status()
+                    .expect("bounded child");
                 let log = fs::read_to_string(job.join("child.log")).expect("child log");
                 if !status.success()
                     || !job.join("executed").exists()
                     || !job.join("verified").exists()
                     || !log.contains("test result: ok. 1 passed;")
+                    || !log.contains(&format!(
+                        "public failure {api}-{case}: assertions completed"
+                    ))
                     || !log.lines().any(|line| {
                         line == "encoder fixture watchdog reaped 0 descendants; timeout=false"
                     })
@@ -394,8 +447,7 @@ fi
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
-    #[test]
-    fn public_encoding_failure_child() {
+    fn assert_public_pass_failure() {
         let Some(root) = std::env::var_os("ENCODER_FIXTURE_ROOT") else {
             return;
         };
@@ -443,8 +495,8 @@ fi
         }
         let script = root.join("five frames.vpy");
         fs::write(&script, "from vapoursynth import core, YUV420P8\ncore.std.Splice([core.std.BlankClip(width=64,height=64,length=1,format=YUV420P8,fpsnum=30000,fpsden=1001,color=[y,128,128]) for y in [16,48,80,112,144]]).set_output()\n").expect("finite VS input");
-        let mut input = Input::from_data(&crate::models::input::Input::VapourSynthScript {
-            source: crate::models::input::VapourSynthScriptSource::Path(script),
+        let mut input = Input::from_data(&andean_condor::models::input::Input::VapourSynthScript {
+            source: andean_condor::models::input::VapourSynthScriptSource::Path(script),
             variables: HashMap::new(),
             index: 0,
             filters: vec![],

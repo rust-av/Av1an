@@ -7,8 +7,6 @@ mod executable_resolution;
 mod photon_noise;
 #[cfg(target_os = "linux")]
 pub(crate) mod process_lifecycle;
-#[cfg(target_os = "linux")]
-mod public_encoding;
 mod rav1e;
 mod statistics;
 pub(super) mod support;

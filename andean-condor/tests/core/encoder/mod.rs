@@ -1,4 +1,6 @@
 mod cli;
+#[cfg(target_os = "linux")]
+mod public_encoding;
 
 #[path = "../../../src/core/encoder/tests/support.rs"]
 mod support;
