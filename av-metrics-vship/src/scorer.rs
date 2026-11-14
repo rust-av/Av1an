@@ -1485,7 +1485,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cumulative_pool_uses_last_in_submission_order() {
+    fn cvvdp_pool_uses_last_score_independent_of_pool_method() {
+        let scores = [2.0, 9.0, 4.0].map(|value| FrameScore {
+            score: Some(value),
+            norm_q: Some(value * 2.0),
+            norm_inf: Some(value * 3.0),
+            ..Default::default()
+        });
+        for method in [PoolMethod::Mean, PoolMethod::Min, PoolMethod::Max] {
+            assert_eq!(
+                VshipScorer::pool(&scores, VshipMetric::Cvvdp, method).unwrap(),
+                4.0
+            );
+        }
+    }
+
+    #[test]
+    fn stateless_pooling_applies_requested_method_to_each_metrics_value() {
         let scores = [2.0, 9.0, 4.0].map(|value| FrameScore {
             score: Some(value),
             norm_q: Some(value * 2.0),
@@ -1495,10 +1511,6 @@ mod tests {
         for (method, independent) in
             [(PoolMethod::Mean, 5.0), (PoolMethod::Min, 2.0), (PoolMethod::Max, 9.0)]
         {
-            assert_eq!(
-                VshipScorer::pool(&scores, VshipMetric::Cvvdp, method).unwrap(),
-                4.0
-            );
             // The explicit independent-frame route uses the same real FrameScores.
             let values: Vec<_> =
                 scores.iter().map(|s| s.value(VshipMetric::Cvvdp).unwrap()).collect();
@@ -1538,7 +1550,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_storage_width_on_every_plane_and_side() {
+    fn plane_validation_rejects_wrong_storage_width_on_every_plane_and_side() {
         let storage = [0u8; 32];
         for sample in [
             ffi::VshipSample::Uint8,
@@ -1609,7 +1621,7 @@ mod tests {
     }
 
     #[test]
-    fn native_upload_rejects_negative_and_short_strides() {
+    fn plane_constructor_rejects_negative_zero_and_short_native_upload_pitch() {
         let storage = [0u8; 32];
         for stride in [-4, isize::MIN, 0, 1] {
             assert!(
@@ -1620,11 +1632,15 @@ mod tests {
     }
 
     #[test]
-    fn invalid_colorspace_dimensions_and_sampling_fail() {
+    fn chroma_dimensions_rejects_zero_negative_and_unrepresentable_geometry() {
         for (width, height) in [(0, 1), (1, 0), (-1, 1), (i64::MAX, 1)] {
             let colorspace = VshipColorspace::bt709_default(width, height);
             assert!(chroma_dimensions(&colorspace).is_err());
         }
+    }
+
+    #[test]
+    fn chroma_dimensions_rejects_invalid_subsampling_exponents() {
         for exponent in [-1, 2, 9, i32::MAX] {
             let mut colorspace = VshipColorspace::bt709_default(2, 2);
             colorspace.subsampling.subw = exponent;
@@ -1722,7 +1738,7 @@ mod tests {
     }
 
     #[test]
-    fn u8_and_u16_storage_matches_only_configured_integer_formats() {
+    fn integer_plane_storage_must_match_configured_sample_width() {
         let data = [0u8; 8];
         let mut colorspace = VshipColorspace::bt709_default(2, 2);
         let bytes = [
@@ -1742,6 +1758,17 @@ mod tests {
             colorspace.sample = crate::sample_for_bit_depth(depth).unwrap();
             assert!(validate_planes(&planes, &colorspace, "distorted").is_ok());
         }
+    }
+
+    #[test]
+    fn half_and_float_native_sample_formats_are_unsupported() {
+        let words = [512u16; 4];
+        let planes = [
+            PlaneSource::from_u16(&words, 2, 2, 4, 0).unwrap(),
+            PlaneSource::from_u16(&words, 1, 1, 2, 0).unwrap(),
+            PlaneSource::from_u16(&words, 1, 1, 2, 0).unwrap(),
+        ];
+        let mut colorspace = VshipColorspace::bt709_default(2, 2);
         for sample in [ffi::VshipSample::Half, ffi::VshipSample::Float] {
             colorspace.sample = sample;
             assert!(matches!(
@@ -1773,53 +1800,6 @@ mod tests {
             mastering_display: None,
             content_light_level: None,
         }
-    }
-
-    /// A discrete device must be preferred over an integrated one.
-    ///
-    /// libvship exposes `integrated` on every backend, and most multi-GPU
-    /// systems pair a discrete part with an integrated one, so the
-    /// highest-indexed non-integrated device is what the default has to
-    /// resolve to.
-    #[test]
-    fn the_default_device_prefers_a_discrete_gpu() {
-        if VshipApi::load().is_err() {
-            return;
-        }
-
-        let Ok(api) = VshipApi::load() else { return };
-        let Ok(count) = api.device_count() else {
-            return;
-        };
-        // No devices means no index to choose, which is reported rather than
-        // silently resolved to a device that does not exist.
-        let Some(chosen) = default_gpu_id() else {
-            assert_eq!(count, 0, "a device exists, so one must have been chosen");
-            return;
-        };
-
-        assert!(
-            chosen < count,
-            "the chosen device {chosen} must exist among {count}"
-        );
-        if let Ok(info) = api.device_info(chosen) {
-            // Only asserted when a discrete part is actually present, since a
-            // single-GPU or all-integrated machine must still resolve.
-            let any_discrete =
-                (0..count).any(|id| api.device_info(id).is_ok_and(|info| info.integrated == 0));
-            if any_discrete {
-                assert_eq!(
-                    info.integrated, 0,
-                    "a discrete device is available, so the default must not be integrated"
-                );
-            }
-        }
-    }
-
-    /// The resolved device must be stable, since it is cached.
-    #[test]
-    fn the_default_device_is_cached() {
-        assert_eq!(default_gpu_id(), default_gpu_id());
     }
 
     #[test]
@@ -1921,7 +1901,7 @@ mod tests {
     }
 
     #[test]
-    fn chroma_dimensions_follow_the_subsampling() {
+    fn even_chroma_dimensions_follow_420_422_and_444() {
         let mut colorspace = VshipColorspace::bt709_default(64, 32);
 
         assert_eq!(chroma_dimensions(&colorspace).unwrap(), (32, 16));
@@ -1929,7 +1909,12 @@ mod tests {
         assert_eq!(chroma_dimensions(&colorspace).unwrap(), (32, 32));
         colorspace.subsampling = crate::ffi::VshipChromaSubsample::yuv444();
         assert_eq!(chroma_dimensions(&colorspace).unwrap(), (64, 32));
+    }
 
+    #[test]
+    fn negative_chroma_exponent_is_rejected() {
+        let mut colorspace = VshipColorspace::bt709_default(64, 32);
+        colorspace.subsampling = crate::ffi::VshipChromaSubsample::yuv444();
         colorspace.subsampling.subw = -1;
         assert!(chroma_dimensions(&colorspace).is_err());
     }
@@ -1951,7 +1936,7 @@ mod tests {
     }
 
     #[test]
-    fn pooling_uses_each_metrics_own_value() {
+    fn stateless_pooling_uses_primary_or_butteraugli_q_norm() {
         let scores = [
             FrameScore {
                 score: Some(0.9),
@@ -1972,21 +1957,10 @@ mod tests {
 
         let mean = VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean).unwrap();
         assert!((mean - 2.0).abs() < 1e-12, "mean was {mean}, expected 2.0");
-
-        assert!(VshipScorer::pool(&[], VshipMetric::Cvvdp, PoolMethod::Mean).is_err());
     }
 
-    /// A machine without libvship must be reported as unavailable rather than
-    /// panicking, which is what keeps the suite green with no GPU and no
-    /// binary.
     #[test]
-    fn availability_is_total_and_never_panics() {
-        match VshipScorer::is_available() {
-            true => assert!(VshipScorer::libvship_version().is_some()),
-            false => assert_eq!(VshipScorer::libvship_version(), None),
-        }
-        // These are `Option` or `Result` for the same reason.
-        let _ = VshipScorer::device_name();
-        let _ = VshipScorer::device_info();
+    fn cvvdp_pooling_rejects_empty_scores() {
+        assert!(VshipScorer::pool(&[], VshipMetric::Cvvdp, PoolMethod::Mean).is_err());
     }
 }

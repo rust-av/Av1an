@@ -707,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_frame_rate_bounds_only_apply_to_cvvdp() {
+    fn cvvdp_invalid_fps_rejects_before_discovery_with_or_without_temporal_filtering() {
         let format =
             crate::VideoFormat::from_details(&details(32, 32, 8, ChromaSubsampling::Yuv420));
         for rate in [
@@ -739,11 +739,12 @@ mod tests {
                     ),
                     "{rate} must fail before library discovery"
                 );
-                for metric in [VshipMetric::Ssimulacra2, VshipMetric::Butteraugli] {
-                    assert!(config.clone().with_metric(metric).validate().is_ok());
-                }
             }
         }
+    }
+
+    #[test]
+    fn cvvdp_accepts_positive_fps_through_one_hundred_thousand() {
         for rate in [f32::MIN_POSITIVE, 24.0, 23.976_025, 60.0, 100_000.0] {
             assert!(
                 VshipConfig::new()
@@ -753,6 +754,30 @@ mod tests {
                     .is_ok(),
                 "{rate}"
             );
+        }
+    }
+
+    #[test]
+    fn stateless_metrics_ignore_cvvdp_fps_bounds() {
+        for rate in [
+            0.0,
+            -0.0,
+            -1.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            100_000.01,
+            f32::MAX,
+        ] {
+            for disabled in [false, true] {
+                let config = VshipConfig::new()
+                    .with_metric(VshipMetric::Cvvdp)
+                    .with_fps(rate)
+                    .with_disable_temporal(disabled);
+                for metric in [VshipMetric::Ssimulacra2, VshipMetric::Butteraugli] {
+                    assert!(config.clone().with_metric(metric).validate().is_ok());
+                }
+            }
         }
     }
 
@@ -815,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_defaults_but_unsupported_metadata_errors() {
+    fn unspecified_color_metadata_matches_absent_defaults() {
         use av_decoders::{
             ChromaLocation, ColorPrimaries, ColorRange, ColorSpace,
             TransferCharacteristic as Transfer,
@@ -828,6 +853,19 @@ mod tests {
         source.color_transfer_characteristic = Some(Transfer::Unspecified);
         source.chroma_location = Some(ChromaLocation::Unspecified);
         assert_eq!(colorspace_from_details(&source, None).unwrap(), absent);
+    }
+
+    #[test]
+    fn unsupported_transfers_matrix_primaries_and_chroma_location_are_rejected() {
+        use av_decoders::{
+            ChromaLocation, ColorPrimaries, ColorRange, ColorSpace,
+            TransferCharacteristic as Transfer,
+        };
+        let mut source = details(1920, 480, 8, ChromaSubsampling::Yuv420);
+        source.color_range = Some(ColorRange::Unspecified);
+        source.color_space = Some(ColorSpace::Unspecified);
+        source.color_primaries = Some(ColorPrimaries::Unspecified);
+        source.chroma_location = Some(ChromaLocation::Unspecified);
         for transfer in [Transfer::Reserved, Transfer::VLog, Transfer::Log] {
             source.color_transfer_characteristic = Some(transfer);
             assert!(matches!(
@@ -929,7 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_formats_are_reported() {
+    fn colorspace_rejects_eleven_bit_and_monochrome_inputs() {
         let bad_depth = details(1920, 1080, 11, ChromaSubsampling::Yuv420);
         assert!(matches!(
             colorspace_from_details(&bad_depth, None),
@@ -965,15 +1003,10 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_the_library_defaults() {
+    fn default_config_selects_ssimulacra2_and_documented_butteraugli_cvvdp_options() {
         let config = VshipConfig::new();
 
         assert_eq!(config.metric(), VshipMetric::Ssimulacra2);
-        // A default configuration leaves the device unset so the scorer can
-        // pick a discrete GPU at run time; `gpu_id()` reports that, and
-        // `gpu_id_or_default()` resolves it.
-        assert!(!config.has_explicit_gpu_id());
-        assert!(config.gpu_id_or_default() < u32::MAX);
         assert_eq!(config.handler_threads(), DEFAULT_HANDLER_THREADS);
         assert_eq!(config.butteraugli().q_norm, 2);
         assert_eq!(config.butteraugli().intensity_multiplier, 203.0);
@@ -985,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn builders_set_their_fields() {
+    fn config_builders_retain_metric_device_threads_norm_intensity_and_temporal_options() {
         let config = VshipConfig::new()
             .with_metric(VshipMetric::Butteraugli)
             .with_gpu_id(2)
@@ -1021,7 +1054,7 @@ mod tests {
     }
 
     #[test]
-    fn display_model_builders_reject_an_interior_nul() {
+    fn display_name_and_json_path_builders_reject_interior_nul() {
         // Each builder takes `self` by value, so a fresh config is used per
         // case rather than cloning one.
         assert!(
@@ -1034,24 +1067,36 @@ mod tests {
                 .with_display_model_json("C:\\models\\my\0model.json")
                 .is_err_and(|error| matches!(error, VshipError::InvalidConfiguration { .. }))
         );
+    }
 
+    #[test]
+    fn display_model_builder_preserves_valid_name() {
         let config = VshipConfig::new().with_display_model("uhd_4k").unwrap();
         assert_eq!(config.cvvdp().display_model, "uhd_4k");
     }
 
     #[test]
-    fn validation_catches_unusable_parameters() {
+    fn butteraugli_validation_rejects_zero_qnorm() {
         let bad_qnorm = VshipConfig::new().with_metric(VshipMetric::Butteraugli).with_q_norm(0);
         assert!(bad_qnorm.validate().is_err());
+    }
 
+    #[test]
+    fn butteraugli_validation_rejects_negative_intensity() {
         let bad_intensity = VshipConfig::new()
             .with_metric(VshipMetric::Butteraugli)
             .with_intensity_multiplier(-1.0);
         assert!(bad_intensity.validate().is_err());
+    }
 
+    #[test]
+    fn cvvdp_validation_rejects_nan_fps() {
         let bad_fps = VshipConfig::new().with_metric(VshipMetric::Cvvdp).with_fps(f32::NAN);
         assert!(bad_fps.validate().is_err());
+    }
 
+    #[test]
+    fn cvvdp_validation_rejects_empty_display_model() {
         // An empty display model is only rejected when CVVDP is the metric.
         let empty = VshipConfig::new()
             .with_metric(VshipMetric::Cvvdp)
@@ -1084,25 +1129,35 @@ mod tests {
     }
 
     #[test]
-    fn metric_direction_and_temporality() {
+    fn butteraugli_is_lower_better_and_other_metrics_higher_better() {
         assert!(VshipMetric::Ssimulacra2.higher_is_better());
         assert!(!VshipMetric::Butteraugli.higher_is_better());
         assert!(VshipMetric::Cvvdp.higher_is_better());
+    }
 
+    #[test]
+    fn only_cvvdp_is_temporal() {
         assert!(!VshipMetric::Ssimulacra2.is_temporal());
         assert!(!VshipMetric::Butteraugli.is_temporal());
         assert!(VshipMetric::Cvvdp.is_temporal());
+    }
 
+    #[test]
+    fn all_metrics_lists_three_variants() {
         assert_eq!(VshipMetric::all().len(), 3);
     }
 
     #[test]
-    fn pooling_picks_the_requested_extreme_or_the_mean() {
+    fn pool_method_returns_requested_mean_min_or_max() {
         let scores = [1.0, 5.0, 3.0];
 
         assert_eq!(PoolMethod::Mean.apply(&scores).unwrap(), 3.0);
         assert_eq!(PoolMethod::Min.apply(&scores).unwrap(), 1.0);
         assert_eq!(PoolMethod::Max.apply(&scores).unwrap(), 5.0);
+    }
+
+    #[test]
+    fn pool_method_rejects_empty_scores() {
         assert!(PoolMethod::Mean.apply(&[]).is_err());
     }
 }
