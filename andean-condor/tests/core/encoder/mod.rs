@@ -1,3 +1,4 @@
+mod aom;
 mod cli;
 #[cfg(unix)]
 mod executable_resolution;
@@ -5,6 +6,9 @@ mod executable_resolution;
 mod preflight;
 #[cfg(target_os = "linux")]
 mod public_encoding;
+mod rav1e;
+mod svt_av1;
+mod vpx;
 
 #[path = "../../../src/core/encoder/tests/support.rs"]
 mod support;
