@@ -52,8 +52,8 @@ mod cli_parser {
     }
 
     #[test]
-    fn defaults_local_options_and_globals_remain_valid() {
-        use clap::{CommandFactory, FromArgMatches};
+    fn cli_default_and_command_local_run_options_pass_root_admission() {
+        use clap::CommandFactory;
         for args in [
             vec![],
             vec!["encode"],
@@ -70,6 +70,11 @@ mod cli_parser {
             CondorCli::admit_root_arguments(&matches, &mut cmd)
                 .expect("local/default options admitted");
         }
+    }
+
+    #[test]
+    fn cli_global_options_before_or_after_run_subcommand_preserve_values() {
+        use clap::{CommandFactory, FromArgMatches};
         for command in [
             "init",
             "encode",
@@ -108,6 +113,20 @@ mod cli_parser {
                 assert!(cli.verbose);
                 assert!(cli.version);
             }
+        }
+    }
+
+    #[test]
+    fn cli_version_before_or_after_subcommand_sets_version_flag() {
+        for command in [
+            "init",
+            "encode",
+            "detect-scenes",
+            "target-quality",
+            "concatenate",
+            "quality-check",
+            "benchmark",
+        ] {
             for args in [["condor", "--version", command], ["condor", command, "--version"]] {
                 assert!(CondorCli::try_parse_from(args).expect("global version").version);
             }
@@ -140,7 +159,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_relative_paths() {
+        fn init_relative_input_and_output_paths_parse_without_filesystem_admission() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
@@ -248,7 +267,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_optional_flags() {
+        fn init_unknown_encoder_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
@@ -262,6 +281,10 @@ mod cli_parser {
                 Err(_),
                 "\"condor init INPUT OUTPUT --encoder x263\" does not parse"
             );
+        }
+
+        #[test]
+        fn init_negative_workers_are_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
@@ -275,6 +298,10 @@ mod cli_parser {
                 Err(_),
                 "\"condor init INPUT OUTPUT --workers -2\" does not parse"
             );
+        }
+
+        #[test]
+        fn init_negative_photon_noise_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
@@ -338,7 +365,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_discard() {
+        fn init_unknown_discard_category_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "init",
@@ -377,15 +404,8 @@ mod cli_parser {
         }
 
         #[test]
-        fn without_input() {
-            let temp = tempfile::tempdir().expect("temp directory");
-            let output = temp.path().join("out.mkv");
-
-            let result = CondorCli::try_parse_from([
-                "condor",
-                "--output",
-                output.to_str().expect("output path is valid"),
-            ]);
+        fn root_output_without_input_parses_without_subcommand() {
+            let result = CondorCli::try_parse_from(["condor", "--output", "./out.mkv"]);
             assert_matches!(
                 result,
                 Ok(CondorCli { command: None, .. }),
@@ -410,7 +430,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn without_parameters() {
+        fn cli_no_arguments_parses_root_command() {
             let result = CondorCli::try_parse_from(["condor"]);
             assert_matches!(
                 result,
@@ -467,7 +487,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_optional_flags() {
+        fn root_unknown_encoder_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--input",
@@ -482,6 +502,10 @@ mod cli_parser {
                 Err(_),
                 "\"condor --input INPUT --output OUTPUT --encoder x263\" does not parse"
             );
+        }
+
+        #[test]
+        fn root_negative_workers_are_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--input",
@@ -496,6 +520,10 @@ mod cli_parser {
                 Err(_),
                 "\"condor --input INPUT --output OUTPUT --workers -2\" does not parse"
             );
+        }
+
+        #[test]
+        fn root_negative_photon_noise_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--input",
@@ -513,7 +541,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_zones() {
+        fn root_repeated_zones_preserve_inline_definition_and_file_argument() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "--input",
@@ -541,7 +569,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn dry_run_before_and_after_negative_bound_zones() {
+        fn zone_dry_run_flag_parses_around_negative_bound_definitions() {
             for args in [
                 vec!["condor", "zone", "--dry-run", "-1 200 svt-av1 \"--preset 3\""],
                 vec!["condor", "zone", "-1 200 svt-av1 \"--preset 3\"", "--dry-run"],
@@ -555,7 +583,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn default() {
+        fn zone_without_arguments_parses_empty_zones_and_dry_run_false() {
             let result = CondorCli::try_parse_from(["condor", "zone"]);
             assert_matches!(
                 result,
@@ -568,7 +596,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_zones() {
+        fn zone_inline_definition_and_file_parse_in_order_with_dry_run_false() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "zone",
@@ -597,7 +625,7 @@ mod cli_parser {
         /// without an action the addressed scenes are printed. The shapes
         /// the index binds are pinned here so the grammar cannot drift.
         #[test]
-        fn the_index_comes_before_the_action() {
+        fn scenes_selection_before_info_action_binds_ranges_and_key() {
             let cli = CondorCli::try_parse_from([
                 "condor",
                 "scenes",
@@ -616,7 +644,10 @@ mod cli_parser {
                     ..
                 }) if ranges == &[(1, 2), (8, 10), (16, 16)]
             );
+        }
 
+        #[test]
+        fn scenes_all_before_reset_binds_all_selection() {
             let cli = CondorCli::try_parse_from(["condor", "scenes", "all", "reset"])
                 .expect("\"condor scenes all reset\" parses");
             assert_matches!(
@@ -627,7 +658,10 @@ mod cli_parser {
                     ..
                 })
             );
+        }
 
+        #[test]
+        fn scenes_without_selection_or_action_parses_both_as_unset() {
             // Without an action, and without an index, the whole list is
             // what a bare `condor scenes` prints.
             let cli =
@@ -644,7 +678,7 @@ mod cli_parser {
 
         /// `add` places its own scene, so its placements are exclusive.
         #[test]
-        fn add_placements_are_exclusive() {
+        fn scenes_add_after_binds_placement_without_selection() {
             let cli =
                 CondorCli::try_parse_from(["condor", "scenes", "add", "0", "100", "--after=3"])
                     .expect("\"condor scenes add 0 100 --after=3\" parses");
@@ -656,7 +690,10 @@ mod cli_parser {
                     ..
                 })
             );
+        }
 
+        #[test]
+        fn scenes_add_append_and_prepend_together_are_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "scenes",
@@ -686,7 +723,7 @@ mod cli_parser {
         /// editor shares: a keyed read, a typed write and both reset
         /// forms.
         #[test]
-        fn the_config_action_triple_binds() {
+        fn config_info_set_and_reset_bind_typed_command_action_and_property() {
             let cli = CondorCli::try_parse_from(["condor", "detect-scenes", "info", "method"])
                 .expect("\"detect-scenes info method\" parses");
             assert_matches!(
@@ -739,7 +776,10 @@ mod cli_parser {
                     ..
                 })
             );
+        }
 
+        #[test]
+        fn config_reset_section_key_is_rejected() {
             // The redundant `section` key is gone; a bare `reset`
             // replaces it.
             assert!(
@@ -752,7 +792,7 @@ mod cli_parser {
         /// tables the parser owns — the switch spellings, the alias names —
         /// are pinned here rather than end to end.
         #[test]
-        fn values_positionals_and_aliases_parse() {
+        fn scale_speed_set_pairs_parse_quantizer_and_speed_values() {
             let cli = CondorCli::try_parse_from([
                 "condor",
                 "scale-speed",
@@ -773,7 +813,10 @@ mod cli_parser {
                     ..
                 }) if points == vec![(20, 6), (35, 4)]
             );
+        }
 
+        #[test]
+        fn detect_noise_set_reference_filters_keeps_positional_filter() {
             let cli = CondorCli::try_parse_from([
                 "condor",
                 "detect-noise",
@@ -793,7 +836,10 @@ mod cli_parser {
                     ..
                 }) if filters == &["resize:width=960;".to_owned()]
             );
+        }
 
+        #[test]
+        fn config_toggle_aliases_parse_on_and_off() {
             // One flag turns a setting both ways: every spelling of the
             // on/off value lands on the switch, and a following flag is
             // never swallowed as its value.
@@ -833,7 +879,10 @@ mod cli_parser {
                     }) if save_scores == Some(expected)
                 );
             }
+        }
 
+        #[test]
+        fn config_optional_toggle_does_not_consume_following_flag() {
             let cli = CondorCli::try_parse_from([
                 "condor",
                 "detect-scenes",
@@ -858,7 +907,10 @@ mod cli_parser {
                     ..
                 })
             );
+        }
 
+        #[test]
+        fn config_omitted_scale_chroma_toggle_leaves_optional_value_unset() {
             // The switch value is optional and means on when omitted.
             let cli = CondorCli::try_parse_from(["condor", "scale-noise", "set", "scale-chroma"])
                 .expect("\"scale-noise set scale-chroma\" parses");
@@ -876,7 +928,7 @@ mod cli_parser {
         /// Unknown properties and kinds are parse errors, and run flags
         /// never mix with an editing subcommand.
         #[test]
-        fn invalid_edits_and_mixed_run_flags_are_rejected() {
+        fn config_unknown_properties_invalid_values_and_removed_settings_are_rejected() {
             for args in [
                 vec!["condor", "detect-scenes", "set", "nonsense"],
                 vec!["condor", "detect-scenes", "set", "method", "not-an-algorithm"],
@@ -893,7 +945,10 @@ mod cli_parser {
                     "{args:?} is rejected"
                 );
             }
+        }
 
+        #[test]
+        fn detect_scenes_run_flags_parse_without_edit_action() {
             // Run flags still parse on their own, but conflict with a
             // configuration subcommand.
             let cli =
@@ -907,7 +962,10 @@ mod cli_parser {
                     ..
                 })
             );
+        }
 
+        #[test]
+        fn detect_scenes_run_flags_conflict_with_info_action() {
             assert!(
                 CondorCli::try_parse_from([
                     "condor",
@@ -925,7 +983,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn detect_scenes_without_options_parses_detect_scenes_command() {
             let result = CondorCli::try_parse_from(["condor", "detect-scenes"]);
             assert_matches!(
                 result,
@@ -938,7 +996,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_input() {
+        fn detect_scenes_input_flag_parses_as_present() {
             let result =
                 CondorCli::try_parse_from(["condor", "detect-scenes", "--input", "./input.mp4"]);
             assert_matches!(
@@ -952,11 +1010,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_options() {
-            let temp = tempfile::tempdir().expect("temp directory");
-            let config_path = temp.path().join("condor.json");
-            let logs_path = temp.path().join("condor.log");
-
+        fn detect_scenes_fast_method_and_scene_duration_bounds_parse_expected_values() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "detect-scenes",
@@ -967,11 +1021,11 @@ mod cli_parser {
                 "--max-scene-seconds",
                 "5",
                 "--config-file",
-                config_path.to_str().expect("config path exists"),
+                "./condor.json",
                 "--temp",
-                temp.path().to_str().expect("temp path exists"),
+                "./work",
                 "--logs",
-                logs_path.to_str().expect("log path exists"),
+                "./condor.log",
             ]);
             assert_matches!(
                 result,
@@ -990,7 +1044,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_optional_flags() {
+        fn detect_scenes_nonnumeric_minimum_duration_is_rejected() {
             let result =
                 CondorCli::try_parse_from(["condor", "detect-scenes", "--min-scene-seconds", "pi"]);
             assert_matches!(
@@ -998,6 +1052,10 @@ mod cli_parser {
                 Err(_),
                 "\"condor detect-scenes --min-scene-seconds pi\" does not parse"
             );
+        }
+
+        #[test]
+        fn detect_scenes_negative_maximum_duration_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "detect-scenes",
@@ -1009,6 +1067,10 @@ mod cli_parser {
                 Err(_),
                 "\"condor detect-scenes --max-scene-seconds -12\" does not parse"
             );
+        }
+
+        #[test]
+        fn detect_scenes_unknown_method_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "detect-scenes",
@@ -1028,7 +1090,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn detect_noise_without_options_parses_detect_noise_command() {
             let result = CondorCli::try_parse_from(["condor", "detect-noise"]);
             assert_matches!(
                 result,
@@ -1041,7 +1103,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_input() {
+        fn detect_noise_input_flag_parses_as_present() {
             let result =
                 CondorCli::try_parse_from(["condor", "detect-noise", "--input", "./input.mp4"]);
             assert_matches!(
@@ -1055,7 +1117,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_vs_args() {
+        fn detect_noise_repeated_vs_args_parse_two_values_with_script_input() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "detect-noise",
@@ -1086,7 +1148,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn scale_noise_without_options_parses_scale_noise_command() {
             let result = CondorCli::try_parse_from(["condor", "scale-noise"]);
             assert_matches!(
                 result,
@@ -1099,7 +1161,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_threshold() {
+        fn scale_noise_threshold_parses_expected_fraction() {
             let result =
                 CondorCli::try_parse_from(["condor", "scale-noise", "--threshold", "0.002"]);
             assert_matches!(
@@ -1116,7 +1178,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_min_max_scaler() {
+        fn scale_noise_minimum_and_maximum_scalers_parse_expected_values() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "scale-noise",
@@ -1140,7 +1202,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_scale_chroma() {
+        fn scale_noise_scale_chroma_flag_parses_as_true() {
             let result = CondorCli::try_parse_from(["condor", "scale-noise", "--scale-chroma"]);
             assert_matches!(
                 result,
@@ -1156,7 +1218,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_all_options() {
+        fn scale_noise_combined_threshold_bounds_and_chroma_flag_preserve_all_values() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "scale-noise",
@@ -1189,7 +1251,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn benchmark_without_options_parses_benchmark_command() {
             let result = CondorCli::try_parse_from(["condor", "benchmark"]);
             assert_matches!(
                 result,
@@ -1202,7 +1264,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_threshold() {
+        fn benchmark_threshold_parses_expected_integer() {
             let result = CondorCli::try_parse_from(["condor", "benchmark", "--threshold", "10"]);
             assert_matches!(
                 result,
@@ -1218,7 +1280,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_max_memory() {
+        fn benchmark_max_memory_parses_expected_limit() {
             let result = CondorCli::try_parse_from(["condor", "benchmark", "--max-memory", "4096"]);
             assert_matches!(
                 result,
@@ -1234,7 +1296,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_threshold_range() {
+        fn benchmark_threshold_above_one_hundred_is_rejected() {
             let result = CondorCli::try_parse_from(["condor", "benchmark", "--threshold", "101"]);
             assert_matches!(
                 result,
@@ -1244,7 +1306,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_threshold_negative() {
+        fn benchmark_negative_threshold_is_rejected() {
             let result = CondorCli::try_parse_from(["condor", "benchmark", "--threshold", "-5"]);
             assert_matches!(
                 result,
@@ -1258,7 +1320,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn target_quality_without_options_parses_target_quality_command() {
             let result = CondorCli::try_parse_from(["condor", "target-quality"]);
             assert_matches!(
                 result,
@@ -1271,7 +1333,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_input() {
+        fn target_quality_input_flag_parses_as_present() {
             let result =
                 CondorCli::try_parse_from(["condor", "target-quality", "--input", "./input.mp4"]);
             assert_matches!(
@@ -1285,7 +1347,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_metric_and_target() {
+        fn target_quality_ssimulacra2_metric_and_numeric_target_parse_expected_values() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "target-quality",
@@ -1309,7 +1371,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_profile() {
+        fn target_quality_slow_profile_parses_slow_variant() {
             let result =
                 CondorCli::try_parse_from(["condor", "target-quality", "--profile", "slow"]);
             assert_matches!(
@@ -1326,7 +1388,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_all_metric_variants() {
+        fn target_quality_each_metric_name_parses_corresponding_variant() {
             for (name, expected) in [
                 ("vmaf", QualityMetric::VMAF),
                 ("ssimulacra2", QualityMetric::SSIMULACRA2),
@@ -1369,7 +1431,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_all_profile_variants() {
+        fn target_quality_each_profile_name_parses_corresponding_variant() {
             for (name, expected) in [
                 ("fast", QualityProfile::Fast),
                 ("standard", QualityProfile::Standard),
@@ -1403,7 +1465,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_min_max_quantizer() {
+        fn target_quality_min_q_and_max_q_parse_expected_bounds() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "target-quality",
@@ -1427,7 +1489,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_params() {
+        fn target_quality_parameter_string_parses_as_present() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "target-quality",
@@ -1448,7 +1510,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_metric() {
+        fn target_quality_unknown_metric_is_rejected() {
             let result =
                 CondorCli::try_parse_from(["condor", "target-quality", "--metric", "nonexistent"]);
             assert_matches!(
@@ -1459,7 +1521,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_profile() {
+        fn target_quality_unknown_profile_is_rejected() {
             let result =
                 CondorCli::try_parse_from(["condor", "target-quality", "--profile", "nonexistent"]);
             assert_matches!(
@@ -1474,7 +1536,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn quality_check_without_options_parses_quality_check_command() {
             let result = CondorCli::try_parse_from(["condor", "quality-check"]);
             assert_matches!(
                 result,
@@ -1487,7 +1549,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_metric() {
+        fn quality_check_ssimulacra2_metric_parses_corresponding_variant() {
             let result =
                 CondorCli::try_parse_from(["condor", "quality-check", "--metric", "ssimulacra2"]);
             assert_matches!(
@@ -1504,7 +1566,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_profile() {
+        fn quality_check_fast_profile_parses_fast_variant() {
             let result =
                 CondorCli::try_parse_from(["condor", "quality-check", "--profile", "fast"]);
             assert_matches!(
@@ -1521,7 +1583,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_all_metric_variants() {
+        fn quality_check_each_metric_name_parses_corresponding_variant() {
             for (name, expected) in [
                 ("vmaf", QualityMetric::VMAF),
                 ("ssimulacra2", QualityMetric::SSIMULACRA2),
@@ -1558,7 +1620,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_metric() {
+        fn quality_check_unknown_metric_is_rejected() {
             let result =
                 CondorCli::try_parse_from(["condor", "quality-check", "--metric", "nonexistent"]);
             assert_matches!(
@@ -1573,7 +1635,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn optimize_bitrate_without_options_parses_optimize_bitrate_command() {
             let result = CondorCli::try_parse_from(["condor", "optimize-bitrate"]);
             assert_matches!(
                 result,
@@ -1586,7 +1648,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_sigma_threshold() {
+        fn optimize_bitrate_sigma_threshold_parses_expected_integer() {
             let result =
                 CondorCli::try_parse_from(["condor", "optimize-bitrate", "--sigma-threshold", "3"]);
             assert_matches!(
@@ -1603,7 +1665,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_sigma_below_range() {
+        fn optimize_bitrate_sigma_below_one_is_rejected() {
             let result =
                 CondorCli::try_parse_from(["condor", "optimize-bitrate", "--sigma-threshold", "0"]);
             assert_matches!(
@@ -1614,7 +1676,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_sigma_above_range() {
+        fn optimize_bitrate_sigma_above_ten_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "optimize-bitrate",
@@ -1634,7 +1696,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn requires_both_quantizers_and_speeds() {
+        fn scale_speed_one_quantizer_speed_pair_parses() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "scale-speed",
@@ -1654,7 +1716,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_multiple_pairs() {
+        fn scale_speed_repeated_quantizer_and_speed_flags_preserve_three_ordered_pairs() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "scale-speed",
@@ -1705,7 +1767,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn quantizers_without_speeds() {
+        fn scale_speed_quantizers_without_speeds_are_rejected() {
             let result = CondorCli::try_parse_from(["condor", "scale-speed", "--quantizers", "20"]);
             assert_matches!(
                 result,
@@ -1715,7 +1777,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn speeds_without_quantizers() {
+        fn scale_speed_speeds_without_quantizers_are_rejected() {
             let result = CondorCli::try_parse_from(["condor", "scale-speed", "--speeds", "5"]);
             assert_matches!(
                 result,
@@ -1725,7 +1787,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_negative_quantizers() {
+        fn scale_speed_negative_quantizer_argument_is_rejected() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "scale-speed",
@@ -1746,7 +1808,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn encode_without_options_parses_encode_command() {
             let result = CondorCli::try_parse_from(["condor", "encode"]);
             assert_matches!(
                 result,
@@ -1759,7 +1821,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_input() {
+        fn encode_input_flag_parses_as_present() {
             let result = CondorCli::try_parse_from(["condor", "encode", "--input", "./input.mp4"]);
             assert_matches!(
                 result,
@@ -1772,7 +1834,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_encoder_and_workers() {
+        fn encode_x264_and_worker_count_parse_expected_values() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "encode",
@@ -1796,7 +1858,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_passes() {
+        fn encode_pass_count_parses_expected_integer() {
             let result = CondorCli::try_parse_from(["condor", "encode", "--passes", "2"]);
             assert_matches!(
                 result,
@@ -1812,7 +1874,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_params() {
+        fn encode_parameter_string_parses_as_present() {
             let result =
                 CondorCli::try_parse_from(["condor", "encode", "--params", "--preset 8 --crf 30"]);
             assert_matches!(
@@ -1829,7 +1891,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_photon_noise() {
+        fn encode_luma_and_chroma_photon_noise_parse_expected_iso_values() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "encode",
@@ -1853,7 +1915,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_decoder_and_filters() {
+        fn encode_bestsource_decoder_and_filter_string_parse_as_requested() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "encode",
@@ -1877,7 +1939,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_vs_args() {
+        fn encode_vs_args_flag_parses_as_present() {
             let result = CondorCli::try_parse_from(["condor", "encode", "--vs-args", "threads=8"]);
             assert_matches!(
                 result,
@@ -1893,7 +1955,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_ffmpeg_filter() {
+        fn encode_ffmpeg_filter_parses_as_present() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "encode",
@@ -1914,7 +1976,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_encoder() {
+        fn encode_unknown_encoder_is_rejected() {
             let result = CondorCli::try_parse_from(["condor", "encode", "--encoder", "x263"]);
             assert_matches!(
                 result,
@@ -1924,7 +1986,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_workers_negative() {
+        fn encode_negative_worker_count_is_rejected() {
             let result = CondorCli::try_parse_from(["condor", "encode", "--workers", "-1"]);
             assert_matches!(
                 result,
@@ -1938,7 +2000,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn concatenate_without_options_parses_concatenate_command() {
             let result = CondorCli::try_parse_from(["condor", "concatenate"]);
             assert_matches!(
                 result,
@@ -1951,7 +2013,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_mkvmerge() {
+        fn concatenate_mkvmerge_method_parses_corresponding_variant() {
             let result =
                 CondorCli::try_parse_from(["condor", "concatenate", "--method", "mkvmerge"]);
             assert_matches!(
@@ -1968,7 +2030,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_ffmpeg() {
+        fn concatenate_ffmpeg_method_parses_corresponding_variant() {
             let result = CondorCli::try_parse_from(["condor", "concatenate", "--method", "ffmpeg"]);
             assert_matches!(
                 result,
@@ -1984,7 +2046,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_ivf() {
+        fn concatenate_ivf_method_parses_corresponding_variant() {
             let result = CondorCli::try_parse_from(["condor", "concatenate", "--method", "ivf"]);
             assert_matches!(
                 result,
@@ -2000,7 +2062,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_method() {
+        fn concatenate_unknown_method_is_rejected() {
             let result =
                 CondorCli::try_parse_from(["condor", "concatenate", "--method", "invalid"]);
             assert_matches!(
@@ -2011,7 +2073,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_discard() {
+        fn concatenate_audio_discard_parses_audio_category() {
             let result = CondorCli::try_parse_from(["condor", "concatenate", "--discard", "audio"]);
             assert_matches!(
                 result,
@@ -2038,7 +2100,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_repeated_discard() {
+        fn concatenate_repeated_discard_flags_preserve_audio_and_subtitle_order() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "concatenate",
@@ -2081,7 +2143,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_delimited_discard() {
+        fn concatenate_comma_delimited_discard_preserves_audio_subtitle_and_chapters_order() {
             let result = CondorCli::try_parse_from([
                 "condor",
                 "concatenate",
@@ -2124,7 +2186,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_invalid_discard() {
+        fn concatenate_unknown_discard_category_is_rejected() {
             let result = CondorCli::try_parse_from(["condor", "concatenate", "--discard", "font"]);
             assert_matches!(
                 result,
@@ -2151,7 +2213,7 @@ mod cli_parser {
         use super::*;
 
         #[test]
-        fn default() {
+        fn clean_without_options_parses_clean_command() {
             let result = CondorCli::try_parse_from(["condor", "clean"]);
             assert_matches!(
                 result,
@@ -2164,7 +2226,7 @@ mod cli_parser {
         }
 
         #[test]
-        fn with_all() {
+        fn clean_all_flag_parses_as_true() {
             let result = CondorCli::try_parse_from(["condor", "clean", "--all"]);
             assert_matches!(
                 result,
@@ -2200,7 +2262,7 @@ mod discard {
     use crate::commands::help_text::process_command_tree;
 
     #[test]
-    fn parses_every_category() {
+    fn concatenate_discard_each_supported_category_name_parses() {
         for name in ["audio", "subtitle", "attachment", "metadata", "chapters", "video"] {
             let result = CondorCli::try_parse_from(["condor", "concatenate", "--discard", name]);
             assert_matches!(
@@ -2218,7 +2280,7 @@ mod discard {
     }
 
     #[test]
-    fn category_names_round_trip() {
+    fn discard_categories_format_canonical_names_and_parse_back_to_original_variants() {
         assert_eq!(DiscardCategory::Audio.to_string(), "audio");
         assert_eq!(DiscardCategory::Subtitle.to_string(), "subtitle");
         assert_eq!(DiscardCategory::Attachment.to_string(), "attachment");
@@ -2293,7 +2355,7 @@ mod enum_mappings {
     use super::*;
 
     #[test]
-    fn scene_detection_method_mapping() {
+    fn scene_detection_cli_methods_map_to_core_algorithms_and_preserve_explicit_frame_bounds() {
         // None -> CoreSCDMethod::None
         let result = SceneDetectionMethod::None.as_core_method(Some(120), Some(240));
         assert_matches!(result, CoreSCDMethod::None { .. });
@@ -2346,7 +2408,7 @@ mod enum_mappings {
     }
 
     #[test]
-    fn scene_detection_method_default_lengths() {
+    fn scene_detection_none_without_lengths_uses_default_minimum_and_maximum_frames() {
         // None with None lengths uses defaults
         let result = SceneDetectionMethod::None.as_core_method(None, None);
         assert_matches!(result, CoreSCDMethod::None { .. });
@@ -2371,7 +2433,7 @@ mod enum_mappings {
     }
 
     #[test]
-    fn encoder_method_mapping() {
+    fn cli_encoder_methods_map_to_corresponding_core_encoder_bases() {
         assert_matches!(EncoderMethod::AOM.as_encoder_base(), EncoderBase::AOM);
         assert_matches!(EncoderMethod::RAV1E.as_encoder_base(), EncoderBase::RAV1E);
         assert_matches!(EncoderMethod::VPX.as_encoder_base(), EncoderBase::VPX);
@@ -2384,7 +2446,7 @@ mod enum_mappings {
     }
 
     #[test]
-    fn decoder_method_strum_serialization() {
+    fn decoder_methods_convert_to_canonical_cli_names() {
         use super::DecoderMethod;
         assert_eq!(<&str>::from(&DecoderMethod::BestSource), "bestsource");
         assert_eq!(<&str>::from(&DecoderMethod::VSFFMS2), "vs-ffms2");
@@ -2394,7 +2456,7 @@ mod enum_mappings {
     }
 
     #[test]
-    fn decoder_method_from_str() {
+    fn decoder_canonical_names_parse_to_variants_and_unknown_name_is_rejected() {
         use std::str::FromStr;
         assert_matches!(
             DecoderMethod::from_str("bestsource"),
@@ -2417,14 +2479,14 @@ mod enum_mappings {
     }
 
     #[test]
-    fn concatenation_method_strum_serialization() {
+    fn concatenation_methods_convert_to_canonical_cli_names() {
         assert_eq!(<&str>::from(&ConcatenationMethod::MkvMerge), "mkvmerge");
         assert_eq!(<&str>::from(&ConcatenationMethod::FFmpeg), "ffmpeg");
         assert_eq!(<&str>::from(&ConcatenationMethod::Ivf), "ivf");
     }
 
     #[test]
-    fn encoder_method_strum_serialization() {
+    fn encoder_methods_convert_to_canonical_cli_names() {
         assert_eq!(<&str>::from(&EncoderMethod::AOM), "aom");
         assert_eq!(<&str>::from(&EncoderMethod::RAV1E), "rav1e");
         assert_eq!(<&str>::from(&EncoderMethod::VPX), "vpx");
@@ -2437,7 +2499,7 @@ mod enum_mappings {
     }
 
     #[test]
-    fn target_quality_metric_strum_serialization() {
+    fn quality_metrics_convert_to_canonical_cli_names() {
         assert_eq!(<&str>::from(&QualityMetric::VMAF), "vmaf");
         assert_eq!(<&str>::from(&QualityMetric::SSIMULACRA2), "ssimulacra2");
         assert_eq!(<&str>::from(&QualityMetric::BUTTERAUGLI), "butteraugli");
@@ -2450,14 +2512,14 @@ mod enum_mappings {
     }
 
     #[test]
-    fn target_quality_profile_strum_serialization() {
+    fn quality_profiles_convert_to_canonical_cli_names() {
         assert_eq!(<&str>::from(&QualityProfile::Fast), "fast");
         assert_eq!(<&str>::from(&QualityProfile::Standard), "standard");
         assert_eq!(<&str>::from(&QualityProfile::Slow), "slow");
     }
 
     #[test]
-    fn scene_detection_method_strum_serialization() {
+    fn scene_detection_methods_convert_to_canonical_cli_names() {
         assert_eq!(<&str>::from(&SceneDetectionMethod::None), "none");
         assert_eq!(<&str>::from(&SceneDetectionMethod::Fast), "fast");
         assert_eq!(<&str>::from(&SceneDetectionMethod::Standard), "standard");
