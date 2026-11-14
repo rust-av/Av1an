@@ -14,6 +14,197 @@ mod target_quality;
 mod zone;
 
 #[cfg(test)]
+mod input_configuration {
+    use andean_condor::{
+        models::input::{ImportMethod, Input as InputModel, VapourSynthScriptSource},
+        vapoursynth::vapoursynth_filters::VapourSynthFilter,
+    };
+    use california_condor::{
+        commands::{
+            CondorCliError, DecoderMethod,
+            handlers::{apply_input_filters, configure_input, encode, load_configuration},
+        },
+        configuration::Configuration,
+    };
+    use std::{assert_matches, collections::HashMap, path::PathBuf};
+
+    fn script_input(stream_concurrently: bool) -> InputModel {
+        InputModel::VapourSynthScript {
+            source: VapourSynthScriptSource::Path("script.vpy".into()),
+            variables: HashMap::new(),
+            index: 0,
+            filters: Vec::new(),
+            stream_concurrently,
+        }
+    }
+
+    fn built_stream_concurrently(input: &InputModel) -> bool {
+        let InputModel::VapourSynthScript {
+            stream_concurrently,
+            ..
+        } = input
+        else {
+            panic!("expected a VapourSynthScript input");
+        };
+        *stream_concurrently
+    }
+
+    #[test]
+    fn configure_and_apply_filters_are_atomic_without_source_indexing() {
+        use andean_condor::{ffmpeg::FFPixelFormat, models::input::Ffms2Filter};
+        let temp = tempfile::tempdir().expect("CLI fixture");
+        let script = temp.path().join("blank.vpy");
+        std::fs::write(&script, "from vapoursynth import core, YUV420P8\ncore.std.BlankClip(width=32, height=16, format=YUV420P8).set_output()\n").expect("blank script");
+        let mut configuration = Configuration::new(
+            &script,
+            &temp.path().join("out.mkv"),
+            Some(temp.path()),
+            None,
+            None,
+        )
+        .expect("configuration");
+        let media = temp.path().join("not-a-decodable-source.mkv");
+        std::fs::write(
+            &media,
+            b"configuration edits must not decode/index this file",
+        )
+        .expect("existing path");
+        configuration.condor.input = InputModel::Video {
+            path: media,
+            import_method: ImportMethod::FFMS2 {
+                index: Some(0),
+                cache_path: Some(temp.path().join("must-not-exist.ffindex")),
+            },
+            filters: vec![Ffms2Filter::OutputFormat {
+                bit_depth: Some(10),
+                chroma: None,
+                width: None,
+                height: None,
+            }],
+        };
+        let disk = temp.path().join("config.json");
+        let before = serde_json::to_vec(&configuration).expect("configuration JSON");
+        std::fs::write(&disk, &before).expect("saved configuration");
+        let converted = configure_input(
+            &configuration,
+            &configuration.condor.input,
+            None,
+            Some(&DecoderMethod::VSFFMS2),
+            None,
+            None,
+            None,
+        )
+        .expect("model-only copy, no decoder/index");
+        for format in [FFPixelFormat::NV12, FFPixelFormat::GBRP, FFPixelFormat::YUV440P] {
+            let invalid = VapourSynthFilter::Resize {
+                scaler: None,
+                width: Some(16),
+                height: None,
+                format: Some(format),
+            };
+            let mut override_config = configuration.clone();
+            override_config.condor.input = converted.clone();
+            let override_before = serde_json::to_vec(&override_config).expect("VS config snapshot");
+            let error = encode::configure_parallel_encoder(
+                &mut override_config,
+                None,
+                Some(&DecoderMethod::FFMS2),
+                Some(std::slice::from_ref(&invalid)),
+                None,
+                Some(2),
+                None,
+            )
+            .expect_err("native override cannot represent explicit format");
+            assert!(error.to_string().contains(format.to_pix_fmt_string()));
+            assert_eq!(
+                serde_json::to_vec(&override_config).expect("unchanged override config"),
+                override_before
+            );
+            let mut vs = converted.clone();
+            vs.set_filters(vec![invalid.clone()]).expect("VS retains resize intent");
+            assert!(
+                configure_input(
+                    &configuration,
+                    &vs,
+                    None,
+                    Some(&DecoderMethod::FFMS2),
+                    None,
+                    None,
+                    None
+                )
+                .is_err(),
+                "{format:?}"
+            );
+            let error = apply_input_filters(&mut configuration.condor.input, &[invalid])
+                .expect_err("unsupported explicit format");
+            assert!(error.to_string().contains(format.to_pix_fmt_string()));
+            assert_eq!(
+                serde_json::to_vec(&configuration).expect("unchanged model"),
+                before
+            );
+            assert_eq!(std::fs::read(&disk).expect("saved config"), before);
+        }
+        assert!(!temp.path().join("must-not-exist.ffindex").exists());
+        assert_eq!(
+            std::fs::read_dir(temp.path()).expect("fixture listing").count(),
+            3,
+            "only script, media and config; no index or temp output"
+        );
+    }
+
+    #[test]
+    fn rebuilding_a_script_input_keeps_concurrent_streaming_off() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let script = temp.path().join("script.vpy");
+        // BlankClip supplies the real output node required by Configuration::new.
+        std::fs::write(
+            &script,
+            "import vapoursynth as vs\ncore = vs.core\nclip = core.std.BlankClip(width=16, \
+             height=16, format=vs.YUV420P8)\nclip.set_output(0)\n",
+        )
+        .expect("script file writes to disk");
+        let configuration =
+            Configuration::new(&script, &PathBuf::from("out.mkv"), None, None, None)
+                .expect("a configuration can be built from a script");
+        let rebuilt = configure_input(
+            &configuration,
+            &script_input(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("the input can be rebuilt");
+        assert!(
+            !built_stream_concurrently(&rebuilt),
+            "stream_concurrently: false must survive the rebuild"
+        );
+    }
+
+    #[test]
+    fn load_configuration_invalid_json_returns_typed_parse_error_with_line_detail() {
+        let temp = tempfile::tempdir().expect("failed to create temp dir");
+        let config_path = temp.path().join("condor.json");
+        std::fs::write(&config_path, "{ invalid JSON").expect("config file writes to disk");
+        let error = load_configuration(Some(&config_path))
+            .expect_err("invalid JSON should fail to load")
+            .downcast::<CondorCliError>()
+            .expect("load_configuration error should be CondorCliError");
+        let error_string = format!("{error:#}");
+        assert_matches!(
+            error,
+            CondorCliError::ConfigParseError(_),
+            "invalid JSON should be ConfigParseError"
+        );
+        assert!(
+            error_string.contains("line"),
+            "error should include the JSON parse detail, got: {error_string}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod encoder_admission {
     use crate::common::condor_cmd;
     use andean_condor::models::{
