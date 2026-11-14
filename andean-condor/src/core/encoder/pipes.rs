@@ -287,7 +287,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn e13_process_display_prioritizes_failed_codec_but_retains_io_and_raw_bytes() {
+    fn process_display_prioritizes_failed_codec_but_retains_io_and_raw_bytes() {
         use std::os::unix::process::ExitStatusExt;
         for status in [Some(42), Some(0), None] {
             let result = status.map(|code| EncoderResult {
@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn e08_interrupted_reads_retain_fragments_bytes_and_progress() {
+    fn interrupted_reads_retain_fragments_bytes_and_progress() {
         struct InterruptedReader(usize);
         impl Read for InterruptedReader {
             fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn e08_invalid_record_retains_bytes_and_later_progress_on_both_routes() {
+    fn invalid_record_retains_bytes_and_later_progress_on_both_routes() {
         for (base, stdout, data) in [
             (
                 EncoderBase::X264,
@@ -409,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn e08_reader_writer_wait_errors_and_panics_are_all_joined_with_context() {
+    fn reader_writer_wait_errors_and_panics_are_all_joined_with_context() {
         for panic in [false, true] {
             let completed = Arc::new(AtomicU64::new(0));
             let stdout = spawn_reader(

@@ -187,7 +187,7 @@ impl SceneConcatenator {
                     })?;
                     remaining -= length as u32;
                     #[cfg(test)]
-                    super::tests::x09_tests::during_payload(output, cancellation);
+                    super::tests::publication::during_payload(output, cancellation);
                 }
                 // Bounded by the already checked global record count.
                 part_records += 1;
@@ -220,7 +220,7 @@ mod tests {
     use super::count_record;
 
     #[test]
-    fn x07_actual_record_count_rejects_overflow() {
+    fn actual_record_count_rejects_overflow() {
         assert_eq!(
             count_record(u32::MAX - 1).expect("last representable record"),
             u32::MAX

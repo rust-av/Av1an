@@ -276,12 +276,12 @@ fn collect_scene_values_with<'core>(
 }
 
 #[cfg(test)]
-mod m27a_tests {
+mod tests {
     use super::*;
     use std::{cell::Cell, sync::mpsc};
 
     #[test]
-    fn m27a_plugin_scene_construction_pairing_progress_and_stop() {
+    fn plugin_scene_construction_pairing_progress_and_stop() {
         let script = "import vapoursynth as vs\nc=vs.core\nc.std.Splice([c.std.BlankClip(width=32,height=32,length=1,format=vs.YUV420P8,color=[x,128,128]).std.SetFrameProps(CVVDP=float(x)) for x in [1,2,3,4,5,6]]).set_output()";
         let mut decoder =
             av_decoders::Decoder::from_script(script, Default::default()).expect("std fixture");

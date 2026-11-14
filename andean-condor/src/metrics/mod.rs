@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn m17_butteraugli_norm_capability_over_all_availability_and_inputs() {
+    fn butteraugli_norm_capability_over_all_availability_and_inputs() {
         // Rows: vship, fmetrics, plugin, infinity VS/FFMS2, finite VS/FFMS2.
         let cases = [
             (false, false, false, [None, None], [None, None]),

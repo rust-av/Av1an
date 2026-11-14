@@ -82,5 +82,5 @@ impl Dav1dFilmGrainDataRaw {
 }
 
 #[cfg(test)]
-#[path = "raw_tests.rs"]
+#[path = "raw/tests.rs"]
 mod tests;

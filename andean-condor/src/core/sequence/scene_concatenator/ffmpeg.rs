@@ -1,8 +1,8 @@
-use super::*;
-
 #[cfg(test)]
-#[path = "x05_tests.rs"]
-mod x05_tests;
+#[path = "tests/ffmpeg_tracks.rs"]
+mod ffmpeg_tracks;
+
+use super::*;
 
 impl SceneConcatenator {
     /// Scratch writer: the caller must exclusively own `output`; this can overwrite it.
@@ -602,7 +602,7 @@ mod tests {
 
     /// Explicit supported tracks are preserved without implicitly copying data.
     #[test]
-    fn x04_ffmpeg_args_override_maps_supported_tracks_without_data() {
+    fn ffmpeg_args_override_maps_supported_tracks_without_data() {
         let config: FfmpegConfig = serde_json::from_str(
             r#"{"tracks":{"1":{"type":"audio"},"2":{"type":"audio","copy":false},"3":{"type":"subtitle"},"4":{"type":"attachment"}},"extra_inputs":[{"path":"extra.mkv","tracks":{"1":{"type":"audio","copy":false},"2":{"type":"audio"},"3":{"type":"subtitle"},"4":{"type":"attachment"}}}]}"#,
         )
@@ -656,7 +656,7 @@ mod tests {
 
     /// Copy-all includes supported ancillary types, not unsupported data streams.
     #[test]
-    fn x04_ffmpeg_args_copy_all_maps_supported_tracks_without_data() {
+    fn ffmpeg_args_copy_all_maps_supported_tracks_without_data() {
         let config: FfmpegConfig =
             serde_json::from_str(r#"{"extra_inputs":[{"path":"extra.mkv"}]}"#)
                 .expect("config should deserialize");
@@ -683,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn x04_native_mov_timecode_is_omitted_and_audio_selection_is_preserved() {
+    fn native_mov_timecode_is_omitted_and_audio_selection_is_preserved() {
         fn run(command: &mut Command) -> Vec<u8> {
             let output = command.output().expect("required native fixture tool");
             assert!(
@@ -780,7 +780,9 @@ mod tests {
         assert_eq!(streams[2]["codec_type"], "audio");
         assert_eq!(streams[3]["codec_type"], "data");
         assert_eq!(streams[3]["codec_tag_string"], "tmcd");
-        eprintln!("X04 source: video, eng audio, jpn audio, tmcd data verified by ffprobe");
+        eprintln!(
+            "ffmpeg-mapping source: video, eng audio, jpn audio, tmcd data verified by ffprobe"
+        );
         let chunk = dir.path().join("chunk 'video'.mkv");
         run(Command::new("ffmpeg")
             .args(["-v", "error", "-i"])
@@ -847,7 +849,7 @@ mod tests {
             }
             assert!(!streams.iter().any(|stream| stream["codec_type"] == "data"));
             eprintln!(
-                "X04 {case}: native MKV, four video frames, {languages:?} audio packet hashes preserved, no data"
+                "ffmpeg-mapping {case}: native MKV, four video frames, {languages:?} audio packet hashes preserved, no data"
             );
         }
         assert_eq!(std::fs::read(&source).expect("source intact"), original);

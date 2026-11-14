@@ -8,13 +8,13 @@
 
 typedef struct { int history; double sum; } State;
 static void event(const char *name) {
-    FILE *f = fopen(getenv("M15_LOG"), "a");
+    FILE *f = fopen(getenv("TEMPORAL_FIXTURE_LOG"), "a");
     if (!f) abort();
     fprintf(f, "%s\n", name);
     fclose(f);
 }
 static void audit(const char *name) {
-    const char *s = getenv("M16_FPS_AUDIT");
+    const char *s = getenv("FRAME_RATE_FIXTURE_FPS_AUDIT");
     if (s && *s) event(name);
 }
 static void fps_event(const char *name, float fps) {
@@ -25,31 +25,31 @@ static void fps_event(const char *name, float fps) {
     audit(line);
 }
 static int fail(const char *name) {
-    const char *s = getenv("M15_FAIL");
+    const char *s = getenv("TEMPORAL_FIXTURE_FAIL");
     return s && !strcmp(s, name);
 }
 static double marker(State *s, int sample) {
-    if (fail("q05-nan")) return NAN;
-    if (fail("q05-inf")) return INFINITY;
-    if (fail("q05-neginf")) return -INFINITY;
-    if (fail("q05-last") && sample >= 470) return NAN;
+    if (fail("invalid-score-nan")) return NAN;
+    if (fail("invalid-score-inf")) return INFINITY;
+    if (fail("invalid-score-neginf")) return -INFINITY;
+    if (fail("invalid-score-last") && sample >= 470) return NAN;
     double value = sample + 1000 * s->history + 10 * s->sum;
     s->history = sample;
     s->sum += sample;
     return value;
 }
 static int pair_sample(int a, int b) {
-    const char *scope = getenv("M15_SCOPE");
-    return scope && !strncmp(scope, "m27a", 4) ? a + 3 * b : a;
+    const char *scope = getenv("TEMPORAL_FIXTURE_SCOPE");
+    return scope && !strncmp(scope, "scene", 5) ? a + 3 * b : a;
 }
 const char *fmetrics_version_str(void) { audit("fv"); return "0.1.0"; }
-const char *fmetrics_cvvdp_version_str(void) { return "M15-boundary-not-CVVDP"; }
-const char *fmetrics_error_str(FmetricsErr e) { (void)e; return "M15 combined reset failure"; }
+const char *fmetrics_cvvdp_version_str(void) { return "temporal-boundary-not-CVVDP"; }
+const char *fmetrics_error_str(FmetricsErr e) { (void)e; return "temporal combined reset failure"; }
 FmetricsWorkspace *fmetrics_workspace_create(void) { audit("fw+"); return (FmetricsWorkspace *)calloc(1, sizeof(State)); }
 void fmetrics_workspace_destroy(FmetricsWorkspace *p) { free(p); }
 FmetricsErr fmetrics_ssimu2_cmp(FmetricsWorkspace *w, const FmetricsImg *a, const FmetricsImg *b, double *s) {
     (void)w; (void)a; (void)b;
-    *s = fail("q05-nan") ? NAN : fail("q05-inf") ? INFINITY : fail("q05-neginf") ? -INFINITY : 42;
+    *s = fail("invalid-score-nan") ? NAN : fail("invalid-score-inf") ? INFINITY : fail("invalid-score-neginf") ? -INFINITY : 42;
     return FMETRICS_OK;
 }
 FmetricsErr fmetrics_iwssim_cmp(FmetricsWorkspace *w, const FmetricsImg *a, const FmetricsImg *b, double *s) { return fmetrics_ssimu2_cmp(w,a,b,s); }
@@ -77,7 +77,7 @@ Vship_Version Vship_GetVersion(void) { audit("vv"); return (Vship_Version){5,1,2
 Vship_Exception Vship_GetDeviceCount(int *n) { audit("vd"); *n=1; return Vship_NoError; }
 Vship_Exception Vship_GetDeviceInfo(Vship_DeviceInfo *info, int gpu) { audit("vi"); (void)gpu; memset(info,0,sizeof(*info)); return Vship_NoError; }
 Vship_Exception Vship_GPUFullCheck(int gpu) { audit("vg"); (void)gpu; return Vship_NoError; }
-int Vship_GetErrorMessage(Vship_Exception e, char *out, int len) { (void)e; return snprintf(out,(size_t)len,"M15 reset failure"); }
+int Vship_GetErrorMessage(Vship_Exception e, char *out, int len) { (void)e; return snprintf(out,(size_t)len,"temporal reset failure"); }
 int Vship_GetDetailedLastError(char *out, int len) { (void)out; (void)len; return 0; }
 int Vship_GetDetailedLastErrorHandler(Vship_Handle h, char *out, int len) { (void)h; (void)out; (void)len; return 0; }
 Vship_Exception Vship_InitHandler(Vship_Handle *h, void *arg) {

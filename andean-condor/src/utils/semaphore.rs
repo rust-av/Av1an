@@ -139,7 +139,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn e11_owned_permits_return_on_error_and_unwind_without_inflation() {
+    fn owned_permits_return_on_error_and_unwind_without_inflation() {
         let pool = Arc::new(Semaphore::new(1));
         let failed = || -> Result<(), ()> {
             let _permit = pool.acquire_owned().expect("open pool");
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn e11_close_wakes_all_waiters_and_raw_notifications_still_drain() {
+    fn close_wakes_all_waiters_and_raw_notifications_still_drain() {
         let pool = Arc::new(Semaphore::new(0));
         std::thread::scope(|s| {
             let handles: Vec<_> =

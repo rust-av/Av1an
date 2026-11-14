@@ -23,15 +23,6 @@ pub mod speed_scaler;
 pub mod target_quality;
 pub mod zone_encoder;
 
-#[cfg(test)]
-mod metric_fallback_tests;
-
-#[cfg(test)]
-mod m27a_tests;
-
-#[cfg(test)]
-mod c14_tests;
-
 pub trait Sequence<DataHandler, ConfigHandler>
 where
     DataHandler: SequenceDataHandler,
@@ -153,3 +144,6 @@ pub enum SequenceCompletion {
         total: f64,
     },
 }
+
+#[cfg(test)]
+mod tests;

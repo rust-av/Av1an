@@ -763,7 +763,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn m27a_compacted_offset_overflow_rejects_before_metadata_or_reads() {
+    fn compacted_offset_overflow_rejects_before_metadata_or_reads() {
         let script = "import vapoursynth as vs\nvs.core.std.BlankClip(width=32,height=32,length=1,format=vs.YUV420P8).set_output()";
         let mut a =
             av_decoders::Decoder::from_script(script, Default::default()).expect("reference");
@@ -784,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn m05_native_planes_carry_actual_u16_allocation_spans() {
+    fn native_planes_carry_actual_u16_allocation_spans() {
         let frame = av_decoders::v_frame::frame::FrameBuilder::new(
             6,
             4,
@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn m05_vs_span_stops_at_last_visible_sample() {
+    fn vs_span_stops_at_last_visible_sample() {
         let mut decoder = av_decoders::Decoder::from_script(
             "import vapoursynth as vs\nvs.core.std.BlankClip(width=6, height=4, length=1, format=vs.YUV420P10).set_output()",
             Default::default()).expect("VS span fixture");
@@ -827,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_probe_transports_independent_vapoursynth_color_properties() {
+    fn probe_transports_independent_vapoursynth_color_properties() {
         let mut reference = av_decoders::Decoder::from_script(
             "import vapoursynth as vs\nvs.core.std.BlankClip(width=16, height=16, length=1, format=vs.YUV420P8).std.SetFrameProps(_Range=1, _Matrix=6, _Primaries=1, _Transfer=13).set_output()",
             Default::default(),

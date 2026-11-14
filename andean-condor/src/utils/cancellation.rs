@@ -201,7 +201,7 @@ impl Cancellation {
 mod tests {
     use super::*;
     #[test]
-    fn e12_shared_monotonic_state_and_broadcast() {
+    fn shared_monotonic_state_and_broadcast() {
         let token = Cancellation::default();
         assert!(!token.is_cancelled());
         let admitted = token.admit().expect("scene admitted while Running");
@@ -231,7 +231,7 @@ mod tests {
         assert!(admitted.check_admission().expect_err("active view forced").is::<Cancelled>());
     }
     #[test]
-    fn e12_legacy_is_graceful_only() {
+    fn legacy_is_graceful_only() {
         let flag = Arc::new(AtomicBool::new(false));
         let token = Cancellation::from(Arc::clone(&flag));
         flag.store(true, Ordering::SeqCst);

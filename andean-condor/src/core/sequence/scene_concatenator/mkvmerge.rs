@@ -499,7 +499,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn f2_mkvmerge_title_discard_and_replacement_are_explicit() {
+    fn mkvmerge_title_discard_and_replacement_are_explicit() {
         for (metadata, expected) in [
             (serde_json::json!({"copy": false}), Some("")),
             (

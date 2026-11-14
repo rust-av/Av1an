@@ -332,7 +332,7 @@ mod tests {
 
     use super::*;
 
-    fn i02_run(command: &mut std::process::Command) -> Vec<u8> {
+    fn run(command: &mut std::process::Command) -> Vec<u8> {
         // Spool both streams so a full pipe cannot deadlock the watchdog.
         let stdout = tempfile::NamedTempFile::new().expect("child stdout");
         let stderr = tempfile::NamedTempFile::new().expect("child stderr");
@@ -341,7 +341,7 @@ mod tests {
             .stdout(stdout.reopen().expect("stdout handle"))
             .stderr(stderr.reopen().expect("stderr handle"))
             .spawn()
-            .expect("ffmpeg/ffprobe required for native I02 fixtures");
+            .expect("ffmpeg/ffprobe required for native frame-layout fixtures");
         let start = std::time::Instant::now();
         let status = loop {
             if let Some(status) = child.try_wait().expect("child status") {
@@ -350,7 +350,7 @@ mod tests {
             if start.elapsed() > std::time::Duration::from_secs(30) {
                 child.kill().expect("kill timed out child");
                 child.wait().expect("reap timed out child");
-                panic!("I02 native fixture command timed out: {command:?}");
+                panic!("frame-layout native fixture command timed out: {command:?}");
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         };
@@ -362,22 +362,20 @@ mod tests {
         std::fs::read(stdout.path()).expect("child output")
     }
 
-    fn i02_ffmpeg(args: &[&str]) -> Vec<u8> {
-        i02_run(
-            std::process::Command::new("ffmpeg")
-                .args(["-nostdin", "-v", "error", "-y"])
-                .args(args),
-        )
+    fn ffmpeg(args: &[&str]) -> Vec<u8> {
+        run(std::process::Command::new("ffmpeg")
+            .args(["-nostdin", "-v", "error", "-y"])
+            .args(args))
     }
 
     #[test]
-    fn i02_initial_big_endian_source_normalizes_to_le() {
+    fn initial_big_endian_source_normalizes_to_le() {
         let directory = tempfile::tempdir().expect("BE fixture");
         let raw_path = directory.path().join("source.raw");
         let samples: Vec<u16> = (0..512).map(|i| 0x0123 + i % 113).collect();
         let bytes: Vec<u8> = samples.iter().flat_map(|value| value.to_be_bytes()).collect();
         std::fs::write(&raw_path, bytes).expect("BE raw samples");
-        let nut = i02_ffmpeg(&[
+        let nut = ffmpeg(&[
             "-f",
             "rawvideo",
             "-pixel_format",
@@ -481,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn i02_filter_dimensions_reject_before_native_narrowing() {
+    fn filter_dimensions_reject_before_native_narrowing() {
         for (width, height) in [
             (0, 16),
             (16, 0),
@@ -495,7 +493,7 @@ mod tests {
         assert!(validate_output_dimensions(i32::MAX as usize, i32::MAX as usize).is_ok());
     }
 
-    fn i02_check_native_result(
+    fn check_native_result(
         index: usize,
         converted: (i32, i32),
         result: Result<()>,
@@ -524,14 +522,14 @@ mod tests {
     // views. Never remove native validation to manufacture an over-reading RED.
     #[test]
     #[should_panic(expected = "changed converted output must be rejected")]
-    fn i02_native_oracle_rejects_false_success_on_changed_header() {
-        i02_check_native_result(1, (32, 800), Ok(()), &vec![0; 6 + 32 * 1080 * 3 / 2]);
+    fn native_oracle_rejects_false_success_on_changed_header() {
+        check_native_result(1, (32, 800), Ok(()), &vec![0; 6 + 32 * 1080 * 3 / 2]);
     }
 
     #[test]
     #[should_panic(expected = "unchanged converted output must pack")]
-    fn i02_native_oracle_rejects_unexercised_decode_error() {
-        i02_check_native_result(
+    fn native_oracle_rejects_unexercised_decode_error() {
+        check_native_result(
             0,
             (32, 1080),
             Err(anyhow::anyhow!(
@@ -542,11 +540,11 @@ mod tests {
     }
 
     #[test]
-    fn i02_native_changing_resolution_capability() {
+    fn native_changing_resolution_capability() {
         let directory = tempfile::tempdir().expect("changing resolution fixture");
         let mut encoded = Vec::new();
         for source in ["color=c=black:s=32x1080:r=24", "color=c=white:s=32x800:r=24"] {
-            encoded.extend(i02_ffmpeg(&[
+            encoded.extend(ffmpeg(&[
                 "-f",
                 "lavfi",
                 "-i",
@@ -568,11 +566,9 @@ mod tests {
         }
         let path = directory.path().join("changing.m2v");
         std::fs::write(&path, encoded).expect("concatenated encoded segments");
-        let probe = i02_run(
-            std::process::Command::new("ffprobe")
-                .args(["-v", "error", "-show_entries", "frame=width,height", "-of", "json"])
-                .arg(&path),
-        );
+        let probe = run(std::process::Command::new("ffprobe")
+            .args(["-v", "error", "-show_entries", "frame=width,height", "-of", "json"])
+            .arg(&path));
         let probe: serde_json::Value = serde_json::from_slice(&probe).expect("probe frames");
         let shapes: Vec<_> = probe["frames"]
             .as_array()
@@ -592,12 +588,12 @@ mod tests {
                 || shapes == [(32, 1080), (32, 1080), (32, 800), (32, 800)],
             "genuine changing bitstream: {shapes:?}"
         );
-        eprintln!("I02 native capability: ffprobe decoded {shapes:?}");
+        eprintln!("frame-layout native capability: ffprobe decoded {shapes:?}");
         let native = match Ffms2Decoder::new(&path, None) {
             Ok(native) => native,
             Err(error) => {
                 eprintln!(
-                    "I02 native capability: FFMS2 refused changing MPEG2 index/source: {error}"
+                    "frame-layout native capability: FFMS2 refused changing MPEG2 index/source: {error}"
                 );
                 return;
             },
@@ -612,7 +608,7 @@ mod tests {
             .expect("native decoder");
         let mut baseline = Vec::new();
         let result = pack_frame(&mut decoder, 0, &mut baseline);
-        i02_check_native_result(0, (32, 1080), result, &baseline);
+        check_native_result(0, (32, 1080), result, &baseline);
         assert!(
             baseline[6..6 + 32 * 1080].iter().all(|&value| value == 16),
             "black baseline luma"
@@ -622,7 +618,7 @@ mod tests {
             "neutral baseline chroma"
         );
         eprintln!(
-            "I02 native capability: baseline frame 0 packed correctly; {indexed} frames indexed"
+            "frame-layout native capability: baseline frame 0 packed correctly; {indexed} frames indexed"
         );
         let mut exposed = 0;
         let mut mismatches = 0;
@@ -637,7 +633,7 @@ mod tests {
                 Err(error) => {
                     decode_errors += 1;
                     eprintln!(
-                        "I02 native capability: header decode refused frame {index}: {error}"
+                        "frame-layout native capability: header decode refused frame {index}: {error}"
                     );
                     continue;
                 },
@@ -657,7 +653,7 @@ mod tests {
             exposed += usize::from(converted != (32, 1080));
             let mut packed = Vec::new();
             let result = pack_frame(&mut decoder, index, &mut packed);
-            mismatches += usize::from(i02_check_native_result(index, converted, result, &packed));
+            mismatches += usize::from(check_native_result(index, converted, result, &packed));
         }
         if exposed > 0 {
             assert!(
@@ -669,11 +665,11 @@ mod tests {
                 "every exposed converted change must reject"
             );
             eprintln!(
-                "I02 native capability: {mismatches}/{exposed} exposed converted changes rejected without bytes; {decode_errors} header decode errors"
+                "frame-layout native capability: {mismatches}/{exposed} exposed converted changes rejected without bytes; {decode_errors} header decode errors"
             );
         } else {
             eprintln!(
-                "I02 native capability: NO changing-frame rejection exercised; {indexed} indexed, {decode_errors} later header decode errors, changed encoded frame {encoded_change:?}; decoder refused changes or kept converted output fixed"
+                "frame-layout native capability: NO changing-frame rejection exercised; {indexed} indexed, {decode_errors} later header decode errors, changed encoded frame {encoded_change:?}; decoder refused changes or kept converted output fixed"
             );
         }
         // Explicit output conversion is allowed to keep output fixed even when
@@ -692,11 +688,11 @@ mod tests {
                 .expect("FFMS2 resizes changed encoded shape");
             assert_eq!(packed.len(), 6 + 32 * 1080 * 3 / 2);
             eprintln!(
-                "I02 native capability: fixed output accepted actual changed encoded frame {index}"
+                "frame-layout native capability: fixed output accepted actual changed encoded frame {index}"
             );
         } else {
             eprintln!(
-                "I02 native capability: no decoded changed encoded frame available for fixed-output control"
+                "frame-layout native capability: no decoded changed encoded frame available for fixed-output control"
             );
         }
     }
@@ -931,7 +927,7 @@ mod tests {
 
     /// Hand-sized Y4M planes bypass the tile-only FrameBuilder restrictions.
     /// Floor-rounded native chroma loses edge samples and misaligns frame two.
-    fn i01_native_roundtrip(
+    fn native_roundtrip(
         (width, height): (usize, usize),
         (chroma_width, chroma_height): (usize, usize),
         colorspace: &str,
@@ -1043,27 +1039,27 @@ mod tests {
     // Literal geometry/counts: 853*479 + 2*427*240 = 613547;
     // 853*480 + 2*427*240 = 614400; 853*479 + 2*427*479 = 817653.
     #[test]
-    fn i01_native_853x480_420() {
-        i01_native_roundtrip((853, 480), (427, 240), "420", 8, 614400);
+    fn native_853x480_420() {
+        native_roundtrip((853, 480), (427, 240), "420", 8, 614400);
     }
 
     #[test]
-    fn i01_native_853x479_420() {
-        i01_native_roundtrip((853, 479), (427, 240), "420", 8, 613547);
+    fn native_853x479_420() {
+        native_roundtrip((853, 479), (427, 240), "420", 8, 613547);
     }
 
     #[test]
-    fn i01_native_853x479_422() {
-        i01_native_roundtrip((853, 479), (427, 479), "422", 8, 817653);
+    fn native_853x479_422() {
+        native_roundtrip((853, 479), (427, 479), "422", 8, 817653);
     }
 
     #[test]
-    fn i01_native_853x479_420_high_depth() {
-        i01_native_roundtrip((853, 479), (427, 240), "420p10", 10, 1227094);
+    fn native_853x479_420_high_depth() {
+        native_roundtrip((853, 479), (427, 240), "420p10", 10, 1227094);
     }
 
     #[test]
-    fn i01_native_even_420_control() {
-        i01_native_roundtrip((64, 32), (32, 16), "420", 8, 3072);
+    fn native_even_420_control() {
+        native_roundtrip((64, 32), (32, 16), "420", 8, 3072);
     }
 }

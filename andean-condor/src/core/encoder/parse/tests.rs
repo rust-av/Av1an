@@ -1,14 +1,14 @@
 use crate::core::encoder::parse::*;
 
 #[test]
-fn e24_malformed_counts() {
+fn malformed_counts() {
     for count in ["+1", "-1", "", "1x", "1.0", "１", "18446744073709551616"] {
         let line = format!("Pass 1/1 frame    1/{count} 12345678901234567890B");
         assert_eq!(parse_aom_vpx_frames(&line), None, "count: {count:?}");
     }
 }
 
-fn e24_assert_parity(input: &[u8], expected: Option<u64>) {
+fn assert_parser_parity(input: &[u8], expected: Option<u64>) {
     use crate::core::encoder::Encoder;
 
     if let Ok(line) = std::str::from_utf8(input) {
@@ -35,7 +35,7 @@ fn e24_assert_parity(input: &[u8], expected: Option<u64>) {
 
 // Removing a delimiter/range/digit check, truncating wide counts, or dropping the
 // scalar fallback must break this corpus, independently of parser-derived values.
-fn e24_cases(mut check: impl FnMut(&[u8], Option<u64>)) -> usize {
+fn guard_page_inputs(mut check: impl FnMut(&[u8], Option<u64>)) -> usize {
     let mut cases = 0;
     let mut check = |input: &[u8], expected| {
         cases += 1;
@@ -143,39 +143,39 @@ fn e24_cases(mut check: impl FnMut(&[u8], Option<u64>)) -> usize {
 }
 
 #[test]
-fn e24_prefix_truncation_matrix() {
-    e24_isolate(
-        "core::encoder::parse::tests::e24_prefix_truncation_matrix",
+fn prefix_truncation_matrix() {
+    isolate_guard_page_case(
+        "core::encoder::parse::tests::prefix_truncation_matrix",
         || {
-            let cases = e24_cases(e24_assert_parity);
+            let cases = guard_page_inputs(assert_parser_parity);
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             println!(
-                "E24 matrix: {cases} cases; SSSE3+SSE4.1={}",
+                "parser-bounds matrix: {cases} cases; SSSE3+SSE4.1={}",
                 is_x86_feature_detected!("sse4.1") && is_x86_feature_detected!("ssse3")
             );
             #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-            println!("E24 matrix: {cases} cases; SIMD unavailable on this architecture");
+            println!("parser-bounds matrix: {cases} cases; SIMD unavailable on this architecture");
         },
     );
 }
 
 #[test]
 #[cfg(target_os = "linux")]
-fn e24_guard_page_bounds() {
-    e24_isolate(
-        "core::encoder::parse::tests::e24_guard_page_bounds",
-        e24_guard_page_cases,
+fn guard_page_bounds() {
+    isolate_guard_page_case(
+        "core::encoder::parse::tests::guard_page_bounds",
+        guard_page_cases,
     );
 }
 
-fn e24_isolate(test_name: &str, run: impl FnOnce()) {
+fn isolate_guard_page_case(test_name: &str, run: impl FnOnce()) {
     use std::{
         process::Command,
         thread,
         time::{Duration, Instant},
     };
 
-    const CHILD: &str = "AV1AN_E24_PARSER_CHILD";
+    const CHILD: &str = "AV1AN_PARSER_BOUNDS_CHILD";
     if std::env::var_os(CHILD).is_some() {
         #[cfg(target_os = "linux")]
         assert_eq!(
@@ -193,7 +193,7 @@ fn e24_isolate(test_name: &str, run: impl FnOnce()) {
             0
         );
         run();
-        println!("E24 child cases completed");
+        println!("parser-bounds child cases completed");
         return;
     }
 
@@ -223,13 +223,15 @@ fn e24_isolate(test_name: &str, run: impl FnOnce()) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("E24 child cases completed"));
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("parser-bounds child cases completed")
+    );
     print!("{}", String::from_utf8_lossy(&output.stdout));
     eprint!("{}", String::from_utf8_lossy(&output.stderr));
 }
 
 #[cfg(target_os = "linux")]
-fn e24_guard_page_cases() {
+fn guard_page_cases() {
     // SAFETY: sysconf has no pointer arguments or additional preconditions.
     let page_size =
         usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).expect("positive page size");
@@ -254,13 +256,15 @@ fn e24_guard_page_cases() {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     if is_x86_feature_detected!("sse4.1") && is_x86_feature_detected!("ssse3") {
-        eprintln!("E24 SSSE3+SSE4.1 active in isolated child");
+        eprintln!("parser-bounds SSSE3+SSE4.1 active in isolated child");
     } else {
-        eprintln!("E24 SIMD skipped: SSSE3+SSE4.1 unavailable; scalar/public still checked");
+        eprintln!(
+            "parser-bounds SIMD skipped: SSSE3+SSE4.1 unavailable; scalar/public still checked"
+        );
     }
     // Each slice ends exactly at PROT_NONE. Varying lengths also varies the start
     // alignment; neither spare allocation capacity nor malloc padding can hide a load.
-    let cases = e24_cases(|source, expected| {
+    let cases = guard_page_inputs(|source, expected| {
         assert!(source.len() <= page_size);
         // SAFETY: The copy fits in the first mapped page, does not overlap its
         // source, and the immutable slice lasts only until the next copy.
@@ -269,15 +273,15 @@ fn e24_guard_page_cases() {
             std::ptr::copy_nonoverlapping(source.as_ptr(), start, source.len());
             std::slice::from_raw_parts(start, source.len())
         };
-        e24_assert_parity(input, expected);
+        assert_parser_parity(input, expected);
     });
     // SAFETY: This is the complete still-live mapping returned by mmap above.
     assert_eq!(unsafe { libc::munmap(mapping, page_size * 2) }, 0);
-    println!("E24 guard-page cases completed: {cases}");
+    println!("parser-bounds guard-page cases completed: {cases}");
 }
 
 #[test]
-fn e26_vvenc_keyed_stats_reach_public_parser_and_dispatcher() {
+fn vvenc_keyed_stats_reach_public_parser_and_dispatcher() {
     use crate::core::encoder::Encoder;
 
     // Stats.h at a455d51e335c97b40eeea7bb90e3ad52b84c6e83 emits both forms.
@@ -314,7 +318,7 @@ fn e26_vvenc_keyed_stats_reach_public_parser_and_dispatcher() {
 }
 
 #[test]
-fn e26_vvenc_rejects_malformed_counts_and_non_stats_noise() {
+fn vvenc_rejects_malformed_counts_and_non_stats_noise() {
     use crate::core::encoder::Encoder;
 
     for line in [
@@ -352,7 +356,7 @@ fn e26_vvenc_rejects_malformed_counts_and_non_stats_noise() {
 }
 
 #[test]
-fn v01a_literal_help_options_and_negative_controls() {
+fn literal_help_options_and_negative_controls() {
     // Losing aliases, no- expansion, or equals trimming must break these
     // independent fixtures; native help is checked separately, not snapshotted.
     for (base, help, expected) in [
@@ -383,7 +387,7 @@ fn v01a_literal_help_options_and_negative_controls() {
             expected.split_ascii_whitespace().map(Cow::Borrowed).collect(),
             "{base}"
         );
-        assert!(!actual.contains("--v01-deliberately-nonexistent"));
+        assert!(!actual.contains("--cli-parity-deliberately-nonexistent"));
         assert!(!actual.contains("--passes=<arg>"));
         assert!(!actual.contains("--[no-]weightp"));
     }

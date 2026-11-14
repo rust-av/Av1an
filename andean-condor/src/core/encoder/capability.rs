@@ -12,11 +12,6 @@ use crate::{core::process::OwnedProcess, utils::cancellation::Cancellation};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-#[cfg(test)]
-#[cfg(unix)]
-#[path = "e20_tests.rs"]
-mod e20_tests;
-
 /// Capabilities that need to be checked per encoder binary
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EncoderCapability {
@@ -453,3 +448,8 @@ pub(crate) fn check_capability_cancel(
 
     Ok(supported)
 }
+
+#[cfg(test)]
+#[cfg(unix)]
+#[path = "capability/tests.rs"]
+mod tests;

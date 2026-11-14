@@ -78,7 +78,7 @@ pub(crate) fn capture(
             )
         })?;
         #[cfg(all(test, target_os = "linux"))]
-        super::e09_tests::observe_capture();
+        tests::runtime::observe_capture();
     }
     drop(frames); // Release the sole upstream receiver before replay starts.
     file.flush().with_context(|| {
@@ -88,7 +88,7 @@ pub(crate) fn capture(
         )
     })?;
     #[cfg(all(test, target_os = "linux"))]
-    super::e09_tests::observe_flush();
+    tests::runtime::observe_flush();
 
     Ok(())
 }
@@ -164,61 +164,4 @@ fn feed(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn e12_force_wakes_full_replay_and_prevents_next_pass() {
-        let cancellation = Cancellation::default();
-        let (tx, rx) = bounded(1);
-        tx.send(Cursor::new(vec![1; 1024 * 1024])).expect("spool input");
-        drop(tx);
-        let mut calls = 0;
-        let error = encode_cancel(
-            Cursor::new(Vec::new()),
-            rx,
-            Path::new("unused"),
-            2,
-            &cancellation,
-            |_, frames| -> Result<()> {
-                calls += 1;
-                while frames.len() != 2 {
-                    thread::yield_now();
-                }
-                cancellation.request()?;
-                cancellation.request()?;
-                Err(Cancelled::Forced.into())
-            },
-        )
-        .expect_err("force unblocks the bounded replay producer");
-        assert_eq!(calls, 1);
-        assert!(error.is::<Cancelled>());
-
-        let cancellation = Cancellation::default();
-        let (tx, rx) = bounded(1);
-        tx.send(Cursor::new(vec![1; 32])).expect("spool input");
-        drop(tx);
-        let mut calls = 0;
-        let error = encode_cancel(
-            Cursor::new(Vec::new()),
-            rx,
-            Path::new("unused"),
-            2,
-            &cancellation,
-            |pass, frames| {
-                calls += 1;
-                assert_eq!(pass, 1, "force at pass transition must prevent pass 2");
-                assert_eq!(
-                    frames.into_iter().map(|f| f.into_inner().len()).sum::<usize>(),
-                    32
-                );
-                cancellation.request()?;
-                cancellation.request()?;
-                Ok(())
-            },
-        )
-        .expect_err("force checked before the next pass");
-        assert_eq!(calls, 1);
-        assert!(error.is::<Cancelled>());
-    }
-}
+mod tests;

@@ -958,7 +958,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn e21_ffmpeg_extension_uses_one_dot_in_output_names() {
+    fn ffmpeg_extension_uses_one_dot_in_output_names() {
         let encoder = Encoder::default_from_base(&EncoderBase::FFmpeg, false);
         for extension in [EncoderBase::FFmpeg.output_extension(), encoder.output_extension()] {
             assert_eq!(

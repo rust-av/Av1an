@@ -144,7 +144,7 @@ mod tests {
     use crate::core::input::pixel_format::PixelFormat;
 
     #[test]
-    fn i11_12bit_spellings_parse_and_emit_canonical_formats() {
+    fn twelve_bit_spellings_parse_and_emit_canonical_formats() {
         for (input, canonical, expected) in [
             ("gbrp12l", "gbrp12le", FFPixelFormat::GBRP12LE),
             ("gbrp12le", "gbrp12le", FFPixelFormat::GBRP12LE),
@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn i11_12bit_serde_reads_legacy_names_and_writes_canonical_names() {
+    fn twelve_bit_serde_reads_legacy_names_and_writes_canonical_names() {
         for (input, canonical, expected) in [
             ("GBRP12L", "GBRP12LE", FFPixelFormat::GBRP12LE),
             ("GBRP12LE", "GBRP12LE", FFPixelFormat::GBRP12LE),
@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn i11_ffmpeg_converts_legacy_and_canonical_12bit_outputs() {
+    fn ffmpeg_converts_legacy_and_canonical_12bit_outputs() {
         let directory = tempfile::tempdir().expect("12-bit output fixture");
         for (spellings, source, plane_samples, byte_count) in [
             (

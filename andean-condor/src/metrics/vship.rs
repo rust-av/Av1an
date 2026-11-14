@@ -433,7 +433,7 @@ mod tests {
     use crate::vapoursynth::plugins::vship::cvvdp::DisplayModel;
 
     #[test]
-    fn m04_driver_rejects_unsupported_transfer_before_gpu_discovery() {
+    fn driver_rejects_unsupported_transfer_before_gpu_discovery() {
         let mut reference = av_decoders::Decoder::from_script(
             "import vapoursynth as vs\nvs.core.std.BlankClip(width=16, height=16, length=1, format=vs.YUV420P8).set_output()", Default::default(),
         ).expect("open reference");
@@ -712,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn m16_explicit_source_frame_rate_is_never_replaced_by_default() {
+    fn explicit_source_frame_rate_is_never_replaced_by_default() {
         let metric = QualityMetric::CVVDP {
             target_range: (0.0, 1.0),
             resolution: None,

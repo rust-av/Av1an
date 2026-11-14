@@ -150,7 +150,7 @@ mod tests {
     use types::ProbeStrategy;
 
     #[test]
-    fn q02_known_encoder_endpoints_use_existing_settings_envelopes() {
+    fn known_encoder_endpoints_use_existing_settings_envelopes() {
         for (base, maximum) in [
             (EncoderBase::AOM, 63),
             (EncoderBase::VPX, 63),
@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn q02_target_range_probe_count_and_q01_strategy_contract() {
+    fn target_range_probe_count_and_strategy_contract() {
         let encoder = Encoder::default();
         for range in [
             (f64::NAN, 75.0),
@@ -222,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn q02_effective_options_replace_scene_options_without_hiding_pass_or_rc_conflicts() {
+    fn effective_options_replace_scene_options_without_hiding_pass_or_rc_conflicts() {
         let mut encoder = Encoder::default_from_base(&EncoderBase::SVTAV1, true);
         *encoder.parameters_mut() = CLIParameter::new_numbers("--", " ", &[("preset", 99.0)]);
         let mut config = TargetQualityConfig::default();

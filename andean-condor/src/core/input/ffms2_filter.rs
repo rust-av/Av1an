@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn i06_eight_bit_resize_keeps_explicit_depth() {
+    fn eight_bit_resize_keeps_explicit_depth() {
         let eight_bit = VapourSynthFilter::Resize {
             scaler: None,
             width: None,
@@ -606,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn i06_unsupported_explicit_formats_are_not_native_resizes() {
+    fn unsupported_explicit_formats_are_not_native_resizes() {
         for format in [FFPixelFormat::NV12, FFPixelFormat::GBRP, FFPixelFormat::YUV440P] {
             let filter = VapourSynthFilter::Resize {
                 scaler: None,
@@ -624,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn i06_explicit_formats_preserve_depth_and_chroma() {
+    fn explicit_formats_preserve_depth_and_chroma() {
         for (format, depth, chroma) in [
             (FFPixelFormat::YUV420P, 8, ChromaSampling::Yuv420),
             (FFPixelFormat::YUV422P, 8, ChromaSampling::Yuv422),
@@ -658,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn i11_gray12_spellings_preserve_native_and_vapoursynth_intent() {
+    fn gray12_spellings_preserve_native_and_vapoursynth_intent() {
         for spelling in ["gray12l", "gray12le"] {
             let format = FFPixelFormat::from_str(spelling).expect("gray format");
             assert_eq!(
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn i06_invalid_resize_dimensions_are_errors() {
+    fn invalid_resize_dimensions_are_errors() {
         for width in [0, i32::MAX as usize + 1, usize::MAX] {
             let filter = VapourSynthFilter::Resize {
                 scaler: None,

@@ -328,17 +328,17 @@ mod tests {
     }
 
     #[test]
-    fn e16_specific_final_pass_keeps_native_tuple_and_logical_credit() {
+    fn specific_final_pass_keeps_native_tuple_and_logical_credit() {
         check_specific_pass(2);
     }
 
     #[test]
-    fn e16_specific_first_pass_keeps_native_tuple_and_logical_credit() {
+    fn specific_first_pass_keeps_native_tuple_and_logical_credit() {
         check_specific_pass(1);
     }
 
     #[test]
-    fn e16_sparse_absolute_relay() {
+    fn sparse_absolute_relay() {
         let (tx, rx) = channel();
         let (status_tx, status_rx) = channel();
         let total = Progress::new(status_tx, 30, 0);
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn e16_two_scenes_passes_retry_commit_and_zero() {
+    fn two_scenes_passes_retry_commit_and_zero() {
         let (tx, rx) = channel();
         let total = Progress::new(tx, 60, 0);
         let mut peer = AttemptProgress::new(&total, 8, 30, EncoderPasses::All(2));
@@ -485,7 +485,7 @@ mod tests {
 
     /// Concurrent workers must not lose a count.
     #[test]
-    fn e16_concurrent_attempts_do_not_emit_stale_totals() {
+    fn concurrent_attempts_do_not_emit_stale_totals() {
         let workers = 8_usize;
         let per_worker = 500_usize;
         let total = workers * per_worker;

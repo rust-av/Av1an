@@ -21,4 +21,4 @@ jobs:
       - name: Install optional Miri toolchain
         run: rustup toolchain install nightly --profile minimal --component miri
       - name: Check production writer without native dependencies
-        run: cargo +nightly miri test --manifest-path tests/miri-grain/Cargo.toml --lib i12_fields_padding_and_moves_are_deterministic
+        run: cargo +nightly miri test --manifest-path tests/miri-grain/Cargo.toml --lib fields_padding_and_moves_are_deterministic

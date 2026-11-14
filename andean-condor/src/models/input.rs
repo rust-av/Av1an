@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn i06_failed_filter_conversion_does_not_replace_existing_filters() {
+    fn failed_filter_conversion_does_not_replace_existing_filters() {
         for format in [FFPixelFormat::NV12, FFPixelFormat::GBRP, FFPixelFormat::YUV440P] {
             let original = vec![Ffms2Filter::OutputFormat {
                 bit_depth: Some(12),
@@ -315,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn i06_deferred_filters_roundtrip_without_opening_a_source() {
+    fn deferred_filters_roundtrip_without_opening_a_source() {
         let directory = tempfile::tempdir().expect("absent source fixture");
         let path = directory.path().join("must-not-exist.mkv");
         let original = vec![

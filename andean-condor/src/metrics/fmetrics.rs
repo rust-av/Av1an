@@ -337,7 +337,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn m17_infinity_has_no_fmetrics_mapping_or_native_support() {
+    fn infinity_has_no_fmetrics_mapping_or_native_support() {
         let metric = QualityMetric::BUTTERAUGLI {
             target_range: (1.0, 3.0),
             resolution: None,
@@ -351,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn m17_direct_config_rejects_infinity_actionably() {
+    fn direct_config_rejects_infinity_actionably() {
         let metric = QualityMetric::BUTTERAUGLI {
             target_range: (1.0, 3.0),
             resolution: None,
@@ -371,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn m17_explicit_finite_config_preserves_threads_intensity_and_exponent() {
+    fn explicit_finite_config_preserves_threads_intensity_and_exponent() {
         for norm in [3, 7, u8::MAX] {
             let metric = QualityMetric::BUTTERAUGLI {
                 target_range: (1.0, 3.0),
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_driver_rejects_hdr_on_either_side_before_native_scoring() {
+    fn driver_rejects_hdr_on_either_side_before_native_scoring() {
         for hdr_side in [0, 1] {
             let mut decoders: Vec<_> = (0..2).map(|side| {
                 let transfer = if side == hdr_side { 16 } else { 13 };
@@ -681,7 +681,7 @@ mod tests {
     }
 
     #[test]
-    fn m16_explicit_source_frame_rate_is_never_replaced_by_default() {
+    fn explicit_source_frame_rate_is_never_replaced_by_default() {
         for rate in [
             0.0,
             -0.0,
@@ -745,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn m15_disable_temporal_maps_directly_without_changing_gap_policy() {
+    fn disable_temporal_maps_directly_without_changing_gap_policy() {
         for flag in [None, Some(false), Some(true)] {
             let config = scorer_config(&cvvdp_with(flag), 24.0).unwrap();
             assert_eq!(config.disable_temporal, flag.unwrap_or(false));

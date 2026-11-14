@@ -218,7 +218,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn c06_persist_rejects_destination_created_after_admission_without_consent() {
+    fn persist_rejects_destination_created_after_admission_without_consent() {
         use std::io::Write;
         let dir = tempfile::tempdir().expect("fixture");
         let destination = dir.path().join("final.mkv");
@@ -246,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn c06_identity_and_existing_output_policy() {
+    fn identity_and_existing_output_policy() {
         let dir = tempfile::tempdir().expect("fixture");
         let source = dir.path().join("source");
         fs::write(&source, b"source bytes").expect("source");
@@ -281,7 +281,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn c06_unix_links_special_and_denied_paths() {
+    fn unix_links_special_and_denied_paths() {
         use std::os::unix::fs::{PermissionsExt, symlink};
         let dir = tempfile::tempdir().expect("fixture");
         let source = dir.path().join("source");
@@ -322,7 +322,7 @@ mod tests {
         if probe.as_ref().is_err_and(|error| error.kind() == ErrorKind::PermissionDenied) {
             assert!(result.is_err(), "actual denial must not be absence");
         } else {
-            eprintln!("C06 permission denial unavailable: filesystem probe={probe:?}");
+            eprintln!("final-output permission denial unavailable: filesystem probe={probe:?}");
             result.expect("privileged traversal is not a false denial");
         }
         assert_eq!(fs::read(source).expect("source"), b"source bytes");

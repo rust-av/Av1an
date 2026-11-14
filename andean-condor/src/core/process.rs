@@ -167,10 +167,10 @@ impl OwnedProcess {
             }
         }
         #[cfg(all(test, target_os = "linux"))]
-        crate::core::encoder::e12_tests::before_process_registration(command, process.id());
+        crate::core::encoder::process_lifecycle::before_process_registration(command, process.id());
         #[cfg(all(test, target_os = "linux"))]
         if matches!(
-            std::env::var("E12_CASE").as_deref(),
+            std::env::var("PROCESS_LIFECYCLE_CASE").as_deref(),
             Ok("registration" | "filter-spawn-race")
         ) {
             // Exact race seam: the real child can run, but has not been registered.
@@ -188,7 +188,7 @@ impl OwnedProcess {
             return Err(error);
         }
         #[cfg(all(test, target_os = "linux"))]
-        crate::core::encoder::e12_tests::after_process_registration(command, process.id());
+        crate::core::encoder::process_lifecycle::after_process_registration(command, process.id());
         #[cfg(windows)]
         {
             #[cfg(test)]
@@ -240,7 +240,8 @@ impl OwnedProcess {
                     let killed = state.kill(); // Before reap: no stale group ID can be signalled.
                     let status = state.child.wait();
                     #[cfg(all(test, target_os = "linux"))]
-                    if let Some(root) = std::env::var_os("E08_ROOT").map(std::path::PathBuf::from)
+                    if let Some(root) =
+                        std::env::var_os("ENCODER_FIXTURE_ROOT").map(std::path::PathBuf::from)
                         && let Some(pid) = std::fs::read_to_string(root.join("leader"))
                             .ok()
                             .and_then(|pid| pid.parse::<u32>().ok())
@@ -254,7 +255,7 @@ impl OwnedProcess {
                             .expect("record known fixture leader signal");
                     }
                     #[cfg(all(test, target_os = "linux"))]
-                    crate::core::encoder::e12_tests::observe_reap(state.child.id());
+                    crate::core::encoder::process_lifecycle::observe_reap(state.child.id());
                     state.armed = false;
                     if let Ok(status) = &status {
                         state.status = Some(*status);
@@ -321,7 +322,10 @@ impl InterruptedOutput {
     /// Commit this unit against force; enclosing units retain their own guards.
     pub(crate) fn complete(&mut self) -> Result<()> {
         #[cfg(all(test, target_os = "linux"))]
-        crate::core::encoder::e12_tests::before_output_commit(&self.path, &self.cancellation);
+        crate::core::encoder::process_lifecycle::before_output_commit(
+            &self.path,
+            &self.cancellation,
+        );
         let cancellation = self.cancellation.clone();
         cancellation.publish(|| {
             self.disarm();
@@ -338,7 +342,7 @@ impl InterruptedOutput {
 impl Drop for InterruptedOutput {
     fn drop(&mut self) {
         #[cfg(all(test, target_os = "linux"))]
-        crate::core::encoder::e12_tests::output_drop(&self.path, &self.cancellation);
+        crate::core::encoder::process_lifecycle::output_drop(&self.path, &self.cancellation);
         if self.owned && self.cancellation.is_forced() {
             match std::fs::remove_file(&self.path) {
                 Ok(()) => {},

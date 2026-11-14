@@ -237,7 +237,7 @@ where
                     .name("serial-relay".into())
                     .spawn(move || -> Result<()> {
                         #[cfg(all(test, target_os = "linux"))]
-                        e17_tests::worker("relay");
+                        tests::runtime::worker("relay");
                         relay_progress(scene_progress_rx, progress_tx_clone);
                         Ok(())
                     })
@@ -247,7 +247,7 @@ where
                 let encoder_thread =
                     thread::Builder::new().name("serial-encoder".into()).spawn(move || {
                         #[cfg(all(test, target_os = "linux"))]
-                        e17_tests::worker("encoder");
+                        tests::runtime::worker("encoder");
                         scene_encoder.encode_owned_with_stream_cancel(
                             frames_rx,
                             &private_output,
@@ -272,7 +272,7 @@ where
 
                 let feed = serial_catch(|| -> Result<()> {
                     #[cfg(all(test, target_os = "linux"))]
-                    e17_tests::worker("feed");
+                    tests::runtime::worker("feed");
                     frames_tx.send(Cursor::new(Vec::from(y4m_header.as_bytes())))?;
                     let frame_indices = (scene.start_frame..scene.end_frame).collect::<Vec<_>>();
                     input.y4m_frames_cancel(frames_tx, &frame_indices, &active)
@@ -411,48 +411,4 @@ pub enum SerialEncoderError {
 }
 
 #[cfg(test)]
-#[cfg(target_os = "linux")]
-mod e17_tests;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn e08_serial_relay_drains_zero_few_many_and_multipass_reports_after_disconnect() {
-        for count in [0, 1, 9, 18] {
-            let (source, rx) = sync::mpsc::sync_channel(0);
-            let (sink, disconnected) = sync::mpsc::channel();
-            drop(disconnected);
-            let relay = thread::spawn(move || {
-                relay_progress(rx, sink);
-                Ok(())
-            });
-            for frame in 0..count {
-                source
-                    .send(EncodeProgress {
-                        pass: (1, 2),
-                        frame,
-                        usage: Default::default(),
-                    })
-                    .expect("relay keeps draining after downstream disconnect");
-            }
-            drop(source);
-            join_worker(relay, "serial relay regression").expect("relay joined at EOF");
-        }
-    }
-
-    #[test]
-    fn e08_serial_inner_errors_preserve_all_causes() {
-        let error = serial_results([
-            Err(anyhow::anyhow!("encode failure")),
-            Err(anyhow::anyhow!("decode failure")),
-            Err(anyhow::anyhow!("relay failure")),
-        ])
-        .expect_err("inner errors cannot be discarded");
-        let text = format!("{error:#}");
-        for cause in ["encode failure", "decode failure", "relay failure"] {
-            assert!(text.contains(cause), "{text}");
-        }
-    }
-}
+mod tests;

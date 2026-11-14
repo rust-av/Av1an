@@ -136,8 +136,9 @@ where
         const BENCHMARK_SCENE_FRAMES: usize = 24;
         let (batch_scenes, batch_frames) = (BENCHMARK_SCENES, BENCHMARK_SCENE_FRAMES);
         #[cfg(all(test, target_os = "linux"))]
-        let (batch_scenes, batch_frames) = super::parallel_encoder::e14_r1_tests::fixed_batch()
-            .unwrap_or((batch_scenes, batch_frames));
+        let (batch_scenes, batch_frames) =
+            super::parallel_encoder::tests::artifact_validation::resume_policy::fixed_batch()
+                .unwrap_or((batch_scenes, batch_frames));
         let mut warnings = vec![];
         let parallel_encoder_config = condor.sequence_config.parallel_encoder()?;
         let config = condor.sequence_config.benchmarker()?;
@@ -191,7 +192,9 @@ where
             },
         )?;
         #[cfg(all(test, target_os = "linux"))]
-        super::parallel_encoder::e14_r1_tests::finish_fixed_batch(&cancelled);
+        super::parallel_encoder::tests::artifact_validation::resume_policy::finish_fixed_batch(
+            &cancelled,
+        );
 
         loop {
             cancelled.check_forced()?;

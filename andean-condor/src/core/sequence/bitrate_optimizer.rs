@@ -243,7 +243,7 @@ mod tests {
 
     fn scene(base: EncoderBase, quantizer: f64, passes: Vec<QualityPass>) -> Scene<Data> {
         let mut encoder = Encoder::default_from_base(&base, false);
-        encoder.set_executable(Some("q10-must-not-run".into()));
+        encoder.set_executable(Some("bitrate-optimizer-must-not-run".into()));
         encoder.set_quantizer(quantizer);
         Scene {
             start_frame: 0,
@@ -274,7 +274,7 @@ mod tests {
         ))
         .expect("Rust decoder");
         let input = Input::Video {
-            path: "q10-unused.y4m".into(),
+            path: "bitrate-optimizer-unused.y4m".into(),
             import_method: crate::models::input::ImportMethod::FFMS2 {
                 index: None,
                 cache_path: None,
@@ -291,7 +291,7 @@ mod tests {
         let condor = Condor::new(
             input,
             Output {
-                path: "q10-unused.mkv".into(),
+                path: "bitrate-optimizer-unused.mkv".into(),
                 overwrite: false,
                 tags: Default::default(),
                 video_tags: Default::default(),
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn q16_high_quantizer_outlier_is_unchanged_without_save() {
+    fn high_quantizer_outlier_is_unchanged_without_save() {
         let scenes = [(20.0, 100.0), (25.0, 100.0), (30.0, 100.0), (45.0, 1000.0)]
             .into_iter()
             .map(|(q, b)| scene(EncoderBase::AOM, q, vec![measured(q, b)]))
@@ -338,7 +338,7 @@ mod tests {
         let quantizers: Vec<_> =
             condor.scenes.iter().map(|scene| scene.encoder.quantizer()).collect();
         eprintln!(
-            "Q16 high-q outlier: q={quantizers:?}, saves={}",
+            "quantizer-outlier high-q outlier: q={quantizers:?}, saves={}",
             saved.borrow().len()
         );
         assert!(warnings.is_empty());
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn q16_equal_or_quarter_step_above_mean_is_unchanged_without_save() {
+    fn equal_or_quarter_step_above_mean_is_unchanged_without_save() {
         for selected in [30.0, 30.25] {
             let scenes = [(20.0, 100.0), (30.0, 100.0), (40.0, 100.0), (selected, 1000.0)]
                 .into_iter()
@@ -361,7 +361,7 @@ mod tests {
             // Both means round to q30; an accepted quarter step must not round down.
             let (_, warnings) = run(&mut condor).expect("equal or quarter-step outlier");
             eprintln!(
-                "Q16 selected q{selected}: q={:?}, saves={}",
+                "quantizer-outlier selected q{selected}: q={:?}, saves={}",
                 condor.scenes[3].encoder.quantizer(),
                 saved.borrow().len()
             );
@@ -375,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn q16_mixed_outliers_only_raise_lower_quantizer_and_save_once_preserving_histories() {
+    fn mixed_outliers_only_raise_lower_quantizer_and_save_once_preserving_histories() {
         let scenes = [(20.0, 100.0), (30.0, 100.0), (40.0, 100.0), (45.0, 1000.0), (5.0, 1000.0)]
             .into_iter()
             .map(|(q, b)| {
@@ -395,7 +395,7 @@ mod tests {
         let quantizers: Vec<_> =
             condor.scenes.iter().map(|scene| scene.encoder.quantizer()).collect();
         eprintln!(
-            "Q16 mixed outliers: q={quantizers:?}, saves={}",
+            "quantizer-outlier mixed outliers: q={quantizers:?}, saves={}",
             saved.borrow().len()
         );
         assert!(warnings.is_empty());
@@ -407,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_selected_nonlast_probes_drive_statistics_and_one_real_save() {
+    fn selected_nonlast_probes_drive_statistics_and_one_real_save() {
         let (mut condor, saved) = fixture(outliers());
         let mut expected = condor.scenes.clone();
         expected[2].encoder.set_quantizer(20.0);
@@ -423,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_standalone_repeats_recompute_eligible_scenes_and_adjust_additional_outliers() {
+    fn standalone_repeats_recompute_eligible_scenes_and_adjust_additional_outliers() {
         let scenes = [(20.0, 100.0), (30.0, 100.0), (10.0, 1000.0), (5.0, 500.0)]
             .into_iter()
             .map(|(q, b)| scene(EncoderBase::AOM, q, vec![measured(q, b)]))
@@ -448,7 +448,7 @@ mod tests {
             let observed: Vec<_> =
                 condor.scenes.iter().map(|scene| scene.encoder.quantizer()).collect();
             eprintln!(
-                "Q10 standalone run {}: q={observed:?}, saves={}",
+                "bitrate-optimizer standalone run {}: q={observed:?}, saves={}",
                 index + 1,
                 saved.borrow().len()
             );
@@ -465,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_bitrate_exactly_at_cutoff_is_unchanged_without_save() {
+    fn bitrate_exactly_at_cutoff_is_unchanged_without_save() {
         let scenes = [(20.0, 0.0), (30.0, 2.0)]
             .into_iter()
             .map(|(q, b)| scene(EncoderBase::AOM, q, vec![measured(q, b)]))
@@ -482,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_preserves_population_variance_equal_scene_weight_and_rounded_mean() {
+    fn preserves_population_variance_equal_scene_weight_and_rounded_mean() {
         let scenes = [(20.0, 100.0), (30.0, 200.0), (12.0, 300.0)]
             .into_iter()
             .map(|(q, b)| scene(EncoderBase::AOM, q, vec![measured(q, b)]))
@@ -502,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_exact_quarter_steps_use_latest_measured_match_and_keep_scene_identity() {
+    fn exact_quarter_steps_use_latest_measured_match_and_keep_scene_identity() {
         let mut scenes = outliers();
         scenes.insert(0, scene(EncoderBase::AOM, 15.0, vec![measured(16.0, 1e9)]));
         scenes.insert(2, scene(EncoderBase::AOM, 15.0, vec![]));
@@ -534,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_no_work_controls_leave_scenes_unchanged_without_saving() {
+    fn no_work_controls_leave_scenes_unchanged_without_saving() {
         for control in [
             "empty",
             "no-q",
@@ -620,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_corrupt_selected_measurements_fail_before_mutation_or_save() {
+    fn corrupt_selected_measurements_fail_before_mutation_or_save() {
         for field in ["selected quantizer", "bitrate", "score"] {
             for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0] {
                 if field != "bitrate" && invalid == -1.0 {
@@ -672,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_nonfinite_statistics_fail_without_mutation_or_save() {
+    fn nonfinite_statistics_fail_without_mutation_or_save() {
         for field in ["quantizer average", "bitrate average", "bitrate variance"] {
             let mut scenes = outliers();
             for scene in &mut scenes {
@@ -701,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn q10_invalid_cross_encoder_mean_rejects_all_staged_changes() {
+    fn invalid_cross_encoder_mean_rejects_all_staged_changes() {
         let scenes = vec![
             scene(EncoderBase::RAV1E, 200.0, vec![measured(200.0, 100.0)]),
             scene(EncoderBase::RAV1E, 200.0, vec![measured(200.0, 100.0)]),

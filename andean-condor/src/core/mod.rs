@@ -357,7 +357,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn c13_load_malformed_models_preserves_bytes_and_serde_causes() {
+    fn load_malformed_models_preserves_bytes_and_serde_causes() {
         for (bytes, category) in [
             (&b"{\"input\":"[..], serde_json::error::Category::Eof),
             (&b"{\"input\":42}"[..], serde_json::error::Category::Syntax),
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn c13_load_current_and_optional_field_omissions_without_opening_source() {
+    fn load_current_and_optional_field_omissions_without_opening_source() {
         let dir = tempfile::tempdir().expect("temporary save directory");
         let missing_source = dir.path().join("nonexistent-source.vpy");
         let model: CondorModel<DefaultSequenceData, DefaultSequenceConfig> = CondorModel {
@@ -442,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn c13_load_only_missing_is_none_and_preserves_read_errors() {
+    fn load_only_missing_is_none_and_preserves_read_errors() {
         let dir = tempfile::tempdir().expect("temporary save directory");
         let missing = dir.path().join("missing.json");
         assert!(DefaultAndeanCondor::load(&missing).expect("missing save").is_none());

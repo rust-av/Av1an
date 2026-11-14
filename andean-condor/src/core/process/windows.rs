@@ -197,8 +197,8 @@ pub(super) mod tests {
     fn command(root: &std::path::Path) -> Command {
         let mut command = Command::new(std::env::current_exe().expect("test binary"));
         command
-            .args(["--exact", "core::process::windows::tests::e12_windows_fixture", "--nocapture"])
-            .env("E12_WINDOWS_ROOT", root)
+            .args(["--exact", "core::process::windows::tests::windows_fixture", "--nocapture"])
+            .env("PROCESS_LIFECYCLE_WINDOWS_ROOT", root)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -231,15 +231,15 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn e12_windows_fixture() {
-        let Some(root) = std::env::var_os("E12_WINDOWS_ROOT") else {
+    fn windows_fixture() {
+        let Some(root) = std::env::var_os("PROCESS_LIFECYCLE_WINDOWS_ROOT") else {
             return;
         };
-        if std::env::var_os("E12_WINDOWS_LEAF").is_some() {
+        if std::env::var_os("PROCESS_LIFECYCLE_WINDOWS_LEAF").is_some() {
             std::thread::sleep(Duration::from_secs(8));
         } else {
             let mut command = command(std::path::Path::new(&root));
-            command.env("E12_WINDOWS_LEAF", "1");
+            command.env("PROCESS_LIFECYCLE_WINDOWS_LEAF", "1");
             let mut child = command.spawn().expect("grandchild inside inherited job");
             let pending = std::path::Path::new(&root).join("grandchild.pending");
             std::fs::write(&pending, child.id().to_string()).expect("complete PID");
@@ -250,7 +250,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn e12_windows_suspended_assignment_and_forced_tree() {
+    fn windows_suspended_assignment_and_forced_tree() {
         let root = tempfile::tempdir().expect("fixture");
         let token = Cancellation::default();
         let mut process = OwnedProcess::spawn(&mut command(root.path()), &token)
@@ -283,7 +283,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn e12_windows_assignment_and_resume_failure_reap_suspended_child() {
+    fn windows_assignment_and_resume_failure_reap_suspended_child() {
         for stage in ["assign", "resume"] {
             let root = tempfile::tempdir().expect("fixture");
             FAILURE.set(Some(stage));
@@ -305,7 +305,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn e12_windows_force_before_resume_never_opens_or_resumes_thread() {
+    fn windows_force_before_resume_never_opens_or_resumes_thread() {
         let root = tempfile::tempdir().expect("fixture");
         let token = Cancellation::default();
         RESUME_CALLS.set(0);
@@ -337,7 +337,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn e12_windows_job_close_kills_descendants() {
+    fn windows_job_close_kills_descendants() {
         let root = tempfile::tempdir().expect("fixture");
         let job = Job::new().expect("kill-on-close job");
         let mut child = command(root.path())

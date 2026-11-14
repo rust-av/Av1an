@@ -15,8 +15,8 @@ typedef struct {
 } Image;
 
 const char *fmetrics_version_str(void) { return "0.1.0"; }
-const char *fmetrics_cvvdp_version_str(void) { return "m04-test"; }
-const char *fmetrics_error_str(int error) { return "M04 native image mismatch"; }
+const char *fmetrics_cvvdp_version_str(void) { return "metadata-fixture"; }
+const char *fmetrics_error_str(int error) { return "metadata native image mismatch"; }
 void *fmetrics_workspace_create(void) { return malloc(1); }
 void fmetrics_workspace_destroy(void *workspace) { free(workspace); }
 int fmetrics_ssimu2_cmp(void *workspace, const Image *reference, const Image *distorted, double *score) {
@@ -82,7 +82,7 @@ int Vship_GetDetailedLastError(char *buffer, int len) { return 0; }
 int Vship_GetDetailedLastErrorHandler(void *handler, char *buffer, int len) { return 0; }
 int Vship_InitHandler(void **handler, void *data) {
     const Init *init = data;
-    if (getenv("M07_ABI_LOG")) {
+    if (getenv("UPLOAD_FIXTURE_ABI_LOG")) {
         *handler = malloc(sizeof(Init));
         memcpy(*handler, init, sizeof(Init));
         return 0;
@@ -97,7 +97,7 @@ int Vship_InitHandler(void **handler, void *data) {
 }
 int Vship_FreeHandler(void *handler) { free(handler); return 0; }
 int Vship_ComputeHandler(void *handler, void *data, const uint8_t **a, const uint8_t **b, const int64_t *as, const int64_t *bs) {
-    const char *log = getenv("M07_ABI_LOG");
+    const char *log = getenv("UPLOAD_FIXTURE_ABI_LOG");
     if (log) {
         const Init *init = handler;
         const Colorspace spaces[] = {init->reference, init->distorted};
@@ -135,7 +135,7 @@ int Vship_ComputeHandler(void *handler, void *data, const uint8_t **a, const uin
     return 0;
 }
 int Vship_Reset(void *handler) {
-    const char *log = getenv("M07_ABI_LOG");
+    const char *log = getenv("UPLOAD_FIXTURE_ABI_LOG");
     if (log) { FILE *file = fopen(log, "a"); if (!file) return 7; fputs("reset\n", file); fclose(file); }
     return 0;
 }

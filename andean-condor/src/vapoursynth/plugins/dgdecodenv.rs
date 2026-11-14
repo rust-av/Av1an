@@ -505,7 +505,7 @@ fn run_index(
             let result =
                 stderr.read_to_end(&mut bytes).map(|_| ()).context("Reading DGIndexNV stderr");
             #[cfg(all(test, target_os = "linux"))]
-            crate::core::input::i13_tests::after_stderr_read();
+            crate::core::input::indexing::after_stderr_read();
             Ok((bytes, result))
         })?;
     let mut reader = BufReader::new(stdout);
@@ -517,7 +517,7 @@ fn run_index(
             let read = reader.read_until(b'\n', &mut line);
             stdout.extend_from_slice(&line); // Capture even a failed partial read.
             #[cfg(all(test, target_os = "linux"))]
-            crate::core::input::i13_tests::after_stdout_read()?;
+            crate::core::input::indexing::after_stdout_read()?;
             if read.context("Reading DGIndexNV stdout")? == 0 {
                 return Ok(());
             }
@@ -562,8 +562,8 @@ fn run_index(
 
     #[cfg(all(test, target_os = "linux"))]
     {
-        crate::core::encoder::e12_tests::before_output_commit(cache, cancellation);
-        crate::core::input::i13_tests::before_publish(cache, cancellation);
+        crate::core::encoder::process_lifecycle::before_output_commit(cache, cancellation);
+        crate::core::input::indexing::before_publish(cache, cancellation);
     }
     // persist_noclobber uses rename(NOREPLACE), or an atomic hard-link on Unix.
     // The old private link may remain on some platforms; the directory owns it.
@@ -581,8 +581,8 @@ fn run_index(
     }
     #[cfg(all(test, target_os = "linux"))]
     {
-        crate::core::encoder::e12_tests::output_drop(cache, cancellation);
-        crate::core::input::i13_tests::after_publish(cancellation);
+        crate::core::encoder::process_lifecycle::output_drop(cache, cancellation);
+        crate::core::input::indexing::after_publish(cancellation);
     }
     Ok(cache.to_owned())
 }

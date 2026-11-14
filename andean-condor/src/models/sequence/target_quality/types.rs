@@ -538,7 +538,7 @@ mod tests {
     };
 
     #[test]
-    fn q05_statistics_reject_empty_and_nonfinite() {
+    fn statistics_reject_empty_and_nonfinite() {
         for statistic in [
             ProbeStatistic::Mean,
             ProbeStatistic::Median,
@@ -563,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn q05_undefined_and_overflow_statistics_are_errors() {
+    fn undefined_and_overflow_statistics_are_errors() {
         for (statistic, scores) in [
             (ProbeStatistic::Harmonic, vec![1.0, -1.0]),
             (ProbeStatistic::Harmonic, vec![f64::from_bits(1)]),
@@ -592,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn q05_finite_statistics_preserve_conventions() {
+    fn finite_statistics_preserve_conventions() {
         for (statistic, expected) in [
             (ProbeStatistic::Mean, 0.5),
             (ProbeStatistic::Median, 0.5),
@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn q06_percentile_caps_at_maximum_without_changing_lower_ranks() {
+    fn percentile_caps_at_maximum_without_changing_lower_ranks() {
         let scores = [4.0, 1.0, 3.0, 2.0];
         for (percentile, expected) in
             [(0.0, 1.0), (25.0, 2.0), (50.0, 3.0), (75.0, 4.0), (99.0, 4.0), (100.0, 4.0)]
@@ -683,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn q05_temporal_admission_checks_every_prefix_without_sorting() {
+    fn temporal_admission_checks_every_prefix_without_sorting() {
         let metric = QualityMetric::CVVDP {
             target_range: (0.0, 10.0),
             resolution: None,
@@ -712,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn q01_percentage_selects_scene_fraction() {
+    fn percentage_selects_scene_fraction() {
         let strategy = ProbeStrategy::Subset {
             position: SubsetProbePosition::Start,
             length: SubsetProbeLength::Percentage(25.0),
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn q01_small_numeric_and_boundary_matrix() {
+    fn small_numeric_and_boundary_matrix() {
         use SubsetProbeLength::{Frames, Percentage};
         use SubsetProbePosition::{End, Middle, Start};
         for (position, length, start, end, expected) in [
@@ -774,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn q01_checked_selection_rejects_invalid_values_and_ranges() {
+    fn checked_selection_rejects_invalid_values_and_ranges() {
         for strategy in [
             ProbeStrategy::Skip { skip: 0 },
             ProbeStrategy::Subset {
@@ -810,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn m27_metric_reduction_keeps_prefix_order_and_independent_statistics() {
+    fn metric_reduction_keeps_prefix_order_and_independent_statistics() {
         let scores = [2.0, 9.0, 4.0];
         for disabled in [None, Some(false), Some(true)] {
             let metric = QualityMetric::CVVDP {

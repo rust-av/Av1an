@@ -278,7 +278,7 @@ mod tests {
     impl SequenceDataHandler for Data {}
     impl NoiseDetectorDataHandler for Data {
         fn get_noise_detection(&self) -> anyhow::Result<&Option<NoiseDetectorData>> {
-            anyhow::ensure!(self.fail != 1, "q12 detection access failed");
+            anyhow::ensure!(self.fail != 1, "noise-scaler detection access failed");
             Ok(&self.noise)
         }
         fn get_noise_detection_mut(&mut self) -> anyhow::Result<&mut Option<NoiseDetectorData>> {
@@ -287,11 +287,11 @@ mod tests {
     }
     impl NoiseScalerDataHandler for Data {
         fn get_noise_scaling(&self) -> anyhow::Result<&Option<NoiseScalerData>> {
-            anyhow::ensure!(self.fail != 2, "q12 scaling read failed");
+            anyhow::ensure!(self.fail != 2, "noise-scaler scaling read failed");
             Ok(&self.scaling)
         }
         fn get_noise_scaling_mut(&mut self) -> anyhow::Result<&mut Option<NoiseScalerData>> {
-            anyhow::ensure!(self.fail != 3, "q12 scaling write failed");
+            anyhow::ensure!(self.fail != 3, "noise-scaler scaling write failed");
             Ok(&mut self.scaling)
         }
     }
@@ -310,7 +310,7 @@ mod tests {
 
     fn scene(base: EncoderBase, noise: Option<f64>) -> Scene<Data> {
         let mut encoder = Encoder::default_from_base(&base, true);
-        encoder.set_executable(Some("q12-must-not-run".into()));
+        encoder.set_executable(Some("noise-scaler-must-not-run".into()));
         encoder.set_photon_noise(Some(PhotonNoise {
             iso: 800,
             chroma_iso: Some(400),
@@ -344,7 +344,7 @@ mod tests {
         ))
         .expect("Rust decoder");
         let input = Input::Video {
-            path: "q12-unused.y4m".into(),
+            path: "noise-scaler-unused.y4m".into(),
             import_method: crate::models::input::ImportMethod::FFMS2 {
                 index: None,
                 cache_path: None,
@@ -359,7 +359,7 @@ mod tests {
         let condor = Condor::new(
             input,
             Output {
-                path: "q12-unused.mkv".into(),
+                path: "noise-scaler-unused.mkv".into(),
                 overwrite: false,
                 tags: Default::default(),
                 video_tags: Default::default(),
@@ -404,14 +404,14 @@ mod tests {
     }
 
     #[test]
-    fn q12_no_interval_preserves_iso_chroma_metadata_without_save() {
+    fn no_interval_preserves_iso_chroma_metadata_without_save() {
         for noises in [[0.2, 0.2], [0.1, 0.15], [0.0, 0.0]] {
             let scenes = noises.map(|n| scene(EncoderBase::AOM, Some(n))).to_vec();
             let (mut condor, saved) = fixture(Some(config()), scenes);
             let before = snapshot(&condor);
             run(&mut condor).expect("no interval succeeds");
             eprintln!(
-                "Q12 no interval {noises:?}: {}; saves={}",
+                "noise-scaler no interval {noises:?}: {}; saves={}",
                 String::from_utf8_lossy(&snapshot(&condor)),
                 saved.borrow().len()
             );
@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn q12_ordinary_interval_and_optional_chroma_save_once() {
+    fn ordinary_interval_and_optional_chroma_save_once() {
         for scale_chroma in [true, false] {
             let mut config = config();
             config.scale_chroma = scale_chroma;
@@ -457,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn q12_all_recorded_population_and_encoder_exclusions_are_retained() {
+    fn all_recorded_population_and_encoder_exclusions_are_retained() {
         let mut scenes = vec![
             scene(EncoderBase::AOM, Some(0.2)),
             scene(EncoderBase::RAV1E, Some(0.4)),
@@ -505,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn q12_disabled_empty_missing_and_already_done_do_not_save() {
+    fn disabled_empty_missing_and_already_done_do_not_save() {
         let mut done = scene(EncoderBase::AOM, Some(0.6));
         done.sequence_data.scaling = Some(NoiseScalerData {
             scaler: 1.5,
@@ -527,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn q12_loaded_invalid_config_rejected_by_validate_and_direct_execute() {
+    fn loaded_invalid_config_rejected_by_validate_and_direct_execute() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.1] {
             for field in 0..3 {
                 let mut config = config();
@@ -557,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn q12_late_invalid_recorded_noise_is_contextual_and_atomic() {
+    fn late_invalid_recorded_noise_is_contextual_and_atomic() {
         for noise in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.1] {
             let scenes =
                 vec![scene(EncoderBase::AOM, Some(0.4)), scene(EncoderBase::AVM, Some(noise))];
@@ -565,7 +565,7 @@ mod tests {
             let before = snapshot(&condor);
             let result = run(&mut condor);
             eprintln!(
-                "Q12 later noise {noise}: {result:?}, saves={}",
+                "noise-scaler later noise {noise}: {result:?}, saves={}",
                 saved.borrow().len()
             );
             let error = result.expect_err("all recorded noise must be finite and nonnegative");
@@ -576,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn q12_late_data_access_errors_leave_all_scenes_and_saved_bytes_untouched() {
+    fn late_data_access_errors_leave_all_scenes_and_saved_bytes_untouched() {
         for fail in 1..=3 {
             let mut scenes =
                 vec![scene(EncoderBase::AOM, Some(0.4)), scene(EncoderBase::AOM, Some(0.6))];
@@ -584,14 +584,14 @@ mod tests {
             let (mut condor, saved) = fixture(Some(config()), scenes);
             let before = snapshot(&condor);
             let error = run(&mut condor).expect_err("data access must fail");
-            assert!(format!("{error:#}").contains("q12"));
+            assert!(format!("{error:#}").contains("noise-scaler"));
             assert_eq!(snapshot(&condor), before);
             assert!(saved.borrow().is_empty());
         }
     }
 
     #[test]
-    fn q12_extreme_finite_factors_and_chroma_overflow_fail_before_publication() {
+    fn extreme_finite_factors_and_chroma_overflow_fail_before_publication() {
         for (factor, chroma) in [(f64::MAX, false), (10_000_000.0, false), (2.0, true)] {
             let mut config = config();
             config.minimum_scaler = factor;
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn q12_zero_factor_is_explicit_and_save_error_restores_memory() {
+    fn zero_factor_is_explicit_and_save_error_restores_memory() {
         let mut zero_config = config();
         zero_config.minimum_scaler = 0.0;
         zero_config.maximum_scaler = 0.0;
@@ -630,12 +630,12 @@ mod tests {
 
         let (mut condor, saved) = fixture(Some(config()), vec![scene(EncoderBase::AOM, Some(0.6))]);
         let before = snapshot(&condor);
-        condor.save_callback = Box::new(|_| anyhow::bail!("q12 atomic save failed"));
+        condor.save_callback = Box::new(|_| anyhow::bail!("noise-scaler atomic save failed"));
         assert!(
             run(&mut condor)
                 .expect_err("save error")
                 .to_string()
-                .contains("q12 atomic save failed")
+                .contains("noise-scaler atomic save failed")
         );
         assert_eq!(snapshot(&condor), before);
         assert!(saved.borrow().is_empty());

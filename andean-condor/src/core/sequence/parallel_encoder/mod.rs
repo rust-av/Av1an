@@ -28,30 +28,6 @@ mod progress;
 mod streaming;
 mod task;
 
-#[cfg(test)]
-#[cfg(target_os = "linux")]
-mod e14_tests;
-
-#[cfg(test)]
-#[cfg(target_os = "linux")]
-pub(super) mod e14_r1_tests;
-
-#[cfg(test)]
-#[cfg(target_os = "linux")]
-mod e11_tests;
-
-#[cfg(test)]
-#[cfg(target_os = "linux")]
-mod e13_tests;
-
-#[cfg(test)]
-#[cfg(target_os = "linux")]
-mod e28_tests;
-
-#[cfg(test)]
-#[cfg(target_os = "linux")]
-mod e15_tests;
-
 pub use error::ParallelEncoderError;
 pub(super) use lifecycle::TempOutput;
 pub use task::{ParallelEncoderResult, Task};
@@ -598,7 +574,7 @@ mod bitrate_tests {
     use super::checked_bitrate;
 
     #[test]
-    fn q09_checked_bitrate_numeric_contract() {
+    fn checked_bitrate_numeric_contract() {
         for (bytes, frames, fps, expected) in [
             (1000, 240, 24.0, 800.0),
             (1000, 240, 24000.0 / 1001.0, 800000.0 / 1001.0),
@@ -629,3 +605,7 @@ mod bitrate_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(target_os = "linux")]
+pub(in crate::core::sequence) mod tests;

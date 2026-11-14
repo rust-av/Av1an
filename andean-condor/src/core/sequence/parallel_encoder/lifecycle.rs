@@ -38,7 +38,7 @@ impl Stop {
         // Disconnect broadcasts to every idle worker and job handoff selector.
         self.sender.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
         #[cfg(all(test, target_os = "linux"))]
-        super::e11_tests::stopped();
+        super::tests::shutdown::stopped();
     }
 
     pub(super) fn stopped(&self, cancelled: &Cancellation) -> bool {

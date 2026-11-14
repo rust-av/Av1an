@@ -587,7 +587,7 @@ mod tests {
 
     use super::*;
 
-    fn i02_details(width: usize, height: usize, bit_depth: usize) -> VideoDetails {
+    fn frame_details(width: usize, height: usize, bit_depth: usize) -> VideoDetails {
         VideoDetails {
             width,
             height,
@@ -605,7 +605,7 @@ mod tests {
         }
     }
 
-    fn i02_header(data: &[u8], width: i32, height: i32, format: &str) -> FFMS_Frame {
+    fn header(data: &[u8], width: i32, height: i32, format: &str) -> FFMS_Frame {
         // SAFETY: this C header contains only numeric fields and raw pointers;
         // zero is valid for each field. Plane allocations remain caller-owned.
         let mut frame: FFMS_Frame = unsafe { std::mem::zeroed() };
@@ -622,8 +622,8 @@ mod tests {
     }
 
     #[test]
-    fn i02_converted_metadata_mismatch_rejected() {
-        let details = i02_details(16, 1080, 8);
+    fn converted_metadata_mismatch_rejected() {
+        let details = frame_details(16, 1080, 8);
         // Overallocate every plane for the OLD configured-height read as well
         // as every claimed format. RED must never rely on invalid memory.
         let data = vec![0; 32 * 1080];
@@ -634,7 +634,7 @@ mod tests {
             (16, 1080, "yuv420p10le"),
             (16, 1080, "yuv420p10be"),
         ] {
-            let frame = i02_header(&data, width, height, format);
+            let frame = header(&data, width, height, format);
             // SAFETY: all planes have 1080 fully allocated 32-byte rows, live
             // through the call, including when baseline ignores the metadata.
             let result = unsafe { planes_of(&frame, &details, 42) };
@@ -647,9 +647,9 @@ mod tests {
     }
 
     #[test]
-    fn i02_metadata_precedes_all_plane_headers() {
-        let details = i02_details(16, 1080, 10);
-        let mut frame = i02_header(&[], 16, 800, "yuv420p10le");
+    fn metadata_precedes_all_plane_headers() {
+        let details = frame_details(16, 1080, 10);
+        let mut frame = header(&[], 16, 800, "yuv420p10le");
         frame.Data = [std::ptr::null(); 4];
         for (width, height, format) in [
             (16, 800, "yuv420p10le"),
@@ -683,11 +683,11 @@ mod tests {
     }
 
     #[test]
-    fn i02_all_planes_preflight_without_views() {
-        let details = i02_details(16, 8, 8);
+    fn all_planes_preflight_without_views() {
+        let details = frame_details(16, 8, 8);
         // These deliberately have NO readable plane allocation. Only the
         // production pure preflight is called, never `planes_of`/`view`.
-        let mut frame = i02_header(&[], 16, 8, "yuv420p");
+        let mut frame = header(&[], 16, 8, "yuv420p");
         frame.Data = [std::ptr::dangling(); 4];
         for plane in 0..3 {
             frame.Data[plane] = std::ptr::null();
@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn i02_spans_checked_and_last_row_padding_not_required() {
+    fn spans_checked_and_last_row_padding_not_required() {
         for (stride, width, height, bytes) in [
             (1, 0, 1, 1),
             (1, 1, 0, 1),
@@ -725,10 +725,10 @@ mod tests {
             assert_eq!(plane_span(stride, width, height, bytes), None);
         }
         assert_eq!(plane_span(isize::MAX as usize, 1, 1, 1), Some(1));
-        let mut details = i02_details(2, 2, 10);
+        let mut details = frame_details(2, 2, 10);
         details.chroma_sampling = ChromaSubsampling::Monochrome;
         let data = [0x23, 0x01, 0x45, 0x02, 99, 99, 0x67, 0x03, 0x89, 0x01];
-        let mut frame = i02_header(&data, 2, 2, "gray10le");
+        let mut frame = header(&data, 2, 2, "gray10le");
         frame.Data[1..].fill(std::ptr::null());
         frame.Linesize = [6, -1, -1, -1];
         // SAFETY: exactly (2-1)*6+4 = 10 bytes, with no final-row padding.
@@ -740,11 +740,11 @@ mod tests {
     }
 
     #[test]
-    fn i02_valid_layouts_and_documented_unscaled_sentinel() {
+    fn valid_layouts_and_documented_unscaled_sentinel() {
         let data = vec![0x01; 32 * 8];
         for (depth, format) in [(8, "yuv420p"), (10, "yuv420p10le"), (12, "yuv420p12le")] {
-            let details = i02_details(5, 3, depth);
-            let mut frame = i02_header(&data, 5, 3, format);
+            let details = frame_details(5, 3, depth);
+            let mut frame = header(&data, 5, 3, format);
             // Encoded geometry is irrelevant when actual converted size is set.
             frame.EncodedWidth = 100;
             frame.EncodedHeight = 800;
@@ -761,13 +761,13 @@ mod tests {
         }
         for depth in [9, 16] {
             // av-decoders 0.12 does not accept these as native decoder output.
-            assert!(output_format_id(&i02_details(5, 3, depth)).is_err());
+            assert!(output_format_id(&frame_details(5, 3, depth)).is_err());
         }
-        let details = i02_details(0, 3, 8);
-        let frame = i02_header(&data, 0, 3, "yuv420p");
+        let details = frame_details(0, 3, 8);
+        let frame = header(&data, 0, 3, "yuv420p");
         assert!(preflight_planes(&frame, &details, 1).is_err());
-        let frame = i02_header(&data, 5, 3, "yuv420p");
-        let mut details = i02_details(5, 3, 8);
+        let frame = header(&data, 5, 3, "yuv420p");
+        let mut details = frame_details(5, 3, 8);
         assert!(validate_metadata(&frame, &details, 1).is_ok());
         // On 64-bit, unchecked i32/u32 narrowing aliases this positive width
         // back to 5. Use metadata only: never attempt an oversized plane view.

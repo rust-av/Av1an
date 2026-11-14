@@ -238,7 +238,7 @@ mod tests {
 
     fn scene(base: EncoderBase, quantizer: Option<f64>) -> Scene<Data> {
         let mut encoder = Encoder::default_from_base(&base, true);
-        encoder.set_executable(Some("q11-must-not-run".into()));
+        encoder.set_executable(Some("speed-scaler-must-not-run".into()));
         encoder.set_speed(3);
         if let Some(q) = quantizer {
             encoder.set_quantizer(q);
@@ -263,7 +263,7 @@ mod tests {
         ))
         .expect("Rust decoder");
         let input = Input::Video {
-            path: "q11-unused.y4m".into(),
+            path: "speed-scaler-unused.y4m".into(),
             import_method: crate::models::input::ImportMethod::FFMS2 {
                 index: None,
                 cache_path: None,
@@ -278,7 +278,7 @@ mod tests {
         let condor = Condor::new(
             input,
             Output {
-                path: "q11-unused.mkv".into(),
+                path: "speed-scaler-unused.mkv".into(),
                 overwrite: false,
                 tags: Default::default(),
                 video_tags: Default::default(),
@@ -313,7 +313,7 @@ mod tests {
         }
         let result = run(&mut condor);
         let observed: Vec<_> = condor.scenes.iter().map(|s| s.encoder.speed()).collect();
-        eprintln!("Q11 q={queries:?}: speeds={observed:?}; want={speeds:?}");
+        eprintln!("speed-scaler q={queries:?}: speeds={observed:?}; want={speeds:?}");
         result.expect("scaling succeeds");
         assert_eq!(
             serde_json::to_value(&condor.scenes).expect("scenes"),
@@ -330,12 +330,12 @@ mod tests {
     }
 
     #[test]
-    fn q11_two_points_interpolate_instead_of_using_an_endpoint() {
+    fn two_points_interpolate_instead_of_using_an_endpoint() {
         assert_speeds(vec![(4, 20.0), (8, 40.0)], &[30.0, 39.0], &[6, 8]);
     }
 
     #[test]
-    fn q11_unsorted_fractional_endpoints_outside_and_descending_speeds() {
+    fn unsorted_fractional_endpoints_outside_and_descending_speeds() {
         assert_speeds(
             vec![(4, 40.5), (8, 20.5)],
             &[0.0, 20.5, 30.5, 39.5, 40.5, 60.0],
@@ -344,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn q11_natural_three_and_four_point_curves_are_retained_and_bounded() {
+    fn natural_three_and_four_point_curves_are_retained_and_bounded() {
         // Natural spline at q30 is 4.875, not PCHIP's 3.75. At q10 it is -1.125.
         assert_speeds(
             vec![(0, 0.0), (0, 20.0), (12, 40.0)],
@@ -361,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn q11_loaded_invalid_knots_fail_validate_and_execute_without_save() {
+    fn loaded_invalid_knots_fail_validate_and_execute_without_save() {
         let mut failures = vec![];
         for points in [
             vec![(4, 20.0)],
@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn q11_later_invalid_scene_is_atomic_in_memory_and_saved_bytes() {
+    fn later_invalid_scene_is_atomic_in_memory_and_saved_bytes() {
         for q in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let scenes =
                 vec![scene(EncoderBase::AOM, Some(30.0)), scene(EncoderBase::AOM, Some(q))];
@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn q11_nonfinite_estimate_is_rejected_without_save() {
+    fn nonfinite_estimate_is_rejected_without_save() {
         let (mut condor, saved) = fixture(
             vec![(4, 0.0), (8, f64::MIN_POSITIVE / 2.0), (4, 1.0)],
             vec![scene(EncoderBase::SVTAV1, Some(0.5))],
@@ -435,21 +435,21 @@ mod tests {
     }
 
     #[test]
-    fn q11_save_error_does_not_leave_published_encoder_edits() {
+    fn save_error_does_not_leave_published_encoder_edits() {
         let (mut condor, saved) = fixture(
             vec![(4, 20.0), (8, 40.0)],
             vec![scene(EncoderBase::AOM, Some(30.0))],
         );
         let before = serde_json::to_vec(&condor.scenes).expect("snapshot");
-        condor.save_callback = Box::new(|_| anyhow::bail!("q11 failed atomic save"));
+        condor.save_callback = Box::new(|_| anyhow::bail!("speed-scaler failed atomic save"));
         let error = run(&mut condor).expect_err("save must fail");
-        assert!(error.to_string().contains("q11 failed atomic save"));
+        assert!(error.to_string().contains("speed-scaler failed atomic save"));
         assert_eq!(serde_json::to_vec(&condor.scenes).expect("scenes"), before);
         assert!(saved.borrow().is_empty());
     }
 
     #[test]
-    fn q11_disabled_empty_and_no_quantizer_do_not_save() {
+    fn disabled_empty_and_no_quantizer_do_not_save() {
         for (points, scenes) in [
             (vec![], vec![scene(EncoderBase::AOM, Some(30.0))]),
             (vec![(4, 20.0), (8, 40.0)], vec![]),
@@ -467,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn q11_known_speed_limits_and_named_presets_use_existing_settings_contracts() {
+    fn known_speed_limits_and_named_presets_use_existing_settings_contracts() {
         for (base, points, query, expected) in [
             (EncoderBase::RAV1E, vec![(0, 0.0), (10, 40.0)], 20.0, "5"),
             (EncoderBase::SVTAV1, vec![(-1, 0.0), (13, 40.0)], 20.0, "6"),
