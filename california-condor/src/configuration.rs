@@ -835,449 +835,512 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::{
-        process::{Child, Command, Stdio},
-        time::{Duration, Instant},
-    };
-
-    fn fixture(directory: &Path) -> Configuration {
-        use crate::test_helpers::{TestVideo, default_config};
-        let source = directory.join("source.vpy");
-        fs::write(&source, "import vapoursynth as vs\nvs.core.std.BlankClip(width=32,height=16,length=2,format=vs.YUV420P8).set_output()\n").expect("tiny native source");
-        let video = TestVideo {
-            path: source.clone(),
-            width: 32,
-            height: 16,
-            frames: 2,
-            fps_rational: (24, 1),
-            format: FFPixelFormat::YUV420P,
-            scenes: vec![(0, 2)],
-        };
-        let mut config =
-            default_config(&video, &directory.join("out.mkv"), &directory.join("work"));
-        config.condor.input = Configuration::new_input_model(&source, None, None, None, None)
-            .expect("script model without native open");
-        config.condor.scenes = video.mock_scenes(&config.condor.encoder);
-        config
-    }
-
-    struct Reap(Child);
-    impl Drop for Reap {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-
-    fn wait_until(mut ready: impl FnMut() -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while !ready() {
-            assert!(
-                Instant::now() < deadline,
-                "job lock child coordination timed out"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    #[test]
-    fn job_lock_callback_child() {
-        let Some(directory) = std::env::var_os("CONDOR_JOB_LOCK_CALLBACK_CHILD") else {
-            return;
-        };
-        let directory = PathBuf::from(directory);
-        let guard =
-            JobLock::acquire(&directory.join("job.json")).expect("caller-held guard before load");
-        let mut config = Configuration::load(guard.path()).expect("load").expect("config");
-        config.schema = "job lock callback snapshot".into();
-        let path = guard.path().to_path_buf();
-        // Native state is created and dropped on its worker, never shared across threads.
-        let worker = std::thread::spawn(move || {
-            let condor = crate::instantiate_saved_condor(&config, &path, &Default::default())
-                .expect("actual production callback");
-            condor.save().expect("real callback publication");
-            fs::write(directory.join("entered"), b"saved").expect("ready");
-            wait_until(|| directory.join("release").exists());
-            condor.save().expect("callback before worker exits");
-        });
-        worker.join().expect("join while caller still holds guard");
-        drop(guard);
-    }
-
-    #[test]
-    fn direct_guard_covers_real_callback_and_join() {
-        let temp = tempfile::tempdir().expect("fixture");
-        let config = fixture(temp.path());
-        let file = temp.path().join("job.json");
-        config.save(&file).expect("initial");
-        #[cfg(unix)]
-        let before = {
-            use std::os::unix::fs::MetadataExt;
-            fs::metadata(&file).expect("inode").ino()
-        };
-        let mut child = Reap(
-            Command::new(std::env::current_exe().expect("test executable"))
-                .current_dir(temp.path())
-                .args(["--exact", "configuration::tests::job_lock_callback_child", "--nocapture"])
-                .env("CONDOR_JOB_LOCK_CALLBACK_CHILD", temp.path())
-                .stdout(Stdio::null())
-                .stderr(File::create(temp.path().join("child.log")).expect("log"))
-                .spawn()
-                .expect("callback child"),
-        );
-        wait_until(|| {
-            assert!(
-                child.0.try_wait().expect("status").is_none(),
-                "callback child exited before ready"
-            );
-            temp.path().join("entered").exists()
-        });
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            assert_ne!(fs::metadata(&file).expect("replaced inode").ino(), before);
-        }
-        assert_eq!(
-            Configuration::load(&file).expect("snapshot").expect("saved").schema,
-            "job lock callback snapshot"
-        );
-        let error = JobLock::acquire(&file).expect_err("busy after callback while joining");
-        assert!(error.to_string().contains("another process"), "{error:#}");
-        let independent =
-            JobLock::acquire(&temp.path().join("job.other")).expect("full basename independence");
-        drop(independent);
-        fs::write(temp.path().join("release"), b"join").expect("release");
-        wait_until(|| child.0.try_wait().expect("status").is_some());
-        assert!(child.0.wait().expect("reap").success());
-        let guard = JobLock::acquire(&file).expect("normal return releases persistent sidecar");
-        assert_eq!(
-            Configuration::load(guard.path()).expect("snapshot").expect("saved").schema,
-            "job lock callback snapshot"
-        );
-    }
-
-    #[test]
-    fn unique_staging_and_failed_publication_preserve_original_bytes() {
-        let temp = tempfile::tempdir().expect("fixture");
-        let config = fixture(temp.path());
-        let file = temp.path().join("job.json");
-        config.save(&file).expect("initial config");
-        let original = fs::read(&file).expect("snapshot");
-        std::thread::scope(|scope| {
-            // Both owned files remain alive regardless of which staging call runs first.
-            let first =
-                scope.spawn(|| stage_config(b"first", &file).expect("first production staging"));
-            let second = stage_config(b"second", &file).expect("second production staging");
-            let first = first.join().expect("stage thread");
-            assert_ne!(first.path(), second.path());
-            assert_eq!(fs::read(first.path()).expect("first staged"), b"first");
-            assert_eq!(fs::read(second.path()).expect("second staged"), b"second");
-            fs::remove_file(first.path())
-                .expect("force native publish failure without chmod assumptions");
-            assert_eq!(
-                publish_config(first, &file).expect_err("missing staged file").kind(),
-                io::ErrorKind::NotFound
-            );
-            assert_eq!(fs::read(&file).expect("original preserved"), original);
-            assert!(
-                second.path().exists(),
-                "failure only cleans its owned staging"
-            );
-        });
-        let mut invalid = config;
-        invalid.condor.sequence_config.parallel_encoder.max_tries = 0;
-        assert!(invalid.save(&file).is_err(), "validation before staging");
-        assert_eq!(fs::read(&file).expect("unchanged JSON"), original);
-        invalid.condor.sequence_config.parallel_encoder.max_tries = 1;
-        invalid.condor.scenes[0].sequence_data.noise_detection = Some(NoiseDetectorData {
-            noise: 1.0,
-            luminance: 1.0,
-            created_on: std::time::SystemTime::UNIX_EPOCH - Duration::from_secs(1),
-        });
-        assert!(
-            matches!(invalid.save(&file), Err(ConfigError::Serialize(_))),
-            "real serialization failure before staging"
-        );
-        assert_eq!(
-            fs::read(&file).expect("serialization preserves original bytes"),
-            original
-        );
-        assert_eq!(
-            fs::read_dir(temp.path()).expect("owned temps cleaned").count(),
-            2
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    mod lock_inheritance {
-        use super::*;
+    mod internal_integration {
+        use super::super::*;
+        #[cfg(target_os = "linux")]
+        use std::process::Stdio;
         use std::{
-            io::Read,
-            os::{
-                fd::AsRawFd,
-                unix::{fs::MetadataExt, net::UnixStream, process::CommandExt},
-            },
-            thread::{self, JoinHandle},
+            process::{Child, Command},
+            time::{Duration, Instant},
         };
 
-        const TEST: &str =
-            "configuration::tests::lock_inheritance::drop_unlocks_inherited_description";
-        const PASSED: &str =
-            "lock inheritance production inheritance/successor/crash controls passed";
-
-        unsafe extern "C" {
-            fn getpid() -> i32;
-            fn read(fd: i32, ptr: *mut std::ffi::c_void, count: usize) -> isize;
-            fn write(fd: i32, ptr: *const std::ffi::c_void, count: usize) -> isize;
-            fn _exit(code: i32) -> !;
+        fn fixture(directory: &Path) -> Configuration {
+            use crate::test_helpers::{TestVideo, default_config};
+            let source = directory.join("source.vpy");
+            fs::write(&source, "import vapoursynth as vs\nvs.core.std.BlankClip(width=32,height=16,length=2,format=vs.YUV420P8).set_output()\n").expect("tiny native source");
+            let video = TestVideo {
+                path: source.clone(),
+                width: 32,
+                height: 16,
+                frames: 2,
+                fps_rational: (24, 1),
+                format: FFPixelFormat::YUV420P,
+                scenes: vec![(0, 2)],
+            };
+            let mut config =
+                default_config(&video, &directory.join("out.mkv"), &directory.join("work"));
+            config.condor.input = Configuration::new_input_model(&source, None, None, None, None)
+                .expect("script model without native open");
+            config.condor.scenes = video.mock_scenes(&config.condor.encoder);
+            config
         }
 
-        fn command(mode: &str, directory: &Path) -> Command {
-            let mut command = Command::new(std::env::current_exe().expect("test executable"));
-            command
-                .args(["--exact", TEST, "--nocapture"])
-                .env("CONDOR_LOCK_INHERITANCE_MODE", mode)
-                .env("CONDOR_LOCK_INHERITANCE_DIRECTORY", directory)
-                .stdout(Stdio::null());
-            command
-        }
-
-        struct Pending {
-            gate: UnixStream,
-            worker: Option<JoinHandle<io::Result<Child>>>,
-        }
-
-        impl Pending {
-            fn start(directory: &Path) -> (Self, i32) {
-                let (gate, child_gate) = UnixStream::pair().expect("preopened barrier");
-                gate.set_read_timeout(Some(Duration::from_secs(10))).expect("parent bound");
-                child_gate
-                    .set_read_timeout(Some(Duration::from_secs(10)))
-                    .expect("pre-exec bound even if parent exits");
-                let mut command = command("post-exec", directory);
-                let worker = thread::spawn(move || {
-                    // SAFETY: Only async-signal-safe syscalls and stack bytes run after
-                    // fork; the socket is preopened and its read has a kernel timeout.
-                    unsafe {
-                        command.pre_exec(move || {
-                            let pid = getpid().to_ne_bytes();
-                            let fd = child_gate.as_raw_fd();
-                            if write(fd, pid.as_ptr().cast(), pid.len()) != pid.len() as isize {
-                                _exit(125);
-                            }
-                            let mut byte: u8 = 0;
-                            if read(fd, (&mut byte as *mut u8).cast(), 1) != 1 || byte != b'x' {
-                                _exit(126);
-                            }
-                            Ok(())
-                        });
-                    }
-                    command.spawn()
-                });
-                let mut pending = Self {
-                    gate,
-                    worker: Some(worker),
-                };
-                let mut pid = [0; 4];
-                pending.gate.read_exact(&mut pid).expect("known pre-exec child reached barrier");
-                (pending, i32::from_ne_bytes(pid))
-            }
-
-            fn finish(&mut self) -> Reap {
-                self.gate.write_all(b"x").expect("allow exec");
-                Reap(
-                    self.worker
-                        .take()
-                        .expect("one owned worker")
-                        .join()
-                        .expect("spawn worker")
-                        .expect("exec child"),
-                )
-            }
-        }
-
-        impl Drop for Pending {
+        struct Reap(Child);
+        impl Drop for Reap {
             fn drop(&mut self) {
-                if let Some(worker) = self.worker.take() {
-                    let _ = self.gate.write_all(b"x");
-                    if let Ok(Ok(child)) = worker.join() {
-                        drop(Reap(child));
-                    }
-                }
+                let _ = self.0.kill();
+                let _ = self.0.wait();
             }
         }
 
-        fn same_inode(path: impl AsRef<Path>, expected: &fs::Metadata) -> bool {
-            fs::metadata(path).is_ok_and(|actual| {
-                actual.dev() == expected.dev() && actual.ino() == expected.ino()
-            })
-        }
-
-        fn wait_for(child: &mut Reap, marker: &Path) {
-            wait_until(|| {
+        fn wait_until(mut ready: impl FnMut() -> bool) {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while !ready() {
                 assert!(
-                    child.0.try_wait().expect("child status").is_none(),
-                    "child exited early"
+                    Instant::now() < deadline,
+                    "job lock child coordination timed out"
                 );
-                marker.exists()
-            });
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
 
-        fn probe(directory: &Path) {
-            let config = directory.join("job.json");
-            let sidecar = directory.join("job.json.lock");
-            let guard = JobLock::acquire(&config).expect("actual production guard");
-            let fd = guard._file.as_raw_fd();
-            let identity = fs::metadata(&sidecar).expect("persistent sidecar identity");
-            assert!(
-                JobLock::acquire(&config).is_err(),
-                "live owner excludes fresh opens"
-            );
-
-            let (mut pending, pid) = Pending::start(directory);
-            let child_fd = format!("/proc/{pid}/fd/{fd}");
-            let child_info = format!("/proc/{pid}/fdinfo/{fd}");
-            assert!(
-                same_inode(&child_fd, &identity),
-                "fork inherited the owning descriptor"
-            );
-            let info = fs::read_to_string(&child_info).expect("known child descriptor info");
-            let parent_info = fs::read_to_string(format!("/proc/self/fdinfo/{fd}"))
-                .expect("owning descriptor info");
-            let lock = info.lines().find(|line| line.starts_with("lock:")).expect("inherited lock");
-            assert!(lock.contains("FLOCK  ADVISORY  WRITE"), "{lock}");
-            assert_eq!(
-                Some(lock),
-                parent_info.lines().find(|line| line.starts_with("lock:"))
-            );
-            let flags = usize::from_str_radix(
-                info.lines().find_map(|line| line.strip_prefix("flags:\t")).expect("fd flags"),
-                8,
-            )
-            .expect("octal flags");
-            assert_ne!(flags & 0o2000000, 0, "CLOEXEC closes at exec, not fork");
-            println!(
-                "lock inheritance parent={} child={pid} fd={fd} dev={} inode={} flags={flags:o}; {lock}",
-                std::process::id(),
-                identity.dev(),
-                identity.ino()
-            );
-            assert!(
-                JobLock::acquire(&config).is_err(),
-                "still-live owner remains exclusive"
-            );
+        fn run_job_lock_callback_child() {
+            let Some(directory) = std::env::var_os("CONDOR_JOB_LOCK_CALLBACK_CHILD") else {
+                return;
+            };
+            let directory = PathBuf::from(directory);
+            let guard = JobLock::acquire(&directory.join("job.json"))
+                .expect("caller-held guard before load");
+            let mut config = Configuration::load(guard.path()).expect("load").expect("config");
+            config.schema = "job lock callback snapshot".into();
+            let path = guard.path().to_path_buf();
+            let completed = directory.join("completed");
+            // Native state is created and dropped on its worker, never shared across threads.
+            let worker = std::thread::spawn(move || {
+                let condor = crate::instantiate_saved_condor(&config, &path, &Default::default())
+                    .expect("actual production callback");
+                condor.save().expect("real callback publication");
+                fs::write(directory.join("entered"), b"saved").expect("ready");
+                wait_until(|| directory.join("release").exists());
+                condor.save().expect("callback before worker exits");
+            });
+            worker.join().expect("join while caller still holds guard");
             drop(guard);
-            assert!(
-                !same_inode(format!("/proc/self/fd/{fd}"), &identity),
-                "parent fd closed"
-            );
-            assert!(
-                same_inode(&child_fd, &identity),
-                "child still paused before exec"
-            );
-            // Publishing the config must not change the persistent lock inode.
-            let staged = stage_config(b"{}", &config).expect("production staging");
-            publish_config(staged, &config).expect("production publication");
-            assert!(same_inode(&sidecar, &identity));
-            let successor = JobLock::acquire(&config)
-                .expect("drop must unlock before the inherited child reaches exec");
-            assert!(
-                !fs::read_to_string(&child_info)
-                    .expect("old descriptor still open")
-                    .contains("FLOCK"),
-                "unlock affected the inherited open description, not just the parent fd"
-            );
-            assert!(
-                JobLock::acquire(&config).is_err(),
-                "successor is exclusive before exec"
-            );
-
-            let mut child = pending.finish();
-            wait_for(&mut child, &directory.join("exec-ready"));
-            assert!(
-                !same_inode(&child_fd, &identity),
-                "exec closed the old inherited fd"
-            );
-            assert!(
-                JobLock::acquire(&config).is_err(),
-                "old child's close cannot unlock successor"
-            );
-            drop(successor);
-            for _ in 0..3 {
-                drop(
-                    JobLock::acquire(&config).expect("release/reacquire with post-exec child live"),
-                );
-            }
-            fs::write(directory.join("exec-release"), b"exit").expect("release post-exec child");
-            wait_until(|| child.0.try_wait().expect("post-exec status").is_some());
-            assert!(child.0.wait().expect("reap post-exec child").success());
-
-            let mut holder =
-                Reap(command("crash-holder", directory).spawn().expect("owned holder"));
-            wait_for(&mut holder, &directory.join("holder-ready"));
-            assert!(
-                JobLock::acquire(&config).is_err(),
-                "ordinary owned holder is exclusive"
-            );
-            holder.0.kill().expect("kill only owner without inherited lock handles");
-            assert!(!holder.0.wait().expect("reap killed owner").success());
-            for _ in 0..3 {
-                drop(JobLock::acquire(&config).expect("ordinary crash releases OS lock"));
-            }
-            assert!(
-                same_inode(&sidecar, &identity),
-                "never delete the persistent sidecar"
-            );
-            println!("{PASSED}");
+            fs::write(completed, b"joined and unlocked").expect("callback child completed");
         }
 
         #[test]
-        fn drop_unlocks_inherited_description() {
-            if let Ok(mode) = std::env::var("CONDOR_LOCK_INHERITANCE_MODE") {
-                let directory = PathBuf::from(
-                    std::env::var_os("CONDOR_LOCK_INHERITANCE_DIRECTORY")
-                        .expect("owned child directory"),
+        fn caller_held_job_lock_covers_callback_atomic_save_and_worker_join_then_releases() {
+            const TEST: &str = "configuration::tests::internal_integration::caller_held_job_lock_covers_callback_atomic_save_and_worker_join_then_releases";
+            if std::env::var_os("CONDOR_JOB_LOCK_CALLBACK_CHILD").is_some() {
+                assert_eq!(
+                    std::env::var("CONDOR_JOB_LOCK_CALLBACK_TEST").expect("selected child"),
+                    TEST
                 );
-                match mode.as_str() {
-                    "probe" => probe(&directory),
-                    "post-exec" => {
-                        // This child never opens or acquires the job, before or after exec.
-                        fs::write(directory.join("exec-ready"), b"ready").expect("exec marker");
-                        wait_until(|| directory.join("exec-release").exists());
-                    },
-                    "crash-holder" => {
-                        let _guard = JobLock::acquire(&directory.join("job.json")).expect("holder");
-                        fs::write(directory.join("holder-ready"), b"ready").expect("holder marker");
-                        wait_until(|| directory.join("holder-release").exists());
-                    },
-                    _ => panic!("unknown lock inheritance child mode"),
-                }
+                run_job_lock_callback_child();
                 return;
             }
-
-            // The parent libtest never installs pre_exec hooks or forks a test worker.
-            let temp = tempfile::tempdir().expect("owned isolated fixture");
-            let log_path = temp.path().join("child.log");
-            let log = File::create(&log_path).expect("child log");
+            let temp = tempfile::tempdir().expect("fixture");
+            let config = fixture(temp.path());
+            let file = temp.path().join("job.json");
+            config.save(&file).expect("initial");
+            #[cfg(unix)]
+            let before = {
+                use std::os::unix::fs::MetadataExt;
+                fs::metadata(&file).expect("inode").ino()
+            };
             let mut child = Reap(
-                command("probe", temp.path())
-                    .stdout(log.try_clone().expect("stdout log"))
-                    .stderr(log)
+                Command::new(std::env::current_exe().expect("test executable"))
+                    .current_dir(temp.path())
+                    .args(["--exact", TEST, "--nocapture"])
+                    .env("CONDOR_JOB_LOCK_CALLBACK_CHILD", temp.path())
+                    .env("CONDOR_JOB_LOCK_CALLBACK_TEST", TEST)
+                    .stdout(File::create(temp.path().join("child.stdout")).expect("stdout log"))
+                    .stderr(File::create(temp.path().join("child.log")).expect("log"))
                     .spawn()
-                    .expect("isolated probe"),
+                    .expect("callback child"),
             );
-            wait_until(|| child.0.try_wait().expect("probe status").is_some());
-            let status = child.0.wait().expect("reap isolated probe");
-            let log = fs::read_to_string(log_path).expect("probe log");
-            assert!(status.success(), "{status}:\n{log}");
-            assert_eq!(log.matches("running 1 test\n").count(), 1, "{log}");
+            wait_until(|| {
+                assert!(
+                    child.0.try_wait().expect("status").is_none(),
+                    "callback child exited before ready"
+                );
+                temp.path().join("entered").exists()
+            });
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                assert_ne!(fs::metadata(&file).expect("replaced inode").ino(), before);
+            }
             assert_eq!(
-                log.matches(PASSED).count(),
-                1,
-                "child must execute exactly once: {log}"
+                Configuration::load(&file).expect("snapshot").expect("saved").schema,
+                "job lock callback snapshot"
             );
-            print!("{log}");
+            let error = JobLock::acquire(&file).expect_err("busy after callback while joining");
+            assert!(error.to_string().contains("another process"), "{error:#}");
+            let independent = JobLock::acquire(&temp.path().join("job.other"))
+                .expect("full basename independence");
+            drop(independent);
+            fs::write(temp.path().join("release"), b"join").expect("release");
+            wait_until(|| child.0.try_wait().expect("status").is_some());
+            assert!(child.0.wait().expect("reap").success());
+            let stdout =
+                fs::read_to_string(temp.path().join("child.stdout")).expect("child stdout");
+            assert!(
+                stdout.contains("1 passed; 0 failed;"),
+                "exact callback child ran: {stdout}"
+            );
+            assert_eq!(
+                fs::read(temp.path().join("completed")).expect("joined child"),
+                b"joined and unlocked"
+            );
+            eprintln!("{stdout}");
+            let guard = JobLock::acquire(&file).expect("normal return releases persistent sidecar");
+            assert_eq!(
+                Configuration::load(guard.path()).expect("snapshot").expect("saved").schema,
+                "job lock callback snapshot"
+            );
+        }
+
+        fn check_config_publication(phase: u8) {
+            assert!((1..=4).contains(&phase));
+            let temp = tempfile::tempdir().expect("fixture");
+            let config = fixture(temp.path());
+            let file = temp.path().join("job.json");
+            config.save(&file).expect("initial config");
+            let original = fs::read(&file).expect("snapshot");
+            std::thread::scope(|scope| {
+                // Both owned files remain alive regardless of which staging call runs first.
+                let first = scope
+                    .spawn(|| stage_config(b"first", &file).expect("first production staging"));
+                let second = stage_config(b"second", &file).expect("second production staging");
+                let first = first.join().expect("stage thread");
+                assert_ne!(first.path(), second.path());
+                assert_eq!(fs::read(first.path()).expect("first staged"), b"first");
+                assert_eq!(fs::read(second.path()).expect("second staged"), b"second");
+                if phase == 1 {
+                    return;
+                }
+                fs::remove_file(first.path())
+                    .expect("force native publish failure without chmod assumptions");
+                assert_eq!(
+                    publish_config(first, &file).expect_err("missing staged file").kind(),
+                    io::ErrorKind::NotFound
+                );
+                assert_eq!(fs::read(&file).expect("original preserved"), original);
+                assert!(
+                    second.path().exists(),
+                    "failure only cleans its owned staging"
+                );
+            });
+            if phase <= 2 {
+                return;
+            }
+            let mut invalid = config;
+            invalid.condor.sequence_config.parallel_encoder.max_tries = 0;
+            assert!(invalid.save(&file).is_err(), "validation before staging");
+            assert_eq!(fs::read(&file).expect("unchanged JSON"), original);
+            if phase == 3 {
+                return;
+            }
+            invalid.condor.sequence_config.parallel_encoder.max_tries = 1;
+            invalid.condor.scenes[0].sequence_data.noise_detection = Some(NoiseDetectorData {
+                noise: 1.0,
+                luminance: 1.0,
+                created_on: std::time::SystemTime::UNIX_EPOCH - Duration::from_secs(1),
+            });
+            assert!(
+                matches!(invalid.save(&file), Err(ConfigError::Serialize(_))),
+                "real serialization failure before staging"
+            );
+            assert_eq!(
+                fs::read(&file).expect("serialization preserves original bytes"),
+                original
+            );
+            assert_eq!(
+                fs::read_dir(temp.path()).expect("owned temps cleaned").count(),
+                2
+            );
+        }
+
+        #[test]
+        fn concurrent_configuration_staging_owns_distinct_files_and_bytes() {
+            check_config_publication(1);
+        }
+
+        #[test]
+        fn failed_config_publication_preserves_original_bytes_and_other_owned_staging() {
+            check_config_publication(2);
+        }
+
+        #[test]
+        fn invalid_budget_save_preserves_original_configuration_bytes() {
+            check_config_publication(3);
+        }
+
+        #[test]
+        fn serialization_failure_preserves_config_bytes_and_cleans_owned_temps() {
+            check_config_publication(4);
+        }
+
+        #[cfg(target_os = "linux")]
+        mod lock_inheritance {
+            use super::*;
+            use std::{
+                io::Read,
+                os::{
+                    fd::AsRawFd,
+                    unix::{fs::MetadataExt, net::UnixStream, process::CommandExt},
+                },
+                thread::{self, JoinHandle},
+            };
+
+            const TEST: &str = "configuration::tests::internal_integration::lock_inheritance::inherited_lock_drop_unlocks_before_exec_preserves_successor_and_crash_releases_owner";
+            const PASSED: &str =
+                "lock inheritance production inheritance/successor/crash controls passed";
+
+            unsafe extern "C" {
+                fn getpid() -> i32;
+                fn read(fd: i32, ptr: *mut std::ffi::c_void, count: usize) -> isize;
+                fn write(fd: i32, ptr: *const std::ffi::c_void, count: usize) -> isize;
+                fn _exit(code: i32) -> !;
+            }
+
+            fn command(mode: &str, directory: &Path) -> Command {
+                let mut command = Command::new(std::env::current_exe().expect("test executable"));
+                command
+                    .args(["--exact", TEST, "--nocapture"])
+                    .env("CONDOR_LOCK_INHERITANCE_MODE", mode)
+                    .env("CONDOR_LOCK_INHERITANCE_DIRECTORY", directory)
+                    .stdout(Stdio::null());
+                command
+            }
+
+            struct Pending {
+                gate: UnixStream,
+                worker: Option<JoinHandle<io::Result<Child>>>,
+            }
+
+            impl Pending {
+                fn start(directory: &Path) -> (Self, i32) {
+                    let (gate, child_gate) = UnixStream::pair().expect("preopened barrier");
+                    gate.set_read_timeout(Some(Duration::from_secs(10))).expect("parent bound");
+                    child_gate
+                        .set_read_timeout(Some(Duration::from_secs(10)))
+                        .expect("pre-exec bound even if parent exits");
+                    let mut command = command("post-exec", directory);
+                    let worker = thread::spawn(move || {
+                        // SAFETY: Only async-signal-safe syscalls and stack bytes run after
+                        // fork; the socket is preopened and its read has a kernel timeout.
+                        unsafe {
+                            command.pre_exec(move || {
+                                let pid = getpid().to_ne_bytes();
+                                let fd = child_gate.as_raw_fd();
+                                if write(fd, pid.as_ptr().cast(), pid.len()) != pid.len() as isize {
+                                    _exit(125);
+                                }
+                                let mut byte: u8 = 0;
+                                if read(fd, (&mut byte as *mut u8).cast(), 1) != 1 || byte != b'x' {
+                                    _exit(126);
+                                }
+                                Ok(())
+                            });
+                        }
+                        command.spawn()
+                    });
+                    let mut pending = Self {
+                        gate,
+                        worker: Some(worker),
+                    };
+                    let mut pid = [0; 4];
+                    pending
+                        .gate
+                        .read_exact(&mut pid)
+                        .expect("known pre-exec child reached barrier");
+                    (pending, i32::from_ne_bytes(pid))
+                }
+
+                fn finish(&mut self) -> Reap {
+                    self.gate.write_all(b"x").expect("allow exec");
+                    Reap(
+                        self.worker
+                            .take()
+                            .expect("one owned worker")
+                            .join()
+                            .expect("spawn worker")
+                            .expect("exec child"),
+                    )
+                }
+            }
+
+            impl Drop for Pending {
+                fn drop(&mut self) {
+                    if let Some(worker) = self.worker.take() {
+                        let _ = self.gate.write_all(b"x");
+                        if let Ok(Ok(child)) = worker.join() {
+                            drop(Reap(child));
+                        }
+                    }
+                }
+            }
+
+            fn same_inode(path: impl AsRef<Path>, expected: &fs::Metadata) -> bool {
+                fs::metadata(path).is_ok_and(|actual| {
+                    actual.dev() == expected.dev() && actual.ino() == expected.ino()
+                })
+            }
+
+            fn wait_for(child: &mut Reap, marker: &Path) {
+                wait_until(|| {
+                    assert!(
+                        child.0.try_wait().expect("child status").is_none(),
+                        "child exited early"
+                    );
+                    marker.exists()
+                });
+            }
+
+            fn probe(directory: &Path) {
+                let config = directory.join("job.json");
+                let sidecar = directory.join("job.json.lock");
+                let guard = JobLock::acquire(&config).expect("actual production guard");
+                let fd = guard._file.as_raw_fd();
+                let identity = fs::metadata(&sidecar).expect("persistent sidecar identity");
+                assert!(
+                    JobLock::acquire(&config).is_err(),
+                    "live owner excludes fresh opens"
+                );
+
+                let (mut pending, pid) = Pending::start(directory);
+                let child_fd = format!("/proc/{pid}/fd/{fd}");
+                let child_info = format!("/proc/{pid}/fdinfo/{fd}");
+                assert!(
+                    same_inode(&child_fd, &identity),
+                    "fork inherited the owning descriptor"
+                );
+                let info = fs::read_to_string(&child_info).expect("known child descriptor info");
+                let parent_info = fs::read_to_string(format!("/proc/self/fdinfo/{fd}"))
+                    .expect("owning descriptor info");
+                let lock =
+                    info.lines().find(|line| line.starts_with("lock:")).expect("inherited lock");
+                assert!(lock.contains("FLOCK  ADVISORY  WRITE"), "{lock}");
+                assert_eq!(
+                    Some(lock),
+                    parent_info.lines().find(|line| line.starts_with("lock:"))
+                );
+                let flags = usize::from_str_radix(
+                    info.lines().find_map(|line| line.strip_prefix("flags:\t")).expect("fd flags"),
+                    8,
+                )
+                .expect("octal flags");
+                assert_ne!(flags & 0o2000000, 0, "CLOEXEC closes at exec, not fork");
+                println!(
+                    "lock inheritance parent={} child={pid} fd={fd} dev={} inode={} flags={flags:o}; {lock}",
+                    std::process::id(),
+                    identity.dev(),
+                    identity.ino()
+                );
+                assert!(
+                    JobLock::acquire(&config).is_err(),
+                    "still-live owner remains exclusive"
+                );
+                drop(guard);
+                assert!(
+                    !same_inode(format!("/proc/self/fd/{fd}"), &identity),
+                    "parent fd closed"
+                );
+                assert!(
+                    same_inode(&child_fd, &identity),
+                    "child still paused before exec"
+                );
+                // Publishing the config must not change the persistent lock inode.
+                let staged = stage_config(b"{}", &config).expect("production staging");
+                publish_config(staged, &config).expect("production publication");
+                assert!(same_inode(&sidecar, &identity));
+                let successor = JobLock::acquire(&config)
+                    .expect("drop must unlock before the inherited child reaches exec");
+                assert!(
+                    !fs::read_to_string(&child_info)
+                        .expect("old descriptor still open")
+                        .contains("FLOCK"),
+                    "unlock affected the inherited open description, not just the parent fd"
+                );
+                assert!(
+                    JobLock::acquire(&config).is_err(),
+                    "successor is exclusive before exec"
+                );
+
+                let mut child = pending.finish();
+                wait_for(&mut child, &directory.join("exec-ready"));
+                assert!(
+                    !same_inode(&child_fd, &identity),
+                    "exec closed the old inherited fd"
+                );
+                assert!(
+                    JobLock::acquire(&config).is_err(),
+                    "old child's close cannot unlock successor"
+                );
+                drop(successor);
+                for _ in 0..3 {
+                    drop(
+                        JobLock::acquire(&config)
+                            .expect("release/reacquire with post-exec child live"),
+                    );
+                }
+                fs::write(directory.join("exec-release"), b"exit")
+                    .expect("release post-exec child");
+                wait_until(|| child.0.try_wait().expect("post-exec status").is_some());
+                assert!(child.0.wait().expect("reap post-exec child").success());
+
+                let mut holder =
+                    Reap(command("crash-holder", directory).spawn().expect("owned holder"));
+                wait_for(&mut holder, &directory.join("holder-ready"));
+                assert!(
+                    JobLock::acquire(&config).is_err(),
+                    "ordinary owned holder is exclusive"
+                );
+                holder.0.kill().expect("kill only owner without inherited lock handles");
+                assert!(!holder.0.wait().expect("reap killed owner").success());
+                for _ in 0..3 {
+                    drop(JobLock::acquire(&config).expect("ordinary crash releases OS lock"));
+                }
+                assert!(
+                    same_inode(&sidecar, &identity),
+                    "never delete the persistent sidecar"
+                );
+                println!("{PASSED}");
+            }
+
+            #[test]
+            fn inherited_lock_drop_unlocks_before_exec_preserves_successor_and_crash_releases_owner()
+             {
+                if let Ok(mode) = std::env::var("CONDOR_LOCK_INHERITANCE_MODE") {
+                    let directory = PathBuf::from(
+                        std::env::var_os("CONDOR_LOCK_INHERITANCE_DIRECTORY")
+                            .expect("owned child directory"),
+                    );
+                    match mode.as_str() {
+                        "probe" => probe(&directory),
+                        "post-exec" => {
+                            // This child never opens or acquires the job, before or after exec.
+                            fs::write(directory.join("exec-ready"), b"ready").expect("exec marker");
+                            wait_until(|| directory.join("exec-release").exists());
+                        },
+                        "crash-holder" => {
+                            let _guard =
+                                JobLock::acquire(&directory.join("job.json")).expect("holder");
+                            fs::write(directory.join("holder-ready"), b"ready")
+                                .expect("holder marker");
+                            wait_until(|| directory.join("holder-release").exists());
+                        },
+                        _ => panic!("unknown lock inheritance child mode"),
+                    }
+                    return;
+                }
+
+                // The parent libtest never installs pre_exec hooks or forks a test worker.
+                let temp = tempfile::tempdir().expect("owned isolated fixture");
+                let log_path = temp.path().join("child.log");
+                let log = File::create(&log_path).expect("child log");
+                let mut child = Reap(
+                    command("probe", temp.path())
+                        .stdout(log.try_clone().expect("stdout log"))
+                        .stderr(log)
+                        .spawn()
+                        .expect("isolated probe"),
+                );
+                wait_until(|| child.0.try_wait().expect("probe status").is_some());
+                let status = child.0.wait().expect("reap isolated probe");
+                let log = fs::read_to_string(log_path).expect("probe log");
+                assert!(status.success(), "{status}:\n{log}");
+                assert_eq!(log.matches("running 1 test\n").count(), 1, "{log}");
+                assert_eq!(
+                    log.matches(PASSED).count(),
+                    1,
+                    "child must execute exactly once: {log}"
+                );
+                print!("{log}");
+            }
         }
     }
 }
