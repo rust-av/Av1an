@@ -10,11 +10,68 @@ use std::{
 use v_frame::chroma::ChromaSubsampling;
 
 #[test]
-fn native_pool_format_owns_before_validation() {
+fn invalid_initial_reference_format_is_adopted_and_returned_once() {
+    isolated_formats(
+        "invalid_initial_reference_format_is_adopted_and_returned_once",
+        1,
+        false,
+    );
+}
+
+#[test]
+fn invalid_initial_distorted_format_returns_both_owned_pictures() {
+    isolated_formats(
+        "invalid_initial_distorted_format_returns_both_owned_pictures",
+        2,
+        false,
+    );
+}
+
+#[test]
+fn invalid_reference_replacement_format_is_returned_and_makes_scorer_terminal() {
+    isolated_formats(
+        "invalid_reference_replacement_format_is_returned_and_makes_scorer_terminal",
+        3,
+        false,
+    );
+}
+
+#[test]
+fn invalid_distorted_replacement_format_is_returned_and_makes_scorer_terminal() {
+    isolated_formats(
+        "invalid_distorted_replacement_format_is_returned_and_makes_scorer_terminal",
+        4,
+        false,
+    );
+}
+
+#[test]
+fn failed_fetch_with_invalid_format_preserves_status_without_adopting_output() {
+    isolated_formats(
+        "failed_fetch_with_invalid_format_preserves_status_without_adopting_output",
+        2,
+        true,
+    );
+}
+
+fn isolated_formats(test: &str, fetch: u32, failed: bool) {
     if std::env::var_os("VMAF_PIXEL_FORMAT_FIXTURE_CHILD").is_some() {
-        child();
+        assert_eq!(
+            std::env::var("VMAF_PIXEL_FORMAT_FIXTURE_FETCH").expect("fetch"),
+            fetch.to_string(),
+            "child fetch fault belongs to the selected contract"
+        );
+        assert_eq!(
+            std::env::var("VMAF_SETUP_FIXTURE_STAGE").expect("stage"),
+            if failed { "9" } else { "0" },
+            "child native status belongs to the selected contract"
+        );
+        assert_pool_format_ownership();
+        println!("pool-format ownership assertions completed");
         return;
     }
+    let module = module_path!().split_once("::").expect("test crate prefix").1;
+    let exact = format!("{module}::{test}");
     let dir = tempfile::tempdir().expect("fixture directory");
     let library = dir.path().join(if cfg!(target_os = "macos") {
         "libvmaf.dylib"
@@ -36,49 +93,44 @@ fn native_pool_format_owns_before_validation() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    for (fetch, failed) in [(1, false), (2, false), (3, false), (4, false), (2, true)] {
-        for format in [777, -123, 0, 4] {
-            let mut child = Command::new(std::env::current_exe().expect("executable"))
-                .args([
-                    "--exact",
-                    "scorer::pixel_format::native_pool_format_owns_before_validation",
-                    "--nocapture",
-                ])
-                .env("VMAF_PIXEL_FORMAT_FIXTURE_CHILD", "1")
-                .env("VMAF_PIXEL_FORMAT_FIXTURE_FETCH", fetch.to_string())
-                .env("VMAF_PIXEL_FORMAT_FIXTURE_PIXFMT", format.to_string())
-                .env("VMAF_SETUP_FIXTURE_STAGE", if failed { "9" } else { "0" })
-                .env("VMAF_PARTIAL_SETUP_FIXTURE_CHILD", "1")
-                .env("VMAF_PIXEL_FORMAT_FIXTURE_LIBRARY", &library)
-                .env("VMAF_LIB_DIR", dir.path())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .expect("child");
-            let start = Instant::now();
-            while child.try_wait().expect("status").is_none() {
-                if start.elapsed() > Duration::from_secs(30) {
-                    child.kill().expect("kill");
-                    child.wait().expect("reap");
-                    panic!("pool close hung");
-                }
-                std::thread::sleep(Duration::from_millis(10));
+    for format in [777, -123, 0, 4] {
+        let mut child = Command::new(std::env::current_exe().expect("executable"))
+            .args(["--exact", &exact, "--nocapture"])
+            .env("VMAF_PIXEL_FORMAT_FIXTURE_CHILD", "1")
+            .env("VMAF_PIXEL_FORMAT_FIXTURE_FETCH", fetch.to_string())
+            .env("VMAF_PIXEL_FORMAT_FIXTURE_PIXFMT", format.to_string())
+            .env("VMAF_SETUP_FIXTURE_STAGE", if failed { "9" } else { "0" })
+            .env("VMAF_PARTIAL_SETUP_FIXTURE_CHILD", "1")
+            .env("VMAF_PIXEL_FORMAT_FIXTURE_LIBRARY", &library)
+            .env("VMAF_LIB_DIR", dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("child");
+        let start = Instant::now();
+        while child.try_wait().expect("status").is_none() {
+            if start.elapsed() > Duration::from_secs(30) {
+                child.kill().expect("kill");
+                child.wait().expect("reap");
+                panic!("pool close hung");
             }
-            let out = child.wait_with_output().expect("output");
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            assert!(
-                out.status.success(),
-                "{fetch}/{format}/{failed}: {stdout}\n{}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            assert!(
-                stdout.contains("1 passed; 0 failed"),
-                "exact nonzero child: {stdout}"
-            );
+            std::thread::sleep(Duration::from_millis(10));
         }
+        let out = child.wait_with_output().expect("output");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "{fetch}/{format}/{failed}: {stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            stdout.contains("1 passed; 0 failed")
+                && stdout.contains("pool-format ownership assertions completed"),
+            "exact nonzero child: {stdout}"
+        );
     }
 }
-fn child() {
+fn assert_pool_format_ownership() {
     // SAFETY: exact fixture mapping remains live through cleanup and counters.
     let lib = unsafe {
         libloading::Library::new(

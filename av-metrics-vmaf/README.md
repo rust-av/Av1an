@@ -584,8 +584,8 @@ This compiles the portable C probe and exercises its drift check on that platfor
 Windows/macOS execution and real GPU acceptance must still be run there.
 
 Tests that require libvmaf skip themselves when it is unavailable, so the suite is
-green without a native installation. On Unix, `scorer::ownership::picture_ownership` always
-compiles a self-contained C ABI fixture with `cc` and runs isolated child tests
+green without a native installation. On Unix, the ownership cases under
+`scorer::ownership` compile a self-contained C ABI fixture with `cc` and run isolated child tests
 through the public constructor, submission, and drop paths. It checks ownership
 transfer without relying on caller-descriptor zeroing, worker-reference retention,
 and failed fetch/read cleanup; it does not execute real CUDA or a native thread

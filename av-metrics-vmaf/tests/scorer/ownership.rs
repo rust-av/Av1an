@@ -31,11 +31,59 @@ const ALLOC: u32 = 16;
 const FREE: u32 = 17;
 
 #[test]
-fn finalization_boundary() {
+fn pending_drain_does_not_query_native_scores_before_flush() {
+    finalization_case(
+        "pending_drain_does_not_query_native_scores_before_flush",
+        "early",
+    );
+}
+
+#[test]
+fn repeated_finish_reuses_one_flush_and_full_score_vector() {
+    finalization_case(
+        "repeated_finish_reuses_one_flush_and_full_score_vector",
+        "repeat",
+    );
+}
+
+#[test]
+fn final_score_query_error_preserves_index_status_and_does_not_reflush() {
+    finalization_case(
+        "final_score_query_error_preserves_index_status_and_does_not_reflush",
+        "query_error",
+    );
+}
+
+#[test]
+fn failed_flush_remains_retryable_without_score_queries() {
+    finalization_case(
+        "failed_flush_remains_retryable_without_score_queries",
+        "flush_error",
+    );
+}
+
+#[test]
+fn postflush_submit_rejects_before_host_copy_and_native_read() {
+    finalization_case(
+        "postflush_submit_rejects_before_host_copy_and_native_read",
+        "postflush",
+    );
+}
+
+#[test]
+fn scorer_constructor_disables_native_diagnostics() {
+    finalization_case("scorer_constructor_disables_native_diagnostics", "logging");
+}
+
+fn finalization_case(test: &str, expected_scenario: &str) {
     if let Ok(scenario) = std::env::var("VMAF_FINALIZATION_FIXTURE_CHILD") {
+        assert_eq!(scenario, expected_scenario, "case belongs to this contract");
         check_finalization(&scenario);
+        println!("finalization {scenario}: assertions completed");
         return;
     }
+    let module = module_path!().split_once("::").expect("test crate prefix").1;
+    let exact = format!("{module}::{test}");
     let directory = tempfile::tempdir().expect("finalization fixture");
     let library = directory.path().join(if cfg!(target_os = "macos") {
         "libvmaf.dylib"
@@ -57,43 +105,46 @@ fn finalization_boundary() {
         String::from_utf8_lossy(&output.stderr)
     );
     let mut failed = Vec::new();
-    for scenario in ["early", "repeat", "query_error", "flush_error", "postflush", "logging"] {
-        let mut child = Command::new(std::env::current_exe().expect("test executable"))
-            .args(["--exact", "scorer::ownership::finalization_boundary", "--nocapture"])
-            .env("VMAF_FINALIZATION_FIXTURE_CHILD", scenario)
-            .env(
-                "VMAF_FINALIZATION_FIXTURE_MODE",
-                if scenario == "query_error" { "2" } else { "1" },
-            )
-            .env(
-                "VMAF_OWNERSHIP_FIXTURE_FAIL_FLUSH",
-                if scenario == "flush_error" { "1" } else { "0" },
-            )
-            .env("VMAF_OWNERSHIP_FIXTURE_THREADS", "2")
-            .env("VMAF_OWNERSHIP_FIXTURE_NONZERO", "1")
-            .env("VMAF_FINALIZATION_FIXTURE_LIBRARY", &library)
-            .env("VMAF_LIB_DIR", directory.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("finalization child");
-        let start = Instant::now();
-        while child.try_wait().expect("status").is_none() {
-            if start.elapsed() > Duration::from_secs(30) {
-                child.kill().expect("kill");
-                child.wait().expect("reap");
-                panic!("finalization {scenario} timeout");
-            }
-            std::thread::sleep(Duration::from_millis(10));
+    let scenario = expected_scenario;
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", &exact, "--nocapture"])
+        .env("VMAF_FINALIZATION_FIXTURE_CHILD", scenario)
+        .env(
+            "VMAF_FINALIZATION_FIXTURE_MODE",
+            if scenario == "query_error" { "2" } else { "1" },
+        )
+        .env(
+            "VMAF_OWNERSHIP_FIXTURE_FAIL_FLUSH",
+            if scenario == "flush_error" { "1" } else { "0" },
+        )
+        .env("VMAF_OWNERSHIP_FIXTURE_THREADS", "2")
+        .env("VMAF_OWNERSHIP_FIXTURE_NONZERO", "1")
+        .env("VMAF_FINALIZATION_FIXTURE_LIBRARY", &library)
+        .env("VMAF_LIB_DIR", directory.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("finalization child");
+    let start = Instant::now();
+    while child.try_wait().expect("status").is_none() {
+        if start.elapsed() > Duration::from_secs(30) {
+            child.kill().expect("kill");
+            child.wait().expect("reap");
+            panic!("finalization {scenario} timeout");
         }
-        let output = child.wait_with_output().expect("output");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("finalization {scenario}: {stdout}\n{stderr}");
-        assert!(stdout.contains("running 1 test"), "nonzero exact filter");
-        if !output.status.success() {
-            failed.push(scenario);
-        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let output = child.wait_with_output().expect("output");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    eprintln!("finalization {scenario}: {stdout}\n{stderr}");
+    assert!(
+        stdout.contains("running 1 test")
+            && stdout.contains(&format!("finalization {scenario}: assertions completed")),
+        "nonzero exact filter: {stdout}"
+    );
+    if !output.status.success() {
+        failed.push(scenario);
     }
     assert!(
         failed.is_empty(),
@@ -264,12 +315,164 @@ fn check_finalization(scenario: &str) {
     );
 }
 
-#[test]
-fn picture_ownership() {
-    if let Ok(scenario) = std::env::var("VMAF_OWNERSHIP_FIXTURE_CHILD") {
-        check_scenario(&scenario);
+macro_rules! ownership_case {
+    ($name:ident, $scenario:literal, $threads:literal, $nonzero:literal, $fetch:literal, $reject:literal, $flush:literal) => {
+        #[test]
+        fn $name() {
+            picture_case(
+                stringify!($name),
+                ($scenario, $threads, $nonzero, $fetch, $reject, $flush),
+            );
+        }
+    };
+}
+
+ownership_case!(
+    cpu_submission_transfers_each_picture_once,
+    "cpu",
+    0,
+    0,
+    0,
+    0,
+    0
+);
+ownership_case!(
+    cpu_submission_with_nonzero_native_descriptors_does_not_double_unref,
+    "cuda_compiled_cpu",
+    0,
+    1,
+    0,
+    0,
+    0
+);
+ownership_case!(
+    threaded_cpu_submission_releases_double_worker_refs,
+    "threaded_cpu",
+    2,
+    0,
+    0,
+    0,
+    0
+);
+ownership_case!(
+    threaded_cpu_nonzero_descriptors_preserve_single_owner,
+    "threaded_cuda_compiled_cpu",
+    2,
+    1,
+    0,
+    0,
+    0
+);
+ownership_case!(
+    rejected_cpu_read_returns_caller_owned_pair,
+    "reject_cpu",
+    0,
+    0,
+    3,
+    1,
+    0
+);
+ownership_case!(
+    rejected_nonzero_descriptor_read_returns_caller_owned_pair,
+    "reject_nonzero",
+    0,
+    1,
+    3,
+    1,
+    0
+);
+ownership_case!(
+    rejected_threaded_read_returns_caller_and_worker_refs,
+    "reject_threaded",
+    2,
+    0,
+    3,
+    1,
+    0
+);
+ownership_case!(
+    rejected_threaded_nonzero_read_preserves_original_error,
+    "reject_threaded_nonzero",
+    2,
+    1,
+    3,
+    1,
+    0
+);
+ownership_case!(
+    first_replacement_fetch_failure_makes_scorer_terminal,
+    "replace_first",
+    2,
+    1,
+    3,
+    0,
+    0
+);
+ownership_case!(
+    second_replacement_fetch_failure_returns_partial_owned_pair,
+    "replace_second",
+    2,
+    1,
+    4,
+    0,
+    0
+);
+ownership_case!(
+    later_first_replacement_failure_keeps_scorer_terminal,
+    "later_replace_first",
+    2,
+    1,
+    5,
+    0,
+    0
+);
+ownership_case!(
+    later_second_replacement_failure_returns_partial_owned_pair,
+    "later_replace_second",
+    2,
+    1,
+    6,
+    0,
+    0
+);
+ownership_case!(
+    initial_first_fetch_failure_closes_without_adoption,
+    "initial_first",
+    0,
+    1,
+    1,
+    0,
+    0
+);
+ownership_case!(
+    initial_second_fetch_failure_returns_first_picture_before_close,
+    "initial_second",
+    0,
+    1,
+    2,
+    0,
+    0
+);
+ownership_case!(
+    flush_error_still_releases_all_picture_and_worker_refs,
+    "flush_error",
+    2,
+    1,
+    0,
+    0,
+    1
+);
+
+fn picture_case(test: &str, case: (&str, u32, u32, u32, u32, u32)) {
+    let (scenario, threads, nonzero, fail_fetch, reject, flush) = case;
+    if let Ok(selected) = std::env::var("VMAF_OWNERSHIP_FIXTURE_CHILD") {
+        assert_eq!(selected, scenario, "case belongs to this contract");
+        check_scenario(scenario);
+        println!("ownership {scenario}: assertions completed");
         return;
     }
+    let module = module_path!().split_once("::").expect("test crate prefix").1;
+    let exact = format!("{module}::{test}");
     let directory = tempfile::tempdir().expect("temporary ABI fixture");
     let library = directory.path().join(if cfg!(target_os = "macos") {
         "libvmaf.dylib"
@@ -291,56 +494,40 @@ fn picture_ownership() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    for (scenario, threads, nonzero, fail_fetch, reject, flush) in [
-        ("cuda_compiled_cpu", 0, 1, 0, 0, 0),
-        ("cpu", 0, 0, 0, 0, 0),
-        ("threaded_cpu", 2, 0, 0, 0, 0),
-        ("threaded_cuda_compiled_cpu", 2, 1, 0, 0, 0),
-        ("reject_cpu", 0, 0, 3, 1, 0),
-        ("reject_nonzero", 0, 1, 3, 1, 0),
-        ("reject_threaded", 2, 0, 3, 1, 0),
-        ("reject_threaded_nonzero", 2, 1, 3, 1, 0),
-        ("replace_first", 2, 1, 3, 0, 0),
-        ("replace_second", 2, 1, 4, 0, 0),
-        ("later_replace_first", 2, 1, 5, 0, 0),
-        ("later_replace_second", 2, 1, 6, 0, 0),
-        ("initial_first", 0, 1, 1, 0, 0),
-        ("initial_second", 0, 1, 2, 0, 0),
-        ("flush_error", 2, 1, 0, 0, 1),
-    ] {
-        let mut child = Command::new(std::env::current_exe().expect("test executable"))
-            .args(["--exact", "scorer::ownership::picture_ownership", "--nocapture"])
-            .env("VMAF_OWNERSHIP_FIXTURE_CHILD", scenario)
-            .env("VMAF_OWNERSHIP_FIXTURE_THREADS", threads.to_string())
-            .env("VMAF_OWNERSHIP_FIXTURE_NONZERO", nonzero.to_string())
-            .env("VMAF_OWNERSHIP_FIXTURE_FAIL_FETCH", fail_fetch.to_string())
-            .env("VMAF_OWNERSHIP_FIXTURE_REJECT_READ", reject.to_string())
-            .env("VMAF_OWNERSHIP_FIXTURE_FAIL_FLUSH", flush.to_string())
-            .env("VMAF_OWNERSHIP_FIXTURE_LIBRARY", &library)
-            .env("VMAF_LIB_DIR", directory.path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("isolated ABI child");
-        let start = Instant::now();
-        while child.try_wait().expect("child status").is_none() {
-            if start.elapsed() > Duration::from_secs(30) {
-                child.kill().expect("kill timed out ABI child");
-                child.wait().expect("reap timed out ABI child");
-                panic!("{scenario}: ABI child exceeded 30s");
-            }
-            std::thread::sleep(Duration::from_millis(10));
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", &exact, "--nocapture"])
+        .env("VMAF_OWNERSHIP_FIXTURE_CHILD", scenario)
+        .env("VMAF_OWNERSHIP_FIXTURE_THREADS", threads.to_string())
+        .env("VMAF_OWNERSHIP_FIXTURE_NONZERO", nonzero.to_string())
+        .env("VMAF_OWNERSHIP_FIXTURE_FAIL_FETCH", fail_fetch.to_string())
+        .env("VMAF_OWNERSHIP_FIXTURE_REJECT_READ", reject.to_string())
+        .env("VMAF_OWNERSHIP_FIXTURE_FAIL_FLUSH", flush.to_string())
+        .env("VMAF_OWNERSHIP_FIXTURE_LIBRARY", &library)
+        .env("VMAF_LIB_DIR", directory.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("isolated ABI child");
+    let start = Instant::now();
+    while child.try_wait().expect("child status").is_none() {
+        if start.elapsed() > Duration::from_secs(30) {
+            child.kill().expect("kill timed out ABI child");
+            child.wait().expect("reap timed out ABI child");
+            panic!("{scenario}: ABI child exceeded 30s");
         }
-        let output = child.wait_with_output().expect("ABI child output");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(output.status.success(), "{scenario}: {stdout}\n{stderr}");
-        assert!(
-            stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed"),
-            "{scenario}: exact child must execute one test, not silently match zero: {stdout}"
-        );
-        eprintln!("{scenario}: {stdout}\n{stderr}");
+        std::thread::sleep(Duration::from_millis(10));
     }
+    let output = child.wait_with_output().expect("ABI child output");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{scenario}: {stdout}\n{stderr}");
+    assert!(
+        stdout.contains("running 1 test")
+            && stdout.contains("1 passed; 0 failed")
+            && stdout.contains(&format!("ownership {scenario}: assertions completed")),
+        "{scenario}: exact child must execute one test, not silently match zero: {stdout}"
+    );
+    eprintln!("{scenario}: {stdout}\n{stderr}");
 }
 
 fn assert_call(error: &VmafError, expected_function: &str, expected_status: i32) {
