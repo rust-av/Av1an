@@ -125,7 +125,7 @@ fn watchdog(args: &[String]) -> io::Result<()> {
     let mut child = Command::new(&args[2])
         .args([
             "--exact",
-            args.get(5).map_or("core::encoder::tests::diagnostics::diagnostics_child", String::as_str),
+            args.get(5).expect("explicit exact test selector"),
             "--nocapture",
         ])
         .env("ENCODER_FIXTURE_ROOT", &args[3])

@@ -1,5 +1,7 @@
 mod aom;
 mod cli;
+#[cfg(target_os = "linux")]
+mod diagnostics;
 #[cfg(unix)]
 mod executable_resolution;
 #[cfg(unix)]

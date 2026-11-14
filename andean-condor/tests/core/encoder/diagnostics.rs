@@ -1,5 +1,15 @@
 use super::*;
-use std::fs;
+use andean_condor::core::{
+    encoder::{EncodeProgress, EncoderResult, StringOrBytes},
+    input::Input,
+};
+use std::{
+    collections::HashMap,
+    fs,
+    io::Cursor,
+    path::PathBuf,
+    sync::{Arc, mpsc},
+};
 
 fn bytes(value: &StringOrBytes) -> &[u8] {
     match value {
@@ -31,57 +41,86 @@ fn diagnostics(result: &EncoderResult, dropped_after_first: bool) {
     assert_eq!(bytes(&result.stderr), stderr);
 }
 
-#[test]
-fn public_encoding_drains_diagnostics_and_joins_failures() {
-    run_diagnostics_cases(&[
+macro_rules! diagnostic_cases {
+    ($name:ident, [$($case:literal),+ $(,)?]) => {
+        #[test]
+        fn $name() { run_diagnostics_cases(stringify!($name), &[$($case),+]); }
+    };
+}
+
+diagnostic_cases!(
+    encoder_large_invalid_utf8_diagnostics_survive_observer_disconnect,
+    [
         "stream",
         "avm",
         "drop-after-first",
         "avm-drop-after-first",
         "input",
-        "input-drop-after-first",
-        "decode",
-        "exit0",
-        "exit42",
-        "input-exit0",
-        "input-exit42",
-        "serial0",
-        "serialfew",
-        "serialmany",
-        "serialmultipass",
-        "serialdecode",
-        "serialencode",
-        "watchdog",
-    ]);
-}
-
-#[test]
-fn vvenc_public_input_and_stream_report_progress() {
-    run_diagnostics_cases(&["vvenc-input", "vvenc-stream"]);
-}
-
-#[test]
-fn owned_ffmpeg_rejects_stale_outputs_and_preserves_public_controls() {
-    run_diagnostics_cases(&[
+        "input-drop-after-first"
+    ]
+);
+diagnostic_cases!(
+    encoder_early_exit_keeps_stdin_error_and_native_status,
+    ["exit0", "exit42", "input-exit0", "input-exit42"]
+);
+diagnostic_cases!(input_decode_failure_joins_encoder_before_return, ["decode"]);
+diagnostic_cases!(
+    serial_encode_errors_join_workers_before_return,
+    ["serialdecode", "serialencode"]
+);
+diagnostic_cases!(
+    serial_scene_progress_finishes_in_scene_and_pass_order,
+    ["serial0", "serialfew", "serialmany", "serialmultipass"]
+);
+diagnostic_cases!(
+    encoder_watchdog_kills_and_reaps_a_stalled_tree,
+    ["watchdog"]
+);
+diagnostic_cases!(
+    vvenc_input_and_stream_report_only_increasing_stdout_frame_counts,
+    ["vvenc-input", "vvenc-stream"]
+);
+diagnostic_cases!(
+    owned_ffmpeg_attempts_replace_stale_private_outputs,
+    [
         "owned-ffmpeg-parallel-stale",
         "owned-ffmpeg-parallel-decoded-stale",
         "owned-ffmpeg-serial-stale",
-        "owned-ffmpeg-parallel-raw-y",
-        "owned-ffmpeg-parallel-raw-n",
-        "owned-ffmpeg-parallel-raw-yn",
-        "owned-ffmpeg-public",
-    ]);
-}
+        "owned-ffmpeg-parallel-raw-y"
+    ]
+);
+diagnostic_cases!(
+    owned_ffmpeg_no_overwrite_option_fails_before_spawn,
+    ["owned-ffmpeg-parallel-raw-n", "owned-ffmpeg-parallel-raw-yn"]
+);
+diagnostic_cases!(
+    public_ffmpeg_encoding_preserves_existing_outputs_without_raw_overwrite,
+    ["owned-ffmpeg-public"]
+);
+diagnostic_cases!(
+    public_ffmpeg_explicit_overwrite_still_replaces_caller_output,
+    ["owned-ffmpeg-public-overwrite"]
+);
 
-fn run_diagnostics_cases(cases: &[&str]) {
+fn run_diagnostics_cases(test: &str, cases: &[&str]) {
+    if std::env::var_os("ENCODER_FIXTURE_ROOT").is_some() {
+        let case = std::env::var("ENCODER_FIXTURE_CASE").expect("case");
+        assert!(
+            cases.contains(&case.as_str()),
+            "selected diagnostic case belongs to this contract"
+        );
+        assert_diagnostic_case();
+        println!("diagnostics {case}: assertions completed");
+        return;
+    }
     let temp = tempfile::tempdir().expect("fixture");
     let root = temp.path();
     fs::write(
         root.join("fake.rs"),
-        include_str!("../../../../tests/core/encoder/fixtures/fake_encoder.rs"),
+        include_str!("fixtures/fake_encoder.rs"),
     )
     .expect("fixture source");
-    crate::core::encoder::tests::support::run_bounded(
+    super::support::run_bounded(
         Command::new("rustc").arg(root.join("fake.rs")).arg("-o").arg(root.join("fake")),
         &root.join("rustc.log"),
     );
@@ -94,14 +133,13 @@ fn run_diagnostics_cases(cases: &[&str]) {
             .arg(std::env::current_exe().expect("test binary"))
             .arg(root)
             .arg(case)
+            .arg(format!("core::encoder::diagnostics::{test}"))
             .stdout(file.try_clone().expect("clone log"))
             .stderr(file)
             .status()
             .expect("bounded child");
         let log = fs::read_to_string(log_path).expect("child log");
-        if case.starts_with("owned-ffmpeg-") {
-            eprintln!("{case}: {status}\n{log}");
-        }
+        eprintln!("{case}: {status}\n{log}");
         if case == "watchdog" {
             assert_eq!(
                 status.code(),
@@ -111,6 +149,7 @@ fn run_diagnostics_cases(cases: &[&str]) {
             assert!(log.contains("reaped 1 descendants; timeout=true"), "{log}");
         } else if !status.success()
             || !log.contains("1 passed; 0 failed")
+            || !log.contains(&format!("diagnostics {case}: assertions completed"))
             || !log
                 .lines()
                 .any(|line| line == "encoder fixture watchdog reaped 0 descendants; timeout=false")
@@ -134,8 +173,7 @@ fn run_diagnostics_cases(cases: &[&str]) {
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
 
-#[test]
-fn diagnostics_child() {
+fn assert_diagnostic_case() {
     let Some(root) = std::env::var_os("ENCODER_FIXTURE_ROOT") else {
         return;
     };
@@ -203,8 +241,8 @@ fn diagnostics_child() {
         let script = root.join(format!("{case}.vpy"));
         let side = if early { 4096 } else { 64 };
         fs::write(&script, format!("from vapoursynth import core, YUV420P8\ncore.std.BlankClip(width={side},height={side},length=1,format=YUV420P8).set_output()\n")).expect("blank clip");
-        let mut input = Input::from_data(&crate::models::input::Input::VapourSynthScript {
-            source: crate::models::input::VapourSynthScriptSource::Path(script),
+        let mut input = Input::from_data(&andean_condor::models::input::Input::VapourSynthScript {
+            source: andean_condor::models::input::VapourSynthScriptSource::Path(script),
             variables: HashMap::new(),
             index: 0,
             filters: vec![],
@@ -239,16 +277,11 @@ fn diagnostics_child() {
                 frames,
                 &output,
                 progress,
-                &crate::core::encoder::tests::clip_info(),
+                &super::clip_info(),
                 None,
             )
         } else {
-            encoder.encode_with_stream(
-                frames,
-                &output,
-                progress,
-                &crate::core::encoder::tests::clip_info(),
-            )
+            encoder.encode_with_stream(frames, &output, progress, &super::clip_info())
         }
     };
     if case == "decode" || early {
@@ -291,7 +324,7 @@ fn diagnostics_child() {
 // Removing owned-only overwrite must break native stale encodes; extending
 // it to public APIs must break the nonowned sentinel controls below.
 fn owned_ffmpeg_case(root: &Path, case: &str) {
-    use crate::{
+    use andean_condor::{
         core::{
             Condor,
             output::Output,
@@ -372,99 +405,110 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
     let old_final = root.join("user-final.mkv");
     fs::write(&old_final, b"existing user final").expect("old final");
     let info = input.clip_info().expect("clip info");
-    if case == "owned-ffmpeg-public" {
+    if case.starts_with("owned-ffmpeg-public") {
         // A matching prefix, owned statistics, or a missing basename is not
         // output ownership. Exercise both public input/stream and pass APIs.
         let caller = root.join(".av1an-attempt-caller");
         fs::create_dir_all(&caller).expect("nonowned prefix");
-        for manual in [false, true] {
-            for decoded in [false, true] {
-                for isolated in [false, true] {
-                    let total = 1;
-                    let output = caller.join(format!("{manual}-{decoded}-{isolated}.mkv"));
-                    fs::write(&output, b"caller sentinel").expect("sentinel");
-                    let stats = if isolated {
-                        PassStatistics::new(&output)
-                    } else {
-                        PassStatistics::external(&output.with_extension("stats"))
-                    }
-                    .expect("statistics do not grant output ownership");
-                    for parameters in [
-                        encoder.parameters_with_output((total, total), &output, &info),
-                        encoder.parameters_with_stats((total, total), &output, &info, stats.base()),
-                        encoder.parameters_with_output(
-                            (total, total),
-                            &caller.join("missing.mkv"),
-                            &info,
-                        ),
-                    ] {
-                        assert!(!parameters.expect("public argv").iter().any(|p| p == "-y"));
-                    }
-                    let (tx, rx) = mpsc::channel();
-                    drop(rx);
-                    let result = if decoded {
-                        if manual {
-                            encoder.encode_pass_with_input(
-                                &mut input,
-                                &output,
-                                0,
-                                2,
-                                (total, total),
-                                tx,
-                                Some(&stats),
-                            )
+        if case == "owned-ffmpeg-public" {
+            for manual in [false, true] {
+                for decoded in [false, true] {
+                    for isolated in [false, true] {
+                        let total = 1;
+                        let output = caller.join(format!("{manual}-{decoded}-{isolated}.mkv"));
+                        fs::write(&output, b"caller sentinel").expect("sentinel");
+                        let stats = if isolated {
+                            PassStatistics::new(&output)
                         } else {
-                            encoder.encode_with_input(&mut input, &output, 0, 2, tx)
+                            PassStatistics::external(&output.with_extension("stats"))
                         }
-                    } else {
-                        let (frames, rx) = crossbeam_channel::unbounded();
-                        frames.send(Cursor::new(source_bytes.clone())).expect("Y4M stdin");
-                        drop(frames);
-                        if manual {
-                            encoder.encode_pass_with_stream(
+                        .expect("statistics do not grant output ownership");
+                        for parameters in [
+                            encoder.parameters_with_output((total, total), &output, &info),
+                            encoder.parameters_with_stats(
                                 (total, total),
-                                rx,
                                 &output,
-                                tx,
                                 &info,
-                                Some(&stats),
-                            )
-                        } else {
-                            encoder.encode_with_stream(rx, &output, tx, &info)
+                                stats.base(),
+                            ),
+                            encoder.parameters_with_output(
+                                (total, total),
+                                &caller.join("missing.mkv"),
+                                &info,
+                            ),
+                        ] {
+                            assert!(!parameters.expect("public argv").iter().any(|p| p == "-y"));
                         }
-                    };
-                    // Some native FFmpeg builds return zero on overwrite refusal.
-                    // Raw APIs preserve native status, not final-writer guarantees.
-                    let diagnostic = match result {
-                        Ok(result) => result,
-                        Err(error) => error.downcast::<EncoderResult>().expect("native refusal"),
-                    };
-                    assert!(!diagnostic.parameters.iter().any(|p| p == "-y"));
-                    let stderr = String::from_utf8_lossy(bytes(&diagnostic.stderr));
-                    assert!(
-                        stderr.contains("already exists")
-                            && (stderr.contains("Exiting") || stderr.contains("Not overwriting")),
-                        "{diagnostic:?}"
-                    );
-                    assert_eq!(fs::read(&output).expect("preserved"), b"caller sentinel");
-                    eprintln!(
-                        "public manual={manual} decoded={decoded} isolated_stats={isolated}: native status={} no generated -y; sentinel preserved",
-                        diagnostic.status
-                    );
+                        let (tx, rx) = mpsc::channel();
+                        drop(rx);
+                        let result = if decoded {
+                            if manual {
+                                encoder.encode_pass_with_input(
+                                    &mut input,
+                                    &output,
+                                    0,
+                                    2,
+                                    (total, total),
+                                    tx,
+                                    Some(&stats),
+                                )
+                            } else {
+                                encoder.encode_with_input(&mut input, &output, 0, 2, tx)
+                            }
+                        } else {
+                            let (frames, rx) = crossbeam_channel::unbounded();
+                            frames.send(Cursor::new(source_bytes.clone())).expect("Y4M stdin");
+                            drop(frames);
+                            if manual {
+                                encoder.encode_pass_with_stream(
+                                    (total, total),
+                                    rx,
+                                    &output,
+                                    tx,
+                                    &info,
+                                    Some(&stats),
+                                )
+                            } else {
+                                encoder.encode_with_stream(rx, &output, tx, &info)
+                            }
+                        };
+                        // Some native FFmpeg builds return zero on overwrite refusal.
+                        // Raw APIs preserve native status, not final-writer guarantees.
+                        let diagnostic = match result {
+                            Ok(result) => result,
+                            Err(error) => {
+                                error.downcast::<EncoderResult>().expect("native refusal")
+                            },
+                        };
+                        assert!(!diagnostic.parameters.iter().any(|p| p == "-y"));
+                        let stderr = String::from_utf8_lossy(bytes(&diagnostic.stderr));
+                        assert!(
+                            stderr.contains("already exists")
+                                && (stderr.contains("Exiting")
+                                    || stderr.contains("Not overwriting")),
+                            "{diagnostic:?}"
+                        );
+                        assert_eq!(fs::read(&output).expect("preserved"), b"caller sentinel");
+                        eprintln!(
+                            "public manual={manual} decoded={decoded} isolated_stats={isolated}: native status={} no generated -y; sentinel preserved",
+                            diagnostic.status
+                        );
+                    }
                 }
             }
+        } else {
+            // Explicit raw -y retains its existing low-level native meaning; it is
+            // not C06 final-output consent and is not inserted into saved defaults.
+            encoder.parameters_mut().insert("y".into(), CLIParameter::new_bool("-", true));
+            let raw_output = caller.join("explicit-y.mkv");
+            fs::write(&raw_output, b"explicit caller overwrite").expect("raw sentinel");
+            let (tx, _rx) = mpsc::channel();
+            let result = encoder
+                .encode_with_input(&mut input, &raw_output, 0, 2, tx)
+                .expect("explicit raw -y");
+            assert_eq!(result.parameters.iter().filter(|p| *p == "-y").count(), 1);
+            decoded_frames(&raw_output);
         }
-        // Explicit raw -y retains its existing low-level native meaning; it is
-        // not C06 final-output consent and is not inserted into saved defaults.
-        encoder.parameters_mut().insert("y".into(), CLIParameter::new_bool("-", true));
-        let raw_output = caller.join("explicit-y.mkv");
-        fs::write(&raw_output, b"explicit caller overwrite").expect("raw sentinel");
-        let (tx, _rx) = mpsc::channel();
-        let result = encoder
-            .encode_with_input(&mut input, &raw_output, 0, 2, tx)
-            .expect("explicit raw -y");
-        assert_eq!(result.parameters.iter().filter(|p| *p == "-y").count(), 1);
-        decoded_frames(&raw_output);
     } else {
         let scenes = root.join("scenes");
         fs::create_dir_all(&scenes).expect("scenes");
@@ -614,8 +658,8 @@ fn vvenc_case(root: &Path, case: &str) {
     let result = if input_path {
         let script = root.join("vvenc.vpy");
         fs::write(&script, "from vapoursynth import core, YUV420P8\ncore.std.BlankClip(width=64,height=64,length=1,format=YUV420P8).set_output()\n").expect("finite input");
-        let mut input = Input::from_data(&crate::models::input::Input::VapourSynthScript {
-            source: crate::models::input::VapourSynthScriptSource::Path(script),
+        let mut input = Input::from_data(&andean_condor::models::input::Input::VapourSynthScript {
+            source: andean_condor::models::input::VapourSynthScriptSource::Path(script),
             variables: HashMap::new(),
             index: 0,
             filters: vec![],
@@ -626,7 +670,7 @@ fn vvenc_case(root: &Path, case: &str) {
         let (frames, receiver) = crossbeam_channel::unbounded();
         frames.send(Cursor::new(vec![0; 64])).expect("finite stream");
         drop(frames);
-        encoder.encode_with_stream(receiver, &output, tx, &crate::core::encoder::tests::clip_info())
+        encoder.encode_with_stream(receiver, &output, tx, &super::clip_info())
     }.expect("public VVenC encode");
     assert!(result.status.success());
     assert_eq!(
@@ -651,7 +695,7 @@ fn vvenc_case(root: &Path, case: &str) {
 }
 
 fn serial_case(root: &Path, case: &str, mut encoder: Encoder) {
-    use crate::{
+    use andean_condor::{
         core::{
             Condor,
             output::Output,
@@ -690,8 +734,8 @@ fn serial_case(root: &Path, case: &str, mut encoder: Encoder) {
     let script = root.join(format!("{case}.vpy"));
     let side = if case == "serialencode" { 4096 } else { 64 };
     fs::write(&script, format!("from vapoursynth import core, YUV420P8\ncore.std.BlankClip(width={side},height={side},length=4,format=YUV420P8).set_output()\n")).expect("serial input");
-    let input = Input::from_data(&crate::models::input::Input::VapourSynthScript {
-        source: crate::models::input::VapourSynthScriptSource::Path(script),
+    let input = Input::from_data(&andean_condor::models::input::Input::VapourSynthScript {
+        source: andean_condor::models::input::VapourSynthScriptSource::Path(script),
         variables: HashMap::new(),
         index: 0,
         filters: vec![],

@@ -1,7 +1,5 @@
 mod aom;
 mod avm;
-#[cfg(target_os = "linux")]
-mod diagnostics;
 mod photon_noise;
 #[cfg(target_os = "linux")]
 pub(crate) mod process_lifecycle;
