@@ -677,7 +677,7 @@ pub(in crate::core::sequence) mod resume_policy {
 
     pub(in crate::core::sequence) fn fixed_batch() -> Option<(usize, usize)> {
         std::env::var("ENCODER_FIXTURE_CASE")
-            .is_ok_and(|case| case.starts_with("r1-worker-"))
+            .is_ok_and(|case| case.starts_with("resume-policy-worker-"))
             .then_some((1, 3))
     }
     pub(in crate::core::sequence) fn finish_fixed_batch(token: &Cancellation) {
@@ -692,7 +692,8 @@ pub(in crate::core::sequence) mod resume_policy {
         }
     }
     pub(in crate::core::sequence::parallel_encoder) fn after_rename(output: &Path) {
-        if std::env::var("ENCODER_FIXTURE_CASE").is_ok_and(|case| case.starts_with("r1-observer-"))
+        if std::env::var("ENCODER_FIXTURE_CASE")
+            .is_ok_and(|case| case.starts_with("resume-policy-observer-"))
         {
             let root =
                 std::path::PathBuf::from(std::env::var_os("ENCODER_FIXTURE_ROOT").expect("root"));
@@ -787,7 +788,7 @@ exit "$status"
                 r#"#!/bin/sh
 printf probe >> "$ENCODER_FIXTURE_ROOT/probes"
 if [ -f "$ENCODER_FIXTURE_ROOT/probe-bad" ]; then printf '{"streams":[{"nb_read_frames":"N/A"}]}'; exit 0; fi
-if [ "$ENCODER_FIXTURE_CASE" = r1-resume-graceful ]; then
+if [ "$ENCODER_FIXTURE_CASE" = resume-policy-resume-graceful ]; then
     printf ready > "$ENCODER_FIXTURE_ROOT/probe-active"
     for attempt in 1 2 3 4 5; do
         [ -f "$ENCODER_FIXTURE_ROOT/release-probe" ] && break
@@ -806,7 +807,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             .arg("--encoder-fixture-watchdog")
             .arg(std::env::current_exe().expect("test binary"))
             .arg(&job)
-            .arg(format!("r1-{case}"))
+            .arg(format!("resume-policy-{case}"))
             .arg("core::sequence::parallel_encoder::tests::artifact_validation::resume_policy::resume_policy_child")
             .env("PATH", job.join("bin"))
             .env("ARTIFACT_VALIDATION_X264", which::which("x264").expect("x264"))
@@ -842,7 +843,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
         };
         let root = std::path::PathBuf::from(root);
         let case = std::env::var("ENCODER_FIXTURE_CASE").expect("case");
-        let case = case.strip_prefix("r1-").expect("R1 selection");
+        let case = case.strip_prefix("resume-policy-").expect("resume-policy selection");
         fs::write(root.join("codec"), CODEC).expect("codec");
         fs::set_permissions(root.join("codec"), fs::Permissions::from_mode(0o755))
             .expect("executable");
@@ -1304,7 +1305,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
         );
         fs::write(
             root.join("verified"),
-            "R1 functional boundary assertions passed",
+            "resume-policy functional boundary assertions passed",
         )
         .expect("verified");
     }

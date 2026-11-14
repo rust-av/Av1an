@@ -224,7 +224,7 @@ Unlike its metadata sanitization, the wrapper rejects invalid explicit input.
 Andean always forwards the explicit source rate, retaining fractional FPS within
 f32 precision; it never replaces invalid metadata with the low-level default.
 The bound limits FPS-driven temporal ring growth, not total memory at arbitrary
-resolutions. `m16_` checks exercise real constructors/drivers with harmless C ABI
+resolutions. Frame-rate checks exercise real constructors/drivers with harmless C ABI
 sinks to verify native FPS arguments and zero probes/allocations on rejection;
 they do not allocate real high-FPS rings or prove GPU accuracy.
 
@@ -234,10 +234,14 @@ the plugin cannot reset history alone while preserving accumulation. Use native
 Vship for that gap policy, a contiguous selection, or independent frames with
 `disable_temporal=true`. Native Vship's supported gap handling is unchanged.
 
-The `m15_` stateful C ABI checks prove reset ordering and ownership, not CVVDP
-accuracy. Real native-vs-VapourSynth parity is compiled in Andean's
-`m15_native_vs_plugin` test. Run it on a supported GPU/plugin host with
-`AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor m15_native_vs_plugin -- --nocapture`.
+The stateful C ABI checks prove reset ordering and ownership, not CVVDP
+accuracy. Real native-vs-VapourSynth parity is covered by Andean's plugin-parity
+test. Run it on a supported GPU/plugin host with:
+
+```sh
+AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor --test metrics metrics::plugin_parity::tests::native_vs_plugin -- --exact --nocapture
+```
+
 That required gate fails if the runtime/plugin is missing; ordinary suites report
 it UNEXECUTED. Its provisional tolerance is not evidence of measured accuracy.
 

@@ -733,7 +733,7 @@ fn vpx_default_and_conflicting_webm_outputs_are_ivf() {
                 let argv = encoder
                     .parameters_with_stats((1, 1), &output, &clip, stats.base())
                     .expect("production argv");
-                eprintln!("V01b {row} production argv: {argv:?}");
+                eprintln!("VPX container {row} production argv: {argv:?}");
                 run_bounded(
                     Command::new(&vpx)
                         .args(&argv)
@@ -743,7 +743,7 @@ fn vpx_default_and_conflicting_webm_outputs_are_ivf() {
                 );
                 let bytes = fs::read(&output).expect("encoded output");
                 eprintln!(
-                    "V01b {row} header: {:?}; {} bytes; expected {codec}/ivf/3 frames",
+                    "VPX container {row} header: {:?}; {} bytes; expected {codec}/ivf/3 frames",
                     &bytes[..bytes.len().min(12)],
                     bytes.len()
                 );
@@ -775,7 +775,10 @@ fn vpx_default_and_conflicting_webm_outputs_are_ivf() {
             }
         }
     }
-    assert!(failures.is_empty(), "V01b failed rows: {failures:?}");
+    assert!(
+        failures.is_empty(),
+        "VPX container failed rows: {failures:?}"
+    );
 }
 
 fn probe(ffprobe: &Path, output: &Path, codec: &str, container: &str, log: &Path) {

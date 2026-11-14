@@ -136,12 +136,16 @@ Low-level callers may explicitly choose `with_reset_on_discontinuity(false)` and
 intentionally carry history across selected source gaps; the scorer itself has
 no source indices. Do not use the combined reset as a history-only substitute.
 
-Stateful `m15_` C ABI tests prove wrapper/reset/driver behavior, not CVVDP numeric
-accuracy. The `m16_` tests also check native FPS arguments and rejection before
+Stateful C ABI tests prove wrapper/reset/driver behavior, not CVVDP numeric
+accuracy. Frame-rate tests also check native FPS arguments and rejection before
 native probes/allocations using harmless ABI sinks, not real temporal rings.
-Real Vship-vs-plugin parity requires a supported GPU and plugin; run
-`AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor m15_native_vs_plugin -- --nocapture` on that host. Missing runtime/plugin fails
-that required gate; ordinary suites report it UNEXECUTED.
+Real Vship-vs-plugin parity requires a supported GPU and plugin. On that host, run:
+
+```sh
+AV_METRICS_REQUIRE_CVVDP_PARITY=1 cargo +stable test --profile ci -p andean-condor --test metrics metrics::plugin_parity::tests::native_vs_plugin -- --exact --nocapture
+```
+
+Missing runtime/plugin fails that required gate; ordinary suites report it UNEXECUTED.
 
 ### Colour
 

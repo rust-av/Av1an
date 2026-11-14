@@ -428,7 +428,7 @@ pub(super) mod runtime {
         );
         wait_for_thread_count(before, Duration::from_secs(5), thread_count)
             .expect("negative-control cleanup");
-        eprintln!("E10a LIVE-worker negative control rejected and released: {diagnostic}");
+        eprintln!("thread census LIVE-worker negative control rejected and released: {diagnostic}");
     }
 
     fn relay_faults() {
