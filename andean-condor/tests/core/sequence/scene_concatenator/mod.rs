@@ -33,9 +33,14 @@ mod ffmpeg_tracks;
 #[cfg(unix)]
 #[path = "fixtures/final_mux.rs"]
 mod final_mux;
+#[cfg(unix)]
+mod mux_status;
 mod preflight;
 #[cfg(unix)]
 mod publication;
+#[cfg(target_os = "linux")]
+mod publication_failures;
+mod scene_list;
 mod validation;
 
 fn scratch_directory(root: &Path) -> PathBuf {
