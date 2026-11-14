@@ -9,6 +9,8 @@ mod photon_noise;
 #[cfg(unix)]
 mod preflight;
 #[cfg(target_os = "linux")]
+mod process_lifecycle;
+#[cfg(target_os = "linux")]
 mod public_encoding;
 mod rav1e;
 mod statistics;

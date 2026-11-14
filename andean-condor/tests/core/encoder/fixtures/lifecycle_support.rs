@@ -1,6 +1,391 @@
 //! Test-only lifecycle fixtures shared by public API and private-hook contracts.
 use super::*;
 
+pub(super) fn install_launchers(root: &Path) {
+    for name in ["ffmpeg", "mkvmerge"] {
+        std::os::unix::fs::symlink(root.join("fake"), root.join(name)).expect("fixture launcher");
+    }
+    let path = std::env::join_paths(std::iter::once(root.to_path_buf()).chain(
+        std::env::split_paths(&std::env::var_os("PATH").expect("PATH")),
+    ))
+    .expect("PATH");
+    // SAFETY: This isolated child has not started controller or relay threads yet.
+    unsafe {
+        std::env::set_var("PATH", path);
+    }
+}
+
+pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellation) {
+    let root2 = root.to_path_buf();
+    let signal = cancellation.clone();
+    let kind = case.to_owned();
+    let controller = thread::spawn(move || {
+        if kind == "capture" {
+            while !fs::read_dir(&root2).expect("listing").any(|e| {
+                e.expect("entry").file_name().to_string_lossy().starts_with(".av1an-stats-")
+            }) {
+                thread::yield_now();
+            }
+        } else if kind.starts_with("graceful") {
+            wait_file(&root2, "active");
+        } else {
+            wait_file(&root2, "grandchild");
+        }
+        if kind == "stdin-full" {
+            wait_file(&root2, "queued");
+        }
+        if kind == "mid-production" {
+            wait_file(&root2, "frame-k");
+        }
+        if kind == "filter-full" {
+            wait_file(&root2, "full-output");
+        }
+        if [
+            "force-vs",
+            "mid-production",
+            "force-native",
+            "stdin-full",
+            "stream-idle",
+            "replay-full",
+            "serial",
+            "serial-native",
+            "zone",
+        ]
+        .contains(&kind.as_str())
+        {
+            let pid: u32 = fs::read_to_string(root2.join("leader"))
+                .expect("correct leader PID")
+                .parse()
+                .expect("PID");
+            let registered = format!("registered-{pid}");
+            if ["mid-production", "stream-idle", "serial", "serial-native"].contains(&kind.as_str())
+            {
+                wait_file(&root2, &format!("registration-blocked-{pid}"));
+                assert!(
+                    !root2.join(&registered).exists(),
+                    "child readiness precedes registration"
+                );
+                assert!(
+                    !signal.is_forced(),
+                    "readiness alone must not force diagnostic stage"
+                );
+                fs::write(
+                    root2.join(format!("registration-release-{pid}")),
+                    "register now",
+                )
+                .expect("release registration barrier");
+            }
+            wait_file(&root2, &registered);
+        }
+        if kind == "leader-exits" {
+            let pid: u32 =
+                fs::read_to_string(root2.join("leader")).expect("PID").parse().expect("PID");
+            loop {
+                // SAFETY: Observe only this still-owned direct child without reaping it.
+                let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+                // SAFETY: The known child and valid siginfo are observed using WNOWAIT.
+                let observed = unsafe {
+                    libc::waitid(
+                        libc::P_PID,
+                        pid,
+                        &mut info,
+                        libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                    )
+                };
+                assert_eq!(observed, 0);
+                // SAFETY: Successful waitid initializes the SIGCHLD union member.
+                if unsafe { info.si_pid() } != 0 {
+                    break;
+                }
+                thread::yield_now();
+            }
+        }
+        signal.request().expect("graceful");
+        if kind.starts_with("graceful") {
+            if kind == "graceful-sigint" {
+                // SAFETY: Only this supervisor-owned group is signalled; managed children lead other groups.
+                assert_eq!(unsafe { libc::kill(0, libc::SIGINT) }, 0);
+            }
+            fs::write(root2.join("release"), "finish active scene").expect("release");
+        } else {
+            signal.request().expect("force");
+            if kind == "mid-production" {
+                fs::write(root2.join("release-frame"), "forced").expect("release finite callback");
+            }
+        }
+    });
+    let mut filter_spawn_failed = false;
+    let result: Result<()> = if case.starts_with("filter") {
+        let (_tx, rx) = crossbeam_channel::bounded(1);
+        match FfmpegFilter::spawn_cancel(
+            rx,
+            1,
+            "null",
+            Arc::new(std::sync::Mutex::new(None)),
+            &cancellation,
+        ) {
+            Err(error) => {
+                filter_spawn_failed = true;
+                Err(error)
+            },
+            Ok(mut stage) => {
+                let output = stage.take_receiver().expect("receiver");
+                if case == "filter-full" {
+                    while output.is_empty() {
+                        thread::yield_now();
+                    }
+                    fs::write(root.join("full-output"), "bounded output full")
+                        .expect("full handshake");
+                    assert!(cancellation.forced().recv().is_err());
+                } else {
+                    let _ = output.recv();
+                }
+                drop(output);
+                stage.check()
+            },
+        }
+    } else if case == "dg" {
+        fs::write(root.join("source"), "finite fixture source").expect("source");
+        DGSource::index_video_cancel(
+            &root.join("source"),
+            Some(&root.join("out.dgi")),
+            Some(&root.join("fake")),
+            None,
+            &cancellation,
+        )
+        .map(|_| ())
+    } else if case.starts_with("ffmpeg") || case.starts_with("mkv") {
+        fs::create_dir_all(root.join("Scene Concatenator")).expect("scratch");
+        let scenes = vec![root.join("scene.264"); if case == "mkv-group" { 513 } else { 1 }];
+        fs::write(&scenes[0], b"owned scene fixture").expect("nonempty mux input");
+        let (tx, _rx) = mpsc::channel();
+        if case.starts_with("ffmpeg") {
+            SceneConcatenator::ffmpeg_cancel(
+                root,
+                &root.join("out.mkv"),
+                &scenes,
+                None,
+                1,
+                av_format::rational::Ratio::new(24, 1),
+                None,
+                &tx,
+                &cancellation,
+            )
+        } else {
+            SceneConcatenator::mkvmerge_cancel(
+                root,
+                &root.join("out.mkv"),
+                &scenes,
+                None,
+                av_format::rational::Ratio::new(24, 1),
+                None,
+                &tx,
+                &cancellation,
+            )
+        }
+    } else if ["capture", "stream-idle", "encoder-existing", "stdin-full", "replay-full"]
+        .contains(&case)
+    {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let full = case == "stdin-full" || case == "replay-full";
+        let _keep_alive = (!full).then(|| tx.clone());
+        let producer = full.then(|| {
+            let replay = case == "replay-full";
+            let root = root.to_path_buf();
+            thread::spawn(move || {
+                tx.send(Cursor::new(vec![1; 16 * 1024 * 1024])).expect("first chunk");
+                if !replay {
+                    tx.send(Cursor::new(vec![2; 1024])).expect("queued chunk");
+                    fs::write(root.join("queued"), "yes").expect("queue handshake");
+                    assert!(tx.send(Cursor::new(vec![3; 1024])).is_err());
+                }
+            })
+        });
+        let (progress, _rx) = mpsc::channel();
+        let result = encoder(root, case == "capture" || case == "replay-full")
+            .encode_with_stream_cancel(
+                rx,
+                &root.join("out.264"),
+                progress,
+                &super::clip_info(),
+                &cancellation,
+            )
+            .map(|_| ());
+        if let Some(producer) = producer {
+            producer.join().expect("bounded producer joined");
+        }
+        result
+    } else {
+        let mut input = input(root, case.ends_with("native"));
+        let encoder = encoder(root, case.starts_with("graceful"));
+        let scenes = (0..2)
+            .map(|i| Scene {
+                start_frame: if case == "mid-production" { i * 8 } else { i },
+                end_frame: if case == "mid-production" && i == 0 {
+                    8
+                } else if case == "mid-production" {
+                    9
+                } else {
+                    i + 1
+                },
+                sub_scenes: None,
+                encoder: encoder.clone(),
+                sequence_data: DefaultSequenceData::default(),
+            })
+            .collect();
+        let mut config = DefaultSequenceConfig::default();
+        config.parallel_encoder.scenes_directory = root.to_path_buf();
+        config.parallel_encoder.workers = Some(1);
+        config.parallel_encoder.max_tries = 1; // Registration handshakes require direct streaming.
+        config.parallel_encoder.validate_frame_count = false; // Ownership markers are not bitstreams.
+        let saved = root.join("saved.json");
+        let (progress, _rx) = mpsc::channel();
+        if case == "zone" || case == "zone-probe" {
+            let tasks: Vec<_> = (0..2)
+                .map(|i| Task {
+                    original_index: i,
+                    index: i,
+                    frame_indices: vec![i],
+                    sub_scenes: None,
+                    encoder: encoder.clone(),
+                    output: root.join(format!("{i}.264")),
+                })
+                .collect();
+            let plan = ZonePlan::try_build_cancel(&tasks, &cancellation);
+            plan.and_then(|plan| {
+                ZoneEncoder::encode_tasks_cancel(
+                    &mut input,
+                    tasks.into(),
+                    plan,
+                    progress,
+                    cancellation,
+                )
+            })
+            .map(|_| ())
+        } else {
+            let mut condor = Condor::new(
+                input,
+                Output {
+                    path: root.join("unused"),
+                    overwrite: false,
+                    tags: HashMap::new(),
+                    video_tags: HashMap::new(),
+                },
+                encoder,
+                scenes,
+                Some(config),
+                Box::new(move |data| {
+                    fs::write(&saved, serde_json::to_vec(&data)?)?;
+                    Ok(())
+                }),
+            );
+            let result = if case.starts_with("serial") {
+                SerialEncoder::new(root).execute_cancel(&mut condor, progress, cancellation)
+            } else {
+                ParallelEncoder::default().execute_cancel(&mut condor, progress, cancellation)
+            };
+            if case.starts_with("graceful") {
+                assert_eq!(
+                    fs::read_to_string(root.join("passes")).expect("passes"),
+                    "1\n2\n"
+                );
+                assert!(root.join("00000.264").exists());
+                assert!(condor.scenes[0].sequence_data.parallel_encoder.bytes.is_some());
+                assert!(condor.scenes[1].sequence_data.parallel_encoder.bytes.is_none());
+                assert!(root.join("saved.json").exists());
+            } else {
+                assert!(
+                    condor.scenes.iter().all(|scene| scene
+                        .sequence_data
+                        .parallel_encoder
+                        .bytes
+                        .is_none())
+                );
+                assert!(
+                    !root.join("saved.json").exists(),
+                    "no success callback for forced scenes"
+                );
+            }
+            result.map(|_| ())
+        }
+    };
+    controller.join().expect("controller joined");
+    if case.starts_with("graceful") {
+        result.expect("active All2 completes");
+        assert!(!root.join("queued-decoded").exists());
+    } else {
+        let error = result.expect_err("force is not success");
+        assert_eq!(error.downcast_ref::<Cancelled>(), Some(&Cancelled::Forced));
+        if [
+            "force-vs",
+            "mid-production",
+            "force-native",
+            "stdin-full",
+            "stream-idle",
+            "replay-full",
+            "serial",
+            "serial-native",
+            "zone",
+        ]
+        .contains(&case)
+        {
+            assert!(
+                error.chain().any(|cause| cause.is::<EncoderResult>()),
+                "forced encoder diagnostics/status must remain typed: {error:#}"
+            );
+        }
+        if ["mid-production", "stdin-full", "serial", "serial-native"].contains(&case) {
+            let diagnostic = error
+                .chain()
+                .find_map(|cause| cause.downcast_ref::<EncoderResult>())
+                .expect("mid-production typed encoder diagnostic");
+            let bytes = |value: &StringOrBytes| match value {
+                StringOrBytes::String(value) => value.as_bytes().to_vec(),
+                StringOrBytes::Bytes(value) => value.clone(),
+            };
+            assert_eq!(
+                bytes(&diagnostic.stdout),
+                b"process lifecycle mid stdout\xff\n"
+            );
+            assert_eq!(
+                bytes(&diagnostic.stderr),
+                b"process lifecycle mid stderr\xfe\n"
+            );
+            if case == "mid-production" || case == "stdin-full" {
+                assert!(error.chain().any(|cause| cause.is::<EncoderProcessError>()));
+            }
+        }
+        assert!(!root.join("00000.264").exists());
+        if case == "encoder-existing" {
+            assert_eq!(
+                fs::read(root.join("out.264")).expect("existing output"),
+                b"caller-owned"
+            );
+        } else {
+            assert!(!root.join("out.264").exists());
+        }
+        assert!(!root.join("out.dgi").exists());
+        if case == "ffmpeg-existing" {
+            assert_eq!(
+                fs::read(root.join("out.mkv")).expect("existing output"),
+                b"caller-owned"
+            );
+        } else {
+            assert!(!root.join("out.mkv").exists());
+        }
+    }
+    assert!(!root.join("00001.264").exists());
+    assert!(!root.join("zone-pass.temp.264").exists());
+    assert!(!root.join("Scene Concatenator/00000.mkv").exists());
+    reap(root);
+    if case == "filter-spawn-race" {
+        assert!(
+            filter_spawn_failed,
+            "force won construction, not stage.check()"
+        );
+    }
+}
+
 pub(super) fn prepare_case() -> (PathBuf, String, Cancellation) {
     let root = PathBuf::from(std::env::var_os("PROCESS_LIFECYCLE_ROOT").expect("fixture root"));
     let case = std::env::var("PROCESS_LIFECYCLE_CASE").expect("case");
