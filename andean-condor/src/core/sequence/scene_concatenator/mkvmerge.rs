@@ -499,7 +499,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mkvmerge_title_discard_and_replacement_are_explicit() {
+    fn mkvmerge_args_emit_empty_title_when_metadata_copy_is_disabled_and_preserve_explicit_titles()
+    {
         for (metadata, expected) in [
             (serde_json::json!({"copy": false}), Some("")),
             (
@@ -536,7 +537,8 @@ mod tests {
 
     /// With no output settings the mkvmerge argument list is unchanged.
     #[test]
-    fn mkvmerge_args_without_settings_reproduce_the_previous_layout() {
+    fn mkvmerge_args_without_settings_copy_ancillary_tracks_and_append_scenes_at_configured_frame_rate()
+     {
         let args = mkvmerge_args(
             "out.mkv",
             &["a.mkv".to_owned(), "b.mkv".to_owned()],

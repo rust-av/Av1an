@@ -1,6 +1,10 @@
 #[cfg(unix)]
 use super::*;
 
+#[path = "preflight.rs"]
+#[cfg(unix)]
+mod preflight;
+
 #[cfg(unix)]
 #[test]
 fn persist_failure_after_mux_preserves_existing_output_and_cleans_staging() {

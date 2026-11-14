@@ -1,7 +1,6 @@
 mod internal_integration;
 #[cfg(unix)]
 mod mux_status;
-pub(super) mod preflight;
 pub(super) mod publication;
 mod scene_list;
 

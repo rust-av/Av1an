@@ -29,12 +29,18 @@ use anyhow::Result;
 
 use crate::core::support::provenance::current_encoding_fixture;
 
+mod ffmpeg_tracks;
 #[cfg(unix)]
 #[path = "fixtures/final_mux.rs"]
 mod final_mux;
+mod preflight;
 #[cfg(unix)]
 mod publication;
 mod validation;
+
+fn scratch_directory(root: &Path) -> PathBuf {
+    root.join("Scene Concatenator")
+}
 
 fn concat_job(
     directory: &Path,
