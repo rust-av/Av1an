@@ -1,6 +1,6 @@
 /* ABI sink, NOT a GPU implementation. The unmodified header checks signatures. */
 #define VSHIP_STATIC
-#include "headers/VshipAPI.h"
+#include "../headers/VshipAPI.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <stdatomic.h>
@@ -10,15 +10,15 @@
 static _Atomic unsigned counts[8]; /* probe, init, free, compute, reset, reset_score, count, info */
 static _Atomic unsigned gpu_counts[2][4]; /* M28: FullCheck/Init by requested device. */
 static int setting(const char *key, int fallback) { const char *s=getenv(key); return s ? atoi(s) : fallback; }
-unsigned m14_count(unsigned i) { if (i>=8) abort(); return counts[i]; }
-unsigned m28_gpu_count(unsigned kind, unsigned gpu) { if (kind>=2 || gpu>=4) abort(); return gpu_counts[kind][gpu]; }
+unsigned boundary_count(unsigned i) { if (i>=8) abort(); return counts[i]; }
+unsigned capability_gpu_count(unsigned kind, unsigned gpu) { if (kind>=2 || gpu>=4) abort(); return gpu_counts[kind][gpu]; }
 /* M20: record native identity/order; reject stale handles before dereferencing. */
 typedef struct { int type; unsigned id, calls; } Handle;
 static Handle *live[64];
 static unsigned trace[256], trace_len;
 static int controls[6], overridden[6], failed_output;
-void m20_set(unsigned i, int status) { if (i>=6) abort(); controls[i]=status; overridden[i]=1; }
-unsigned m20_trace(unsigned i) { return i<trace_len ? trace[i] : 0; }
+void handler_set(unsigned i, int status) { if (i>=6) abort(); controls[i]=status; overridden[i]=1; }
+unsigned handler_trace(unsigned i) { return i<trace_len ? trace[i] : 0; }
 static int status(unsigned i, const char *key) { return overridden[i] ? controls[i] : setting(key,0); }
 static Handle *owned(Vship_Handle h) {
     for (unsigned i=1; i<64; i++) if (live[i] && live[i]==h) return live[i];
@@ -28,17 +28,17 @@ static void record(unsigned kind, Handle *h) {
     if (trace_len>=256) abort();
     trace[trace_len++]=kind*10000+h->id*100+h->calls;
 }
-Vship_Version Vship_GetVersion(void) { return (Vship_Version){5,1,setting("M14_PATCH",2),(Vship_Backend)setting("M14_BACKEND",3)}; }
-Vship_Exception Vship_GetDeviceCount(int *n) { counts[6]++; *n=setting("M28_DEVICES",0) ? 3 : 1; return Vship_NoError; }
+Vship_Version Vship_GetVersion(void) { return (Vship_Version){5,1,setting("VSHIP_BOUNDARY_FIXTURE_PATCH",2),(Vship_Backend)setting("VSHIP_BOUNDARY_FIXTURE_BACKEND",3)}; }
+Vship_Exception Vship_GetDeviceCount(int *n) { counts[6]++; *n=setting("VSHIP_CAPABILITY_FIXTURE_DEVICES",0) ? 3 : 1; return Vship_NoError; }
 Vship_Exception Vship_GetDeviceInfo(Vship_DeviceInfo *info, int gpu) {
     counts[7]++; memset(info,0,sizeof(*info));
-    if (setting("M28_DEVICES",0)) info->integrated=setting("M28_DEVICES",0)==2 || gpu!=1;
+    if (setting("VSHIP_CAPABILITY_FIXTURE_DEVICES",0)) info->integrated=setting("VSHIP_CAPABILITY_FIXTURE_DEVICES",0)==2 || gpu!=1;
     return Vship_NoError;
 }
 Vship_Exception Vship_GPUFullCheck(int gpu) {
     counts[0]++; if (gpu>=0 && gpu<4) gpu_counts[0][gpu]++;
-    if (setting("M28_DEVICES",0) && (gpu<0 || gpu>=3)) return Vship_BadDeviceArgument;
-    return (Vship_Exception)status(2,"M14_PROBE_STATUS");
+    if (setting("VSHIP_CAPABILITY_FIXTURE_DEVICES",0) && (gpu<0 || gpu>=3)) return Vship_BadDeviceArgument;
+    return (Vship_Exception)status(2,"VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS");
 }
 int Vship_GetErrorMessage(Vship_Exception e, char *out, int len) {
     if ((unsigned)e > 17) abort();
@@ -52,7 +52,7 @@ Vship_Exception Vship_InitHandler(Vship_Handle *h, void *arg) {
     int gpu=type==1 ? ((Vship_InitSSIMULACRA2_1*)arg)->gpu_id :
             type==2 ? ((Vship_InitButteraugli_1*)arg)->gpu_id : ((Vship_InitCVVDP_1*)arg)->gpu_id;
     if (gpu>=0 && gpu<4) gpu_counts[1][gpu]++;
-    int error=status(1,"M20_INIT_STATUS");
+    int error=status(1,"VSHIP_HANDLER_FIXTURE_INIT_STATUS");
     /* A failed out-parameter is not an owned handle, even when non-null. */
     if (error) { *h=&failed_output; return (Vship_Exception)error; }
     if (id>=64) abort();
@@ -70,15 +70,15 @@ Vship_Exception Vship_ComputeHandler(Vship_Handle h, void *out, const uint8_t *a
     else if (type==2) {
         Vship_ScoreButteraugli *s=out; s->normQ=42; s->norm3=43; s->norminf=44;
     } else ((Vship_ScoreCVVDP*)out)->score=42;
-    *(Vship_StructType*)out=(Vship_StructType)(overridden[0] ? controls[0] : setting("M14_TAG",type+3));
-    return (Vship_Exception)status(3,"M14_COMPUTE_STATUS");
+    *(Vship_StructType*)out=(Vship_StructType)(overridden[0] ? controls[0] : setting("VSHIP_BOUNDARY_FIXTURE_TAG",type+3));
+    return (Vship_Exception)status(3,"VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS");
 }
-Vship_Exception Vship_Reset(Vship_Handle h) { counts[4]++; record(4,owned(h)); return (Vship_Exception)status(4,"M19_RESET_STATUS"); }
-Vship_Exception Vship_ResetScore(Vship_Handle h) { counts[5]++; record(5,owned(h)); return (Vship_Exception)status(5,"M19_RESET_STATUS"); }
+Vship_Exception Vship_Reset(Vship_Handle h) { counts[4]++; record(4,owned(h)); return (Vship_Exception)status(4,"VSHIP_RESET_FIXTURE_RESET_STATUS"); }
+Vship_Exception Vship_ResetScore(Vship_Handle h) { counts[5]++; record(5,owned(h)); return (Vship_Exception)status(5,"VSHIP_RESET_FIXTURE_RESET_STATUS"); }
 Vship_Exception Vship_PinnedMalloc2(void **p, uint64_t size, int gpu) { (void)gpu; *p=malloc((size_t)size); return Vship_NoError; }
 Vship_Exception Vship_PinnedFree2(void *p, int gpu) { (void)gpu; free(p); return Vship_NoError; }
 
-#ifdef M14_PROBE
+#ifdef VSHIP_BOUNDARY_FIXTURE_PROBE
 #define TYPE(T) printf("%zu %zu ",sizeof(T),_Alignof(T))
 #define FIELD(T,F) printf("%zu %zu ",offsetof(T,F),sizeof(((T*)0)->F))
 int main(void) {

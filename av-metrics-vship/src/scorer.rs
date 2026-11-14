@@ -1485,7 +1485,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn m27_cumulative_pool_uses_last_in_submission_order() {
+    fn cumulative_pool_uses_last_in_submission_order() {
         let scores = [2.0, 9.0, 4.0].map(|value| FrameScore {
             score: Some(value),
             norm_q: Some(value * 2.0),
@@ -1519,7 +1519,7 @@ mod tests {
     }
 
     #[test]
-    fn m27_cumulative_pool_requires_the_final_metric_value() {
+    fn cumulative_pool_requires_the_final_metric_value() {
         for scores in [
             vec![],
             vec![
@@ -1538,7 +1538,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_configured_storage_width_on_every_plane_and_side() {
+    fn configured_storage_width_on_every_plane_and_side() {
         let storage = [0u8; 32];
         for sample in [
             ffi::VshipSample::Uint8,
@@ -1582,7 +1582,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_safe_u8_frame_cannot_supply_ten_bit_storage() {
+    fn safe_u8_frame_cannot_supply_ten_bit_storage() {
         let frame = v_frame::frame::FrameBuilder::new(2, 2, ChromaSubsampling::Yuv420, 8)
             .build::<u8>()
             .unwrap();
@@ -1597,7 +1597,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_odd_chroma_and_one_pixel_axes_round_up() {
+    fn odd_chroma_and_one_pixel_axes_round_up() {
         let mut colorspace = VshipColorspace::bt709_default(1919, 1079);
         assert_eq!(chroma_dimensions(&colorspace).unwrap(), (960, 540));
         colorspace.subsampling = ffi::VshipChromaSubsample::yuv422();
@@ -1609,7 +1609,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_native_upload_rejects_negative_and_short_strides() {
+    fn native_upload_rejects_negative_and_short_strides() {
         let storage = [0u8; 32];
         for stride in [-4, isize::MIN, 0, 1] {
             assert!(
@@ -1620,7 +1620,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_invalid_colorspace_dimensions_and_sampling_fail() {
+    fn invalid_colorspace_dimensions_and_sampling_fail() {
         for (width, height) in [(0, 1), (1, 0), (-1, 1), (i64::MAX, 1)] {
             let colorspace = VshipColorspace::bt709_default(width, height);
             assert!(chroma_dimensions(&colorspace).is_err());
@@ -1636,7 +1636,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_nonnative_formats_fail_before_library_discovery() {
+    fn nonnative_formats_fail_before_library_discovery() {
         for (width, height) in [(u32::MAX as usize, 1), (65536, 65536)] {
             let format =
                 VideoFormat::from_details(&details(width, height, 8, ChromaSubsampling::Yuv420));
@@ -1648,7 +1648,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_wide_pitch_must_be_sample_aligned_but_byte_pitch_may_be_odd() {
+    fn wide_pitch_must_be_sample_aligned_but_byte_pitch_may_be_odd() {
         let storage = [0u8; 32];
         let words = [0u16; 16];
         for stride in [3, 7, 9] {
@@ -1672,7 +1672,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_exact_last_visible_prefix_and_unaligned_origin_are_valid() {
+    fn exact_last_visible_prefix_and_unaligned_origin_are_valid() {
         // origin 1 + two row gaps of 10 + six final visible bytes = 27.
         let storage = [0u8; 27];
         let plane = PlaneSource::from_bytes(&storage, 3, 3, 10, 1, 2).unwrap();
@@ -1685,7 +1685,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_origins_extents_and_native_narrowing_are_checked_without_reads() {
+    fn origins_extents_and_native_narrowing_are_checked_without_reads() {
         let data = [0u8; 32];
         // Invalid declarations are rejected before any read or pointer addition.
         for (len, width, height, stride, origin, bytes) in [
@@ -1722,7 +1722,7 @@ mod tests {
     }
 
     #[test]
-    fn m07_u8_and_u16_storage_matches_only_configured_integer_formats() {
+    fn u8_and_u16_storage_matches_only_configured_integer_formats() {
         let data = [0u8; 8];
         let mut colorspace = VshipColorspace::bt709_default(2, 2);
         let bytes = [
@@ -1823,7 +1823,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_video_format_preserves_each_inputs_metadata() {
+    fn video_format_preserves_each_inputs_metadata() {
         use av_decoders::{ColorPrimaries, ColorRange, ColorSpace, TransferCharacteristic};
         let mut reference = details(1920, 1080, 10, ChromaSubsampling::Yuv420);
         reference.color_range = Some(ColorRange::Full);

@@ -15,13 +15,13 @@ use std::{
 };
 
 #[cfg(unix)]
-#[path = "../../test-support/m24_runtime.rs"]
-mod m24_runtime;
+#[path = "../../test-support/runtime_discovery.rs"]
+mod runtime_discovery;
 
 #[test]
 #[cfg(unix)]
-fn m24_runtime_overrides_and_staged_release() {
-    if std::env::var_os("M24_CHILD").is_some() {
+fn runtime_overrides_and_staged_release() {
+    if std::env::var_os("RUNTIME_DISCOVERY_CHILD").is_some() {
         // Load through production discovery before mapping fixture counters.
         assert_eq!(
             av_metrics_fmetrics::fmetrics_version().as_deref(),
@@ -31,8 +31,8 @@ fn m24_runtime_overrides_and_staged_release() {
         child();
         return;
     }
-    m24_runtime::run(
-        "m24_runtime_overrides_and_staged_release",
+    runtime_discovery::run(
+        "runtime_overrides_and_staged_release",
         if cfg!(target_os = "macos") {
             "libfmetrics.dylib"
         } else {
@@ -43,17 +43,17 @@ fn m24_runtime_overrides_and_staged_release() {
         |library| compile(library, false, &[]),
         |command, library| {
             command
-                .env("M14_VERSION", "0.1.0")
-                .env("M14_STATUS", "0")
-                .env("M14_LIBRARY", library);
+                .env("FMETRICS_BOUNDARY_FIXTURE_VERSION", "0.1.0")
+                .env("FMETRICS_BOUNDARY_FIXTURE_STATUS", "0")
+                .env("FMETRICS_BOUNDARY_FIXTURE_LIBRARY", library);
         },
     );
 }
 
 #[test]
 #[cfg(unix)]
-fn m14_native_status_and_version_contract() {
-    if std::env::var_os("M14_CHILD").is_some() {
+fn native_status_and_version_contract() {
+    if std::env::var_os("FMETRICS_BOUNDARY_FIXTURE_CHILD").is_some() {
         child();
         return;
     }
@@ -70,12 +70,12 @@ fn m14_native_status_and_version_contract() {
                 continue;
             }
             let mut child = Command::new(std::env::current_exe().expect("test executable"))
-                .args(["--exact", "m14_native_status_and_version_contract", "--nocapture"])
-                .env("M14_CHILD", "1")
-                .env("M14_VERSION", version)
-                .env("M14_STATUS", status.to_string())
+                .args(["--exact", "native_status_and_version_contract", "--nocapture"])
+                .env("FMETRICS_BOUNDARY_FIXTURE_CHILD", "1")
+                .env("FMETRICS_BOUNDARY_FIXTURE_VERSION", version)
+                .env("FMETRICS_BOUNDARY_FIXTURE_STATUS", status.to_string())
                 .env("FMETRICS_LIB_PATH", dir.path())
-                .env("M14_LIBRARY", &library)
+                .env("FMETRICS_BOUNDARY_FIXTURE_LIBRARY", &library)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -85,7 +85,7 @@ fn m14_native_status_and_version_contract() {
                 if start.elapsed() > Duration::from_secs(30) {
                     child.kill().expect("kill");
                     child.wait().expect("reap");
-                    panic!("M14 child timed out");
+                    panic!("native status/version child timed out");
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -106,9 +106,9 @@ fn m14_native_status_and_version_contract() {
 
 #[test]
 #[cfg(unix)]
-fn m17_finite_options_checked_results_and_returned_leases() {
-    if std::env::var_os("M17_CHILD").is_some() {
-        m17_child();
+fn finite_options_checked_results_and_returned_leases() {
+    if std::env::var_os("FMETRICS_RESULT_FIXTURE_CHILD").is_some() {
+        finite_options_child();
         return;
     }
     let dir = tempfile::tempdir().expect("fixture directory");
@@ -119,18 +119,17 @@ fn m17_finite_options_checked_results_and_returned_leases() {
     });
     compile(&library, false, &[]);
     let out = Command::new(std::env::current_exe().expect("test executable"))
-        .args([
-            "--exact",
-            "m17_finite_options_checked_results_and_returned_leases",
-            "--nocapture",
-        ])
-        .env("M17_CHILD", "1")
-        .env("M14_VERSION", "0.1.0")
-        .env("M14_STATUS", "0")
+        .args(["--exact", "finite_options_checked_results_and_returned_leases", "--nocapture"])
+        .env("FMETRICS_RESULT_FIXTURE_CHILD", "1")
+        .env("FMETRICS_BOUNDARY_FIXTURE_VERSION", "0.1.0")
+        .env("FMETRICS_BOUNDARY_FIXTURE_STATUS", "0")
         .env("FMETRICS_LIB_PATH", dir.path())
-        .env("M14_LIBRARY", &library)
-        .env("M17_RESULT_FILE", dir.path().join("result"))
-        .env("M17_ABI_LOG", dir.path().join("calls"))
+        .env("FMETRICS_BOUNDARY_FIXTURE_LIBRARY", &library)
+        .env(
+            "FMETRICS_RESULT_FIXTURE_RESULT_FILE",
+            dir.path().join("result"),
+        )
+        .env("FMETRICS_RESULT_FIXTURE_ABI_LOG", dir.path().join("calls"))
         .output()
         .expect("isolated norm boundary");
     assert!(
@@ -144,14 +143,17 @@ fn m17_finite_options_checked_results_and_returned_leases() {
 }
 
 #[cfg(unix)]
-fn m17_child() {
+fn finite_options_child() {
     // SAFETY: exact fixture counter signature; mapping outlives every call.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("FMETRICS_BOUNDARY_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
     // SAFETY: fixture exports this C signature and accepts indices 0..=3.
-    let counter =
-        unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m14_count\0") }.expect("counter");
+    let counter = unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"boundary_count\0") }
+        .expect("counter");
     // SAFETY: all indices below are defined, and the library remains mapped.
     let count = |i| unsafe { counter(i) };
     let color = ColorInfo {
@@ -162,8 +164,8 @@ fn m17_child() {
         colorspace: FmetricsColorspace::Srgb,
         hdr: false,
     };
-    let result_file = std::env::var_os("M17_RESULT_FILE").expect("result file");
-    let log = std::env::var_os("M17_ABI_LOG").expect("log");
+    let result_file = std::env::var_os("FMETRICS_RESULT_FIXTURE_RESULT_FILE").expect("result file");
+    let log = std::env::var_os("FMETRICS_RESULT_FIXTURE_ABI_LOG").expect("log");
     std::fs::write(&result_file, "42").expect("valid result");
     let config = FmetricsConfig::new(FmetricsMetric::Butteraugli).with_threads(1);
     for p in [0, -1, i32::MIN] {
@@ -258,19 +260,22 @@ fn m17_child() {
         "every workspace destroyed and every success/error path reached"
     );
     eprintln!(
-        "M17 low-level: 6 invalid preprobe rejects, 4 finite options, 3 nonfinite + 3 raw-status errors, 6 lease recoveries; workspaces=5/5 calls=16"
+        "finite options: 6 invalid preprobe rejects, 4 finite options, 3 nonfinite + 3 raw-status errors, 6 lease recoveries; workspaces=5/5 calls=16"
     );
 }
 
 #[cfg(unix)]
 fn child() {
     // SAFETY: isolated fixture mapping stays alive through all counter calls.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("FMETRICS_BOUNDARY_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
     // SAFETY: exact fixture counter signature and indices 0/1.
-    let counter =
-        unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m14_count\0") }.expect("counter");
+    let counter = unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"boundary_count\0") }
+        .expect("counter");
     // SAFETY: only defined indices 0/1 are used while the fixture stays mapped.
     let count = |index| unsafe { counter(index) };
     let color = ColorInfo {
@@ -282,14 +287,14 @@ fn child() {
         hdr: false,
     };
     let result = FmetricsScorer::new(FmetricsConfig::new(FmetricsMetric::Ssimulacra2), color);
-    if std::env::var("M14_VERSION").expect("version") != "0.1.0" {
+    if std::env::var("FMETRICS_BOUNDARY_FIXTURE_VERSION").expect("version") != "0.1.0" {
         assert!(
             matches!(&result, Err(FmetricsError::IncompatibleLibrary { .. })),
             "reject incompatible ABI"
         );
         let error = result.expect_err("incompatible version").to_string();
         assert!(
-            error.contains(&std::env::var("M14_VERSION").expect("version"))
+            error.contains(&std::env::var("FMETRICS_BOUNDARY_FIXTURE_VERSION").expect("version"))
                 && error.contains("0.1.0"),
             "observed version and actionable pinned build: {error}"
         );
@@ -300,7 +305,10 @@ fn child() {
     let bytes = [128u8; 32 * 32 * 3];
     let image = RgbView::new(&bytes, 32, 32, false).expect("RGB");
     let result = scorer.submit_rgb(&image, &image);
-    let raw: i32 = std::env::var("M14_STATUS").expect("status").parse().expect("integer");
+    let raw: i32 = std::env::var("FMETRICS_BOUNDARY_FIXTURE_STATUS")
+        .expect("status")
+        .parse()
+        .expect("integer");
     if raw == 0 {
         assert_eq!(
             result.expect("score").ssimulacra2,
@@ -334,12 +342,15 @@ fn compile(path: &std::path::Path, probe: bool, flags: &[&str]) {
     cmd.args(["-std=c11", "-Wall", "-Wextra", "-Werror"]);
     cmd.args(flags);
     if probe {
-        cmd.arg("-DM14_PROBE");
+        cmd.arg("-DFMETRICS_BOUNDARY_FIXTURE_PROBE");
     } else {
         cmd.args(["-shared", "-fPIC"]);
     }
     let out = cmd
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/m14_boundary.c"))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/boundary.c"
+        ))
         .arg("-o")
         .arg(path)
         .output()
@@ -352,7 +363,7 @@ fn compile(path: &std::path::Path, probe: bool, flags: &[&str]) {
 }
 
 #[test]
-fn m14_real_header_layouts_and_signatures() {
+fn real_header_layouts_and_signatures() {
     let dir = tempfile::tempdir().expect("probe directory");
     let exe = dir.path().join(if cfg!(windows) { "probe.exe" } else { "probe" });
     compile(&exe, true, &[]);
@@ -405,7 +416,7 @@ fn m14_real_header_layouts_and_signatures() {
     expected.extend([0, 1, 2, 3, 4, 5, 6, 1, 2, 3, 1, 2, 0, 27]);
     assert_eq!(actual, expected, "real pinned public C schema/signatures");
     eprintln!(
-        "M14 fmetrics: {} real-header values, all 17 exported signatures",
+        "fmetrics ABI: {} real-header values, all 17 exported signatures",
         actual.len()
     );
     let drift = dir.path().join(if cfg!(windows) {

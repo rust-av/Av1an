@@ -27,7 +27,7 @@ fn q05_vmaf_invalid_last_value_has_no_score_callbacks() {
         .arg(library)
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../av-metrics-vmaf/tests/fixtures/m09_ownership.c"
+            "/../av-metrics-vmaf/tests/fixtures/ownership.c"
         ))
         .output()
         .expect("cc");
@@ -44,9 +44,12 @@ fn q05_vmaf_invalid_last_value_has_no_score_callbacks() {
                 "--nocapture",
             ])
             .env("M18_DRIVER_CHILD", "q05-invalid")
-            .env("Q05_BAD_SCORE", bad)
-            .env("M18_MODE", "1")
-            .env("M18_EVENTS", directory.path().join(bad))
+            .env("VMAF_FINALIZATION_FIXTURE_BAD_SCORE", bad)
+            .env("VMAF_FINALIZATION_FIXTURE_MODE", "1")
+            .env(
+                "VMAF_FINALIZATION_FIXTURE_EVENTS",
+                directory.path().join(bad),
+            )
             .env("VMAF_LIB_DIR", directory.path())
             .output()
             .expect("child");
@@ -74,7 +77,7 @@ fn m25_driver_invalid_override_preserves_error_before_callbacks() {
         ])
         .env("M25_DRIVER_CHILD", "1")
         .env("VMAF_MODEL_PATH", directory.path().join("missing models 雪"))
-        .env("M18_EVENTS", directory.path().join("events"))
+        .env("VMAF_FINALIZATION_FIXTURE_EVENTS", directory.path().join("events"))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -113,7 +116,7 @@ fn m18_driver_events() {
         .arg(library)
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../av-metrics-vmaf/tests/fixtures/m09_ownership.c"
+            "/../av-metrics-vmaf/tests/fixtures/ownership.c"
         ))
         .output()
         .expect("M18 requires cc");
@@ -136,16 +139,19 @@ fn m18_driver_events() {
             .args(["--exact", EXACT, "--nocapture"])
             .env("M18_DRIVER_CHILD", scenario)
             .env(
-                "M18_MODE",
+                "VMAF_FINALIZATION_FIXTURE_MODE",
                 if scenario == "query_error" { "2" } else { "1" },
             )
-            .env("M18_EVENTS", directory.path().join(scenario))
             .env(
-                "M09_REJECT_READ",
+                "VMAF_FINALIZATION_FIXTURE_EVENTS",
+                directory.path().join(scenario),
+            )
+            .env(
+                "VMAF_OWNERSHIP_FIXTURE_REJECT_READ",
                 if scenario == "reject" { "1" } else { "0" },
             )
             .env(
-                "M09_FAIL_FLUSH",
+                "VMAF_OWNERSHIP_FIXTURE_FAIL_FLUSH",
                 if scenario == "flush_error" { "1" } else { "0" },
             )
             .env("VMAF_LIB_DIR", directory.path())
@@ -182,7 +188,9 @@ fn driver_child(scenario: &str) {
     std::fs::write(fixture.path(), y4m).expect("write");
     let mut reference = av_decoders::Decoder::from_file(fixture.path()).expect("reference");
     let mut distorted = av_decoders::Decoder::from_file(fixture.path()).expect("distorted");
-    let event_path = std::path::PathBuf::from(std::env::var_os("M18_EVENTS").expect("events"));
+    let event_path = std::path::PathBuf::from(
+        std::env::var_os("VMAF_FINALIZATION_FIXTURE_EVENTS").expect("events"),
+    );
     let events = || std::fs::read_to_string(&event_path).unwrap_or_default();
     let log = |name, position| {
         writeln!(

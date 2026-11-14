@@ -700,14 +700,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn m16_cvvdp_default_frame_rate_is_usable() {
+    fn cvvdp_default_frame_rate_is_usable() {
         let config = VshipConfig::new().with_metric(VshipMetric::Cvvdp);
         assert_eq!(config.cvvdp().fps, 60.0);
         assert!(config.validate().is_ok());
     }
 
     #[test]
-    fn m16_explicit_frame_rate_bounds_only_apply_to_cvvdp() {
+    fn explicit_frame_rate_bounds_only_apply_to_cvvdp() {
         let format =
             crate::VideoFormat::from_details(&details(32, 32, 8, ChromaSubsampling::Yuv420));
         for rate in [
@@ -781,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_explicit_metadata_overrides_resolution_defaults() {
+    fn explicit_metadata_overrides_resolution_defaults() {
         use av_decoders::{
             ChromaLocation, ColorPrimaries, ColorRange, ColorSpace,
             TransferCharacteristic as Transfer,
@@ -815,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_unknown_defaults_but_unsupported_metadata_errors() {
+    fn unknown_defaults_but_unsupported_metadata_errors() {
         use av_decoders::{
             ChromaLocation, ColorPrimaries, ColorRange, ColorSpace,
             TransferCharacteristic as Transfer,
@@ -944,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    fn m20_handler_count_is_independent_of_legacy_request() {
+    fn handler_count_is_independent_of_legacy_request() {
         let config = VshipConfig::new().with_handler_threads(8);
 
         assert_eq!(config.handler_threads(), 8);
@@ -1008,7 +1008,7 @@ mod tests {
     }
 
     #[test]
-    fn m15_temporal_and_gap_policy_are_independent() {
+    fn temporal_and_gap_policy_are_independent() {
         for disabled in [false, true] {
             for gap in [false, true] {
                 let config = VshipConfig::new()

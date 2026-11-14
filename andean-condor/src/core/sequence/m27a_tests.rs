@@ -719,7 +719,7 @@ fn native_children(test: &str, scopes: &[(&str, &str)], child_test: impl FnOnce(
         .arg(&library)
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/m15_native.c"
+            "/tests/fixtures/temporal.c"
         ))
         .output()
         .expect("native boundary requires cc");
@@ -777,7 +777,7 @@ fn native_children(test: &str, scopes: &[(&str, &str)], child_test: impl FnOnce(
         }))
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/m15_native.c"
+            "/tests/fixtures/temporal.c"
         ))
         .arg(&no_devices)
         .output()

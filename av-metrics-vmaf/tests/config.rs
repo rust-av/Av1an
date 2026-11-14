@@ -14,12 +14,15 @@ use av_metrics_vmaf::{
 use v_frame::chroma::ChromaSubsampling;
 
 #[test]
-fn m25_explicit_stock_directory_is_exclusive() {
-    if let Ok(scenario) = std::env::var("M25_CHILD") {
+fn explicit_stock_directory_is_exclusive() {
+    if let Ok(scenario) = std::env::var("VMAF_MODEL_FIXTURE_CHILD") {
         check_child(&scenario);
         return;
     }
-    let directory = tempfile::Builder::new().prefix("m25-").tempdir().expect("fixture");
+    let directory = tempfile::Builder::new()
+        .prefix("vmaf-model-fixture-")
+        .tempdir()
+        .expect("fixture");
     let root = directory.path();
     let native = root.join("lib");
     let explicit = root.join("explicit models 雪;literal:directory");
@@ -44,10 +47,10 @@ fn m25_explicit_stock_directory_is_exclusive() {
         .arg(&library)
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/m25_models.c"
+            "/tests/fixtures/models.c"
         ))
         .output()
-        .expect("M25 requires cc");
+        .expect("model fixture requires cc");
     assert!(
         output.status.success(),
         "{}",
@@ -67,12 +70,12 @@ fn m25_explicit_stock_directory_is_exclusive() {
     ] {
         let mut command = Command::new(std::env::current_exe().expect("test executable"));
         command
-            .args(["--exact", "m25_explicit_stock_directory_is_exclusive", "--nocapture"])
-            .env("M25_CHILD", scenario)
-            .env("M25_ROOT", root)
-            .env("M25_LIBRARY", &library)
+            .args(["--exact", "explicit_stock_directory_is_exclusive", "--nocapture"])
+            .env("VMAF_MODEL_FIXTURE_CHILD", scenario)
+            .env("VMAF_MODEL_FIXTURE_ROOT", root)
+            .env("VMAF_MODEL_FIXTURE_LIBRARY", &library)
             .env(
-                "M25_NO_BUILTIN",
+                "VMAF_MODEL_FIXTURE_NO_BUILTIN",
                 if scenario.ends_with("fallback") {
                     "1"
                 } else {
@@ -101,42 +104,48 @@ fn m25_explicit_stock_directory_is_exclusive() {
             },
             _ => {},
         }
-        let mut child = command.spawn().expect("M25 isolated child");
+        let mut child = command.spawn().expect("model selection isolated child");
         let start = Instant::now();
         while child.try_wait().expect("child status").is_none() {
             if start.elapsed() > Duration::from_secs(30) {
                 child.kill().expect("kill timed out child");
                 child.wait().expect("reap child");
-                panic!("M25 {scenario} exceeded 30s");
+                panic!("model selection {scenario} exceeded 30s");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
         let output = child.wait_with_output().expect("child output");
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("M25 {scenario}: {stdout}{stderr}");
+        eprintln!("model selection {scenario}: {stdout}{stderr}");
         assert!(stdout.contains("running 1 test"), "exact child filter");
         if !output.status.success() {
             failed.push(scenario);
         }
     }
-    assert!(failed.is_empty(), "failed M25 scenarios: {failed:?}");
+    assert!(
+        failed.is_empty(),
+        "failed model selection scenarios: {failed:?}"
+    );
 }
 
 fn check_child(scenario: &str) {
     // SAFETY: the compiled fixture remains mapped for all exact-signature reads.
-    let library =
-        unsafe { libloading::Library::new(std::env::var_os("M25_LIBRARY").expect("fixture")) }
-            .expect("fixture counters");
+    let library = unsafe {
+        libloading::Library::new(std::env::var_os("VMAF_MODEL_FIXTURE_LIBRARY").expect("fixture"))
+    }
+    .expect("fixture counters");
     // SAFETY: exact fixture signature; every index below is in 0..8.
-    let counter = unsafe { library.get::<unsafe extern "C" fn(u32) -> u32>(b"m25_count\0") }
-        .expect("counter");
+    let counter =
+        unsafe { library.get::<unsafe extern "C" fn(u32) -> u32>(b"model_fixture_count\0") }
+            .expect("counter");
     // SAFETY: exact fixture signature; returns a live static NUL-terminated buffer.
-    let path = unsafe { library.get::<unsafe extern "C" fn() -> *const c_char>(b"m25_path\0") }
-        .expect("path");
+    let path =
+        unsafe { library.get::<unsafe extern "C" fn() -> *const c_char>(b"model_fixture_path\0") }
+            .expect("path");
     // SAFETY: all counter indices are defined while the fixture is mapped.
     let count = |index| unsafe { counter(index) };
-    let root = PathBuf::from(std::env::var_os("M25_ROOT").expect("root"));
+    let root = PathBuf::from(std::env::var_os("VMAF_MODEL_FIXTURE_ROOT").expect("root"));
     let explicit = root.join("explicit models 雪;literal:directory/vmaf_v0.6.1.json");
     let mut config = VmafConfig::new().with_backend(BackendPreference::CpuOnly);
     if scenario == "direct" {
@@ -165,7 +174,9 @@ fn check_child(scenario: &str) {
     let snapshot: Vec<_> = (0..8).map(count).collect();
     // SAFETY: fixture-owned static buffer remains mapped and NUL-terminated.
     let selected = unsafe { CStr::from_ptr(path()) }.to_str().expect("UTF-8 fixture path");
-    eprintln!("M25 {scenario} path={selected:?}, counters={snapshot:?}, error={error:?}");
+    eprintln!(
+        "model selection {scenario} path={selected:?}, counters={snapshot:?}, error={error:?}"
+    );
     if scenario.starts_with("missing") {
         assert_eq!(
             snapshot, [0; 8],
@@ -252,9 +263,10 @@ fn check_child(scenario: &str) {
             );
         }
     }
-    // SAFETY: m09's existing counter ABI is shared by this pinned fixture.
-    let ownership = unsafe { library.get::<unsafe extern "C" fn(u32) -> u32>(b"m09_count\0") }
-        .expect("ownership counters");
+    // SAFETY: ownership.c's existing counter ABI is shared by this pinned fixture.
+    let ownership =
+        unsafe { library.get::<unsafe extern "C" fn(u32) -> u32>(b"ownership_count\0") }
+            .expect("ownership counters");
     // SAFETY: all indices refer to existing fixture counters.
     let owned = |index| unsafe { ownership(index) };
     assert_eq!(

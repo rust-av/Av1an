@@ -11,14 +11,14 @@ use std::{
 };
 use v_frame::{chroma::ChromaSubsampling, frame::FrameBuilder};
 
-#[path = "../tests/common/mod.rs"]
+#[path = "../../../tests/common/mod.rs"]
 mod common;
 
-const TEST: &str = "ffi::m29_tests::m29_native_call_transactions";
+const TEST: &str = "ffi::tests::transactions::native_call_transactions";
 
 #[test]
-fn m29_native_call_transactions() {
-    if let Ok(scenario) = std::env::var("M29_CHILD") {
+fn native_call_transactions() {
+    if let Ok(scenario) = std::env::var("VSHIP_TRANSACTION_FIXTURE_CHILD") {
         child(&scenario);
         return;
     }
@@ -30,7 +30,10 @@ fn m29_native_call_transactions() {
     });
     let out = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
         .args(["-std=c11", "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror"])
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/m29_boundary.c"))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/native_call.c"
+        ))
         .arg("-o")
         .arg(&library)
         .output()
@@ -61,8 +64,8 @@ fn m29_native_call_transactions() {
         let stderr = stdout.try_clone().expect("stderr");
         let mut process = Command::new(std::env::current_exe().expect("executable"))
             .args(["--exact", TEST, "--nocapture"])
-            .env("M29_CHILD", scenario)
-            .env("M29_LIBRARY", &library)
+            .env("VSHIP_TRANSACTION_FIXTURE_CHILD", scenario)
+            .env("VSHIP_TRANSACTION_FIXTURE_LIBRARY", &library)
             .env("VSHIP_PLUGIN_PATH", dir.path())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))
@@ -148,16 +151,21 @@ fn assert_error(result: Result<(), VshipError>, kind: u32, status: i32) {
 
 fn child(scenario: &str) {
     // SAFETY: pinned-header test exports with exact signatures; mapping outlives workers.
-    let library =
-        unsafe { libloading::Library::new(std::env::var_os("M29_LIBRARY").expect("library")) }
-            .expect("fixture mapping");
+    let library = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VSHIP_TRANSACTION_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("fixture mapping");
     // SAFETY: both functions only operate on atomic fixture state and validate indices.
     let (count, set) = unsafe {
         (
             *library
-                .get::<unsafe extern "C" fn(u32) -> u32>(b"m29_count\0")
+                .get::<unsafe extern "C" fn(u32) -> u32>(b"transaction_count\0")
                 .expect("counter"),
-            *library.get::<unsafe extern "C" fn(u32, i32)>(b"m29_set\0").expect("control"),
+            *library
+                .get::<unsafe extern "C" fn(u32, i32)>(b"transaction_set\0")
+                .expect("control"),
         )
     };
     // SAFETY: all call sites use the fixture's defined indices, while mapped.
@@ -251,7 +259,7 @@ fn child(scenario: &str) {
     worker.join().expect("worker");
     challenger.join().expect("challenger");
     println!(
-        "M29 {scenario}: overlaps={}, calls={:?}, live={}, freed-mask={:#x}; 20000-yield scheduling bound",
+        "native transaction {scenario}: overlaps={}, calls={:?}, live={}, freed-mask={:#x}; 20000-yield scheduling bound",
         count(10),
         (0..10).map(count).collect::<Vec<_>>(),
         count(12),
@@ -334,13 +342,13 @@ fn lifecycle(api: &'static VshipApi, count: impl Fn(u32) -> u32, _set: impl Fn(u
     assert_eq!(
         (count(0), count(1), count(2)),
         (1, 2, 1),
-        "M28 concurrent default probes once"
+        "concurrent default probes once"
     );
     assert_eq!((count(3), count(4), count(7), count(12)), (6, 6, 6, 0));
     assert_eq!(count(13), 0x3f, "six distinct handlers freed once");
     assert_eq!(api.version_string(), "5.1.2");
     println!(
-        "M29 lifecycle: six thread-local scorers, markers=42, init/compute/free=6/6/6, default count/info/probe=1/2/1"
+        "native transaction lifecycle: six thread-local scorers, markers=42, init/compute/free=6/6/6, default count/info/probe=1/2/1"
     );
 
     let clip = common::SyntheticClip::generate(
@@ -376,7 +384,7 @@ fn lifecycle(api: &'static VshipApi, count: impl Fn(u32) -> u32, _set: impl Fn(u
             // SAFETY: writable integer, exact pinned fixture signature.
             assert_eq!(unsafe { (api.get_device_count)(&raw mut n) }, 0);
             assert_eq!(n, 3);
-            panic!("M29 deliberate transaction unwind");
+            panic!("native transaction deliberate unwind");
         })
     });
     assert!(panicked.is_err() && NATIVE_CALLS.is_poisoned());
@@ -389,7 +397,9 @@ fn lifecycle(api: &'static VshipApi, count: impl Fn(u32) -> u32, _set: impl Fn(u
         (count(3), count(7), count(12), count(13)),
         (11, 11, 0, 0x7ff)
     );
-    println!("M29 callback reentry and poison recovery: init/free=11/11, live=0, freed-mask=0x7ff");
+    println!(
+        "native transaction callback reentry and poison recovery: init/free=11/11, live=0, freed-mask=0x7ff"
+    );
 }
 
 fn lock_order(count: impl Fn(u32) -> u32, set: impl Fn(u32, i32)) {
@@ -416,6 +426,6 @@ fn lock_order(count: impl Fn(u32) -> u32, set: impl Fn(u32, i32)) {
         (1, 2, 2, 2, 2, 0)
     );
     println!(
-        "M29 lock order: explicit init vs first default OnceLock/cache lookup joined; init/free=2/2"
+        "native transaction lock order: explicit init vs first default OnceLock/cache lookup joined; init/free=2/2"
     );
 }

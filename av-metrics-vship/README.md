@@ -29,7 +29,7 @@ C statuses, returned version backends and score tags are raw C integers.
 unchanged. Only status zero is success; `CallFailed` preserves every other code.
 Successful computes with a wrong/unknown score tag return `InvalidScoreTag`
 before interpreting scores. Input-only colorspace/init enums remain typed.
-The `m14_` tests compile unmodified pinned public headers (MIT NON-AI license
+The `ffi` integration tests compile unmodified pinned public headers (MIT NON-AI license
 included) and C ABI sinks without GPU SDKs. These are ABI tests, not GPU accuracy
 tests; ordinary crate builds require neither a C compiler nor native headers.
 
@@ -114,7 +114,7 @@ Wide odd pitches are therefore conservatively rejected until a corrected Vulkan
 dispatch is the supported minimum and odd-pitch uploads pass the real GPU gate.
 Pure checks and C ABI sinks run without a GPU; they do not prove GPU upload
 completion or metric accuracy. On a supported GPU host, run `just test-gpu`;
-`m07_gpu_padded_uploads_and_typed_mismatch` compares packed uploads against each
+`gpu_padded_uploads_and_typed_mismatch` compares packed uploads against each
 side padded separately, using nonflat Y/U/V patterns and distinct padding sentinels,
 and fails, rather than skipping, when required mode has no working runtime.
 

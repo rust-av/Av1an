@@ -7,28 +7,28 @@ use std::{
 use super::*;
 use crate::config::{BackendPreference, VmafFeature};
 
-const EXACT: &str = "scorer::setup_tests::m11_complete_backend_attempts";
+const EXACT: &str = "scorer::tests::setup::complete_backend_attempts";
 
 #[test]
-fn m26_auto_feature_policy() {
-    check_feature_policy("scorer::setup_tests::m26_auto_feature_policy", "auto");
+fn auto_feature_policy() {
+    check_feature_policy("scorer::tests::setup::auto_feature_policy", "auto");
 }
 
 #[test]
-fn m26_cpu_only_feature_policy() {
-    check_feature_policy("scorer::setup_tests::m26_cpu_only_feature_policy", "cpu");
+fn cpu_only_feature_policy() {
+    check_feature_policy("scorer::tests::setup::cpu_only_feature_policy", "cpu");
 }
 
 #[test]
-fn m26_require_cuda_feature_policy() {
+fn require_cuda_feature_policy() {
     check_feature_policy(
-        "scorer::setup_tests::m26_require_cuda_feature_policy",
+        "scorer::tests::setup::require_cuda_feature_policy",
         "require",
     );
 }
 
 fn check_feature_policy(exact: &str, preference: &str) {
-    if std::env::var_os("M11_CHILD").is_some() {
+    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
         check_attempt();
         return;
     }
@@ -39,11 +39,11 @@ fn check_feature_policy(exact: &str, preference: &str) {
 }
 
 #[test]
-fn m26_cuda_availability_requires_feature() {
-    if std::env::var_os("M11_CHILD").is_none() {
+fn cuda_availability_requires_feature() {
+    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_none() {
         let (directory, library) = setup_fixture();
         run_child(
-            "scorer::setup_tests::m26_cuda_availability_requires_feature",
+            "scorer::tests::setup::cuda_availability_requires_feature",
             0,
             "auto",
             &library,
@@ -52,15 +52,16 @@ fn m26_cuda_availability_requires_feature() {
         return;
     }
     // SAFETY: this fixture remains mapped through all pointer and counter uses.
-    let library =
-        unsafe { libloading::Library::new(std::env::var_os("M11_LIBRARY").expect("fixture")) }
-            .expect("fixture library");
+    let library = unsafe {
+        libloading::Library::new(std::env::var_os("VMAF_SETUP_FIXTURE_LIBRARY").expect("fixture"))
+    }
+    .expect("fixture library");
     let mut api = *ffi::VmafApi::load().expect("fixture API");
     // SAFETY: exact allocator-matched fixture callback and counter signatures.
     let counter = unsafe {
-        api.cuda.free_state = Some(*library.get(b"m11_free\0").expect("free"));
+        api.cuda.free_state = Some(*library.get(b"setup_free\0").expect("free"));
         library
-            .get::<unsafe extern "C" fn(u32, u32) -> u32>(b"m11_count\0")
+            .get::<unsafe extern "C" fn(u32, u32) -> u32>(b"setup_count\0")
             .expect("count")
     };
     let api_available = api.cuda_available();
@@ -68,7 +69,7 @@ fn m26_cuda_availability_requires_feature() {
     // SAFETY: all indices are within the fixture's tables.
     let globals: Vec<_> = (0..7).map(|i| unsafe { counter(2, i) }).collect();
     eprintln!(
-        "M26 availability: api={api_available}, public={public_available}, globals={globals:?}"
+        "feature policy availability: api={api_available}, public={public_available}, globals={globals:?}"
     );
     assert_eq!(globals, [0; 7], "availability must not initialize CUDA");
     assert_eq!(
@@ -89,11 +90,11 @@ fn m26_cuda_availability_requires_feature() {
 }
 
 #[test]
-fn m26_required_cuda_feature_precedes_loader_failure() {
-    if std::env::var_os("M11_CHILD").is_none() {
+fn required_cuda_feature_precedes_loader_failure() {
+    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_none() {
         let (directory, library) = setup_fixture();
         run_child(
-            "scorer::setup_tests::m26_required_cuda_feature_precedes_loader_failure",
+            "scorer::tests::setup::required_cuda_feature_precedes_loader_failure",
             0,
             "require",
             &library,
@@ -113,13 +114,13 @@ fn m26_required_cuda_feature_precedes_loader_failure() {
         || {
             loads.set(loads.get() + 1);
             Err(VmafError::LibraryLoadFailed {
-                attempts: "M26 injected missing library".to_owned(),
+                attempts: "feature policy injected missing library".to_owned(),
             })
         },
     )
     .err()
     .expect("constructor must fail");
-    eprintln!("M26 loader calls={}, error={error}", loads.get());
+    eprintln!("feature policy loader calls={}, error={error}", loads.get());
     if cfg!(feature = "cuda") {
         assert_eq!(
             loads.get(),
@@ -127,7 +128,7 @@ fn m26_required_cuda_feature_precedes_loader_failure() {
             "feature-enabled construction reaches the loader"
         );
         assert!(
-            matches!(error, VmafError::LibraryLoadFailed { ref attempts } if attempts == "M26 injected missing library"),
+            matches!(error, VmafError::LibraryLoadFailed { ref attempts } if attempts == "feature policy injected missing library"),
             "{error:?}"
         );
     } else {
@@ -155,8 +156,8 @@ fn assert_missing_cuda_feature(error: &VmafError) {
 }
 
 #[test]
-fn m11_complete_backend_attempts() {
-    if std::env::var_os("M11_CHILD").is_some() {
+fn complete_backend_attempts() {
+    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
         check_attempt();
         return;
     }
@@ -181,10 +182,10 @@ fn setup_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
         .arg(&library)
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/m11_setup.c"
+            "/tests/fixtures/setup.c"
         ))
         .output()
-        .expect("M11 requires cc");
+        .expect("setup fixture requires cc");
     assert!(
         output.status.success(),
         "{}",
@@ -208,14 +209,21 @@ fn run_child(
     let mut command = Command::new(std::env::current_exe().expect("test executable"));
     command
         .args(["--exact", exact, "--nocapture"])
-        .env("M11_CHILD", "1")
+        .env("VMAF_SETUP_FIXTURE_CHILD", "1")
         .env(
-            "M12_CHILD",
-            if exact.contains("::m12_") { "1" } else { "0" },
+            "VMAF_PARTIAL_SETUP_FIXTURE_CHILD",
+            if matches!(
+                exact.rsplit("::").next(),
+                Some("owned_partial_and_cpu_constructor_failures" | "blocking_pool_pressure")
+            ) {
+                "1"
+            } else {
+                "0"
+            },
         )
-        .env("M11_STAGE", stage.to_string())
-        .env("M11_PREFERENCE", preference)
-        .env("M11_LIBRARY", library)
+        .env("VMAF_SETUP_FIXTURE_STAGE", stage.to_string())
+        .env("VMAF_SETUP_FIXTURE_PREFERENCE", preference)
+        .env("VMAF_SETUP_FIXTURE_LIBRARY", library)
         .env("VMAF_LIB_DIR", directory)
         .env("VMAF_MODEL_PATH", directory)
         .stdout(Stdio::piped())
@@ -225,7 +233,7 @@ fn run_child(
     if matches!(stage, 14 | 16) {
         command.env_remove("VMAF_MODEL_PATH");
     }
-    let mut child = command.spawn().expect("isolated M11 child");
+    let mut child = command.spawn().expect("isolated setup child");
     let start = Instant::now();
     while child.try_wait().expect("child status").is_none() {
         if start.elapsed() > Duration::from_secs(30) {
@@ -251,27 +259,32 @@ fn run_child(
 
 fn check_attempt() {
     // SAFETY: this is our fixture, kept mapped through cleanup and counter reads.
-    let library =
-        unsafe { libloading::Library::new(std::env::var_os("M11_LIBRARY").expect("fixture")) }
-            .expect("load fixture");
-    // SAFETY: signatures/indices are defined by m11_setup.c.
+    let library = unsafe {
+        libloading::Library::new(std::env::var_os("VMAF_SETUP_FIXTURE_LIBRARY").expect("fixture"))
+    }
+    .expect("load fixture");
+    // SAFETY: signatures/indices are defined by setup.c.
     let (counter, cleanup) = unsafe {
         (
             library
-                .get::<unsafe extern "C" fn(u32, u32) -> u32>(b"m11_count\0")
+                .get::<unsafe extern "C" fn(u32, u32) -> u32>(b"setup_count\0")
                 .expect("count"),
-            library.get::<unsafe extern "C" fn()>(b"m11_cleanup\0").expect("cleanup"),
+            library.get::<unsafe extern "C" fn()>(b"setup_cleanup\0").expect("cleanup"),
         )
     };
     // SAFETY: all indices below are within the fixture's tables.
     let count = |backend, index| unsafe { counter(backend, index) };
-    let stage: u32 = std::env::var("M11_STAGE").expect("stage").parse().expect("number");
-    let preference = match std::env::var("M11_PREFERENCE").expect("preference").as_str() {
-        "auto" => BackendPreference::Auto,
-        "require" => BackendPreference::RequireCuda,
-        "cpu" => BackendPreference::CpuOnly,
-        _ => unreachable!(),
-    };
+    let stage: u32 = std::env::var("VMAF_SETUP_FIXTURE_STAGE")
+        .expect("stage")
+        .parse()
+        .expect("number");
+    let preference =
+        match std::env::var("VMAF_SETUP_FIXTURE_PREFERENCE").expect("preference").as_str() {
+            "auto" => BackendPreference::Auto,
+            "require" => BackendPreference::RequireCuda,
+            "cpu" => BackendPreference::CpuOnly,
+            _ => unreachable!(),
+        };
     let model_path = std::path::PathBuf::from(std::env::var_os("VMAF_LIB_DIR").expect("fixture"))
         .join("vmaf_v0.6.1.json");
     let mut config = VmafConfig::new()
@@ -292,7 +305,7 @@ fn check_attempt() {
         let mut api = *ffi::VmafApi::load().expect("fixture API");
         // SAFETY: the fixture's allocator-matched wrapper deallocator counts
         // the production guard's calls. No public injection API is exposed.
-        api.cuda.free_state = Some(unsafe { *library.get(b"m11_free\0").expect("free") });
+        api.cuda.free_state = Some(unsafe { *library.get(b"setup_free\0").expect("free") });
         api
     });
     let result = VmafScorer::new_with_loader(config, format, || Ok(api));
@@ -373,7 +386,7 @@ fn check_attempt() {
     let globals: Vec<_> = (0..7).map(|i| count(2, i)).collect();
     // SAFETY: all Rust handles have dropped. Reclaim tombstones even during RED.
     unsafe { cleanup() };
-    eprintln!("M11 CPU/CUDA {snapshot:?}, global {globals:?}");
+    eprintln!("setup CPU/CUDA {snapshot:?}, global {globals:?}");
     if rejected {
         assert_missing_cuda_feature(
             &feature_error.expect("RequireCuda must reject the missing feature"),
@@ -459,15 +472,15 @@ fn check_attempt() {
 }
 
 #[test]
-fn m12_owned_partial_and_cpu_constructor_failures() {
-    if std::env::var_os("M11_CHILD").is_some() {
-        check_m12_attempt();
+fn owned_partial_and_cpu_constructor_failures() {
+    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
+        check_partial_setup_attempt();
         return;
     }
     let (directory, library) = setup_fixture();
     for stage in [6, 7, 8, 9, 12, 15, 14, 16] {
         run_child(
-            "scorer::setup_tests::m12_owned_partial_and_cpu_constructor_failures",
+            "scorer::tests::setup::owned_partial_and_cpu_constructor_failures",
             stage,
             "cpu",
             &library,
@@ -476,7 +489,7 @@ fn m12_owned_partial_and_cpu_constructor_failures() {
     }
     for stage in [6, 16] {
         run_child(
-            "scorer::setup_tests::m12_owned_partial_and_cpu_constructor_failures",
+            "scorer::tests::setup::owned_partial_and_cpu_constructor_failures",
             stage,
             "auto",
             &library,
@@ -486,15 +499,15 @@ fn m12_owned_partial_and_cpu_constructor_failures() {
 }
 
 #[test]
-fn m12_blocking_pool_pressure() {
-    if std::env::var_os("M11_CHILD").is_some() {
-        check_m12_attempt();
+fn blocking_pool_pressure() {
+    if std::env::var_os("VMAF_SETUP_FIXTURE_CHILD").is_some() {
+        check_partial_setup_attempt();
         return;
     }
     let (directory, library) = setup_fixture();
     for stage in [17, 18] {
         run_child(
-            "scorer::setup_tests::m12_blocking_pool_pressure",
+            "scorer::tests::setup::blocking_pool_pressure",
             stage,
             "cpu",
             &library,
@@ -503,25 +516,29 @@ fn m12_blocking_pool_pressure() {
     }
 }
 
-fn check_m12_attempt() {
+fn check_partial_setup_attempt() {
     // SAFETY: fixture ABI, kept mapped until all scorers and helper threads drop.
-    let library =
-        unsafe { libloading::Library::new(std::env::var_os("M11_LIBRARY").expect("fixture")) }
-            .expect("load fixture");
-    let stage: u32 = std::env::var("M11_STAGE").expect("stage").parse().expect("number");
-    let auto = std::env::var("M11_PREFERENCE").expect("preference") == "auto";
-    // SAFETY: signatures match m11_setup.c; copied pointers stay mapped below.
+    let library = unsafe {
+        libloading::Library::new(std::env::var_os("VMAF_SETUP_FIXTURE_LIBRARY").expect("fixture"))
+    }
+    .expect("load fixture");
+    let stage: u32 = std::env::var("VMAF_SETUP_FIXTURE_STAGE")
+        .expect("stage")
+        .parse()
+        .expect("number");
+    let auto = std::env::var("VMAF_SETUP_FIXTURE_PREFERENCE").expect("preference") == "auto";
+    // SAFETY: signatures match setup.c; copied pointers stay mapped below.
     let (counter, cleanup, pressure_count, release_reserved) = unsafe {
         (
             *library
-                .get::<unsafe extern "C" fn(u32, u32) -> u32>(b"m11_count\0")
+                .get::<unsafe extern "C" fn(u32, u32) -> u32>(b"setup_count\0")
                 .expect("count"),
-            *library.get::<unsafe extern "C" fn()>(b"m11_cleanup\0").expect("cleanup"),
+            *library.get::<unsafe extern "C" fn()>(b"setup_cleanup\0").expect("cleanup"),
             *library
-                .get::<unsafe extern "C" fn(u32) -> u32>(b"m12_pressure_count\0")
+                .get::<unsafe extern "C" fn(u32) -> u32>(b"partial_setup_pressure_count\0")
                 .expect("pressure"),
             *library
-                .get::<unsafe extern "C" fn()>(b"m12_release_reserved\0")
+                .get::<unsafe extern "C" fn()>(b"partial_setup_release_reserved\0")
                 .expect("release reserved"),
         )
     };
@@ -529,7 +546,7 @@ fn check_m12_attempt() {
     let api = API.get_or_init(|| {
         let mut api = *ffi::VmafApi::load().expect("fixture API");
         // SAFETY: allocator-matched fixture deallocator, no public injection API.
-        api.cuda.free_state = Some(unsafe { *library.get(b"m11_free\0").expect("free") });
+        api.cuda.free_state = Some(unsafe { *library.get(b"setup_free\0").expect("free") });
         api
     });
     let model = std::path::PathBuf::from(std::env::var_os("VMAF_LIB_DIR").expect("fixture"))
@@ -579,7 +596,7 @@ fn check_m12_attempt() {
         cleanup();
         (snapshot, globals, pressure)
     };
-    eprintln!("M12 CPU/CUDA {snapshot:?}, global {globals:?}, pressure {pressure:?}");
+    eprintln!("partial setup CPU/CUDA {snapshot:?}, global {globals:?}, pressure {pressure:?}");
     match stage {
         6 | 15 | 16 if !auto || !cfg!(feature = "cuda") => {
             let Some(VmafError::ModelNotFound {

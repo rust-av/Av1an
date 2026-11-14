@@ -925,7 +925,7 @@ mod tests {
     }
 
     #[test]
-    fn m17_nonpositive_butteraugli_norm_rejects_before_library_loading() {
+    fn nonpositive_butteraugli_norm_rejects_before_library_loading() {
         for pnorm in [0, -1, i32::MIN] {
             let config = FmetricsConfig::new(FmetricsMetric::Butteraugli)
                 .with_threads(1)
@@ -992,14 +992,14 @@ mod tests {
     }
 
     #[test]
-    fn m16_cvvdp_default_frame_rate_is_usable() {
+    fn cvvdp_default_frame_rate_is_usable() {
         let config = FmetricsConfig::new(FmetricsMetric::Cvvdp);
         assert_eq!(config.frame_rate(), 60.0);
         assert!(FmetricsScorer::validate_frame_rate(&config).is_ok());
     }
 
     #[test]
-    fn m16_explicit_frame_rate_bounds_precede_library_loading() {
+    fn explicit_frame_rate_bounds_precede_library_loading() {
         for rate in [
             0.0,
             -0.0,
@@ -1231,7 +1231,7 @@ mod tests {
     }
 
     #[test]
-    fn m08_slots_release_exactly_one_and_restore_every_wave() {
+    fn slots_release_exactly_one_and_restore_every_wave() {
         assert!(FreeSlots::new(0).claim().is_none());
         let slots = FreeSlots::new(3);
         for _ in 0..32 {
@@ -1251,7 +1251,7 @@ mod tests {
     }
 
     #[test]
-    fn m08_oversubscribed_claims_are_exclusive_across_release_waves() {
+    fn oversubscribed_claims_are_exclusive_across_release_waves() {
         use std::{
             collections::HashSet,
             sync::{Barrier, Mutex},
@@ -1309,7 +1309,7 @@ mod tests {
     }
 
     #[test]
-    fn m08_error_and_unwind_return_capacity() {
+    fn error_and_unwind_return_capacity() {
         let slots = FreeSlots::new(1);
         let score = || -> Result<(), &str> {
             let _lease = slots.claim().unwrap();
@@ -1330,7 +1330,7 @@ mod tests {
     }
 
     #[test]
-    fn m08_poison_recovery_does_not_free_a_held_slot() {
+    fn poison_recovery_does_not_free_a_held_slot() {
         let slots = FreeSlots::new(2);
         let held = slots.claim().unwrap();
         std::thread::scope(|scope| {
@@ -1357,10 +1357,10 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn m08_callback_unwind_returns_capacity() {
+    fn callback_unwind_returns_capacity() {
         // Isolate the loader OnceLock and use genuinely allocated/freed handles,
         // even when a system fmetrics library is installed or unavailable.
-        if std::env::var_os("M08_NATIVE_CHILD").is_none() {
+        if std::env::var_os("FMETRICS_CALLBACK_UNWIND_CHILD").is_none() {
             let directory = tempfile::tempdir().expect("temporary native ABI sink");
             let library = directory.path().join(ffi::library_names()[0]);
             let output = std::process::Command::new("cc")
@@ -1368,30 +1368,31 @@ mod tests {
                 .arg(&library)
                 .arg(concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/../andean-condor/tests/fixtures/m04_native.c"
+                    "/../andean-condor/tests/fixtures/metadata.c"
                 ))
                 .output()
-                .expect("M08 native ownership check requires cc");
+                .expect("callback ownership check requires cc");
             assert!(
                 output.status.success(),
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
             let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "scorer::tests::m08_callback_unwind_returns_capacity",
-                    "--nocapture",
-                ])
-                .env("M08_NATIVE_CHILD", "1")
+                .args(["--exact", "scorer::tests::callback_unwind_returns_capacity", "--nocapture"])
+                .env("FMETRICS_CALLBACK_UNWIND_CHILD", "1")
                 .env("FMETRICS_LIB_PATH", directory.path())
                 .output()
-                .expect("run isolated M08 callback regression");
+                .expect("run isolated callback regression");
             assert!(
                 output.status.success(),
                 "{}\n{}",
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+                "callback child must execute exactly one test: {}",
+                String::from_utf8_lossy(&output.stdout)
             );
             return;
         }

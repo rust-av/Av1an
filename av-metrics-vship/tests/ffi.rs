@@ -18,16 +18,16 @@ use v_frame::{chroma::ChromaSubsampling, frame::FrameBuilder};
 mod common;
 
 #[cfg(unix)]
-#[path = "../../test-support/m24_runtime.rs"]
-mod m24_runtime;
+#[path = "../../test-support/runtime_discovery.rs"]
+mod runtime_discovery;
 
 /// Catches repeated default probes, check-then-store races, cached failures,
 /// skipped explicit admission, and routing a selected device to the wrong init.
 #[test]
 #[cfg(unix)]
-fn m28_default_capability_cache() {
-    if let Ok(scenario) = std::env::var("M28_CHILD") {
-        m28_child(&scenario);
+fn default_capability_cache() {
+    if let Ok(scenario) = std::env::var("VSHIP_CAPABILITY_FIXTURE_CHILD") {
+        capability_child(&scenario);
         return;
     }
     let dir = tempfile::tempdir().expect("capability fixture directory");
@@ -40,26 +40,26 @@ fn m28_default_capability_cache() {
     let mut errors = Vec::new();
     for scenario in ["mixed", "constructor-first", "concurrent", "all-integrated", "retry"] {
         let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "m28_default_capability_cache", "--nocapture"])
-            .env("M28_CHILD", scenario)
+            .args(["--exact", "default_capability_cache", "--nocapture"])
+            .env("VSHIP_CAPABILITY_FIXTURE_CHILD", scenario)
             .env(
-                "M28_DEVICES",
+                "VSHIP_CAPABILITY_FIXTURE_DEVICES",
                 if scenario == "all-integrated" {
                     "2"
                 } else {
                     "1"
                 },
             )
-            .env("M14_LIBRARY", &library)
-            .env("M14_BACKEND", "3")
-            .env("M14_PATCH", "2")
+            .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
+            .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
+            .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
             .env(
-                "M14_PROBE_STATUS",
+                "VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS",
                 if scenario == "retry" { "777" } else { "0" },
             )
-            .env("M14_COMPUTE_STATUS", "0")
-            .env("M20_INIT_STATUS", "0")
-            .env_remove("M14_TAG")
+            .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", "0")
+            .env("VSHIP_HANDLER_FIXTURE_INIT_STATUS", "0")
+            .env_remove("VSHIP_BOUNDARY_FIXTURE_TAG")
             .env("VSHIP_PLUGIN_PATH", dir.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -70,7 +70,7 @@ fn m28_default_capability_cache() {
             if start.elapsed() > Duration::from_secs(30) {
                 child.kill().expect("kill");
                 child.wait().expect("reap");
-                panic!("M28 timed out: {scenario}");
+                panic!("capability cache timed out: {scenario}");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -89,18 +89,22 @@ fn m28_default_capability_cache() {
 }
 
 #[cfg(unix)]
-fn m28_child(scenario: &str) {
+fn capability_child(scenario: &str) {
     // SAFETY: exact fixture signatures; the mapping outlives calls and threads.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
-    // SAFETY: these exports are defined in m14_boundary.c.
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VSHIP_BOUNDARY_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
+    // SAFETY: these exports are defined in boundary.c.
     let (counter, gpu_counter, control) = unsafe {
         (
-            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m14_count\0").expect("counter"),
-            lib.get::<unsafe extern "C" fn(u32, u32) -> u32>(b"m28_gpu_count\0")
+            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"boundary_count\0")
+                .expect("counter"),
+            lib.get::<unsafe extern "C" fn(u32, u32) -> u32>(b"capability_gpu_count\0")
                 .expect("GPU counter"),
-            lib.get::<unsafe extern "C" fn(u32, i32)>(b"m20_set\0").expect("control"),
+            lib.get::<unsafe extern "C" fn(u32, i32)>(b"handler_set\0").expect("control"),
         )
     };
     // SAFETY: bounded indices, live mapping; counters are C11 atomics.
@@ -241,7 +245,7 @@ fn m28_child(scenario: &str) {
         "availability creates no handlers"
     );
     println!(
-        "M28 {scenario}: default={chosen}, probes={}, enumeration/info={}/{}, borrowed version={:p}",
+        "capability cache {scenario}: default={chosen}, probes={}, enumeration/info={}/{}, borrowed version={:p}",
         count(0),
         count(6),
         count(7),
@@ -384,7 +388,7 @@ fn m28_child(scenario: &str) {
         "native scoring failures retain the borrowed version"
     );
     println!(
-        "M28 mixed: explicit FullCheck/Init IDs checked; status 8/777, probe/init/compute recovery; probes={}, init/free={}/{}, compute={}",
+        "capability cache mixed: explicit FullCheck/Init IDs checked; status 8/777, probe/init/compute recovery; probes={}, init/free={}/{}, compute={}",
         count(0),
         count(1),
         count(2),
@@ -394,8 +398,8 @@ fn m28_child(scenario: &str) {
 
 #[test]
 #[cfg(unix)]
-fn m24_runtime_overrides_and_staged_release() {
-    if std::env::var_os("M24_CHILD").is_some() {
+fn runtime_overrides_and_staged_release() {
+    if std::env::var_os("RUNTIME_DISCOVERY_CHILD").is_some() {
         // Load through production discovery before mapping fixture counters.
         assert_eq!(
             av_metrics_vship::libvship_version(),
@@ -405,8 +409,8 @@ fn m24_runtime_overrides_and_staged_release() {
         child();
         return;
     }
-    m24_runtime::run(
-        "m24_runtime_overrides_and_staged_release",
+    runtime_discovery::run(
+        "runtime_overrides_and_staged_release",
         if cfg!(target_os = "macos") {
             "libvship.dylib"
         } else {
@@ -417,11 +421,11 @@ fn m24_runtime_overrides_and_staged_release() {
         |library| compile(library, false, &[]),
         |command, library| {
             command
-                .env("M14_BACKEND", "3")
-                .env("M14_PATCH", "2")
-                .env("M14_PROBE_STATUS", "0")
-                .env("M14_COMPUTE_STATUS", "0")
-                .env("M14_LIBRARY", library);
+                .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
+                .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
+                .env("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS", "0")
+                .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", "0")
+                .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", library);
         },
     );
 }
@@ -429,9 +433,9 @@ fn m24_runtime_overrides_and_staged_release() {
 /// Catches per-request version clones/leaks while retaining fresh explicit admission.
 #[test]
 #[cfg(unix)]
-fn m21_version_borrows_cached_storage() {
-    if std::env::var_os("M21_CHILD").is_some() {
-        m21_child();
+fn version_borrows_cached_storage() {
+    if std::env::var_os("VSHIP_VERSION_FIXTURE_CHILD").is_some() {
+        version_child();
         return;
     }
     let dir = tempfile::tempdir().expect("version fixture directory");
@@ -442,12 +446,12 @@ fn m21_version_borrows_cached_storage() {
     });
     compile(&library, false, &[]);
     let mut child = Command::new(std::env::current_exe().expect("executable"))
-        .args(["--exact", "m21_version_borrows_cached_storage", "--nocapture"])
-        .env("M21_CHILD", "1")
-        .env("M14_LIBRARY", &library)
-        .env("M14_BACKEND", "3")
-        .env("M14_PATCH", "2")
-        .env("M14_PROBE_STATUS", "0")
+        .args(["--exact", "version_borrows_cached_storage", "--nocapture"])
+        .env("VSHIP_VERSION_FIXTURE_CHILD", "1")
+        .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
+        .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
+        .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
+        .env("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS", "0")
         .env("VSHIP_PLUGIN_PATH", dir.path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -458,7 +462,7 @@ fn m21_version_borrows_cached_storage() {
         if start.elapsed() > Duration::from_secs(30) {
             child.kill().expect("kill");
             child.wait().expect("reap");
-            panic!("M21 timed out");
+            panic!("version storage timed out");
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -473,16 +477,20 @@ fn m21_version_borrows_cached_storage() {
 }
 
 #[cfg(unix)]
-fn m21_child() {
+fn version_child() {
     // SAFETY: exact fixture exports; mapping outlives all calls and reads.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
-    // SAFETY: these signatures are defined in m14_boundary.c.
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VSHIP_BOUNDARY_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
+    // SAFETY: these signatures are defined in boundary.c.
     let (counter, control) = unsafe {
         (
-            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m14_count\0").expect("counter"),
-            lib.get::<unsafe extern "C" fn(u32, i32)>(b"m20_set\0").expect("control"),
+            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"boundary_count\0")
+                .expect("counter"),
+            lib.get::<unsafe extern "C" fn(u32, i32)>(b"handler_set\0").expect("control"),
         )
     };
     // SAFETY: only defined counter indices 0..3 are used while mapped.
@@ -500,7 +508,7 @@ fn m21_child() {
         assert_eq!(count(0), 1, "default requests share successful admission");
     }
     println!(
-        "M21 version=5.1.2 pointers={:?}; probes={}",
+        "version storage version=5.1.2 pointers={:?}; probes={}",
         versions.iter().map(|version| version.as_ptr()).collect::<Vec<_>>(),
         count(0)
     );
@@ -596,7 +604,7 @@ fn m21_child() {
         "explicit recovery revalidates and owns one handler"
     );
     println!(
-        "M21 explicit failed probe status=777 retained; recovered pointer={:p}; probes=3, init/free=1/1 (version probes allocate none)",
+        "version storage explicit failed probe status=777 retained; recovered pointer={:p}; probes=3, init/free=1/1 (version probes allocate none)",
         recovered.as_ptr()
     );
 }
@@ -605,9 +613,9 @@ fn m21_child() {
 /// before preflight. This drives the production constructor/submission boundary.
 #[test]
 #[cfg(unix)]
-fn m20_single_handler_native_ownership() {
-    if std::env::var_os("M20_CHILD").is_some() {
-        m20_child();
+fn single_handler_native_ownership() {
+    if std::env::var_os("VSHIP_HANDLER_FIXTURE_CHILD").is_some() {
+        handler_child();
         return;
     }
     let dir = tempfile::tempdir().expect("handler fixture directory");
@@ -633,16 +641,16 @@ fn m20_single_handler_native_ownership() {
         ("init", "3"),
     ] {
         let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "m20_single_handler_native_ownership", "--nocapture"])
-            .env("M20_CHILD", scenario)
-            .env("M20_REQUESTED", requested)
-            .env("M14_LIBRARY", &library)
-            .env("M14_BACKEND", "3")
-            .env("M14_PATCH", "2")
-            .env("M14_PROBE_STATUS", "0")
-            .env("M14_COMPUTE_STATUS", "0")
-            .env_remove("M14_TAG")
-            .env_remove("M19_RESET_STATUS")
+            .args(["--exact", "single_handler_native_ownership", "--nocapture"])
+            .env("VSHIP_HANDLER_FIXTURE_CHILD", scenario)
+            .env("VSHIP_HANDLER_FIXTURE_REQUESTED", requested)
+            .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
+            .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
+            .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
+            .env("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS", "0")
+            .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", "0")
+            .env_remove("VSHIP_BOUNDARY_FIXTURE_TAG")
+            .env_remove("VSHIP_RESET_FIXTURE_RESET_STATUS")
             .env("VSHIP_PLUGIN_PATH", dir.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -653,7 +661,7 @@ fn m20_single_handler_native_ownership() {
             if start.elapsed() > Duration::from_secs(30) {
                 child.kill().expect("kill");
                 child.wait().expect("reap");
-                panic!("M20 timed out: {scenario}/{requested}");
+                panic!("handler ownership timed out: {scenario}/{requested}");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -672,20 +680,24 @@ fn m20_single_handler_native_ownership() {
 }
 
 #[cfg(unix)]
-fn m20_child() {
+fn handler_child() {
     use av_metrics_vship::{PlaneSet, PlaneSource};
-    let scenario = std::env::var("M20_CHILD").expect("scenario");
-    let requested = std::env::var("M20_REQUESTED").expect("requested");
+    let scenario = std::env::var("VSHIP_HANDLER_FIXTURE_CHILD").expect("scenario");
+    let requested = std::env::var("VSHIP_HANDLER_FIXTURE_REQUESTED").expect("requested");
     // SAFETY: exact fixture exports; mapping outlives all scorers and reads.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
-    // SAFETY: these signatures are defined in m14_boundary.c.
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VSHIP_BOUNDARY_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
+    // SAFETY: these signatures are defined in boundary.c.
     let (counter, control, trace) = unsafe {
         (
-            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m14_count\0").expect("counter"),
-            lib.get::<unsafe extern "C" fn(u32, i32)>(b"m20_set\0").expect("control"),
-            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m20_trace\0").expect("trace"),
+            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"boundary_count\0")
+                .expect("counter"),
+            lib.get::<unsafe extern "C" fn(u32, i32)>(b"handler_set\0").expect("control"),
+            lib.get::<unsafe extern "C" fn(u32) -> u32>(b"handler_trace\0").expect("trace"),
         )
     };
     // SAFETY: bounded fixture indices and live mapping throughout this function.
@@ -948,15 +960,15 @@ fn m20_child() {
             "free the same native handle exactly once, after its last call"
         );
         println!(
-            "M20 {metric:?}/{requested}/{scenario}: init/free=1/1, native identity={id}, ordered trace and success-only submissions checked"
+            "handler ownership {metric:?}/{requested}/{scenario}: init/free=1/1, native identity={id}, ordered trace and success-only submissions checked"
         );
     }
 }
 
 #[test]
 #[cfg(unix)]
-fn m14_native_discriminants_and_admission() {
-    if std::env::var_os("M14_CHILD").is_some() {
+fn native_discriminants_and_admission() {
+    if std::env::var_os("VSHIP_BOUNDARY_FIXTURE_CHILD").is_some() {
         child();
         return;
     }
@@ -983,20 +995,20 @@ fn m14_native_discriminants_and_admission() {
     for (backend, patch, probe, status, tag) in cases {
         let mut child = Command::new(std::env::current_exe().expect("executable"));
         child
-            .args(["--exact", "m14_native_discriminants_and_admission", "--nocapture"])
-            .env("M14_CHILD", "1")
-            .env("M14_BACKEND", backend.to_string())
-            .env("M14_PATCH", patch.to_string())
-            .env("M14_PROBE_STATUS", probe.to_string())
-            .env("M14_COMPUTE_STATUS", status.to_string())
+            .args(["--exact", "native_discriminants_and_admission", "--nocapture"])
+            .env("VSHIP_BOUNDARY_FIXTURE_CHILD", "1")
+            .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", backend.to_string())
+            .env("VSHIP_BOUNDARY_FIXTURE_PATCH", patch.to_string())
+            .env("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS", probe.to_string())
+            .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", status.to_string())
             .env("VSHIP_PLUGIN_PATH", dir.path())
-            .env("M14_LIBRARY", &library)
+            .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if tag != -1 {
-            child.env("M14_TAG", tag.to_string());
+            child.env("VSHIP_BOUNDARY_FIXTURE_TAG", tag.to_string());
         } else {
-            child.env_remove("M14_TAG");
+            child.env_remove("VSHIP_BOUNDARY_FIXTURE_TAG");
         }
         let mut child = child.spawn().expect("child");
         let start = Instant::now();
@@ -1004,7 +1016,7 @@ fn m14_native_discriminants_and_admission() {
             if start.elapsed() > Duration::from_secs(30) {
                 child.kill().expect("kill");
                 child.wait().expect("reap");
-                panic!("M14 timed out");
+                panic!("native admission timed out");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -1025,12 +1037,15 @@ fn m14_native_discriminants_and_admission() {
 fn child() {
     let setting = |name| std::env::var(name).expect("setting").parse::<i32>().expect("integer");
     // SAFETY: isolated fixture and exact counter signature, mapping remains live.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VSHIP_BOUNDARY_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
     // SAFETY: signature defined in the fixture, valid indices 0..4.
-    let counter =
-        unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m14_count\0") }.expect("counter");
+    let counter = unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"boundary_count\0") }
+        .expect("counter");
     // SAFETY: only defined fixture indices 0..4 are used while mapped.
     let count = |index| unsafe { counter(index) };
     let format = VideoFormat {
@@ -1051,7 +1066,9 @@ fn child() {
             format,
             None,
         );
-        if !(0..4).contains(&setting("M14_BACKEND")) || setting("M14_PATCH") != 2 {
+        if !(0..4).contains(&setting("VSHIP_BOUNDARY_FIXTURE_BACKEND"))
+            || setting("VSHIP_BOUNDARY_FIXTURE_PATCH") != 2
+        {
             assert!(
                 matches!(&result, Err(VshipError::IncompatibleLibrary { .. })),
                 "ABI rejection"
@@ -1061,19 +1078,19 @@ fn child() {
                 (0, 0),
                 "reject before GPU probe and handler allocation"
             );
-            if !(0..4).contains(&setting("M14_BACKEND")) {
+            if !(0..4).contains(&setting("VSHIP_BOUNDARY_FIXTURE_BACKEND")) {
                 assert!(
                     result
                         .err()
                         .expect("error")
                         .to_string()
-                        .contains(&setting("M14_BACKEND").to_string()),
+                        .contains(&setting("VSHIP_BOUNDARY_FIXTURE_BACKEND").to_string()),
                     "retain unknown backend integer"
                 );
             }
             continue;
         }
-        let probe = setting("M14_PROBE_STATUS");
+        let probe = setting("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS");
         if probe != 0 {
             assert!(
                 matches!(result,Err(VshipError::CallFailed { status,.. }) if status==probe),
@@ -1085,15 +1102,17 @@ fn child() {
         let mut scorer = result.expect("pinned ABI");
         assert_eq!(
             scorer.backend() as i32,
-            setting("M14_BACKEND"),
+            setting("VSHIP_BOUNDARY_FIXTURE_BACKEND"),
             "checked backend roundtrip"
         );
         let frame = FrameBuilder::new(32, 32, ChromaSubsampling::Yuv420, 8)
             .build::<u8>()
             .expect("frame");
         let result = scorer.submit_pair(&frame, &frame);
-        let status = setting("M14_COMPUTE_STATUS");
-        let tag = std::env::var("M14_TAG").ok().map(|s| s.parse::<i32>().expect("tag"));
+        let status = setting("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS");
+        let tag = std::env::var("VSHIP_BOUNDARY_FIXTURE_TAG")
+            .ok()
+            .map(|s| s.parse::<i32>().expect("tag"));
         let expected = match metric {
             VshipMetric::Ssimulacra2 => 4,
             VshipMetric::Butteraugli => 5,
@@ -1129,9 +1148,9 @@ fn child() {
 }
 #[test]
 #[cfg(unix)]
-fn m19_public_resets() {
-    if std::env::var_os("M19_CHILD").is_some() {
-        m19_child();
+fn public_resets() {
+    if std::env::var_os("VSHIP_RESET_FIXTURE_CHILD").is_some() {
+        reset_child();
         return;
     }
     let dir = tempfile::tempdir().expect("reset fixture directory");
@@ -1153,17 +1172,17 @@ fn m19_public_resets() {
         ("CVVDP", 1, -123),
     ] {
         let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "m19_public_resets", "--nocapture"])
-            .env("M19_CHILD", "1")
-            .env("M19_METRIC", metric)
-            .env("M19_HANDLERS", handlers.to_string())
-            .env("M19_RESET_STATUS", status.to_string())
-            .env("M14_LIBRARY", &library)
-            .env("M14_BACKEND", "3")
-            .env("M14_PATCH", "2")
-            .env("M14_PROBE_STATUS", "0")
-            .env("M14_COMPUTE_STATUS", "0")
-            .env_remove("M14_TAG")
+            .args(["--exact", "public_resets", "--nocapture"])
+            .env("VSHIP_RESET_FIXTURE_CHILD", "1")
+            .env("VSHIP_RESET_FIXTURE_METRIC", metric)
+            .env("VSHIP_RESET_FIXTURE_HANDLERS", handlers.to_string())
+            .env("VSHIP_RESET_FIXTURE_RESET_STATUS", status.to_string())
+            .env("VSHIP_BOUNDARY_FIXTURE_LIBRARY", &library)
+            .env("VSHIP_BOUNDARY_FIXTURE_BACKEND", "3")
+            .env("VSHIP_BOUNDARY_FIXTURE_PATCH", "2")
+            .env("VSHIP_BOUNDARY_FIXTURE_PROBE_STATUS", "0")
+            .env("VSHIP_BOUNDARY_FIXTURE_COMPUTE_STATUS", "0")
+            .env_remove("VSHIP_BOUNDARY_FIXTURE_TAG")
             .env("VSHIP_PLUGIN_PATH", dir.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1174,7 +1193,7 @@ fn m19_public_resets() {
             if start.elapsed() > Duration::from_secs(30) {
                 child.kill().expect("kill");
                 child.wait().expect("reap");
-                panic!("M19 timed out: {metric}/{handlers}/{status}");
+                panic!("public reset timed out: {metric}/{handlers}/{status}");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -1193,31 +1212,35 @@ fn m19_public_resets() {
 }
 
 #[cfg(unix)]
-fn m19_child() {
+fn reset_child() {
     const PROBE: u32 = 0;
     const INIT: u32 = 1;
     const FREE: u32 = 2;
     const COMPUTE: u32 = 3;
     const RESET: u32 = 4;
     const RESET_SCORE: u32 = 5;
-    let metric = VshipMetric::from_name(&std::env::var("M19_METRIC").expect("metric"))
-        .expect("known metric");
-    let handlers = std::env::var("M19_HANDLERS")
+    let metric =
+        VshipMetric::from_name(&std::env::var("VSHIP_RESET_FIXTURE_METRIC").expect("metric"))
+            .expect("known metric");
+    let handlers = std::env::var("VSHIP_RESET_FIXTURE_HANDLERS")
         .expect("handlers")
         .parse::<u32>()
         .expect("integer");
-    let status = std::env::var("M19_RESET_STATUS")
+    let status = std::env::var("VSHIP_RESET_FIXTURE_RESET_STATUS")
         .expect("status")
         .parse::<i32>()
         .expect("integer");
     // SAFETY: the isolated real-header fixture owns every handle; the mapping
     // stays live through scorer destruction and all counter reads.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VSHIP_BOUNDARY_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
     // SAFETY: exact fixture signature; only the six defined indices are used.
-    let counter =
-        unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"m14_count\0") }.expect("counter");
+    let counter = unsafe { lib.get::<unsafe extern "C" fn(u32) -> u32>(b"boundary_count\0") }
+        .expect("counter");
     // SAFETY: callers use the named indices above while the fixture is mapped.
     let count = |index| unsafe { counter(index) };
     let frame = FrameBuilder::new(32, 32, ChromaSubsampling::Yuv420, 8)
@@ -1255,7 +1278,7 @@ fn m19_child() {
     let accumulated = scorer.reset_score();
     let resets = (count(RESET), count(RESET_SCORE));
     println!(
-        "M19 {metric:?}/{handlers}/{status}: reset/reset_score={resets:?}; results={temporal:?}/{accumulated:?}"
+        "public reset {metric:?}/{handlers}/{status}: reset/reset_score={resets:?}; results={temporal:?}/{accumulated:?}"
     );
     assert_eq!(
         resets,
@@ -1306,7 +1329,7 @@ fn m19_child() {
         "balanced native cleanup"
     );
     println!(
-        "M19 {metric:?}: init/free=1/1; submitted/compute={}/{}; scores unchanged",
+        "public reset {metric:?}: init/free=1/1; submitted/compute={}/{}; scores unchanged",
         1 + handlers,
         count(COMPUTE)
     );
@@ -1317,12 +1340,15 @@ fn compile(path: &std::path::Path, probe: bool, flags: &[&str]) {
     cmd.args(["-std=c11", "-Wall", "-Wextra", "-Werror"]);
     cmd.args(flags);
     if probe {
-        cmd.arg("-DM14_PROBE");
+        cmd.arg("-DVSHIP_BOUNDARY_FIXTURE_PROBE");
     } else {
         cmd.args(["-shared", "-fPIC"]);
     }
     let out = cmd
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/m14_boundary.c"))
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/boundary.c"
+        ))
         .arg("-o")
         .arg(path)
         .output()
@@ -1334,7 +1360,7 @@ fn compile(path: &std::path::Path, probe: bool, flags: &[&str]) {
     );
 }
 #[test]
-fn m14_real_header_layouts_and_signatures() {
+fn real_header_layouts_and_signatures() {
     let dir = tempfile::tempdir().expect("probe directory");
     let exe = dir.path().join(if cfg!(windows) { "probe.exe" } else { "probe" });
     compile(&exe, true, &[]);
@@ -1383,7 +1409,7 @@ fn m14_real_header_layouts_and_signatures() {
     expected.extend([0, 17, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6]);
     assert_eq!(actual, expected, "real pinned public C schema/signatures");
     eprintln!(
-        "M14 Vship: {} real-header values, all 14 resolved signatures",
+        "Vship ABI: {} real-header values, all 14 resolved signatures",
         actual.len()
     );
     let drift = dir.path().join(if cfg!(windows) {

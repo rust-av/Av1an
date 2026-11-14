@@ -10,8 +10,8 @@ use std::{
 use v_frame::chroma::ChromaSubsampling;
 
 #[test]
-fn m14_native_pool_format_owns_before_validation() {
-    if std::env::var_os("M14_CHILD").is_some() {
+fn native_pool_format_owns_before_validation() {
+    if std::env::var_os("VMAF_PIXEL_FORMAT_FIXTURE_CHILD").is_some() {
         child();
         return;
     }
@@ -25,7 +25,7 @@ fn m14_native_pool_format_owns_before_validation() {
         .args(["-shared", "-fPIC", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread"])
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/m14_pixfmt.c"
+            "/tests/fixtures/pixel_format.c"
         ))
         .arg("-o")
         .arg(&library)
@@ -39,13 +39,17 @@ fn m14_native_pool_format_owns_before_validation() {
     for (fetch, failed) in [(1, false), (2, false), (3, false), (4, false), (2, true)] {
         for format in [777, -123, 0, 4] {
             let mut child = Command::new(std::env::current_exe().expect("executable"))
-                .args(["--exact", "m14_native_pool_format_owns_before_validation", "--nocapture"])
-                .env("M14_CHILD", "1")
-                .env("M14_FETCH", fetch.to_string())
-                .env("M14_PIXFMT", format.to_string())
-                .env("M11_STAGE", if failed { "9" } else { "0" })
-                .env("M12_CHILD", "1")
-                .env("M14_LIBRARY", &library)
+                .args([
+                    "--exact",
+                    "scorer::pixel_format::native_pool_format_owns_before_validation",
+                    "--nocapture",
+                ])
+                .env("VMAF_PIXEL_FORMAT_FIXTURE_CHILD", "1")
+                .env("VMAF_PIXEL_FORMAT_FIXTURE_FETCH", fetch.to_string())
+                .env("VMAF_PIXEL_FORMAT_FIXTURE_PIXFMT", format.to_string())
+                .env("VMAF_SETUP_FIXTURE_STAGE", if failed { "9" } else { "0" })
+                .env("VMAF_PARTIAL_SETUP_FIXTURE_CHILD", "1")
+                .env("VMAF_PIXEL_FORMAT_FIXTURE_LIBRARY", &library)
                 .env("VMAF_LIB_DIR", dir.path())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -76,18 +80,23 @@ fn m14_native_pool_format_owns_before_validation() {
 }
 fn child() {
     // SAFETY: exact fixture mapping remains live through cleanup and counters.
-    let lib =
-        unsafe { libloading::Library::new(std::env::var_os("M14_LIBRARY").expect("library")) }
-            .expect("mapping");
+    let lib = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VMAF_PIXEL_FORMAT_FIXTURE_LIBRARY").expect("library"),
+        )
+    }
+    .expect("mapping");
     // SAFETY: exact fixture signatures with valid indices below.
-    let counter = unsafe { lib.get::<unsafe extern "C" fn(u32, u32) -> u32>(b"m11_count\0") }
+    let counter = unsafe { lib.get::<unsafe extern "C" fn(u32, u32) -> u32>(b"setup_count\0") }
         .expect("counter");
     // SAFETY: fixture signatures, called while mapped.
-    let invalid = unsafe { lib.get::<unsafe extern "C" fn() -> u32>(b"m14_invalid_returns\0") }
-        .expect("invalid returns");
+    let invalid =
+        unsafe { lib.get::<unsafe extern "C" fn() -> u32>(b"pixel_format_invalid_returns\0") }
+            .expect("invalid returns");
     // SAFETY: cleanup runs once after every Rust owner is dropped.
-    let cleanup = unsafe { lib.get::<unsafe extern "C" fn()>(b"m11_cleanup\0") }.expect("cleanup");
-    // SAFETY: all used counter indices are defined by m11_setup.c.
+    let cleanup =
+        unsafe { lib.get::<unsafe extern "C" fn()>(b"setup_cleanup\0") }.expect("cleanup");
+    // SAFETY: all used counter indices are defined by setup.c.
     let count = |b, i| unsafe { counter(b, i) };
     let format = VideoFormat {
         width: 8,
@@ -95,8 +104,11 @@ fn child() {
         bit_depth: 8,
         chroma_sampling: ChromaSubsampling::Yuv420,
     };
-    let fetch: u32 = std::env::var("M14_FETCH").expect("fetch").parse().expect("integer");
-    let failed = std::env::var("M11_STAGE").expect("stage") == "9";
+    let fetch: u32 = std::env::var("VMAF_PIXEL_FORMAT_FIXTURE_FETCH")
+        .expect("fetch")
+        .parse()
+        .expect("integer");
+    let failed = std::env::var("VMAF_SETUP_FIXTURE_STAGE").expect("stage") == "9";
     let result = VmafScorer::new(
         VmafConfig::new().with_backend(BackendPreference::CpuOnly).with_threads(2),
         format,
@@ -131,7 +143,9 @@ fn child() {
             "{error:?}"
         );
         assert!(
-            error.to_string().contains(&std::env::var("M14_PIXFMT").expect("format")),
+            error
+                .to_string()
+                .contains(&std::env::var("VMAF_PIXEL_FORMAT_FIXTURE_PIXFMT").expect("format")),
             "preserve raw pixel-format integer"
         );
     }

@@ -1,5 +1,5 @@
 /* Full-constructor ABI double, NOT a CUDA implementation or metric oracle.
- * All records/tombstones survive close until m11_cleanup, including failed
+ * All records/tombstones survive close until setup_cleanup, including failed
  * out-parameters. Ownership mistakes report counters, not invalid memory use. */
 #include <stdint.h>
 #include <stddef.h>
@@ -66,14 +66,14 @@ static unsigned setting(const char *name) {
     const char *value = getenv(name);
     return value ? (unsigned)atoi(value) : 0;
 }
-static unsigned stage(void) { return setting("M11_STAGE"); }
+static unsigned stage(void) { return setting("VMAF_SETUP_FIXTURE_STAGE"); }
 static int fail_here(void) {
-    return current->cuda || (setting("M12_CHILD") && !state_started);
+    return current->cuda || (setting("VMAF_PARTIAL_SETUP_FIXTURE_CHILD") && !state_started);
 }
 static int pool_pressure(void) { return stage() == 17 || stage() == 18; }
 static void bad_if(int condition) { if (condition) globals[BAD]++; }
-unsigned m12_pressure_count(unsigned index) { return pressure[index]; }
-void m12_release_reserved(void) {
+unsigned partial_setup_pressure_count(unsigned index) { return pressure[index]; }
+void partial_setup_release_reserved(void) {
     pthread_mutex_lock(&pressure_lock);
     while (!waiting) pthread_cond_wait(&pressure_changed, &pressure_lock);
     available += reserved;
@@ -83,7 +83,7 @@ void m12_release_reserved(void) {
     pthread_cond_broadcast(&pressure_changed);
     pthread_mutex_unlock(&pressure_lock);
 }
-unsigned m11_count(unsigned backend, unsigned index) {
+unsigned setup_count(unsigned backend, unsigned index) {
     return backend < 2 ? counts[backend][index] : globals[index];
 }
 const char *vmaf_version(void) { return "3.2.0"; }
@@ -109,7 +109,7 @@ int vmaf_cuda_release(CudaState *state) {
     release(state);
     return 0;
 }
-void m11_free(void *ptr) {
+void setup_free(void *ptr) {
     bad_if(ptr != wrapper || wrapper_freed);
     if (ptr != wrapper || wrapper_freed) return;
     wrapper_freed = 1;
@@ -333,7 +333,7 @@ int vmaf_close(Context *ctx) {
     counts[ctx->cuda][CLOSE]++;
     return 0;
 }
-void m11_cleanup(void) {
+void setup_cleanup(void) {
     while (records) { Record *next = records->next; free(records); records = next; }
     while (models) { Model *next = models->next; free(models); models = next; }
     free(wrapper);

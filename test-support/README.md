@@ -12,7 +12,7 @@ From the repository root in PowerShell:
 
 ```powershell
 $env:AV_METRICS_WINDOWS_CC = 'C:\msys64\mingw64\bin\gcc.exe'
-cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics m22_ -- --include-ignored --nocapture
+cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics windows_loader -- --include-ignored --nocapture
 ```
 
 Each wrapper tests its **actual production load helper** against freshly built
@@ -28,14 +28,14 @@ libraries, and DLLs are removed when the parent test exits normally or unwinds.
 
 The native test is ignored in ordinary suites because it requires this compiler;
 `--include-ignored` makes it a required, actionable gate on Windows. It is compiled
-only on Windows. Linux `m22_` tests exercise production **path/policy selection**
+only on Windows. Linux `loader_policy_tests` tests exercise production **path/policy selection**
 using native Linux paths, not Windows DLL loading or dependency precedence.
 Native Windows execution is required before claiming Windows loader acceptance.
 
 ## Runtime-only native discovery retention (Unix)
 
 ```sh
-cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics m24_ -- --nocapture
+cargo +stable test --profile ci -p av-metrics-vmaf -p av-metrics-vship -p av-metrics-fmetrics runtime_overrides_and_staged_release -- --nocapture
 ```
 
 These tests reuse the pinned C ABI fixtures and production scorers. Fresh children

@@ -887,7 +887,7 @@ mod tests {
     struct AlignedRgbBytes([u8; 24]);
 
     #[test]
-    fn m05_wide_rgb_view_rejects_misaligned_storage() {
+    fn wide_rgb_view_rejects_misaligned_storage() {
         let storage = AlignedRgbBytes([0; 24]);
         let odd = &storage.0[1..13];
         assert!(!odd.as_ptr().cast::<u16>().is_aligned());
@@ -909,10 +909,10 @@ mod tests {
     }
 
     #[test]
-    fn m05_owned_wide_rgb_alignment_and_native_byte_roundtrip() {
+    fn owned_wide_rgb_alignment_and_native_byte_roundtrip() {
         for (depth, midpoint, gray) in [(10, 512u16, 32800u16), (12, 2048, 32776)] {
             let image =
-                m02_convert_pixel([midpoint; 3], depth, YuvMatrix::Bt709, SampleRange::Full);
+                convert_integer_pixel([midpoint; 3], depth, YuvMatrix::Bt709, SampleRange::Full);
             let descriptor = image.as_img(FmetricsColorspace::Srgb, false);
             let raw = descriptor.as_raw();
             assert!(raw.data.cast::<u16>().is_aligned());
@@ -931,7 +931,7 @@ mod tests {
     }
 
     #[test]
-    fn m05_rgb_invalid_geometry_returns_errors_not_panics() {
+    fn rgb_invalid_geometry_returns_errors_not_panics() {
         for (width, height) in [(usize::MAX, 2), (2, usize::MAX), (2, 2)] {
             assert!(
                 matches!(
@@ -944,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    fn m05_plane_layout_rejects_invalid_readable_spans() {
+    fn plane_layout_rejects_invalid_readable_spans() {
         let bytes = [0; 16];
         for (len, width, height, stride, origin, sample) in [
             (16, 0, 2, 2, 0, 1),
@@ -984,7 +984,7 @@ mod tests {
     }
 
     #[test]
-    fn m05_padded_bottom_up_matches_top_down_conversion() {
+    fn padded_bottom_up_matches_top_down_conversion() {
         for (depth, bytes, bottom, top) in [
             (
                 8,
@@ -1036,7 +1036,7 @@ mod tests {
     }
 
     #[test]
-    fn m05_rgb_checked_native_geometry_and_depth() {
+    fn rgb_checked_native_geometry_and_depth() {
         for (width, height, wide) in [
             (0, 2, false),
             (2, 0, true),
@@ -1073,7 +1073,7 @@ mod tests {
         clippy::suboptimal_flops,
         reason = "keep the independent standard gamma/sRGB reference readable"
     )]
-    fn m05_tagged_sdr_high_depth_gray_matches_independent_gamma() {
+    fn tagged_sdr_high_depth_gray_matches_independent_gamma() {
         for (depth, samples) in [
             (10, [0u16, 16, 64, 92, 256, 512, 1023]),
             (12, [0, 64, 256, 368, 1024, 2048, 4095]),
@@ -1111,7 +1111,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_sdr_video_transfers_convert_gray_to_srgb() {
+    fn sdr_video_transfers_convert_gray_to_srgb() {
         use av_decoders::TransferCharacteristic as Transfer;
         // Independent: L=(Y/255)^2.4, piecewise sRGB encoding, round once.
         for transfer in
@@ -1146,7 +1146,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_sdr_srgb_and_linear_preserve_encoded_values() {
+    fn sdr_srgb_and_linear_preserve_encoded_values() {
         for (transfer, colorspace) in [
             (
                 av_decoders::TransferCharacteristic::IEC61966_2_1,
@@ -1171,20 +1171,20 @@ mod tests {
     }
 
     #[test]
-    fn m04_sdr_clips_nominal_excursions_before_matrix() {
+    fn sdr_clips_nominal_excursions_before_matrix() {
         // Clamp Y to [0,1], C to [-.5,.5], then independent BT.709 inverse luma.
         assert_eq!(
-            m01_convert_pixel([0, 0, 128], YuvMatrix::Bt709, SampleRange::Limited),
+            convert_u8_pixel([0, 0, 128], YuvMatrix::Bt709, SampleRange::Limited),
             (0, 24, 0)
         );
         assert_eq!(
-            m01_convert_pixel([255, 128, 255], YuvMatrix::Bt709, SampleRange::Limited),
+            convert_u8_pixel([255, 128, 255], YuvMatrix::Bt709, SampleRange::Limited),
             (255, 195, 255)
         );
     }
 
     #[test]
-    fn m04_sdr_invalid_stored_codes_are_rejected() {
+    fn sdr_invalid_stored_codes_are_rejected() {
         for depth in [10, 12] {
             for invalid_plane in 0..3 {
                 let mut samples = [1u16 << (depth - 1); 3];
@@ -1203,7 +1203,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_sdr_even_and_odd_frames_preserve_strides_origins_and_crop() {
+    fn sdr_even_and_odd_frames_preserve_strides_origins_and_crop() {
         for depth in [8, 10, 12] {
             let bytes = if depth == 8 { 1 } else { 2 };
             let peak = (1u16 << depth) - 1;
@@ -1278,7 +1278,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_sdr_invalid_descriptor_arithmetic_fails_before_reads() {
+    fn sdr_invalid_descriptor_arithmetic_fails_before_reads() {
         for (width, stride, origin) in [(1, 1, usize::MAX), (1, isize::MIN, 0), (usize::MAX, 1, 0)]
         {
             let result = PlaneSource::from_bytes(&[128], width, 1, stride, origin, 1);
@@ -1353,7 +1353,7 @@ mod tests {
         }
     }
 
-    fn m01_convert_pixel(
+    fn convert_u8_pixel(
         samples: [u8; 3],
         matrix: YuvMatrix,
         range: SampleRange,
@@ -1374,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn m01_matrix_reference_vectors() {
+    fn matrix_reference_vectors() {
         let samples = [[128, 144, 128], [128, 128, 144], [96, 112, 152], [160, 152, 112]];
         // Independent inverse-luma reference: R=Y+2(1-Kr)Cr, B=Y+2(1-Kb)Cb,
         // G=(Y-Kr*R-Kb*B)/(1-Kr-Kb), rounded once. Limited Y uses 255/219,
@@ -1415,14 +1415,14 @@ mod tests {
             (
                 matrix,
                 range,
-                samples.map(|samples| m01_convert_pixel(samples, matrix, range)),
+                samples.map(|samples| convert_u8_pixel(samples, matrix, range)),
             )
         });
         assert_eq!(actual, expected, "matrix/range reference RGB values");
     }
 
     #[test]
-    fn m01_neutral_chroma_preserves_gray_and_endpoints() {
+    fn neutral_chroma_preserves_gray_and_endpoints() {
         for matrix in [YuvMatrix::Bt601, YuvMatrix::Bt709, YuvMatrix::Bt2020] {
             for (range, cases) in [
                 (SampleRange::Full, [(0, 0), (128, 128), (255, 255)]),
@@ -1430,7 +1430,7 @@ mod tests {
             ] {
                 for (y, gray) in cases {
                     assert_eq!(
-                        m01_convert_pixel([y, 128, 128], matrix, range),
+                        convert_u8_pixel([y, 128, 128], matrix, range),
                         (gray, gray, gray),
                         "{matrix:?} {range:?} neutral Y={y}"
                     );
@@ -1439,7 +1439,7 @@ mod tests {
         }
     }
 
-    fn m02_convert_pixel<T: v_frame::pixel::Pixel>(
+    fn convert_integer_pixel<T: v_frame::pixel::Pixel>(
         samples: [T; 3],
         bit_depth: usize,
         matrix: YuvMatrix,
@@ -1475,7 +1475,7 @@ mod tests {
     }
 
     #[test]
-    fn m02_full_range_neutral_uses_meaningful_midpoint_and_peak() {
+    fn full_range_neutral_uses_meaningful_midpoint_and_peak() {
         for (depth, midpoint, cases) in [
             (
                 10,
@@ -1490,7 +1490,7 @@ mod tests {
         ] {
             for matrix in [YuvMatrix::Bt601, YuvMatrix::Bt709, YuvMatrix::Bt2020] {
                 for (y, gray) in cases {
-                    let image = m02_convert_pixel(
+                    let image = convert_integer_pixel(
                         [y, midpoint, midpoint],
                         depth,
                         matrix,
@@ -1510,7 +1510,7 @@ mod tests {
     }
 
     #[test]
-    fn m02_limited_range_nominal_endpoints_shift_exactly() {
+    fn limited_range_nominal_endpoints_shift_exactly() {
         for (depth, midpoint, cases) in [
             (
                 10,
@@ -1525,7 +1525,7 @@ mod tests {
         ] {
             for matrix in [YuvMatrix::Bt601, YuvMatrix::Bt709, YuvMatrix::Bt2020] {
                 for (y, gray) in cases {
-                    let image = m02_convert_pixel(
+                    let image = convert_integer_pixel(
                         [y, midpoint, midpoint],
                         depth,
                         matrix,
@@ -1552,7 +1552,7 @@ mod tests {
         clippy::suboptimal_flops,
         reason = "keep the independent inverse-luma reference equation directly readable"
     )]
-    fn m02_chroma_endpoints_match_independent_inverse_luma_reference() {
+    fn chroma_endpoints_match_independent_inverse_luma_reference() {
         for (depth, range, black, white, low, midpoint, high) in [
             (10, SampleRange::Full, 0u16, 1023, 0, 512, 1023),
             (12, SampleRange::Full, 0, 4095, 0, 2048, 4095),
@@ -1566,7 +1566,7 @@ mod tests {
             ] {
                 for (u, v) in [(low, midpoint), (high, midpoint), (midpoint, low), (midpoint, high)]
                 {
-                    let image = m02_convert_pixel([midpoint, u, v], depth, matrix, range);
+                    let image = convert_integer_pixel([midpoint, u, v], depth, matrix, range);
                     // Reference works in unit RGB, reconstructing G from the luma identity
                     // rather than reusing the production matrix or normalization helpers.
                     let y = f64::from(midpoint - black) / f64::from(white - black);
@@ -1596,7 +1596,7 @@ mod tests {
     }
 
     #[test]
-    fn m02_equivalent_colors_agree_across_depths() {
+    fn equivalent_colors_agree_across_depths() {
         // Full-range Y follows the peak ratio; chroma differences follow that
         // ratio around the integer midpoint. These are rounded source codes.
         let full = [
@@ -1609,14 +1609,15 @@ mod tests {
         for range in [SampleRange::Full, SampleRange::Limited] {
             for matrix in [YuvMatrix::Bt601, YuvMatrix::Bt709, YuvMatrix::Bt2020] {
                 for (narrow, ten, twelve) in full {
-                    let baseline = m02_convert_pixel(narrow, 8, matrix, range).pixel(0, 0);
+                    let baseline = convert_integer_pixel(narrow, 8, matrix, range).pixel(0, 0);
                     for (depth, samples) in [(10, ten), (12, twelve)] {
                         let samples = if range == SampleRange::Limited {
                             narrow.map(|s| u16::from(s) << (depth - 8))
                         } else {
                             samples
                         };
-                        let actual = m02_convert_pixel(samples, depth, matrix, range).pixel(0, 0);
+                        let actual =
+                            convert_integer_pixel(samples, depth, matrix, range).pixel(0, 0);
                         for (actual, expected) in [actual.0, actual.1, actual.2]
                             .into_iter()
                             .zip([baseline.0, baseline.1, baseline.2])
@@ -1633,12 +1634,12 @@ mod tests {
     }
 
     #[test]
-    fn m02_adjacent_high_depth_codes_retain_sub_eight_bit_precision() {
+    fn adjacent_high_depth_codes_retain_sub_eight_bit_precision() {
         for (depth, midpoint, expected) in
             [(10, 512u16, [32800, 32864]), (12, 2048u16, [32776, 32792])]
         {
             let actual = [midpoint, midpoint + 1].map(|y| {
-                m02_convert_pixel(
+                convert_integer_pixel(
                     [y, midpoint, midpoint],
                     depth,
                     YuvMatrix::Bt709,
@@ -1655,7 +1656,7 @@ mod tests {
     }
 
     #[test]
-    fn m02_inconsistent_sample_widths_are_rejected() {
+    fn inconsistent_sample_widths_are_rejected() {
         let samples = [512u16; 3];
         for depth in [8, 10, 12] {
             let expected_bytes = if depth == 8 { 1 } else { 2 };
@@ -1706,7 +1707,7 @@ mod tests {
     }
 
     #[test]
-    fn m02_inconsistent_peak_and_unsupported_depth_are_rejected() {
+    fn inconsistent_peak_and_unsupported_depth_are_rejected() {
         let samples = [512u16; 3];
         for (depth, peak) in [(8, 1023), (10, 255), (10, 4095), (12, 1023), (16, 65535)] {
             let planes = PlaneSet {
@@ -1855,23 +1856,23 @@ mod tests {
     }
 
     // Hand-written covering-cell maps for 5x3 luma, including its final row/column.
-    const M03_LAYOUTS: [([usize; 2], [usize; 15]); 3] = [
+    const CHROMA_LAYOUTS: [([usize; 2], [usize; 15]); 3] = [
         ([3, 2], [0, 0, 1, 1, 2, 0, 0, 1, 1, 2, 3, 3, 4, 4, 5]),
         ([3, 3], [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 6, 6, 7, 7, 8]),
         ([5, 3], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]),
     ];
-    const M03_Y: [u8; 15] =
+    const CHROMA_Y: [u8; 15] =
         [100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 148, 152, 156];
-    const M03_U: [u8; 15] =
+    const CHROMA_U: [u8; 15] =
         [104, 120, 136, 148, 112, 140, 124, 144, 108, 116, 132, 152, 100, 128, 156];
-    const M03_V: [u8; 15] =
+    const CHROMA_V: [u8; 15] =
         [148, 112, 140, 116, 136, 104, 152, 124, 144, 108, 128, 156, 120, 132, 100];
 
     #[expect(
         clippy::suboptimal_flops,
         reason = "keep the independent inverse-luma reference equation directly readable"
     )]
-    fn m03_assert_cell_map<T: v_frame::pixel::Pixel + Into<u16>>(
+    fn assert_cell_map<T: v_frame::pixel::Pixel + Into<u16>>(
         geometry: [[usize; 2]; 2],
         samples: [&[T]; 3],
         cells: &[usize],
@@ -1942,11 +1943,11 @@ mod tests {
     }
 
     #[test]
-    fn m03_odd_420_422_444_use_explicit_covering_cells() {
-        for (chroma, cells) in M03_LAYOUTS {
-            m03_assert_cell_map(
+    fn odd_420_422_444_use_explicit_covering_cells() {
+        for (chroma, cells) in CHROMA_LAYOUTS {
+            assert_cell_map(
                 [[5, 3], chroma],
-                [&M03_Y, &M03_U, &M03_V],
+                [&CHROMA_Y, &CHROMA_U, &CHROMA_V],
                 &cells,
                 8,
                 SampleRange::Full,
@@ -1955,16 +1956,16 @@ mod tests {
     }
 
     #[test]
-    fn m03_multi_pixel_u16_preserves_byte_strides_and_cell_precision() {
+    fn multi_pixel_u16_preserves_byte_strides_and_cell_precision() {
         for depth in [10, 12] {
-            let samples = [M03_Y, M03_U, M03_V].map(|plane| {
+            let samples = [CHROMA_Y, CHROMA_U, CHROMA_V].map(|plane| {
                 std::array::from_fn::<_, 15, _>(|index| {
                     (u16::from(plane[index]) << (depth - 8)) + (index % 3) as u16
                 })
             });
             for range in [SampleRange::Full, SampleRange::Limited] {
-                for (chroma, cells) in M03_LAYOUTS {
-                    m03_assert_cell_map(
+                for (chroma, cells) in CHROMA_LAYOUTS {
+                    assert_cell_map(
                         [[5, 3], chroma],
                         samples.each_ref().map(|plane| plane.as_slice()),
                         &cells,
@@ -1977,7 +1978,7 @@ mod tests {
     }
 
     #[test]
-    fn m03_single_pixel_axes_accept_ambiguous_valid_layouts() {
+    fn single_pixel_axes_accept_ambiguous_valid_layouts() {
         for (luma, chroma, cells) in [
             ([1, 1], [1, 1], &[0][..]),
             ([1, 3], [1, 2], &[0, 0, 1][..]),
@@ -1985,9 +1986,9 @@ mod tests {
             ([3, 1], [2, 1], &[0, 0, 1][..]),
             ([3, 1], [3, 1], &[0, 1, 2][..]),
         ] {
-            m03_assert_cell_map(
+            assert_cell_map(
                 [luma, chroma],
-                [&M03_Y, &M03_U, &M03_V],
+                [&CHROMA_Y, &CHROMA_U, &CHROMA_V],
                 cells,
                 8,
                 SampleRange::Full,
@@ -1996,7 +1997,7 @@ mod tests {
     }
 
     #[test]
-    fn m03_inconsistent_or_unsupported_chroma_geometry_is_rejected() {
+    fn inconsistent_or_unsupported_chroma_geometry_is_rejected() {
         let samples = [[128u8; 64]; 3];
         for (u, v) in [
             ([3, 2], [3, 3]),

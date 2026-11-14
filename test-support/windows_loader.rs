@@ -12,14 +12,15 @@ fn marker(candidate: &Path) -> i32 {
     // SAFETY: our fixture exports exactly this signature; the library is alive.
     unsafe {
         library
-            .get::<unsafe extern "C" fn() -> i32>(b"m22_marker\0")
+            .get::<unsafe extern "C" fn() -> i32>(b"windows_loader_marker\0")
             .expect("marker export")()
     }
 }
 
 fn child_case(case: &str) {
-    let root = PathBuf::from(std::env::var_os("M22_ROOT").expect("fixture root"));
-    let name = std::env::var_os("M22_NAME").expect("unique marker name");
+    let root =
+        PathBuf::from(std::env::var_os("WINDOWS_LOADER_FIXTURE_ROOT").expect("fixture root"));
+    let name = std::env::var_os("WINDOWS_LOADER_FIXTURE_NAME").expect("unique marker name");
     // A bare VSSCRIPT_PATH must not inject media/plugins or any other relative
     // directory. This also checks the production candidate builders, not a replica.
     assert!(
@@ -38,9 +39,10 @@ fn child_case(case: &str) {
         },
         "absolute" | "shadow" => assert_eq!(marker(&root.join("trusted").join(&name)), 7),
         "override_absolute" | "override_relative" => {
-            let expected = root
-                .join("trusted")
-                .join(std::env::var_os("M22_STANDARD_NAME").expect("production library name"));
+            let expected = root.join("trusted").join(
+                std::env::var_os("WINDOWS_LOADER_FIXTURE_STANDARD_NAME")
+                    .expect("production library name"),
+            );
             let candidate = library_candidates()
                 .into_iter()
                 .find(|candidate| candidate == &expected)
@@ -72,7 +74,7 @@ fn child_case(case: &str) {
                 "underlying libloading diagnostic must survive"
             );
         },
-        _ => panic!("unknown M22 child case: {case}"),
+        _ => panic!("unknown Windows loader child case: {case}"),
     }
 }
 
@@ -80,10 +82,10 @@ fn compile(compiler: &std::ffi::OsStr, source: &Path, dll: &Path, extra: &[std::
     let output = Command::new(compiler)
         .args(["-shared", "-std=c11", "-O0", "-Wall", "-Wextra", "-Werror", "-o"])
         .arg(dll).arg(source).args(extra).output()
-        .expect("M22 Windows gate requires AV_METRICS_WINDOWS_CC pointing to a native MinGW GCC-compatible C compiler; see test-support/README.md");
+        .expect("Windows loader gate requires AV_METRICS_WINDOWS_CC pointing to a native MinGW GCC-compatible C compiler; see test-support/README.md");
     assert!(
         output.status.success(),
-        "M22 DLL fixture compilation failed; use a compiler matching the Rust process architecture: {}\n{}",
+        "Windows loader DLL fixture compilation failed; use a compiler matching the Rust process architecture: {}\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -91,8 +93,8 @@ fn compile(compiler: &std::ffi::OsStr, source: &Path, dll: &Path, extra: &[std::
 
 #[test]
 #[ignore = "required native Windows gate; see test-support/README.md for compiler prerequisites"]
-fn m22_windows_loader() {
-    if let Ok(case) = std::env::var("M22_CASE") {
+fn windows_loader() {
+    if let Ok(case) = std::env::var("WINDOWS_LOADER_FIXTURE_CASE") {
         child_case(&case);
         return;
     }
@@ -102,22 +104,25 @@ fn m22_windows_loader() {
     for directory in ["trusted", "media", "missing", "path"] {
         std::fs::create_dir_all(root.path().join(directory)).expect("fixture subdirectory");
     }
-    let name = format!("m22_marker_{}.dll", std::process::id());
-    let dependency = format!("m22_private_dependency_{}.dll", std::process::id());
+    let name = format!("windows_loader_marker_{}.dll", std::process::id());
+    let dependency = format!(
+        "windows_loader_private_dependency_{}.dll",
+        std::process::id()
+    );
     let import = root.path().join("private.a");
     let dep_source = root.path().join("dependency.c");
     let main_source = root.path().join("marker.c");
     let decoy_source = root.path().join("decoy.c");
     std::fs::write(
         &dep_source,
-        "__declspec(dllexport) int m22_dependency(void) { return M22_VALUE; }\n",
+        "__declspec(dllexport) int windows_loader_dependency(void) { return WINDOWS_LOADER_FIXTURE_VALUE; }\n",
     )
     .expect("dependency C fixture");
     std::fs::write(&main_source,
-        "__declspec(dllimport) int m22_dependency(void);\n__declspec(dllexport) int m22_marker(void) { return m22_dependency(); }\n").expect("marker C fixture");
+        "__declspec(dllimport) int windows_loader_dependency(void);\n__declspec(dllexport) int windows_loader_marker(void) { return windows_loader_dependency(); }\n").expect("marker C fixture");
     std::fs::write(
         &decoy_source,
-        "__declspec(dllexport) int m22_marker(void) { return 99; }\n",
+        "__declspec(dllexport) int windows_loader_marker(void) { return 99; }\n",
     )
     .expect("decoy C fixture");
     let trusted = root.path().join("trusted");
@@ -125,7 +130,10 @@ fn m22_windows_loader() {
         &compiler,
         &dep_source,
         &trusted.join(&dependency),
-        &["-DM22_VALUE=7".into(), format!("-Wl,--out-implib,{}", import.display()).into()],
+        &[
+            "-DWINDOWS_LOADER_FIXTURE_VALUE=7".into(),
+            format!("-Wl,--out-implib,{}", import.display()).into(),
+        ],
     );
     compile(
         &compiler,
@@ -149,7 +157,7 @@ fn m22_windows_loader() {
         &compiler,
         &dep_source,
         &root.path().join("media").join(&dependency),
-        &["-DM22_VALUE=99".into()],
+        &["-DWINDOWS_LOADER_FIXTURE_VALUE=99".into()],
     );
     std::fs::copy(trusted.join(&name), root.path().join("missing").join(&name))
         .expect("missing sibling fixture");
@@ -175,15 +183,15 @@ fn m22_windows_loader() {
         command
             .args([
                 "--exact",
-                "ffi::m22_windows_tests::m22_windows_loader",
+                "ffi::windows_loader_tests::windows_loader",
                 "--ignored",
                 "--nocapture",
             ])
             .current_dir(root.path().join("media"))
-            .env("M22_CASE", case)
-            .env("M22_ROOT", root.path())
-            .env("M22_NAME", &name)
-            .env("M22_STANDARD_NAME", &standard_name)
+            .env("WINDOWS_LOADER_FIXTURE_CASE", case)
+            .env("WINDOWS_LOADER_FIXTURE_ROOT", root.path())
+            .env("WINDOWS_LOADER_FIXTURE_NAME", &name)
+            .env("WINDOWS_LOADER_FIXTURE_STANDARD_NAME", &standard_name)
             .env_remove("PATH")
             .env("VSSCRIPT_PATH", "vsscript.dll")
             .env_remove("VAPOURSYNTH_EXTRA_PLUGIN_PATH")
@@ -215,7 +223,7 @@ fn m22_windows_loader() {
                 child.kill().expect("kill stalled DLL child");
                 let output = child.wait_with_output().expect("reap stalled DLL child");
                 panic!(
-                    "M22 {case} timed out: {}",
+                    "Windows loader {case} timed out: {}",
                     String::from_utf8_lossy(&output.stderr)
                 );
             }
@@ -224,10 +232,15 @@ fn m22_windows_loader() {
         let output = child.wait_with_output().expect("DLL child output");
         assert!(
             output.status.success(),
-            "M22 {case}: {}\n{}",
+            "Windows loader {case}: {}\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        println!("M22 native DLL case {case}: passed");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+            "Windows loader {case}: exact child must execute one test: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        println!("Windows loader native DLL case {case}: passed");
     }
 }

@@ -20,12 +20,12 @@ const MARKERS: [&str; 5] = [
     "vmaf_picture_wrap",
 ];
 
-#[path = "../../test-support/m24_runtime.rs"]
-mod m24_runtime;
+#[path = "../../test-support/runtime_discovery.rs"]
+mod runtime_discovery;
 
 #[test]
-fn m24_runtime_overrides_and_staged_release() {
-    if std::env::var_os("M24_CHILD").is_some() {
+fn runtime_overrides_and_staged_release() {
+    if std::env::var_os("RUNTIME_DISCOVERY_CHILD").is_some() {
         // Load through production discovery before mapping fixture counters.
         assert_eq!(
             av_metrics_vmaf::libvmaf_version(),
@@ -35,8 +35,8 @@ fn m24_runtime_overrides_and_staged_release() {
         check_child(true);
         return;
     }
-    m24_runtime::run(
-        "m24_runtime_overrides_and_staged_release",
+    runtime_discovery::run(
+        "runtime_overrides_and_staged_release",
         if cfg!(target_os = "macos") {
             "libvmaf.dylib"
         } else {
@@ -47,17 +47,17 @@ fn m24_runtime_overrides_and_staged_release() {
         |library| compile(library, 0),
         |command, library| {
             command
-                .env("M13_VERSION", "3.2.0")
-                .env("M13_MARKER_NAME", "")
-                .env("M13_LIBRARY", library);
+                .env("VMAF_RUNTIME_FIXTURE_VERSION", "3.2.0")
+                .env("VMAF_RUNTIME_FIXTURE_MARKER_NAME", "")
+                .env("VMAF_RUNTIME_FIXTURE_LIBRARY", library);
         },
     );
 }
 
 #[test]
-fn m13_rejects_unverified_versions_before_native_setup() {
+fn rejects_unverified_versions_before_native_setup() {
     run_cases(
-        "m13_rejects_unverified_versions_before_native_setup",
+        "rejects_unverified_versions_before_native_setup",
         0,
         &[
             "3.2.1",
@@ -75,14 +75,14 @@ fn m13_rejects_unverified_versions_before_native_setup() {
 }
 
 #[test]
-fn m13_rejects_same_version_new_layout_markers_before_native_setup() {
-    if std::env::var_os("M13_CHILD").is_some() {
+fn rejects_same_version_new_layout_markers_before_native_setup() {
+    if std::env::var_os("VMAF_RUNTIME_FIXTURE_CHILD").is_some() {
         check_child(false);
         return;
     }
     for marker in 1..MARKERS.len() {
         run_cases(
-            "m13_rejects_same_version_new_layout_markers_before_native_setup",
+            "rejects_same_version_new_layout_markers_before_native_setup",
             marker,
             &["3.2.0"],
             false,
@@ -91,9 +91,9 @@ fn m13_rejects_same_version_new_layout_markers_before_native_setup() {
 }
 
 #[test]
-fn m13_accepts_verified_archive_runtime_and_scores() {
+fn accepts_verified_archive_runtime_and_scores() {
     run_cases(
-        "m13_accepts_verified_archive_runtime_and_scores",
+        "accepts_verified_archive_runtime_and_scores",
         0,
         &["3.2.0"],
         true,
@@ -101,11 +101,11 @@ fn m13_accepts_verified_archive_runtime_and_scores() {
 }
 
 fn run_cases(test: &str, marker: usize, versions: &[&str], accepted: bool) {
-    if std::env::var_os("M13_CHILD").is_some() {
+    if std::env::var_os("VMAF_RUNTIME_FIXTURE_CHILD").is_some() {
         check_child(accepted);
         return;
     }
-    let directory = tempfile::tempdir().expect("temporary M13 runtime fixture");
+    let directory = tempfile::tempdir().expect("temporary runtime ABI fixture");
     let library = directory.path().join(if cfg!(target_os = "macos") {
         "libvmaf.dylib"
     } else {
@@ -121,13 +121,13 @@ fn compile(library: &Path, marker: usize) {
     let output = Command::new("cc")
         .args(["-shared", "-fPIC", "-std=c11", "-Wall", "-Wextra", "-Werror", "-o"])
         .arg(library)
-        .arg(format!("-DM13_MARKER={marker}"))
+        .arg(format!("-DVMAF_RUNTIME_FIXTURE_MARKER={marker}"))
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/m13_runtime.c"
+            "/tests/fixtures/runtime.c"
         ))
         .output()
-        .expect("M13 runtime regression requires cc");
+        .expect("runtime ABI regression requires cc");
     assert!(
         output.status.success(),
         "{}",
@@ -138,26 +138,26 @@ fn compile(library: &Path, marker: usize) {
 fn run_child(test: &str, library: &Path, directory: &Path, version: &str, marker: &str) {
     let mut child = Command::new(std::env::current_exe().expect("test executable"))
         .args(["--exact", test, "--nocapture"])
-        .env("M13_CHILD", "1")
-        .env("M13_VERSION", version)
-        .env("M13_MARKER_NAME", marker)
-        .env("M13_LIBRARY", library)
+        .env("VMAF_RUNTIME_FIXTURE_CHILD", "1")
+        .env("VMAF_RUNTIME_FIXTURE_VERSION", version)
+        .env("VMAF_RUNTIME_FIXTURE_MARKER_NAME", marker)
+        .env("VMAF_RUNTIME_FIXTURE_LIBRARY", library)
         .env("VMAF_LIB_DIR", directory)
         .env_remove("VMAF_MODEL_PATH")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("isolated M13 ABI child");
+        .expect("isolated runtime ABI child");
     let start = Instant::now();
     while child.try_wait().expect("child status").is_none() {
         if start.elapsed() > Duration::from_secs(30) {
             child.kill().expect("kill timed out child");
             child.wait().expect("reap timed out child");
-            panic!("{version}/{marker}: M13 child exceeded 30s");
+            panic!("{version}/{marker}: runtime ABI child exceeded 30s");
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    let output = child.wait_with_output().expect("M13 child output");
+    let output = child.wait_with_output().expect("runtime ABI child output");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -174,12 +174,15 @@ fn run_child(test: &str, library: &Path, directory: &Path, version: &str, marker
 fn check_child(accepted: bool) {
     // SAFETY: our isolated fixture stays mapped throughout the counter reads.
     let library = unsafe {
-        libloading::Library::new(std::env::var_os("M13_LIBRARY").expect("fixture library"))
+        libloading::Library::new(
+            std::env::var_os("VMAF_RUNTIME_FIXTURE_LIBRARY").expect("fixture library"),
+        )
     }
     .expect("fixture counters");
     // SAFETY: exact fixture signature and defined indices 0..3, never layout calls.
-    let count = unsafe { library.get::<unsafe extern "C" fn(u32) -> u32>(b"m13_count\0") }
-        .expect("M13 counter");
+    let count =
+        unsafe { library.get::<unsafe extern "C" fn(u32) -> u32>(b"runtime_fixture_count\0") }
+            .expect("runtime ABI counter");
     // SAFETY: the mapping remains live; every index is in range.
     let snapshot = || (0..3).map(|index| unsafe { count(index) }).collect::<Vec<_>>();
     let format = VideoFormat {
@@ -241,7 +244,7 @@ fn check_child(accepted: bool) {
             let VmafError::IncompatibleLibrary { version, .. } = &error else {
                 panic!("dedicated compatibility error: {error:?}");
             };
-            let observed = std::env::var("M13_VERSION").expect("observed version");
+            let observed = std::env::var("VMAF_RUNTIME_FIXTURE_VERSION").expect("observed version");
             assert!(
                 version.contains(&observed),
                 "preserve observed version: {error}"
@@ -255,7 +258,7 @@ fn check_child(accepted: bool) {
                 error.contains("3.2.0") && error.contains("v3.2.1") && error.contains("Reinstall"),
                 "actionable error: {error}"
             );
-            let marker = std::env::var("M13_MARKER_NAME").expect("marker");
+            let marker = std::env::var("VMAF_RUNTIME_FIXTURE_MARKER_NAME").expect("marker");
             assert!(error.contains(&marker), "observed marker: {error}");
         }
     }

@@ -4,11 +4,11 @@ use super::*;
 // libloading's Windows error, without constructing its private WindowsError.
 #[derive(Debug, thiserror::Error)]
 #[error("LoadLibraryExW failed")]
-struct M22LoaderFailure(#[source] std::io::Error);
+struct LoaderFailure(#[source] std::io::Error);
 
 #[test]
-fn m22_loader_adapter_renders_os_code_and_preserves_source_chain() {
-    let error = windows_load_error(M22LoaderFailure(std::io::Error::from_raw_os_error(126)));
+fn loader_adapter_renders_os_code_and_preserves_source_chain() {
+    let error = windows_load_error(LoaderFailure(std::io::Error::from_raw_os_error(126)));
     let rendered = error.to_string();
     assert!(
         rendered.contains("LoadLibraryExW failed"),
@@ -24,7 +24,7 @@ fn m22_loader_adapter_renders_os_code_and_preserves_source_chain() {
     let mut original = false;
     let mut os_code = None;
     while let Some(cause) = source {
-        original |= cause.is::<M22LoaderFailure>();
+        original |= cause.is::<LoaderFailure>();
         if let Some(os_error) = cause.downcast_ref::<std::io::Error>() {
             os_code = os_error.raw_os_error();
         }
@@ -38,7 +38,7 @@ fn m22_loader_adapter_renders_os_code_and_preserves_source_chain() {
 }
 
 #[test]
-fn m22_loader_adapter_renders_legitimate_libloading_source() {
+fn loader_adapter_renders_legitimate_libloading_source() {
     let source = std::ffi::CString::new(b"a\0b").expect_err("NUL source fixture");
     let error = windows_load_error(libloading::Error::CreateCString { source });
     let rendered = error.to_string();
@@ -53,7 +53,7 @@ fn m22_loader_adapter_renders_legitimate_libloading_source() {
 }
 
 #[test]
-fn m22_loader_adapter_keeps_context_without_source() {
+fn loader_adapter_keeps_context_without_source() {
     let error = windows_load_error(libloading::Error::LoadLibraryExWUnknown);
     assert!(
         error
@@ -64,15 +64,15 @@ fn m22_loader_adapter_keeps_context_without_source() {
 }
 
 #[test]
-fn m22_aggregate_diagnostics_keep_all_attempt_paths_and_os_causes() {
+fn aggregate_diagnostics_keep_all_attempt_paths_and_os_causes() {
     let failures = [
         format!(
             "private/metric.dll: {}",
-            windows_load_error(M22LoaderFailure(std::io::Error::from_raw_os_error(126)))
+            windows_load_error(LoaderFailure(std::io::Error::from_raw_os_error(126)))
         ),
         format!(
             "metric.dll: {}",
-            windows_load_error(M22LoaderFailure(std::io::Error::from_raw_os_error(127)))
+            windows_load_error(LoaderFailure(std::io::Error::from_raw_os_error(127)))
         ),
     ];
     let rendered = library_load_error(&failures).to_string();
@@ -90,7 +90,7 @@ fn m22_aggregate_diagnostics_keep_all_attempt_paths_and_os_causes() {
 // These checks exercise the production Windows policy on native host paths;
 // they do not establish Windows DLL search behavior on Linux.
 #[test]
-fn m22_qualified_candidates_select_sibling_search() {
+fn qualified_candidates_select_sibling_search() {
     let root = tempfile::tempdir().expect("policy directory");
     let absolute = root.path().join("marker.dll");
     assert_eq!(
@@ -119,7 +119,7 @@ fn m22_qualified_candidates_select_sibling_search() {
 }
 
 #[test]
-fn m22_explicit_directories_are_validated_without_losing_unicode() {
+fn explicit_directories_are_validated_without_losing_unicode() {
     let root = tempfile::tempdir().expect("directory policy fixture");
     let unicode = root.path().join("日本語-é");
     std::fs::create_dir_all(&unicode).expect("Unicode directory");
@@ -152,7 +152,7 @@ fn m22_explicit_directories_are_validated_without_losing_unicode() {
 
 #[cfg(target_os = "windows")]
 #[test]
-fn m22_windows_drive_and_unc_paths_are_qualified() {
+fn windows_drive_and_unc_paths_are_qualified() {
     for value in [
         r"C:\trusted\marker.dll",
         r"\\server\share\marker.dll",

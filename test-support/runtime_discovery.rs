@@ -14,7 +14,10 @@ pub fn run(
     compile: impl FnOnce(&Path),
     configure: impl Fn(&mut Command, &Path),
 ) {
-    let directory = tempfile::Builder::new().prefix("m24-").tempdir().expect("staged release");
+    let directory = tempfile::Builder::new()
+        .prefix("runtime-discovery-")
+        .tempdir()
+        .expect("staged release");
     let release = directory.path().join("release");
     let media = directory.path().join("media");
     let native = directory.path().join("runtime-override");
@@ -43,12 +46,12 @@ pub fn run(
         command
             .args(["--exact", test, "--nocapture"])
             .env_clear()
-            .env("M24_CHILD", mode)
+            .env("RUNTIME_DISCOVERY_CHILD", mode)
             .current_dir(&media)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         for variable in ["CONDA_PREFIX", "VCPKG_ROOT", "CARGO_MANIFEST_DIR", "OUT_DIR"] {
-            command.env(variable, "/m24-unconsumed-build-host");
+            command.env(variable, "/runtime-discovery-unconsumed-build-host");
         }
         if mode != "bundled" {
             command.env(mode, &native);
@@ -65,7 +68,7 @@ pub fn run(
             );
         }
         configure(&mut command, &library);
-        eprintln!("M24 {mode}: {command:?}");
+        eprintln!("Runtime discovery {mode}: {command:?}");
         let start = Instant::now();
         let mut child = loop {
             match command.spawn() {
@@ -85,7 +88,7 @@ pub fn run(
             if start.elapsed() > Duration::from_secs(30) {
                 child.kill().expect("kill timed out child");
                 child.wait().expect("reap timed out child");
-                panic!("M24 {mode} exceeded 30s");
+                panic!("Runtime discovery {mode} exceeded 30s");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -94,8 +97,8 @@ pub fn run(
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
             output.status.success() && stdout.contains("1 passed; 0 failed"),
-            "M24 {mode}: {stdout}\n{stderr}"
+            "Runtime discovery {mode}: {stdout}\n{stderr}"
         );
-        eprintln!("M24 {mode}: {stdout}{stderr}");
+        eprintln!("Runtime discovery {mode}: {stdout}{stderr}");
     }
 }

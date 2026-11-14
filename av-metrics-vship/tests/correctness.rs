@@ -116,7 +116,7 @@ fn availability_probe_is_consistent() {
 }
 
 /// Shared by the pure sensitivity check and the actual backend gate.
-fn m07_upload_fixture(padded: bool, distorted: bool) -> [Vec<u16>; 3] {
+fn upload_fixture(padded: bool, distorted: bool) -> [Vec<u16>; 3] {
     std::array::from_fn(|plane| {
         let (width, height, pitch) = [(65, 49, 68), (33, 25, 36), (33, 25, 36)][plane];
         let pitch = if padded { pitch } else { width };
@@ -139,10 +139,10 @@ fn m07_upload_fixture(padded: bool, distorted: bool) -> [Vec<u16>; 3] {
 }
 
 #[test]
-fn m07_gpu_fixture_detects_ignored_stride_without_a_gpu() {
+fn gpu_fixture_detects_ignored_stride_without_a_gpu() {
     for distorted in [false, true] {
-        let packed = m07_upload_fixture(false, distorted);
-        let padded = m07_upload_fixture(true, distorted);
+        let packed = upload_fixture(false, distorted);
+        let padded = upload_fixture(true, distorted);
         assert_eq!(packed.each_ref().map(Vec::len), [3185, 825, 825]);
         assert_eq!(padded.each_ref().map(Vec::len), [3329, 897, 897]);
         for (plane, (width, height, pitch, sentinel)) in
@@ -168,8 +168,8 @@ fn m07_gpu_fixture_detects_ignored_stride_without_a_gpu() {
             );
         }
     }
-    let reference = m07_upload_fixture(false, false);
-    let distorted = m07_upload_fixture(false, true);
+    let reference = upload_fixture(false, false);
+    let distorted = upload_fixture(false, true);
     assert_eq!(reference.each_ref().map(|p| p[0]), [128, 229, 330]);
     assert_eq!(distorted.each_ref().map(|p| p[0]), [129, 237, 345]);
     for plane in 0..3 {
@@ -179,13 +179,13 @@ fn m07_gpu_fixture_detects_ignored_stride_without_a_gpu() {
 
 /// Hardware gate: ABI sinks cannot prove backend upload completion or accuracy.
 #[test]
-fn m07_gpu_padded_uploads_and_typed_mismatch() {
+fn gpu_padded_uploads_and_typed_mismatch() {
     if !is_available() {
         assert!(
             std::env::var_os("AV_METRICS_REQUIRE_GPU").is_none(),
-            "required M07 GPU gate needs libvship and a supported device"
+            "required upload GPU gate needs libvship and a supported device"
         );
-        eprintln!("unexecuted M07 hardware gate: no supported libvship/GPU runtime");
+        eprintln!("unexecuted upload hardware gate: no supported libvship/GPU runtime");
         return;
     }
     let format = VideoFormat::from_details(&details(64, 48, 10, ChromaSubsampling::Yuv420));
@@ -196,7 +196,7 @@ fn m07_gpu_padded_uploads_and_typed_mismatch() {
             scorer.backend(),
             VshipBackend::Hip | VshipBackend::Cuda | VshipBackend::Vulkan
         ),
-        "M07 requires a supported GPU backend, not a CPU/sink"
+        "upload gate requires a supported GPU backend, not a CPU/sink"
     );
     let byte_frame = v_frame::frame::FrameBuilder::new(64, 48, ChromaSubsampling::Yuv420, 8)
         .build::<u8>()
@@ -209,10 +209,10 @@ fn m07_gpu_padded_uploads_and_typed_mismatch() {
     let format = VideoFormat::from_details(&details(65, 49, 10, ChromaSubsampling::Yuv420));
     let mut scorer =
         VshipScorer::new(config_for(VshipMetric::Ssimulacra2), format, format, None).unwrap();
-    let reference = m07_upload_fixture(false, false);
-    let distorted = m07_upload_fixture(false, true);
-    let padded_reference = m07_upload_fixture(true, false);
-    let padded_distorted = m07_upload_fixture(true, true);
+    let reference = upload_fixture(false, false);
+    let distorted = upload_fixture(false, true);
+    let padded_reference = upload_fixture(true, false);
+    let padded_distorted = upload_fixture(true, true);
     fn planes(data: &[Vec<u16>; 3], padded: bool) -> PlaneSet<'_> {
         [
             PlaneSource::from_u16(&data[0], 65, 49, if padded { 136 } else { 130 }, 0).unwrap(),

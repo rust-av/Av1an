@@ -255,7 +255,7 @@ jobs:
             availability_probe_is_consistent -- --exact --nocapture
 
       - name: Generate code coverage
-        run: cargo llvm-cov --profile ci --workspace --lcov --output-path lcov.log --ignore-filename-regex tests\.rs
+        run: cargo llvm-cov --profile ci --workspace --lcov --output-path lcov.log --ignore-filename-regex 'tests\.rs|(^|[/\\])(tests|test-support)([/\\]|$)'
 
       - name: Upload coverage to Codecov
         # PRs/forks validate without passing a reporting credential to an action.

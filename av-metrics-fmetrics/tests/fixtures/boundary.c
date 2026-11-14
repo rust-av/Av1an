@@ -1,31 +1,31 @@
 /* ABI double, not a metric. Public signatures are checked by the real header. */
-#include "headers/fmetrics.h"
+#include "../headers/fmetrics.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 static unsigned workspaces, destroyed, butteraugli_calls, version_probes;
-static int status(void) { const char *s = getenv("M14_STATUS"); return s ? atoi(s) : 0; }
-unsigned m14_count(unsigned i) { return i == 3 ? version_probes : i == 2 ? butteraugli_calls : i ? destroyed : workspaces; }
-static void m17_log(const char *event) {
-    const char *path = getenv("M17_ABI_LOG");
+static int status(void) { const char *s = getenv("FMETRICS_BOUNDARY_FIXTURE_STATUS"); return s ? atoi(s) : 0; }
+unsigned boundary_count(unsigned i) { return i == 3 ? version_probes : i == 2 ? butteraugli_calls : i ? destroyed : workspaces; }
+static void result_fixture_log(const char *event) {
+    const char *path = getenv("FMETRICS_RESULT_FIXTURE_ABI_LOG");
     if (path) { FILE *f = fopen(path, "a"); if (!f) abort(); fputs(event, f); fclose(f); }
 }
 const char *fmetrics_version_str(void) {
     version_probes++;
-    const char *s = getenv("M14_VERSION");
+    const char *s = getenv("FMETRICS_BOUNDARY_FIXTURE_VERSION");
     if (!s) return "0.1.0";
     if (!strcmp(s, "null")) return NULL;
     if (!strcmp(s, "non-UTF8")) return "\xff";
     return s;
 }
-const char *fmetrics_cvvdp_version_str(void) { return "m14-test"; }
+const char *fmetrics_cvvdp_version_str(void) { return "boundary-fixture"; }
 const char *fmetrics_error_str(FmetricsErr err) {
     if ((unsigned)err > 6) abort(); /* Rust must not interpret unknown via C. */
     return "known fmetrics status";
 }
-FmetricsWorkspace *fmetrics_workspace_create(void) { workspaces++; m17_log("create\n"); return (FmetricsWorkspace *)malloc(1); }
-void fmetrics_workspace_destroy(FmetricsWorkspace *w) { destroyed++; m17_log("destroy\n"); free(w); }
+FmetricsWorkspace *fmetrics_workspace_create(void) { workspaces++; result_fixture_log("create\n"); return (FmetricsWorkspace *)malloc(1); }
+void fmetrics_workspace_destroy(FmetricsWorkspace *w) { destroyed++; result_fixture_log("destroy\n"); free(w); }
 FmetricsErr fmetrics_ssimu2_cmp(FmetricsWorkspace *w, const FmetricsImg *a, const FmetricsImg *b, double *s) {
     if (!w || !a->data || !b->data || a->format != FMETRICS_PIX_FMT_RGB_UINT8) abort();
     *s = 42;
@@ -40,8 +40,8 @@ FmetricsErr fmetrics_butteraugli_cmp(FmetricsWorkspace *w, const FmetricsImg *a,
     butteraugli_calls++;
     char event[128];
     snprintf(event, sizeof(event), "score %d %.0f\n", o->pnorm, (double)o->intensity_target);
-    m17_log(event);
-    const char *path = getenv("M17_RESULT_FILE");
+    result_fixture_log(event);
+    const char *path = getenv("FMETRICS_RESULT_FIXTURE_RESULT_FILE");
     if (path) {
         FILE *f = fopen(path, "r"); if (!f || fscanf(f, "%lf", s) != 1) abort();
         int raw_status;
@@ -61,7 +61,7 @@ FmetricsErr fmetrics_cvvdp_reset(FmetricsCvvdpCtx *c) { (void)c; return (Fmetric
 FmetricsErr fmetrics_cvvdp_cmp(const FmetricsImg *a, const FmetricsImg *b, FmetricsCvvdpDisplayModel m, unsigned t, const FmetricsCvvdpDisplayParams *p, FmetricsCvvdpResult *r) { (void)a; (void)b; (void)m; (void)t; (void)p; (void)r; return (FmetricsErr)status(); }
 FmetricsErr fmetrics_cvvdp_get_display_params(FmetricsCvvdpDisplayModel m, FmetricsCvvdpDisplayParams *p) { (void)m; (void)p; return (FmetricsErr)status(); }
 
-#ifdef M14_PROBE
+#ifdef FMETRICS_BOUNDARY_FIXTURE_PROBE
 #define TYPE(T) printf("%zu %zu ", sizeof(T), _Alignof(T))
 #define FIELD(T,F) printf("%zu %zu ", offsetof(T,F), sizeof(((T*)0)->F))
 int main(void) {

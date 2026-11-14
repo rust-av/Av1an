@@ -6,4 +6,4 @@ typedef void (*Deallocator)(void *);
  * process-global allocator instead. No symbolic binding or deep binding. */
 void free(void *pointer) { (void)pointer; }
 
-Deallocator m10_bound_free(void) { return free; }
+Deallocator cuda_fixture_bound_free(void) { return free; }

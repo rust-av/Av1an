@@ -26,7 +26,7 @@ Native statuses use integer-safe `FmetricsErr`: known associated constants keep
 their names; `.0` replaces enum casts. `from_raw` preserves every code, and only
 zero is success. Unknown errors retain the original integer in `CallFailed`.
 Input-only image formats/colorspaces and display models remain typed enums.
-The `m14_` tests compile vendored, unmodified public headers with a C11 compiler;
+The `ffi` integration tests compile vendored, unmodified public headers with a C11 compiler;
 ordinary crate builds need no compiler, headers or fmetrics installation.
 
 ## Usage
@@ -81,7 +81,7 @@ can overflow: a native OK with NaN or either infinity returns
 `FmetricsError::NonFiniteButteraugli`, never a successful `FrameScore` or Andean
 score callback. The workspace lease is returned on this error.
 
-The `m17_` routing matrix and real-C ABI sinks check these contracts, not native
+The finite-options routing matrix and real-C ABI sinks check these contracts, not native
 Butteraugli numerical accuracy or GPU/plugin equivalence.
 
 ### CVVDP temporal modes

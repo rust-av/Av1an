@@ -655,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn m25_explicit_selection_and_system_before_adjacent_fallback() {
+    fn explicit_selection_and_system_before_adjacent_fallback() {
         let fixture = tempfile::tempdir().unwrap();
         let root = fixture.path();
         let explicit = root.join("explicit models 雪");

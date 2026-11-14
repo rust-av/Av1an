@@ -153,7 +153,7 @@ fn fixture() -> tempfile::TempDir {
 }
 
 #[test]
-fn m23_exact_candidate_table() {
+fn exact_candidate_table() {
     let root = fixture();
     for (label, inputs, want) in cases(root.path()) {
         assert_eq!(
@@ -165,7 +165,7 @@ fn m23_exact_candidate_table() {
 }
 
 #[test]
-fn m23_parallel_owned_inputs() {
+fn parallel_owned_inputs() {
     let root = fixture();
     let cases = cases(root.path());
     let start = std::sync::Arc::new(std::sync::Barrier::new(cases.len()));

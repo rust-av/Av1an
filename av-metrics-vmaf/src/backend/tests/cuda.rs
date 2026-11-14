@@ -6,11 +6,11 @@ use std::{
 
 use super::*;
 
-const EXACT_TEST: &str = "backend::cuda_tests::m10_cuda_ownership";
+const EXACT_TEST: &str = "backend::tests::cuda::cuda_ownership";
 
 #[test]
-fn m10_cuda_ownership() {
-    if std::env::var_os("M10_CHILD").is_some() {
+fn cuda_ownership() {
+    if std::env::var_os("VMAF_CUDA_FIXTURE_CHILD").is_some() {
         check_scenario();
         return;
     }
@@ -25,10 +25,10 @@ fn m10_cuda_ownership() {
         .arg(&library)
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/m10_cuda.c"
+            "/tests/fixtures/cuda.c"
         ))
         .output()
-        .expect("M10 ABI tests require cc");
+        .expect("CUDA ownership ABI tests require cc");
     assert!(
         output.status.success(),
         "{}",
@@ -38,9 +38,9 @@ fn m10_cuda_ownership() {
     for scenario in 0..19 {
         let mut child = Command::new(std::env::current_exe().expect("test executable"))
             .args(["--exact", EXACT_TEST, "--nocapture"])
-            .env("M10_CHILD", "1")
-            .env("M10_SCENARIO", scenario.to_string())
-            .env("M10_LIBRARY", &library)
+            .env("VMAF_CUDA_FIXTURE_CHILD", "1")
+            .env("VMAF_CUDA_FIXTURE_SCENARIO", scenario.to_string())
+            .env("VMAF_CUDA_FIXTURE_LIBRARY", &library)
             .env("VMAF_LIB_DIR", directory.path())
             .env_remove("VMAF_MODEL_PATH")
             .stdout(Stdio::piped())
@@ -73,25 +73,34 @@ fn m10_cuda_ownership() {
 
 fn check_scenario() {
     // SAFETY: our compiled fixture stays mapped through all counter reads.
-    let library =
-        unsafe { libloading::Library::new(std::env::var_os("M10_LIBRARY").expect("fixture path")) }
-            .expect("load fixture");
+    let library = unsafe {
+        libloading::Library::new(
+            std::env::var_os("VMAF_CUDA_FIXTURE_LIBRARY").expect("fixture path"),
+        )
+    }
+    .expect("load fixture");
     // SAFETY: these are the exact fixture signatures; indices below are in range.
     let (counter, cleanup) = unsafe {
         (
             library
-                .get::<unsafe extern "C" fn(u32) -> u32>(b"m10_count\0")
+                .get::<unsafe extern "C" fn(u32) -> u32>(b"cuda_fixture_count\0")
                 .expect("counter"),
-            library.get::<unsafe extern "C" fn()>(b"m10_cleanup\0").expect("cleanup"),
+            library
+                .get::<unsafe extern "C" fn()>(b"cuda_fixture_cleanup\0")
+                .expect("cleanup"),
         )
     };
-    let scenario: u32 = std::env::var("M10_SCENARIO").expect("scenario").parse().expect("number");
+    let scenario: u32 = std::env::var("VMAF_CUDA_FIXTURE_SCENARIO")
+        .expect("scenario")
+        .parse()
+        .expect("number");
     static API: std::sync::OnceLock<VmafApi> = std::sync::OnceLock::new();
     let api = API.get_or_init(|| {
         let mut api = *VmafApi::load().expect("fixture API");
         // SAFETY: this callback frees the fixture's own malloc allocation. The
         // production guard must use this same field, not a test-only free path.
-        api.cuda.free_state = Some(unsafe { *library.get(b"m10_free\0").expect("C free counter") });
+        api.cuda.free_state =
+            Some(unsafe { *library.get(b"cuda_fixture_free\0").expect("C free counter") });
         match scenario {
             9 | 14 => api.cuda.release = None,
             10 | 12 | 13 => api.cuda.free_state = None,
@@ -130,11 +139,11 @@ fn check_scenario() {
         },
         Err(error) => (None, Some(error)),
     };
-    // SAFETY: fixture remains live and counter indices are defined in m10_cuda.c.
+    // SAFETY: fixture remains live and counter indices are defined in cuda.c.
     let snapshot: Vec<_> = (0..13).map(|index| unsafe { counter(index) }).collect();
     // SAFETY: snapshot is captured; fixture reclaims any RED-only leaked wrapper.
     unsafe { cleanup() };
-    eprintln!("M10 counters: {snapshot:?}");
+    eprintln!("CUDA ownership counters: {snapshot:?}");
     // Literal expectations derived from upstream copy/release/malloc semantics.
     // Order: init_state, alloc, free, original_release, resource_release,
     // context_release, import, CUDA_pool, close, init_context, CPU_pool, duplicate, bad_call.

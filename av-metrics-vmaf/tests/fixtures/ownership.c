@@ -43,7 +43,7 @@ enum {
 static unsigned counts[COUNTERS];
 static int model;
 static Context *active;
-unsigned m09_count(unsigned index) {
+unsigned ownership_count(unsigned index) {
     if (index == COUNTERS) {
         unsigned sum = 0;
         for (Record *r = active->records; r; r = r->next)
@@ -56,7 +56,7 @@ unsigned m09_count(unsigned index) {
     return counts[index];
 }
 static void event(const char *name, unsigned index) {
-    const char *path = getenv("M18_EVENTS");
+    const char *path = getenv("VMAF_FINALIZATION_FIXTURE_EVENTS");
     if (!path) return;
     FILE *file = fopen(path, "a");
     if (!file) abort();
@@ -105,7 +105,7 @@ int vmaf_fetch_preallocated_picture(Context *ctx, Picture *out) {
     *out = *p;
     /* Native pool failure rolls back internally but can leave populated fields.
      * This tombstone is deliberately NOT a checkout or a caller-owned ref. */
-    if (counts[FETCH] == setting("M09_FAIL_FETCH")) return -72;
+    if (counts[FETCH] == setting("VMAF_OWNERSHIP_FIXTURE_FAIL_FETCH")) return -72;
     r->refs = r->rust_owner = 1;
     counts[CHECKOUT]++;
     return 0;
@@ -142,7 +142,7 @@ int vmaf_read_pictures(Context *ctx, Picture *ref, Picture *dist, unsigned index
         counts[FLUSH]++;
         event("flush", 0);
         release_workers(ctx);
-        if (setting("M09_FAIL_FLUSH")) return -73;
+        if (setting("VMAF_OWNERSHIP_FIXTURE_FAIL_FLUSH")) return -73;
         ctx->flushed = 1;
         return 0;
     }
@@ -162,7 +162,7 @@ int vmaf_read_pictures(Context *ctx, Picture *ref, Picture *dist, unsigned index
         }
     }
     /* Enqueue-like rejection cleans worker copies but keeps caller ownership. */
-    if (setting("M09_REJECT_READ")) {
+    if (setting("VMAF_OWNERSHIP_FIXTURE_REJECT_READ")) {
         release_workers(ctx);
         return -71;
     }
@@ -172,7 +172,7 @@ int vmaf_read_pictures(Context *ctx, Picture *ref, Picture *dist, unsigned index
         r->refs--;
         counts[TRANSFER]++;
         counts[NATIVE_RELEASE]++;
-        if (!setting("M09_NONZERO")) memset(pair[i], 0, sizeof(Picture));
+        if (!setting("VMAF_OWNERSHIP_FIXTURE_NONZERO")) memset(pair[i], 0, sizeof(Picture));
     }
     ctx->next_index++;
     return 0;
@@ -217,18 +217,18 @@ int vmaf_score_at_index(Context *ctx, void *handle, double *out, unsigned index)
     counts[QUERY]++;
     event("query", index);
     if (!handle) return -22;
-    if (setting("M18_MODE") && !ctx->flushed) {
+    if (setting("VMAF_FINALIZATION_FIXTURE_MODE") && !ctx->flushed) {
         counts[EARLY]++;
         if (ctx->cfg.log_level) fprintf(stderr, "ERROR no feature at index %u\n", index);
         return -22;
     }
-    if (setting("M18_MODE") == 2 && index == 1) return -74;
+    if (setting("VMAF_FINALIZATION_FIXTURE_MODE") == 2 && index == 1) return -74;
     if (index >= ctx->next_index) return -22;
-    *out = setting("M18_MODE") ? 90.0 + index : 99.0;
+    *out = setting("VMAF_FINALIZATION_FIXTURE_MODE") ? 90.0 + index : 99.0;
     /* Corrupt the LAST value: the driver must validate all before publishing any. */
-    if (index == 2 && setting("Q05_BAD_SCORE"))
-        *out = setting("Q05_BAD_SCORE") == 1 ? NAN :
-               setting("Q05_BAD_SCORE") == 2 ? INFINITY : -INFINITY;
+    if (index == 2 && setting("VMAF_FINALIZATION_FIXTURE_BAD_SCORE"))
+        *out = setting("VMAF_FINALIZATION_FIXTURE_BAD_SCORE") == 1 ? NAN :
+               setting("VMAF_FINALIZATION_FIXTURE_BAD_SCORE") == 2 ? INFINITY : -INFINITY;
     return 0;
 }
 int vmaf_feature_score_pooled(Context *ctx, const char *name, int method,

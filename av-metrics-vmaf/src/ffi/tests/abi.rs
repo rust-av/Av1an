@@ -9,7 +9,7 @@ use std::{
 use super::*;
 
 #[test]
-fn m13_real_headers_match_layouts_and_detect_offset_drift() {
+fn real_headers_match_layouts_and_detect_offset_drift() {
     let Some(include) = header_directory() else {
         return;
     };
@@ -18,9 +18,9 @@ fn m13_real_headers_match_layouts_and_detect_offset_drift() {
         unavailable(&format!("C11 GCC/Clang compiler {compiler:?}: {error}"));
         return;
     }
-    let directory = tempfile::tempdir().expect("temporary M13 header probe");
+    let directory = tempfile::tempdir().expect("temporary ABI header probe");
     eprintln!(
-        "M13: CPU headers from {}; version macros 3/2/0; CUDA public header {}",
+        "ABI: CPU headers from {}; version macros 3/2/0; CUDA public header {}",
         include.display(),
         if include.join("libvmaf/libvmaf_cuda.h").is_file() {
             "installed"
@@ -35,7 +35,7 @@ fn m13_real_headers_match_layouts_and_detect_offset_drift() {
         "installed C headers disagree with Rust ABI"
     );
     eprintln!(
-        "M13: {} real-header layout values match; C signatures compile",
+        "ABI: {} real-header layout values match; C signatures compile",
         actual.len()
     );
 
@@ -43,7 +43,7 @@ fn m13_real_headers_match_layouts_and_detect_offset_drift() {
         .expect("read real picture header for controlled negative fixture");
     let altered = picture.replacen(
         "unsigned bpc;",
-        "unsigned bpc;\n    unsigned m13_offset_drift;",
+        "unsigned bpc;\n    unsigned abi_offset_drift;",
         1,
     );
     assert_ne!(
@@ -64,7 +64,7 @@ fn m13_real_headers_match_layouts_and_detect_offset_drift() {
         "detect field offset drift, not just size"
     );
     eprintln!(
-        "M13: negative header rejected: VmafPicture.w offset C={} Rust={}",
+        "ABI: negative header rejected: VmafPicture.w offset C={} Rust={}",
         drift["VmafPicture.w.offset"], expected["VmafPicture.w.offset"]
     );
 }
@@ -73,9 +73,9 @@ fn unavailable(reason: &str) {
     assert!(
         std::env::var_os("AV_METRICS_REQUIRE_CPU").is_none()
             && std::env::var_os("VMAF_INCLUDE_DIR").is_none(),
-        "M13 required header gate unavailable: {reason}. Install pinned v3.2.1 development headers and a C11 GCC/Clang compiler; set VMAF_INCLUDE_DIR to the parent of libvmaf/ and CC to the compiler."
+        "ABI required header gate unavailable: {reason}. Install pinned v3.2.1 development headers and a C11 GCC/Clang compiler; set VMAF_INCLUDE_DIR to the parent of libvmaf/ and CC to the compiler."
     );
-    eprintln!("UNEXECUTED M13 header gate: {reason}; set AV_METRICS_REQUIRE_CPU=1 to require it");
+    eprintln!("UNEXECUTED ABI header gate: {reason}; set AV_METRICS_REQUIRE_CPU=1 to require it");
 }
 
 fn header_directory() -> Option<PathBuf> {
@@ -118,9 +118,9 @@ fn probe(
 ) -> BTreeMap<String, usize> {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let executable = directory.join(if cfg!(target_os = "windows") {
-        "m13_headers.exe"
+        "headers.exe"
     } else {
-        "m13_headers"
+        "headers"
     });
     let mut command = Command::new(compiler);
     command.args(["-std=c11", "-Wall", "-Wextra", "-Werror"]);
@@ -132,14 +132,14 @@ fn probe(
         .arg(include)
         .arg("-I")
         .arg(fixtures.join("headers"))
-        .arg(fixtures.join("m13_headers.c"))
+        .arg(fixtures.join("headers.c"))
         .arg("-o")
         .arg(&executable)
         .output()
         .expect("execute C header compiler");
     assert!(
         output.status.success(),
-        "M13 C header/signature compilation failed (include {}): {}",
+        "ABI C header/signature compilation failed (include {}): {}",
         include.display(),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -193,6 +193,6 @@ fn signatures(api: VmafApi) {
 }
 
 #[test]
-fn m13_native_cleanup_signature_contracts_compile() {
+fn native_cleanup_signature_contracts_compile() {
     let _ = signatures as fn(VmafApi);
 }

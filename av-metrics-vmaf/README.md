@@ -543,13 +543,13 @@ cargo test -p av-metrics-vmaf --no-default-features
 cargo test -p av-metrics-vmaf --no-default-features --features cuda
 ```
 
-`m13_` tests check the actual loader with isolated counted C fixtures: unsupported
+The `ffi` integration tests check the actual loader with isolated counted C fixtures: unsupported
 versions and each same-version new-ABI marker must reach **zero** init, pool, or
 fetch calls. The verified runtime still constructs and scores a marker pair.
 Those runtime fixtures run on Unix and require `cc`; they do not execute real CUDA.
 
-The test-only `m13_real_headers_match_layouts_and_detect_offset_drift` compiles and
-executes `tests/fixtures/m13_headers.c` with a C11 GCC/Clang compiler (`CC`, default
+The test-only `ffi::tests::abi::real_headers_match_layouts_and_detect_offset_drift` compiles and
+executes `tests/fixtures/headers.c` with a C11 GCC/Clang compiler (`CC`, default
 `cc`). It compares all shared struct sizes, alignments, field offsets and widths,
 including both nested geometries, against **actual public headers**, and compiles
 function signature checks. A temporary changed real picture header must fail the
@@ -564,7 +564,8 @@ not silently pass. Explicit invalid `VMAF_INCLUDE_DIR` also fails. Normal crate
 builds never compile the probe or download headers.
 
 ```bash
-AV_METRICS_REQUIRE_CPU=1 cargo +stable test --profile ci -p av-metrics-vmaf m13_ -- --nocapture
+AV_METRICS_REQUIRE_CPU=1 cargo +stable test --profile ci -p av-metrics-vmaf --lib ffi::tests::abi -- --nocapture
+AV_METRICS_REQUIRE_CPU=1 cargo +stable test --profile ci -p av-metrics-vmaf --test ffi -- --nocapture
 ```
 
 For the analogous Windows header gate, extract `mingw64/include/libvmaf/` from
@@ -576,26 +577,26 @@ No Windows pkg-config is assumed. With a C11 Clang/GCC executable on PATH:
 $env:VMAF_INCLUDE_DIR = "C:\path\to\extracted\mingw64\include"
 $env:CC = "clang"
 $env:AV_METRICS_REQUIRE_CPU = "1"
-cargo +stable test --profile ci -p av-metrics-vmaf m13_ -- --nocapture
+cargo +stable test --profile ci -p av-metrics-vmaf --lib ffi::tests::abi -- --nocapture
 ```
 
 This compiles the portable C probe and exercises its drift check on that platform;
 Windows/macOS execution and real GPU acceptance must still be run there.
 
 Tests that require libvmaf skip themselves when it is unavailable, so the suite is
-green without a native installation. On Unix, `m09_picture_ownership` always
+green without a native installation. On Unix, `scorer::ownership::picture_ownership` always
 compiles a self-contained C ABI fixture with `cc` and runs isolated child tests
 through the public constructor, submission, and drop paths. It checks ownership
 transfer without relying on caller-descriptor zeroing, worker-reference retention,
 and failed fetch/read cleanup; it does not execute real CUDA or a native thread
-pool. `m09_native_cpu_threaded_matches_serial` separately exercises installed
+pool. `native_cpu_threaded_matches_serial` separately exercises installed
 libvmaf's CPU workers when available.
 
-On Unix, `m10_cuda_ownership` always runs isolated production `Context` paths
+On Unix, `backend::tests::cuda::cuda_ownership` always runs isolated production `Context` paths
 against a C ABI fixture, checking state-init, context-init, import and pool
 failures, missing cleanup symbols, CPU fallback and successful teardown. It
 counts wrapper allocations/frees separately from resource releases; it does not
-execute a CUDA driver. On Linux, `m10_cleanup_uses_process_allocator_scope`
+execute a CUDA driver. On Linux, `ffi::tests::cleanup_uses_process_allocator_scope`
 separately checks the production allocator resolver against a local decoy `free`
 and an ordinary global relocation, comparing addresses without calling either.
 Hardware acceptance still requires repeated real CUDA
@@ -603,22 +604,22 @@ construction/teardown while another independent GPU user remains active, with
 no abort or disruption to that user, plus native sanitizer checks. Those gates
 must be run on suitable hardware; passing the fixture does not establish them.
 
-`m26_` checks both availability APIs and all three preferences at the native
+`scorer::tests::setup` checks both availability APIs and all three preferences at the native
 constructor boundary, with complete symbols and late setup failures. Without the
 feature, CUDA entry-point counters stay zero and required CUDA fails before even
 calling a failing API loader. With the feature, CUDA selection and fresh CPU retry
 retain the complete-attempt contract. Run both Cargo configurations above.
 
-`m11_complete_backend_attempts` adds non-skipping full-constructor C-boundary checks
+`complete_backend_attempts` adds non-skipping full-constructor C-boundary checks
 for each setup failure under all three preferences: feature-enabled CUDA attempts
 and fresh CPU retry, or feature-disabled CPU/rejection policy, plus model/picture
 cleanup, separate host/device allocation and untouched device canaries. Its marker
 scores prove submission/flush routing, **not** CPU/CUDA numerical equivalence.
 
-`m12_owned_partial_and_cpu_constructor_failures` checks owned partial JSON models,
+`owned_partial_and_cpu_constructor_failures` checks owned partial JSON models,
 file fallback, fresh CPU retry and CPU-only feature/fetch failures. The shared
 fixture counts each allocation/destruction and checkout/return before close.
-`m12_blocking_pool_pressure` reserves host slots, waits for a genuinely blocked
+`blocking_pool_pressure` reserves host slots, waits for a genuinely blocked
 second fetch, then releases the slots through a condition-variable handshake.
 It checks both successful construction and allocation failure after release,
 without real GPU execution. Installed-CPU malformed-model checks additionally
@@ -630,7 +631,7 @@ itself unexecuted without the environment flag. Run it on a supported CUDA host:
 
 ```bash
 AV_METRICS_REQUIRE_CUDA=1 cargo +stable test --profile ci -p av-metrics-vmaf \
-  --no-default-features --features cuda m11_required_cuda_matches_cpu_on_same_clip -- --nocapture
+  --no-default-features --features cuda required_cuda_matches_cpu_on_same_clip -- --nocapture
 ```
 
 Set `VMAF_TEST_MODEL` if needed. The gate uses the same freshly generated 12-frame

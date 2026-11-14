@@ -1,7 +1,7 @@
 /* Pinned-header C ABI sink, not a GPU or a racy C++ lastError reproduction.
  * All cross-thread state is atomic, including controls and entry gates. */
 #define VSHIP_STATIC
-#include "headers/VshipAPI.h"
+#include "../headers/VshipAPI.h"
 #include <stdatomic.h>
 #include <sched.h>
 #include <stdio.h>
@@ -14,7 +14,7 @@ static _Atomic int errors[8], gate = -1;
 static _Atomic unsigned next_id, freed, live;
 typedef struct { int type; unsigned id; } Handle;
 
-unsigned m29_count(unsigned i) {
+unsigned transaction_count(unsigned i) {
     if (i < 10) return calls[i];
     switch (i) {
         case 10: return overlaps;
@@ -24,7 +24,7 @@ unsigned m29_count(unsigned i) {
         default: abort();
     }
 }
-void m29_set(unsigned i, int value) {
+void transaction_set(unsigned i, int value) {
     if (i < 8) errors[i] = value;
     else if (i == 8) { entered = 0; released = 0; gate = value; }
     else if (i == 9) released = 1;

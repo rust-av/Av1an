@@ -983,12 +983,12 @@ unsafe fn load_library(candidate: &Path) -> std::io::Result<Library> {
 }
 
 #[cfg(test)]
-#[path = "../../test-support/m22_loader_policy.rs"]
-mod m22_loader_tests;
+#[path = "../../test-support/loader_policy.rs"]
+mod loader_policy_tests;
 
 #[cfg(all(test, target_os = "windows"))]
-#[path = "../../test-support/m22_windows_loader.rs"]
-mod m22_windows_tests;
+#[path = "../../test-support/windows_loader.rs"]
+mod windows_loader_tests;
 
 /// Resolve one symbol, naming it in the error if it is missing.
 ///
@@ -1031,7 +1031,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn m14_unknown_status_is_not_normalized_to_internal() {
+    fn unknown_status_is_not_normalized_to_internal() {
         for raw in [777, -123] {
             assert_ne!(FmetricsErr::from_raw(raw), FmetricsErr::Internal);
             assert!(!FmetricsErr::from_raw(raw).is_ok());
@@ -1040,7 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn m14_known_status_debug_names_remain_unchanged() {
+    fn known_status_debug_names_remain_unchanged() {
         for (raw, name) in [
             "Ok",
             "InvalidArgument",
@@ -1128,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn m17_raw_and_config_defaults_are_finite_three() {
+    fn raw_and_config_defaults_are_finite_three() {
         let options = FmetricsButteraugliOptions::default();
         assert_eq!(options.pnorm, 3);
         assert!((options.intensity_target - 203.0).abs() < f32::EPSILON);

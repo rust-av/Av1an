@@ -97,7 +97,7 @@ mod tests {
             .arg(&library)
             .arg(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/tests/fixtures/m15_native.c"
+                "/tests/fixtures/temporal.c"
             ))
             .output()
             .expect("M15 requires cc");

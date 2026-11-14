@@ -17,6 +17,6 @@ The release's [Meson project and soname](https://github.com/Netflix/vmaf/blob/f8
 are **3.2.0**, despite the v3.2.1 tag. The generated header reports 3/2/0.
 The probe checks those macros and compares actual C sizes, alignments, offsets,
 and field widths with Rust. This is a header oracle, not binary attestation.
-Its negative fixture inserts `unsigned m13_offset_drift` after `VmafPicture.bpc`
+Its negative fixture inserts `unsigned abi_offset_drift` after `VmafPicture.bpc`
 in a temporary copy of the real header; the same comparison must detect it.
 No installed headers are modified, and ordinary crate builds never use this probe.

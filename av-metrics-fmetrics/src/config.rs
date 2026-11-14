@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_sdr_source_transfer_and_output_encoding_are_distinct() {
+    fn sdr_source_transfer_and_output_encoding_are_distinct() {
         use TransferCharacteristic as Source;
         use yuvxyb::TransferCharacteristic as Target;
         for (source, target, output) in [
@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_explicit_range_and_matrix_override_resolution() {
+    fn explicit_range_and_matrix_override_resolution() {
         let mut source = details(1920, 1080, 10);
         source.color_range = Some(av_decoders::ColorRange::Full);
         source.color_space = Some(av_decoders::ColorSpace::SMPTE170M);
@@ -590,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_only_unknown_metadata_uses_defaults() {
+    fn only_unknown_metadata_uses_defaults() {
         let mut source = details(1920, 1080, 8);
         let absent = ColorInfo::from_details(&source).unwrap();
         source.color_range = Some(av_decoders::ColorRange::Unspecified);
@@ -607,7 +607,7 @@ mod tests {
     }
 
     #[test]
-    fn m04_unsupported_transfer_and_gamut_do_not_become_srgb() {
+    fn unsupported_transfer_and_gamut_do_not_become_srgb() {
         use av_decoders::{ColorPrimaries, TransferCharacteristic as Transfer};
         for transfer in
             [Transfer::SMPTE2084, Transfer::ARIB_STD_B67, Transfer::Reserved, Transfer::VLog]

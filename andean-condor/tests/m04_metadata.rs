@@ -21,7 +21,7 @@ mod tests {
             "tests::m04_native_driver_metadata_transport",
             "M04_NATIVE_CHILD",
             false,
-            "/tests/fixtures/m04_native.c",
+            "/tests/fixtures/metadata.c",
         );
     }
 
@@ -35,7 +35,7 @@ mod tests {
             "tests::m07_native_upload_storage_boundary",
             "M07_NATIVE_CHILD",
             true,
-            "/tests/fixtures/m04_native.c",
+            "/tests/fixtures/metadata.c",
         );
     }
 
@@ -49,7 +49,7 @@ mod tests {
             "tests::m17_butteraugli_production_entry_rejects_infinity_and_nonfinite_results",
             "M17_NATIVE_CHILD",
             false,
-            "/../av-metrics-fmetrics/tests/m14_boundary.c",
+            "/../av-metrics-fmetrics/tests/fixtures/boundary.c",
         );
     }
 
@@ -86,10 +86,16 @@ mod tests {
         }
         if marker == "M17_NATIVE_CHILD" {
             child
-                .env("M17_ABI_LOG", directory.path().join("calls.log"))
-                .env("M17_RESULT_FILE", directory.path().join("result"))
-                .env("M14_VERSION", "0.1.0")
-                .env("M14_STATUS", "0");
+                .env(
+                    "FMETRICS_RESULT_FIXTURE_ABI_LOG",
+                    directory.path().join("calls.log"),
+                )
+                .env(
+                    "FMETRICS_RESULT_FIXTURE_RESULT_FILE",
+                    directory.path().join("result"),
+                )
+                .env("FMETRICS_BOUNDARY_FIXTURE_VERSION", "0.1.0")
+                .env("FMETRICS_BOUNDARY_FIXTURE_STATUS", "0");
         }
         let output = child
             .args(["--exact", test, "--nocapture"])
@@ -335,8 +341,9 @@ mod tests {
     }
 
     fn check_butteraugli() {
-        let log = std::env::var_os("M17_ABI_LOG").expect("ABI log");
-        let result_file = std::env::var_os("M17_RESULT_FILE").expect("ABI result");
+        let log = std::env::var_os("FMETRICS_RESULT_FIXTURE_ABI_LOG").expect("ABI log");
+        let result_file =
+            std::env::var_os("FMETRICS_RESULT_FIXTURE_RESULT_FILE").expect("ABI result");
         let calls = || std::fs::read_to_string(&log).unwrap_or_default();
         let mut metric = QualityMetric::BUTTERAUGLI {
             target_range: (1.0, 3.0),

@@ -54,12 +54,12 @@ fn small_pair(distortion: Distortion) -> SyntheticPair {
 
 /// Capture native stderr in an isolated process, never redirect production FDs.
 #[test]
-fn m18_stock_cpu_stderr_and_scores() {
+fn stock_cpu_stderr_and_scores() {
     use std::{
         process::{Command, Stdio},
         time::{Duration, Instant},
     };
-    if let Ok(threads) = std::env::var("M18_CPU_CHILD") {
+    if let Ok(threads) = std::env::var("VMAF_FINALIZATION_FIXTURE_CPU_CHILD") {
         let threads = threads.parse().expect("threads");
         let pair = small_pair(Distortion::Moderate);
         let format = VideoFormat {
@@ -101,7 +101,7 @@ fn m18_stock_cpu_stderr_and_scores() {
             "same inputs and existing native score_decoders path, exact identity"
         );
         println!(
-            "M18 CPU threads={threads}: 12 finite scores, exact score_decoders match, repeated finish/drain stable"
+            "stock CPU threads={threads}: 12 finite scores, exact score_decoders match, repeated finish/drain stable"
         );
         assert!(scores.iter().all(|score| score.is_finite()));
         return;
@@ -111,13 +111,13 @@ fn m18_stock_cpu_stderr_and_scores() {
             std::env::var_os("AV_METRICS_REQUIRE_CPU").is_none(),
             "required CPU gate needs libvmaf"
         );
-        eprintln!("UNEXECUTED M18 real CPU gate: libvmaf unavailable");
+        eprintln!("UNEXECUTED stock CPU gate: libvmaf unavailable");
         return;
     }
     for threads in [0, 2] {
         let mut child = Command::new(std::env::current_exe().expect("executable"))
-            .args(["--exact", "m18_stock_cpu_stderr_and_scores", "--nocapture"])
-            .env("M18_CPU_CHILD", threads.to_string())
+            .args(["--exact", "stock_cpu_stderr_and_scores", "--nocapture"])
+            .env("VMAF_FINALIZATION_FIXTURE_CPU_CHILD", threads.to_string())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -141,7 +141,7 @@ fn m18_stock_cpu_stderr_and_scores() {
         );
         assert!(stderr.is_empty(), "native stderr must be empty: {stderr}");
         eprintln!(
-            "{stdout}M18 CPU threads={threads}: captured stderr={} bytes",
+            "{stdout}stock CPU threads={threads}: captured stderr={} bytes",
             output.stderr.len()
         );
     }
@@ -149,7 +149,7 @@ fn m18_stock_cpu_stderr_and_scores() {
 
 /// Manual hardware gate: no absence skip once explicitly requested.
 #[test]
-fn m11_required_cuda_matches_cpu_on_same_clip() {
+fn required_cuda_matches_cpu_on_same_clip() {
     if std::env::var_os("AV_METRICS_REQUIRE_CUDA").is_none() {
         eprintln!("UNEXECUTED hardware gate: set AV_METRICS_REQUIRE_CUDA=1 on a CUDA host");
         return;
@@ -198,7 +198,7 @@ fn m11_required_cuda_matches_cpu_on_same_clip() {
 }
 
 #[test]
-fn m09_native_cpu_threaded_matches_serial() {
+fn native_cpu_threaded_matches_serial() {
     require_libvmaf!();
     let pair = small_pair(Distortion::Mild);
     let format = VideoFormat {
@@ -237,7 +237,7 @@ fn m09_native_cpu_threaded_matches_serial() {
 }
 
 #[test]
-fn m12_native_cpu_malformed_model_then_valid_scorer() {
+fn native_cpu_malformed_model_then_valid_scorer() {
     if std::env::var_os("AV_METRICS_REQUIRE_CPU").is_some() {
         assert!(
             is_available(),
@@ -289,7 +289,7 @@ fn m12_native_cpu_malformed_model_then_valid_scorer() {
 }
 
 #[test]
-fn m06_cpu_rejects_typed_u8_and_either_raw_side_for_ten_bit() {
+fn cpu_rejects_typed_u8_and_either_raw_side_for_ten_bit() {
     require_libvmaf!();
     let format = VideoFormat {
         width: 64,
