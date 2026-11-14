@@ -2057,3 +2057,5 @@ if not (0 < {node_name}.width <= 2147483647 and 0 < {node_name}.height <= 214748
         matches!(self, VapourSynthFilter::Trim { .. })
     }
 }
+#[cfg(test)]
+mod tests;

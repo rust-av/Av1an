@@ -962,6 +962,7 @@ fn xml_escape(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    mod serialization;
     use super::*;
 
     fn config_from(json: &str) -> MkvmergeConfig {

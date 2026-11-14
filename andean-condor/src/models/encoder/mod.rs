@@ -955,6 +955,7 @@ pub enum EncoderPasses {
 
 #[cfg(test)]
 mod tests {
+    mod settings;
     use super::*;
 
     #[test]
