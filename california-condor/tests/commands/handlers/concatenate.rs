@@ -6,6 +6,202 @@ use andean_condor::models::sequence::scene_concatenator::ConcatMethod;
 use california_condor::test_helpers::*;
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use california_condor::{
+        commands::{
+            ConcatenationMethod, DiscardCategory,
+            handlers::{
+                concatenate::{apply_discard, concatenate_handler},
+                init::init_handler,
+            },
+        },
+        utils::hash_path::hash_path,
+    };
+
+    fn check_native_discard(phase: u8) {
+        assert!((1..=3).contains(&phase));
+        let video = get_test_video();
+        let temp = tempfile::tempdir().expect("native fixture");
+        let output = temp.path().join("out.mkv");
+        for method in [
+            ConcatMethod::MKVMerge(Default::default()),
+            ConcatMethod::FFmpeg(Default::default()),
+        ] {
+            let mut config = default_config(&video, &output, temp.path());
+            config.condor.sequence_config.scene_concatenator.method = method;
+            let before = serde_json::to_vec(&config).expect("snapshot");
+            apply_discard(
+                &mut config,
+                &[DiscardCategory::Audio, DiscardCategory::Subtitle, DiscardCategory::Attachment],
+            )
+            .expect("genuine video-only source is not a failed identification");
+            assert_eq!(serde_json::to_vec(&config).expect("after"), before);
+        }
+        if phase == 1 {
+            return;
+        }
+        let path = temp.path().join("one-frame.y4m");
+        let mut data = b"YUV4MPEG2 W2 H2 F24:1 Ip A1:1 C420jpeg\nFRAME\n".to_vec();
+        data.extend([16, 16, 16, 16, 128, 128]);
+        std::fs::write(&path, data).expect("finite Y4M");
+        let video = TestVideo { path, ..video };
+        let mut config = default_config(&video, &output, temp.path());
+        let before = serde_json::to_vec(&config).expect("snapshot");
+        apply_discard(
+            &mut config,
+            &[DiscardCategory::Audio, DiscardCategory::Chapters],
+        )
+        .expect_err("native unrecognized Y4M cannot silently skip MKV discard");
+        assert_eq!(serde_json::to_vec(&config).expect("after"), before);
+        if phase == 2 {
+            return;
+        }
+        config.condor.sequence_config.scene_concatenator.method =
+            ConcatMethod::FFmpeg(Default::default());
+        let before = serde_json::to_vec(&config).expect("snapshot");
+        apply_discard(
+            &mut config,
+            &[DiscardCategory::Audio, DiscardCategory::Subtitle, DiscardCategory::Attachment],
+        )
+        .expect("native FFmpeg fallback keeps video-only no-match behavior");
+        assert_eq!(serde_json::to_vec(&config).expect("after"), before);
+    }
+
+    #[test]
+    fn discard_ancillary_tracks_on_native_video_only_source_leaves_configuration_unchanged() {
+        check_native_discard(1);
+    }
+
+    #[test]
+    fn discard_on_unrecognized_y4m_with_mkvmerge_fails_atomically() {
+        check_native_discard(2);
+    }
+
+    #[test]
+    fn discard_on_y4m_with_ffmpeg_fallback_preserves_empty_ancillary_selection() {
+        check_native_discard(3);
+    }
+
+    #[test]
+    fn concatenate_handler_without_overrides_retains_default_method_and_config_path() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let expected_config = default_config(&test_video, &output, &temp_abs);
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) =
+            concatenate_handler(Some(&config_path), None, None, None, false)
+                .expect("concatenate_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn concatenate_handler_selects_ffmpeg_and_scene_directory_without_changing_other_checked_settings()
+     {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        expected_config.condor.sequence_config.scene_concatenator.method =
+            ConcatMethod::FFmpeg(Default::default());
+        expected_config.condor.sequence_config.scene_concatenator.scenes_directory =
+            temp_abs.join("scenes");
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = concatenate_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            Some(&ConcatenationMethod::FFmpeg),
+            None,
+            false,
+        )
+        .expect("concatanate_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use serial_test::serial;
 
