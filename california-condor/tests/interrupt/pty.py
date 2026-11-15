@@ -585,17 +585,25 @@ elif __name__ == '__main__' and len(sys.argv) == 5 and sys.argv[3] == 'listener'
     listener(sys.argv[1], Path(sys.argv[2]), int(sys.argv[4]))
 elif __name__ == '__main__':
     assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
-    binary, base = sys.argv[1:]
+    all_modes = ('key-graceful', 'key-force', 'key-mixed', 'int-graceful', 'int-force', 'term-graceful', 'term-force', 'open-force', 'override-force')
+    if sys.argv[1] == '--cli-modes':
+        binary, base = sys.argv[2:4]
+        modes = tuple(sys.argv[4:])
+        assert modes and len(set(modes)) == len(modes) and set(modes) <= set(all_modes), modes
+    else:
+        binary, base = sys.argv[1:]
+        modes = all_modes
     base = Path(base)
     source = (base/'source.vpy').read_bytes()
     encoder = base/'encoder'
     encoder.write_text(ENCODER); encoder.chmod(0o755)
     failures = []
     for route in ('standalone', 'root'):
-        for mode in ('key-graceful', 'key-force', 'key-mixed', 'int-graceful', 'int-force', 'term-graceful', 'term-force', 'open-force', 'override-force'):
+        for mode in modes:
             try:
                 run(binary, base/'template.json', base, mode, route)
             except (AssertionError, OSError, subprocess.TimeoutExpired) as error:
                 failures.append(f'{mode}/{route}: {error}')
     assert (base/'source.vpy').read_bytes() == source
     assert not failures, '\n'.join(failures)
+    print(f'CLI_INTERRUPT_CASES_COMPLETED={2 * len(modes)}', flush=True)
