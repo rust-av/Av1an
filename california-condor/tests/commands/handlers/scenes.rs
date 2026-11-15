@@ -131,7 +131,8 @@ mod tests {
     #[cfg(unix)]
     #[serial]
     #[test]
-    fn current_producers_edits_exact_indices_direct_barrier_and_recovery() {
+    fn current_native_results_resume_and_scene_edits_withdraw_affected_indices_until_explicit_reset()
+     {
         use andean_condor::{
             core::sequence::{
                 Sequence, parallel_encoder::ParallelEncoder, quality_check::QualityCheck,
@@ -449,9 +450,8 @@ mod tests {
         }
     }
 
-    #[serial]
-    #[test]
-    fn scenes_print_and_info_address_the_selection() {
+    fn check_scene_info(phase: u8) {
+        assert!((1..=4).contains(&phase));
         let temp = tempfile::tempdir().expect("temp directory");
         let config_path = scenes_config(&temp);
         let mut configuration = load(&config_path);
@@ -489,6 +489,9 @@ mod tests {
 
         let info = condor_cmd(&temp).args(["scenes", "info"]).assert().success();
         assert_eq!(stdout_json(info.get_output()), serde_json::json!(all));
+        if phase == 1 {
+            return;
+        }
 
         // An index addresses one scene, which is reported on its own, and the
         // summary that follows describes that scene rather than the list.
@@ -514,19 +517,22 @@ mod tests {
         );
 
         // Several indices report an array, in ascending order.
-        let many = condor_cmd(&temp).args(["scenes", "1,4", "info", "frames"]).assert().success();
-        assert_eq!(
-            stdout_json(many.get_output()),
-            serde_json::json!([
-                {"start_frame": 121, "end_frame": 240},
-                {"start_frame": 528, "end_frame": 720},
-            ])
-        );
-        assert!(
-            stderr(many.get_output()).contains("Scenes: 2 Frames: 121-720"),
-            "a list of indices reports just those scenes: {}",
-            stderr(many.get_output())
-        );
+        if phase != 2 {
+            let many =
+                condor_cmd(&temp).args(["scenes", "1,4", "info", "frames"]).assert().success();
+            assert_eq!(
+                stdout_json(many.get_output()),
+                serde_json::json!([
+                    {"start_frame": 121, "end_frame": 240},
+                    {"start_frame": 528, "end_frame": 720},
+                ])
+            );
+            assert!(
+                stderr(many.get_output()).contains("Scenes: 2 Frames: 121-720"),
+                "a list of indices reports just those scenes: {}",
+                stderr(many.get_output())
+            );
+        }
 
         let sub_scenes =
             condor_cmd(&temp).args(["scenes", "1", "info", "sub-scenes"]).assert().success();
@@ -534,6 +540,9 @@ mod tests {
             stdout_json(sub_scenes.get_output()).as_array().expect("two sub-scenes").len(),
             2
         );
+        if phase <= 3 {
+            return;
+        }
 
         let missing = condor_cmd(&temp).args(["scenes", "9", "info"]).assert().failure();
         assert!(
@@ -552,9 +561,8 @@ mod tests {
         );
     }
 
-    #[serial]
-    #[test]
-    fn scenes_set_moves_a_frame_and_warns_about_stale_results() {
+    fn check_scene_frame_edit(phase: u8) {
+        assert!((1..=4).contains(&phase));
         use andean_condor::core::sequence::parallel_encoder::ParallelEncoder;
 
         let temp = tempfile::tempdir().expect("temp directory");
@@ -598,6 +606,9 @@ mod tests {
             "existing encode",
             "stale files are never touched"
         );
+        if phase == 1 {
+            return;
+        }
 
         // A frame that would empty the scene is rejected and never saves.
         let rejected = condor_cmd(&temp)
@@ -623,6 +634,9 @@ mod tests {
             unchanged,
             "a rejected edit never saves"
         );
+        if phase == 2 {
+            return;
+        }
 
         // A frame that reaches into a neighbour warns and names it.
         let overlapping =
@@ -637,6 +651,9 @@ mod tests {
             (50, 240),
             "the edit itself is accepted"
         );
+        if phase == 3 {
+            return;
+        }
 
         // A write reports the scenes it addressed too, with the frames they
         // were left holding.
@@ -661,9 +678,8 @@ mod tests {
         );
     }
 
-    #[serial]
-    #[test]
-    fn scenes_set_edits_only_the_named_scene() {
+    fn check_scene_encoder_edit(phase: u8) {
+        assert!((1..=6).contains(&phase));
         let temp = tempfile::tempdir().expect("temp directory");
         let config_path = scenes_config(&temp);
         let global = load(&config_path).condor.encoder;
@@ -708,6 +724,9 @@ mod tests {
                 .expect("crf merged"),
             &andean_condor::models::encoder::cli_parameter::CLIParameter::new_number("", "=", 18.0)
         );
+        if phase == 1 {
+            return;
+        }
         let photon_noise = configuration.condor.scenes[4]
             .encoder
             .photon_noise()
@@ -731,97 +750,109 @@ mod tests {
             global.base(),
             "a scene that only took a filtergraph keeps its encoder"
         );
+        if phase == 2 {
+            return;
+        }
 
         // One line can switch an encoder and set it up at once.
-        condor_cmd(&temp)
-            .args([
-                "scenes",
-                "4",
-                "set",
-                "encoder",
-                "svt-av1",
-                "--passes",
-                "1",
-                "--params",
-                "crf=16",
-                "--iso",
-                "1200",
-                "--chroma-iso",
-                "1200",
-                "--ffmpeg-filter",
-                "crop=iw-16:ih-16",
-            ])
-            .assert()
-            .success();
-        let encoder = &load(&config_path).condor.scenes[4].encoder;
-        assert_eq!(encoder.base().to_string(), "svt-av1");
-        assert_eq!(
-            encoder.passes(),
-            andean_condor::models::encoder::EncoderPasses::All(1)
-        );
-        let photon_noise = encoder.photon_noise().expect("Photon Noise was set");
-        assert_eq!(photon_noise.iso, 1200);
-        assert_eq!(photon_noise.chroma_iso, Some(1200));
-        assert_eq!(encoder.ffmpeg_filter(), Some("crop=iw-16:ih-16"));
+        if phase != 3 {
+            condor_cmd(&temp)
+                .args([
+                    "scenes",
+                    "4",
+                    "set",
+                    "encoder",
+                    "svt-av1",
+                    "--passes",
+                    "1",
+                    "--params",
+                    "crf=16",
+                    "--iso",
+                    "1200",
+                    "--chroma-iso",
+                    "1200",
+                    "--ffmpeg-filter",
+                    "crop=iw-16:ih-16",
+                ])
+                .assert()
+                .success();
+            let encoder = &load(&config_path).condor.scenes[4].encoder;
+            assert_eq!(encoder.base().to_string(), "svt-av1");
+            assert_eq!(
+                encoder.passes(),
+                andean_condor::models::encoder::EncoderPasses::All(1)
+            );
+            let photon_noise = encoder.photon_noise().expect("Photon Noise was set");
+            assert_eq!(photon_noise.iso, 1200);
+            assert_eq!(photon_noise.chroma_iso, Some(1200));
+            assert_eq!(encoder.ffmpeg_filter(), Some("crop=iw-16:ih-16"));
+            if phase == 4 {
+                return;
+            }
 
-        // Unsupported totals fail for the whole selection without saving.
-        let before = std::fs::read(&config_path).expect("snapshot");
-        condor_cmd(&temp)
-            .args(["scenes", "-1", "set", "passes", "4"])
-            .assert()
-            .failure();
-        assert_eq!(std::fs::read(&config_path).expect("unchanged"), before);
-        // A supported whole-selection edit reports the array.
-        let all = condor_cmd(&temp)
-            .args(["scenes", "-1", "set", "passes", "1"])
-            .assert()
-            .success();
-        let printed = String::from_utf8_lossy(&all.get_output().stdout).into_owned();
-        assert!(
-            printed.contains("Scenes scenes 0-4 passes updated"),
-            "a whole-selection change is reported once: {printed}"
-        );
-        assert!(
-            !printed.contains('['),
-            "the value waits for --verbose: {printed}"
-        );
+            // Unsupported totals fail for the whole selection without saving.
+            let before = std::fs::read(&config_path).expect("snapshot");
+            condor_cmd(&temp)
+                .args(["scenes", "-1", "set", "passes", "4"])
+                .assert()
+                .failure();
+            assert_eq!(std::fs::read(&config_path).expect("unchanged"), before);
+            // A supported whole-selection edit reports the array.
+            let all = condor_cmd(&temp)
+                .args(["scenes", "-1", "set", "passes", "1"])
+                .assert()
+                .success();
+            let printed = String::from_utf8_lossy(&all.get_output().stdout).into_owned();
+            assert!(
+                printed.contains("Scenes scenes 0-4 passes updated"),
+                "a whole-selection change is reported once: {printed}"
+            );
+            assert!(
+                !printed.contains('['),
+                "the value waits for --verbose: {printed}"
+            );
 
-        // `--verbose` prints every addressed scene's new value.
-        let all = condor_cmd(&temp)
-            .args(["--verbose", "scenes", "-1", "set", "passes", "1"])
-            .assert()
-            .success();
-        let printed = String::from_utf8_lossy(&all.get_output().stdout).into_owned();
-        let (_, values) = printed.split_once('\n').expect("a value line");
-        let values: Value = serde_json::from_str(values).expect("the reported value is JSON");
-        assert_eq!(
-            values.as_array().expect("five values").len(),
-            5,
-            "every addressed scene reports its new value: {printed}"
-        );
-        assert!(
-            load(&config_path).condor.scenes.iter().all(|scene| scene.encoder.passes()
-                == andean_condor::models::encoder::EncoderPasses::All(1)),
-            "the whole list took the pass count"
-        );
+            // `--verbose` prints every addressed scene's new value.
+            let all = condor_cmd(&temp)
+                .args(["--verbose", "scenes", "-1", "set", "passes", "1"])
+                .assert()
+                .success();
+            let printed = String::from_utf8_lossy(&all.get_output().stdout).into_owned();
+            let (_, values) = printed.split_once('\n').expect("a value line");
+            let values: Value = serde_json::from_str(values).expect("the reported value is JSON");
+            assert_eq!(
+                values.as_array().expect("five values").len(),
+                5,
+                "every addressed scene reports its new value: {printed}"
+            );
+            assert!(
+                load(&config_path).condor.scenes.iter().all(|scene| scene.encoder.passes()
+                    == andean_condor::models::encoder::EncoderPasses::All(1)),
+                "the whole list took the pass count"
+            );
+            if phase == 5 {
+                return;
+            }
 
-        // Capability errors name the encoder and never reach the file.
-        let photon_noise = condor_cmd(&temp)
-            .args(["scenes", "1", "set", "encoder", "x265", "--iso", "800"])
-            .assert()
-            .failure();
-        assert!(
-            stderr(photon_noise.get_output()).contains("does not support Photon Noise"),
-            "x265 cannot carry Photon Noise"
-        );
-        let chroma = condor_cmd(&temp)
-            .args(["scenes", "1", "set", "encoder", "svt-av1", "--chroma-iso", "200"])
-            .assert()
-            .failure();
-        assert!(
-            stderr(chroma.get_output()).contains("chroma Photon Noise requires luma Photon Noise"),
-            "a chroma ISO alone is rejected"
-        );
+            // Capability errors name the encoder and never reach the file.
+            let photon_noise = condor_cmd(&temp)
+                .args(["scenes", "1", "set", "encoder", "x265", "--iso", "800"])
+                .assert()
+                .failure();
+            assert!(
+                stderr(photon_noise.get_output()).contains("does not support Photon Noise"),
+                "x265 cannot carry Photon Noise"
+            );
+            let chroma = condor_cmd(&temp)
+                .args(["scenes", "1", "set", "encoder", "svt-av1", "--chroma-iso", "200"])
+                .assert()
+                .failure();
+            assert!(
+                stderr(chroma.get_output())
+                    .contains("chroma Photon Noise requires luma Photon Noise"),
+                "a chroma ISO alone is rejected"
+            );
+        }
         let outside = condor_cmd(&temp)
             .args(["scenes", "2", "set", "sub-scenes", "0-999"])
             .assert()
@@ -832,9 +863,8 @@ mod tests {
         );
     }
 
-    #[serial]
-    #[test]
-    fn scenes_reset_restores_what_detection_would_have_written() {
+    fn check_scene_reset(phase: u8) {
+        assert!((1..=4).contains(&phase));
         let temp = tempfile::tempdir().expect("temp directory");
         let config_path = scenes_config(&temp);
         let global = load(&config_path).condor.encoder;
@@ -864,6 +894,9 @@ mod tests {
             .success();
         configuration = load(&config_path);
         assert_eq!(configuration.condor.scenes[2].sub_scenes, None);
+        if phase == 1 {
+            return;
+        }
 
         // A keyless reset restores the scene itself and names it once.
         let scene = condor_cmd(&temp).args(["scenes", "2", "reset"]).assert().success();
@@ -872,12 +905,18 @@ mod tests {
             printed.contains("Scenes scene 2 reset to its default"),
             "the scene reset is named once: {printed}"
         );
+        if phase == 2 {
+            return;
+        }
 
         let frames = condor_cmd(&temp).args(["scenes", "0", "reset", "frames"]).assert().failure();
         assert!(
             stderr(frames.get_output()).contains("has no default"),
             "frame ranges come from detection"
         );
+        if phase == 3 {
+            return;
+        }
 
         let reset = condor_cmd(&temp).args(["scenes", "reset"]).assert().success();
         assert!(
@@ -890,9 +929,7 @@ mod tests {
         );
     }
 
-    #[serial]
-    #[test]
-    fn scenes_info_and_reset_reach_the_sequence_data() {
+    fn check_scene_sequence_data(reset: bool) {
         let temp = tempfile::tempdir().expect("temp directory");
         let config_path = scenes_config(&temp);
         let mut configuration = load(&config_path);
@@ -923,6 +960,9 @@ mod tests {
             stdout_json(pair.get_output()).as_array().expect("two scenes").len(),
             2
         );
+        if !reset {
+            return;
+        }
 
         // A reset clears the saved results of every addressed scene.
         condor_cmd(&temp)
@@ -950,9 +990,8 @@ mod tests {
         );
     }
 
-    #[serial]
-    #[test]
-    fn scenes_delete_and_add_change_the_list() {
+    fn check_scene_list_edit(phase: u8) {
+        assert!((1..=4).contains(&phase));
         let temp = tempfile::tempdir().expect("temp directory");
         let config_path = scenes_config(&temp);
 
@@ -973,6 +1012,9 @@ mod tests {
             vec![(0, 121), (240, 480), (528, 720)],
             "the remaining scenes keep their order"
         );
+        if phase == 1 {
+            return;
+        }
 
         // A new scene sorts by start frame unless told where to go.
         let added = condor_cmd(&temp).args(["scenes", "add", "240", "400"]).assert().success();
@@ -991,6 +1033,9 @@ mod tests {
             vec![(0, 121), (240, 400), (240, 480), (528, 720)],
             "an equal start goes before the existing scene"
         );
+        if phase == 2 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["scenes", "add", "900", "1000", "--append"])
@@ -1009,6 +1054,9 @@ mod tests {
             vec![(5, 10), (0, 121), (700, 800), (240, 400), (240, 480), (528, 720), (900, 1000),],
             "every placement landed where it was asked to"
         );
+        if phase == 3 {
+            return;
+        }
 
         let empty = condor_cmd(&temp).args(["scenes", "add", "10", "10"]).assert().failure();
         assert!(
@@ -1020,6 +1068,151 @@ mod tests {
             stderr(indexed.get_output()).contains("takes no index"),
             "`add` takes no index"
         );
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_bare_and_info_report_saved_results_subscenes_and_list_summary() {
+        check_scene_info(1);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_indexed_info_reports_selected_frames_or_subscenes_and_summary() {
+        check_scene_info(2);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_multi_index_info_prints_array_and_selected_span() {
+        check_scene_info(3);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_info_invalid_or_missing_index_reports_lowest_missing_index() {
+        check_scene_info(4);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_frame_edit_saves_selected_range_and_warns_without_touching_stale_chunk() {
+        check_scene_frame_edit(1);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_frame_edit_that_empties_scene_refuses_without_save() {
+        check_scene_frame_edit(2);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_frame_edit_accepts_overlap_and_names_neighbor_in_warning() {
+        check_scene_frame_edit(3);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_selection_summary_uses_actual_extrema_even_when_scene_list_is_unsorted() {
+        check_scene_frame_edit(4);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_encoder_and_parameter_crud_saves_selected_x265_crf() {
+        check_scene_encoder_edit(1);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_photon_noise_and_filtergraph_crud_save_supported_values() {
+        check_scene_encoder_edit(2);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_subscene_crud_saves_two_subranges_and_rejects_outside_range() {
+        check_scene_encoder_edit(3);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_encoder_combined_set_saves_passes_noise_and_filtergraph() {
+        check_scene_encoder_edit(4);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_passes_crud_rejects_unsupported_selection_atomically_and_reports_all_values_when_verbose()
+     {
+        check_scene_encoder_edit(5);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_encoder_capability_errors_name_unsupported_noise_or_missing_luma() {
+        check_scene_encoder_edit(6);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_encoder_reset_restores_global_encoder_and_subscene_reset_clears_ranges() {
+        check_scene_reset(1);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_keyless_reset_reports_selected_scene() {
+        check_scene_reset(2);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_frame_reset_refuses_because_detection_range_has_no_default() {
+        check_scene_reset(3);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_list_reset_clears_list_and_advises_redetection() {
+        check_scene_reset(4);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_sequence_info_reports_selected_saved_results_or_missing_index() {
+        check_scene_sequence_data(false);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_sequence_resets_clear_selected_results_without_changing_frame_boundaries() {
+        check_scene_sequence_data(true);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_delete_removes_selected_indices_preserving_peer_order_and_reports_removed_span() {
+        check_scene_list_edit(1);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_add_sorts_before_equal_start_and_reports_inserted_span() {
+        check_scene_list_edit(2);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_add_explicit_append_prepend_or_after_position_is_honored() {
+        check_scene_list_edit(3);
+    }
+
+    #[serial]
+    #[test]
+    fn scenes_add_rejects_empty_range_or_selection_index() {
+        check_scene_list_edit(4);
     }
 
     #[serial]
@@ -1270,8 +1463,8 @@ mod scene_encoders {
         );
     }
 
-    #[test]
-    fn no_warning_without_saved_scenes_or_global_encoder_request() {
+    fn check_scene_warning_absence(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let temp = tempfile::tempdir().expect("fixture");
         let config = fixture(&temp, true);
         for args in [
@@ -1303,6 +1496,9 @@ mod scene_encoders {
                 "{args:?}"
             );
         }
+        if phase == 1 {
+            return;
+        }
         for args in [
             vec!["--params", "--cq-level=NaN"],
             vec!["encode", "--passes", "3"],
@@ -1317,6 +1513,9 @@ mod scene_encoders {
             assert_eq!(fs::read(temp.path().join("condor.json")).unwrap(), before);
             warning(&output, false, &args);
         }
+        if phase == 2 {
+            return;
+        }
         let empty = fixture(&temp, false);
         for args in [
             vec!["--passes", "1"],
@@ -1328,8 +1527,7 @@ mod scene_encoders {
         }
     }
 
-    #[test]
-    fn crud_guidance_and_real_explicit_reset_preserve_results_and_files() {
+    fn check_global_encoder_guidance(reset: bool) {
         let temp = tempfile::tempdir().expect("fixture");
         fixture(&temp, true);
         let scene_edit = run(&temp, &["scenes", "0", "set", "params", "--crf=17"]);
@@ -1366,6 +1564,9 @@ mod scene_encoders {
             );
             warning(&output, true, &args);
         }
+        if !reset {
+            return;
+        }
         let before_reset = load(&temp);
         let output = run(&temp, &["scenes", "all", "reset", "encoder"]);
         assert!(output.status.success(), "{output:?}");
@@ -1378,6 +1579,32 @@ mod scene_encoders {
             assert_eq!(serde_json::to_value(after).unwrap(), expected);
         }
         assert_eq!(fs::read(chunk).unwrap(), b"historical chunk");
+    }
+
+    #[test]
+    fn non_encoder_routes_with_saved_scenes_do_not_warn_or_change_global_encoder() {
+        check_scene_warning_absence(1);
+    }
+
+    #[test]
+    fn invalid_global_encoder_edits_do_not_warn_or_change_saved_bytes() {
+        check_scene_warning_absence(2);
+    }
+
+    #[test]
+    fn global_encoder_edits_without_saved_scenes_do_not_emit_scene_preservation_warning() {
+        check_scene_warning_absence(3);
+    }
+
+    #[test]
+    fn global_encoder_crud_warns_but_preserves_all_saved_scene_metadata() {
+        check_global_encoder_guidance(false);
+    }
+
+    #[test]
+    fn explicit_scene_encoder_reset_applies_global_encoder_without_changing_other_scene_data_or_files()
+     {
+        check_global_encoder_guidance(true);
     }
 
     #[test]
