@@ -6,6 +6,75 @@ use california_condor::{
 };
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use california_condor::{
+        commands::handlers::zone::zone_handler,
+        test_helpers::default_config,
+        utils::hash_path::hash_path,
+        zoner::{ZonerConfig, parse_zone},
+    };
+
+    #[test]
+    fn zone_handler_without_requested_zones_retains_saved_definitions_and_config_path() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let mut configuration =
+            default_config(&test_video, &temp.path().join("out.mkv"), &temp_abs);
+        configuration.condor.sequence_config.zoner = Some(ZonerConfig {
+            zones: vec![parse_zone("-1 200 svt-av1").expect("the zone parses")],
+        });
+        configuration.save(&config_path).expect("the config saves");
+        let (config, found_config_path) =
+            zone_handler(Some(&config_path), &[]).expect("the handler succeeds");
+        assert_eq!(
+            found_config_path, config_path_abs,
+            "the handler reports the config it loaded"
+        );
+        assert_eq!(
+            config.condor.sequence_config.zoner, configuration.condor.sequence_config.zoner,
+            "the configured zones survive"
+        );
+    }
+
+    #[test]
+    fn zone_handler_without_requested_or_saved_zones_reports_missing_zones() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let config_path = temp.path().join("condor.json");
+        default_config(&test_video, &temp.path().join("out.mkv"), &temp_abs)
+            .save(&config_path)
+            .expect("the config saves");
+        let error = zone_handler(Some(&config_path), &[]).expect_err("there is nothing to zone");
+        assert!(
+            error.to_string().contains("no zones provided"),
+            "error explains the missing zones: {error}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use serial_test::serial;
 
