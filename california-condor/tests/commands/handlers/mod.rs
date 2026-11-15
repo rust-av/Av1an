@@ -214,8 +214,8 @@ mod encoder_admission {
     };
     use california_condor::{configuration::Configuration, test_helpers::TestVideo};
 
-    #[test]
-    fn legacy_jobs_can_be_repaired_in_either_order_without_running() {
+    fn check_legacy_encoder_repair(phase: u8) {
+        assert!((1..=4).contains(&phase));
         use andean_condor::models::encoder::EncoderPasses;
         let temp = tempfile::tempdir().expect("legacy fixture");
         let script = temp.path().join("blank.vpy");
@@ -262,6 +262,9 @@ mod encoder_admission {
                 .args(["scenes", "all", "reset", "parallel-encoder"])
                 .assert()
                 .success();
+            if phase == 2 {
+                continue;
+            }
             let global = ["encode", "set", "passes", "1"];
             let scenes = ["scenes", "all", "set", "passes", "1"];
             let (first, second) = if global_first {
@@ -294,6 +297,9 @@ mod encoder_admission {
                     .iter()
                     .all(|scene| scene.encoder.validate_settings() == Ok(()))
             );
+            if phase == 1 {
+                continue;
+            }
             let before = std::fs::read(&path).expect("repaired snapshot");
             for invalid in [
                 vec!["encode", "set", "passes", "2"],
@@ -307,6 +313,9 @@ mod encoder_admission {
                     before
                 );
             }
+        }
+        if phase <= 2 {
+            return;
         }
         legacy.save(&path).expect("legacy reset fixture");
         let before = std::fs::read(&path).expect("snapshot");
@@ -330,6 +339,9 @@ mod encoder_admission {
                 before
             );
         }
+        if phase == 3 {
+            return;
+        }
         condor_cmd(&temp).args(["encode", "reset", "passes"]).assert().success();
         condor_cmd(&temp).args(["scenes", "all", "reset"]).assert().success();
         legacy.save(&path).expect("legacy clear fixture");
@@ -339,7 +351,27 @@ mod encoder_admission {
     }
 
     #[test]
-    fn routes_reject_before_save_or_index() {
+    fn legacy_multipass_job_requires_global_and_scene_repairs_in_either_order_before_run() {
+        check_legacy_encoder_repair(1);
+    }
+
+    #[test]
+    fn legacy_multipass_job_unrelated_offline_edits_remain_available() {
+        check_legacy_encoder_repair(2);
+    }
+
+    #[test]
+    fn legacy_multipass_job_invalid_targeted_edits_preserve_saved_bytes() {
+        check_legacy_encoder_repair(3);
+    }
+
+    #[test]
+    fn legacy_multipass_job_explicit_resets_repair_or_clear_invalid_encoders() {
+        check_legacy_encoder_repair(4);
+    }
+
+    fn check_encoder_cli_admission(phase: u8) {
+        assert!((1..=5).contains(&phase));
         let temp = tempfile::tempdir().expect("fixture");
         let script = temp.path().join("blank.vpy");
         std::fs::write(&script, "from vapoursynth import core, YUV420P8\ncore.std.BlankClip(width=64,height=64,format=YUV420P8).set_output()\n").expect("script");
@@ -414,6 +446,9 @@ mod encoder_admission {
             );
             assert!(!temp.path().join("forbidden.ffindex").exists());
         }
+        if phase == 1 {
+            return;
+        }
         let new = temp.path().join("new.json");
         for params in [
             "--passes 1 --bitrate 1000",
@@ -441,6 +476,9 @@ mod encoder_admission {
                 before,
                 "{params}"
             );
+        }
+        if phase == 2 {
+            return;
         }
         for args in [
             vec![
@@ -477,6 +515,9 @@ mod encoder_admission {
             );
             assert!(!new.exists(), "invalid new config must not save");
         }
+        if phase == 3 {
+            return;
+        }
         condor_cmd(&temp)
             .args(["encode", "set", "encoder", "svt-av1"])
             .assert()
@@ -489,6 +530,9 @@ mod encoder_admission {
         let before = std::fs::read(&path).expect("VBR snapshot");
         condor_cmd(&temp).args(["encode", "reset", "params"]).assert().failure();
         assert_eq!(std::fs::read(&path).expect("unchanged reset"), before);
+        if phase == 4 {
+            return;
+        }
 
         *config.condor.scenes[0].encoder.passes_mut().expect("passes") =
             andean_condor::models::encoder::EncoderPasses::All(3);
@@ -507,6 +551,31 @@ mod encoder_admission {
                 before
             );
         }
+    }
+
+    #[test]
+    fn encoder_cli_invalid_capabilities_refuse_before_save_or_index() {
+        check_encoder_cli_admission(1);
+    }
+
+    #[test]
+    fn vvenc_cli_frontend_pass_flags_or_zero_bitrate_refuse_before_save() {
+        check_encoder_cli_admission(2);
+    }
+
+    #[test]
+    fn init_and_new_root_unsupported_photon_noise_refuse_before_new_config_creation() {
+        check_encoder_cli_admission(3);
+    }
+
+    #[test]
+    fn encoder_params_reset_that_breaks_multipass_vbr_preserves_job() {
+        check_encoder_cli_admission(4);
+    }
+
+    #[test]
+    fn root_and_encode_invalid_saved_scene_passes_refuse_without_resave() {
+        check_encoder_cli_admission(5);
     }
 }
 
@@ -601,23 +670,71 @@ mod filter_rejection {
         };
     }
 
-    cli_error!(cli_crop, "crop:top=abc", "top");
-    cli_error!(cli_resize, "resize:width=0", "width");
-    cli_error!(cli_trim, "trim:start=10;end=5", "end");
     cli_error!(
-        cli_rescale,
+        cli_filter_routes_reject_crop_non_numeric_top_without_saving_or_decoding,
+        "crop:top=abc",
+        "top"
+    );
+    cli_error!(
+        cli_filter_routes_reject_resize_zero_width_without_saving_or_decoding,
+        "resize:width=0",
+        "width"
+    );
+    cli_error!(
+        cli_filter_routes_reject_trim_end_before_start_without_saving_or_decoding,
+        "trim:start=10;end=5",
+        "end"
+    );
+    cli_error!(
+        cli_filter_routes_reject_rescale_missing_kernel_without_saving_or_decoding,
         "rescale:width=1280;height=720;doubler=ArtCNN",
         "kernel"
     );
-    cli_error!(cli_wnnm, "wnnm:sigma=1,abc", "sigma");
-    cli_error!(cli_bilateral, "bilateral:planes=true,maybe", "planes");
-    cli_error!(cli_degrain, "degrain:recalculate=maybe", "recalculate");
-    cli_error!(cli_zoom_degrain, "zoom_degrain:hpad=abc", "hpad");
-    cli_error!(cli_zoom_plane_negative, "zoom_degrain:plane=-1", "plane");
-    cli_error!(cli_zoom_plane_above_range, "zoom_degrain:plane=5", "plane");
-    cli_error!(cli_fgs, "fgs:", "iso");
-    cli_error!(cli_output_format, "output-format:typo=1", "typo");
-    cli_error!(cli_missing_delimiter, "crop", ":");
+    cli_error!(
+        cli_filter_routes_reject_wnnm_non_numeric_sigma_without_saving_or_decoding,
+        "wnnm:sigma=1,abc",
+        "sigma"
+    );
+    cli_error!(
+        cli_filter_routes_reject_bilateral_invalid_plane_boolean_without_saving_or_decoding,
+        "bilateral:planes=true,maybe",
+        "planes"
+    );
+    cli_error!(
+        cli_filter_routes_reject_degrain_invalid_recalculate_boolean_without_saving_or_decoding,
+        "degrain:recalculate=maybe",
+        "recalculate"
+    );
+    cli_error!(
+        cli_filter_routes_reject_zoom_degrain_non_numeric_hpad_without_saving_or_decoding,
+        "zoom_degrain:hpad=abc",
+        "hpad"
+    );
+    cli_error!(
+        cli_filter_routes_reject_zoom_degrain_negative_plane_with_range_diagnostic_without_saving,
+        "zoom_degrain:plane=-1",
+        "plane"
+    );
+    cli_error!(
+        cli_filter_routes_reject_zoom_degrain_plane_above_four_with_range_diagnostic_without_saving,
+        "zoom_degrain:plane=5",
+        "plane"
+    );
+    cli_error!(
+        cli_filter_routes_reject_fgs_missing_iso_without_saving_or_decoding,
+        "fgs:",
+        "iso"
+    );
+    cli_error!(
+        cli_filter_routes_reject_output_format_unknown_option_without_saving_or_decoding,
+        "output-format:typo=1",
+        "typo"
+    );
+    cli_error!(
+        cli_filter_routes_reject_missing_colon_delimiter_without_saving_or_decoding,
+        "crop",
+        ":"
+    );
 }
 
 #[cfg(test)]
@@ -708,7 +825,7 @@ mod quality_admission {
     }
 
     #[test]
-    fn failed_strategy_edits_are_offline_and_preserve_saved_bytes() {
+    fn quality_strategy_invalid_subset_or_skip_edits_preserve_saved_job_offline() {
         let temp = tempfile::tempdir().expect("fixture");
         let configuration = fixture(temp.path());
         let path = temp.path().join("condor.json");
@@ -760,22 +877,13 @@ mod quality_admission {
             );
             assert_eq!(std::fs::read(&path).expect("unchanged config"), before);
         }
-        for percent in [f64::MIN_POSITIVE, 25.0, 100.0] {
-            assert!(
-                StrategyArgs {
-                    length_percent: Some(percent),
-                    ..args
-                }
-                .build()
-                .is_ok()
-            );
-        }
         assert!(!temp.path().join("forbidden.ffindex").exists());
         assert!(!configuration.temp.exists());
     }
 
     #[test]
-    fn stages_reject_loaded_selection_before_work() {
+    fn target_quality_and_quality_check_invalid_loaded_selection_refuse_all_public_sequence_entries_before_work()
+     {
         let temp = tempfile::tempdir().expect("fixture");
         for (invalid_strategy, invalid_end, expected_error) in [
             (
@@ -884,12 +992,11 @@ mod quality_admission {
         }
     }
 
-    #[test]
-    fn stages_keep_no_work_and_cancellation_precedence() {
+    fn check_quality_precedence(modes: &[&str]) {
         use andean_condor::utils::cancellation::{Cancellation, Cancelled};
         let temp = tempfile::tempdir().expect("fixture");
         for stage in ["TQ", "QC"] {
-            for mode in ["empty", "disabled", "graceful", "forced"] {
+            for &mode in modes {
                 let mut configuration = fixture(temp.path());
                 configuration
                     .condor
@@ -948,6 +1055,21 @@ mod quality_admission {
             }
         }
     }
+
+    #[test]
+    fn quality_sequences_empty_scenes_return_one_warning_without_backend_work() {
+        check_quality_precedence(&["empty"]);
+    }
+
+    #[test]
+    fn quality_sequences_disabled_sections_return_without_warnings_or_backend_work() {
+        check_quality_precedence(&["disabled"]);
+    }
+
+    #[test]
+    fn quality_sequences_graceful_or_forced_cancellation_precedes_invalid_selection() {
+        check_quality_precedence(&["graceful", "forced"]);
+    }
 }
 
 #[cfg(test)]
@@ -958,7 +1080,7 @@ mod target_quality_admission {
     use california_condor::configuration::Configuration;
 
     #[test]
-    fn root_and_start_apply_repairs_before_final_validation() {
+    fn root_cli_and_start_handler_apply_target_quality_repairs_before_final_validation_and_save() {
         use andean_condor::models::{
             encoder::cli_parameter::CLIParameter, sequence::target_quality::types::ProbeStrategy,
         };
@@ -1106,7 +1228,7 @@ mod target_quality_admission {
     }
 
     #[test]
-    fn root_still_rejects_invalid_final_candidates_and_early_encoder_controls() {
+    fn root_cli_invalid_target_quality_or_encoder_candidate_refuses_before_save_or_backend_work() {
         let temp = tempfile::tempdir().expect("fixture");
         let mut configuration = fixture(temp.path());
         configuration.condor.sequence_config.scene_detector.input = Some(blank_input());

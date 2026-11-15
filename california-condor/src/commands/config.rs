@@ -448,3 +448,29 @@ pub trait ConfigCommand {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{ProbeStrategyKind, StrategyArgs};
+
+    #[test]
+    fn quality_strategy_positive_percentage_up_to_hundred_is_accepted() {
+        let args = StrategyArgs {
+            kind: ProbeStrategyKind::Subset,
+            skip: None,
+            position: None,
+            length_frames: None,
+            length_percent: None,
+        };
+        for percent in [f64::MIN_POSITIVE, 25.0, 100.0] {
+            assert!(
+                StrategyArgs {
+                    length_percent: Some(percent),
+                    ..args
+                }
+                .build()
+                .is_ok()
+            );
+        }
+    }
+}
