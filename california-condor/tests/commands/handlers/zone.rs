@@ -110,9 +110,8 @@ mod tests {
         encoder
     }
 
-    #[serial]
-    #[test]
-    fn cli_saves_exact_half_open_ranges_for_strings_and_json() {
+    fn check_zone_partitions(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("fixture");
         let path = temp.path().join("condor.json");
@@ -149,6 +148,9 @@ mod tests {
                 ],
             );
             assert_eq!(std::fs::read(&path).expect("preview unchanged"), before);
+            if phase == 2 {
+                continue;
+            }
             let applied = condor_cmd(&temp)
                 .env("RUST_LOG", "california_condor=info")
                 .args(["zone", definition])
@@ -182,6 +184,9 @@ mod tests {
                     .all(|s| !s.sequence_data.parallel_encoder.invalidated)
             );
             assert_ne!(std::fs::read(&path).expect("published"), before);
+            if phase == 1 {
+                continue;
+            }
             let bytes = std::fs::read(&path).expect("current");
             condor_cmd(&temp).arg("zone").assert().success();
             assert_eq!(std::fs::read(&path).expect("no resave"), bytes);
@@ -192,9 +197,8 @@ mod tests {
         );
     }
 
-    #[serial]
-    #[test]
-    fn old_algorithm_migrates_or_refuses_without_publication() {
+    fn check_legacy_zoner_migration(phase: u8) {
+        assert!((1..=4).contains(&phase));
         use california_condor::zoner::{SceneDefinition, Zoner, ZonerConfig, parse_zone};
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("fixture");
@@ -255,6 +259,9 @@ mod tests {
             std::fs::read(temp.path().join("not-a-file/sentinel")).expect("sentinel"),
             b"preserve"
         );
+        if phase == 1 {
+            return;
+        }
         for (revision, manual, message) in
             [(None, true, "reset/redetect"), (Some(99), false, "algorithm revision")]
         {
@@ -273,6 +280,9 @@ mod tests {
             let output = condor_cmd(&temp).arg("zone").assert().failure();
             assert!(String::from_utf8_lossy(&output.get_output().stderr).contains(message));
             assert_eq!(std::fs::read(&path).expect("refused bytes"), bytes);
+        }
+        if phase == 2 {
+            return;
         }
         legacy.save(&path).expect("restore valid old job");
         condor_cmd(&temp).arg("zone").assert().success();
@@ -306,6 +316,9 @@ mod tests {
             std::fs::read(&new_index).expect("new-index bytes"),
             b"foreign new-index bytes; never adopt"
         );
+        if phase == 3 {
+            return;
+        }
         let bytes = std::fs::read(&path).expect("current bytes");
         condor_cmd(&temp).arg("zone").assert().success();
         assert_eq!(std::fs::read(&path).expect("current no save"), bytes);
@@ -315,9 +328,8 @@ mod tests {
         Zoner::run(&mut direct).expect("current exact definitions skip");
     }
 
-    #[serial]
-    #[test]
-    fn equivalent_old_algorithm_preserves_owning_noise_scaler_results() {
+    fn check_equivalent_zoner_migration(phase: u8) {
+        assert!((1..=4).contains(&phase));
         use andean_condor::models::{
             encoder::photon_noise::PhotonNoise, sequence::noise_detector::NoiseDetectorData,
         };
@@ -432,6 +444,9 @@ mod tests {
             );
             Zoner::run(&mut direct).expect("current skip");
             assert_eq!(saves.get(), 1, "current definitions never save again");
+            if phase == 1 {
+                continue;
+            }
 
             // A publication failure must be the callback error, not the old unsafe-rebase refusal.
             legacy.save(&path).expect("restore old revision");
@@ -465,6 +480,9 @@ mod tests {
                 std::fs::read(temp.path().join("not-a-file/sentinel")).expect("sentinel"),
                 b"preserve"
             );
+            if phase == 2 {
+                continue;
+            }
 
             let mut expected = serde_json::to_value(&legacy).expect("saved snapshot");
             expected["condor"]["scenes"][0]["sequence_data"]["zoner"]["lifecycle"]["algorithm_revision"] =
@@ -498,6 +516,9 @@ mod tests {
                 serde_json::to_value(repeated).expect("no double scaling or changed proof"),
                 expected
             );
+            if phase == 3 {
+                continue;
+            }
             for (kind, message) in [
                 ("changed definitions", "reset/redetect"),
                 ("future", "algorithm revision"),
@@ -592,9 +613,8 @@ mod tests {
         assert_eq!(restored.condor.scenes[1].encoder, restored.condor.encoder);
     }
 
-    #[serial]
-    #[test]
-    fn direct_zoner_stages_failure_and_refuses_legacy_or_unsafe_rebase() {
+    fn check_direct_zoner_publication(phase: u8) {
+        assert!((1..=6).contains(&phase));
         use andean_condor::core::sequence::Sequence;
         use california_condor::{
             test_helpers::default_config,
@@ -656,6 +676,9 @@ mod tests {
             b"preserve"
         );
         assert!(direct.scenes[0].sequence_data.zoner.lifecycle.is_none());
+        if phase == 1 {
+            return;
+        }
         let saves = Rc::new(Cell::new(0));
         let observed = Rc::clone(&saves);
         direct.save_callback = Box::new(move |_| {
@@ -686,6 +709,9 @@ mod tests {
             1,
             "neither entrypoint resaves known unchanged definitions"
         );
+        if phase == 2 {
+            return;
+        }
         let mut removed = config.clone();
         removed.condor.sequence_config.zoner = None;
         let mut restored =
@@ -700,6 +726,9 @@ mod tests {
             restored.scenes[0].sub_scenes.as_ref().expect("original sub-scenes")[0].end_frame,
             121
         );
+        if phase == 3 {
+            return;
+        }
         direct.sequence_config.zoner = None;
         let before_failed_rebase =
             serde_json::to_value(direct.as_data()).expect("before failed removal");
@@ -713,6 +742,9 @@ mod tests {
             before_failed_rebase
         );
         direct.save_callback = callback;
+        if phase == 4 {
+            return;
+        }
         direct.scenes[0].encoder.set_quantizer(18.0);
         direct.sequence_config.zoner = None;
         let manual = serde_json::to_value(direct.as_data()).expect("manual edits");
@@ -722,6 +754,9 @@ mod tests {
             serde_json::to_value(direct.as_data()).expect("preserved"),
             manual
         );
+        if phase == 5 {
+            return;
+        }
         for scene in &mut direct.scenes {
             scene.sequence_data.zoner.lifecycle = None;
         }
@@ -747,9 +782,7 @@ mod tests {
         assert_eq!(saves.get(), 1);
     }
 
-    #[serial]
-    #[test]
-    fn legacy_cli_refuses_flag_erasure_and_full_list_reset_recovers() {
+    fn check_legacy_zone_recovery(recover: bool) {
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("fixture");
         let path = temp.path().join("condor.json");
@@ -775,6 +808,9 @@ mod tests {
             );
             assert_eq!(std::fs::read(&path).expect("unchanged"), json);
         }
+        if !recover {
+            return;
+        }
         condor_cmd(&temp).args(["scenes", "reset"]).assert().success();
         condor_cmd(&temp).args(["scenes", "add", "0", "121"]).assert().success();
         condor_cmd(&temp).args(["zone", "0 121 replace x264"]).assert().success();
@@ -783,9 +819,8 @@ mod tests {
         assert!(recovered.condor.scenes[0].sequence_data.zoner.lifecycle.is_some());
     }
 
-    #[serial]
-    #[test]
-    fn cli_anchor_moves_without_laundering_manual_edits() {
+    fn check_zone_anchor_edit(phase: u8) {
+        assert!((1..=3).contains(&phase));
         use california_condor::zoner::Zoner;
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("fixture");
@@ -833,8 +868,13 @@ mod tests {
                 }))
                 .expect("direct");
             Zoner::run(&mut direct).expect("direct unchanged skip after edit");
-            condor_cmd(&temp).args(["zone", "240 480 replace x264"]).assert().failure();
-            assert_eq!(std::fs::read(&path).expect("unsafe rebase preserved"), json);
+            if phase >= 2 {
+                condor_cmd(&temp).args(["zone", "240 480 replace x264"]).assert().failure();
+                assert_eq!(std::fs::read(&path).expect("unsafe rebase preserved"), json);
+            }
+        }
+        if phase <= 2 {
+            return;
         }
         condor_cmd(&temp).args(["scenes", "reset"]).assert().success();
         let (empty, _) = load_configuration(Some(&path)).expect("empty");
@@ -844,9 +884,8 @@ mod tests {
         assert!(fresh.condor.scenes[0].sequence_data.zoner.lifecycle.is_none());
     }
 
-    #[serial]
-    #[test]
-    fn zones_replace_and_merge_scene_encoders() {
+    fn check_zone_encoder_changes(phase: u8) {
+        assert!((1..=3).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -928,6 +967,9 @@ mod tests {
             config.condor.scenes.iter().all(|scene| scene.sequence_data.zoner.zoned),
             "every scene records that the zones were applied"
         );
+        if phase == 1 {
+            return;
+        }
 
         let saved = std::fs::read(&config_path).expect("config bytes");
         let repeated = condor_cmd(&temp)
@@ -952,6 +994,9 @@ mod tests {
             saved,
             "a skipped run saves nothing"
         );
+        if phase == 2 {
+            return;
+        }
 
         // Re-applying needs the record cleared, which `av1an scenes reset
         // zoner` does; the zones themselves were rewritten in between.
@@ -1039,9 +1084,7 @@ mod tests {
         }
     }
 
-    #[serial]
-    #[test]
-    fn failed_zoning_never_saves_definitions_or_scenes() {
+    fn check_invalid_zoning(empty_scenes: bool) {
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("temp directory");
         let config_path = temp.path().join("condor.json");
@@ -1079,6 +1122,9 @@ mod tests {
                 assert!(!config_path.with_extension("temp").exists());
             }
         }
+        if !empty_scenes {
+            return;
+        }
         config.condor.scenes.clear();
         config.save(&config_path).expect("empty scenes save");
         let original = std::fs::read(&config_path).expect("config bytes");
@@ -1090,9 +1136,8 @@ mod tests {
         assert_eq!(std::fs::read(&config_path).expect("config bytes"), original);
     }
 
-    #[serial]
-    #[test]
-    fn dry_run_preserves_records_normal_zoning_withdraws_results_and_preserves_shifted_files() {
+    fn check_zoning_result_withdrawal(phase: u8) {
+        assert!((1..=3).contains(&phase));
         use andean_condor::core::sequence::parallel_encoder::ParallelEncoder;
         use california_condor::zoner::{ZonerConfig, parse_zone};
 
@@ -1173,6 +1218,9 @@ mod tests {
                 "existing probe"
             );
         }
+        if phase == 1 {
+            return;
+        }
 
         let result = condor_cmd(&temp)
             .env("CONDOR_TEST_MODE", "1")
@@ -1201,6 +1249,9 @@ mod tests {
             std::fs::read_to_string(&probe).expect("probe file"),
             "existing probe"
         );
+        if phase == 2 {
+            return;
+        }
 
         let no_op = condor_cmd(&temp)
             .env("CONDOR_TEST_MODE", "1")
@@ -1212,6 +1263,189 @@ mod tests {
             !String::from_utf8_lossy(&no_op.get_output().stderr).contains("may be stale"),
             "no-op zoning does not warn about cleanup"
         );
+    }
+
+    #[serial]
+    #[test]
+    fn zone_inline_or_json_definition_saves_exact_half_open_partitions_and_selected_encoder() {
+        check_zone_partitions(1);
+    }
+
+    #[serial]
+    #[test]
+    fn zone_dry_run_reports_partition_and_override_without_saving() {
+        check_zone_partitions(2);
+    }
+
+    #[serial]
+    #[test]
+    fn zone_unchanged_saved_definitions_do_not_resave() {
+        check_zone_partitions(3);
+    }
+
+    #[serial]
+    #[test]
+    fn legacy_zoner_migration_publication_failure_restores_runtime_and_saved_job() {
+        check_legacy_zoner_migration(1);
+    }
+
+    #[serial]
+    #[test]
+    fn legacy_zoner_manual_edits_or_future_revision_refuse_without_resave() {
+        check_legacy_zoner_migration(2);
+    }
+
+    #[serial]
+    #[test]
+    fn legacy_zoner_migration_repartitions_from_baseline_and_invalidates_old_results_without_unlinking()
+     {
+        check_legacy_zoner_migration(3);
+    }
+
+    #[serial]
+    #[test]
+    fn current_zoner_definitions_skip_cli_and_direct_resave_after_migration() {
+        check_legacy_zoner_migration(4);
+    }
+
+    #[serial]
+    #[test]
+    fn equivalent_zoner_algorithm_migration_updates_only_revision_preserving_noise_scaler_results()
+    {
+        check_equivalent_zoner_migration(1);
+    }
+
+    #[serial]
+    #[test]
+    fn equivalent_zoner_migration_callback_failure_rolls_back_without_losing_old_job() {
+        check_equivalent_zoner_migration(2);
+    }
+
+    #[serial]
+    #[test]
+    fn equivalent_zoner_cli_dry_run_does_not_save_and_current_reruns_do_not_scale_noise_twice() {
+        check_equivalent_zoner_migration(3);
+    }
+
+    #[serial]
+    #[test]
+    fn legacy_zoner_changed_definitions_future_revision_or_missing_proof_refuse_without_resave() {
+        check_equivalent_zoner_migration(4);
+    }
+
+    #[serial]
+    #[test]
+    fn zoner_execute_publication_failure_restores_full_runtime_and_saved_files() {
+        check_direct_zoner_publication(1);
+    }
+
+    #[serial]
+    #[test]
+    fn zoner_success_saves_once_and_unchanged_run_or_execute_does_not_resave() {
+        check_direct_zoner_publication(2);
+    }
+
+    #[serial]
+    #[test]
+    fn zoner_removing_length_cap_restores_original_partitions_encoder_and_subscenes() {
+        check_direct_zoner_publication(3);
+    }
+
+    #[serial]
+    #[test]
+    fn zoner_failed_rebase_callback_preserves_pre_rebase_state() {
+        check_direct_zoner_publication(4);
+    }
+
+    #[serial]
+    #[test]
+    fn zoner_manual_encoder_edit_prevents_unsafe_definition_rebase() {
+        check_direct_zoner_publication(5);
+    }
+
+    #[serial]
+    #[test]
+    fn zoner_missing_legacy_baseline_refuses_run_and_execute_without_mutation() {
+        check_direct_zoner_publication(6);
+    }
+
+    #[serial]
+    #[test]
+    fn legacy_zoned_job_cannot_apply_new_zones_or_erase_flags_without_baseline() {
+        check_legacy_zone_recovery(false);
+    }
+
+    #[serial]
+    #[test]
+    fn legacy_zoned_job_full_scene_list_reset_and_rebuild_recovers_fresh_zoning() {
+        check_legacy_zone_recovery(true);
+    }
+
+    #[serial]
+    #[test]
+    fn scene_list_edit_moves_zoner_proof_anchor_without_resaving_unchanged_definitions() {
+        check_zone_anchor_edit(1);
+    }
+
+    #[serial]
+    #[test]
+    fn zoned_scene_list_edit_does_not_authorize_changed_definition_rebase() {
+        check_zone_anchor_edit(2);
+    }
+
+    #[serial]
+    #[test]
+    fn full_scene_list_reset_removes_zoner_proof_from_new_scene() {
+        check_zone_anchor_edit(3);
+    }
+
+    #[serial]
+    #[test]
+    fn zones_replace_or_merge_selected_scene_encoders_and_report_only_modified_scenes() {
+        check_zone_encoder_changes(1);
+    }
+
+    #[serial]
+    #[test]
+    fn recorded_zoning_pass_skips_reapplication_without_saving() {
+        check_zone_encoder_changes(2);
+    }
+
+    #[serial]
+    #[test]
+    fn zone_merge_with_mismatched_encoder_reports_matched_scenes_unchanged_and_two_warnings() {
+        check_zone_encoder_changes(3);
+    }
+
+    #[serial]
+    #[test]
+    fn invalid_or_missing_zone_definitions_refuse_normal_and_dry_run_without_saving() {
+        check_invalid_zoning(false);
+    }
+
+    #[serial]
+    #[test]
+    fn zoning_without_scenes_refuses_without_resaving() {
+        check_invalid_zoning(true);
+    }
+
+    #[serial]
+    #[test]
+    fn zone_dry_run_all_definition_formats_warns_about_affected_results_and_preserves_job_and_chunks()
+     {
+        check_zoning_result_withdrawal(1);
+    }
+
+    #[serial]
+    #[test]
+    fn zone_partition_change_withdraws_saved_results_but_preserves_shifted_chunk_and_probe_files() {
+        check_zoning_result_withdrawal(2);
+    }
+
+    #[serial]
+    #[test]
+    fn noop_zone_dry_run_does_not_warn_about_stale_files() {
+        check_zoning_result_withdrawal(3);
     }
 
     #[serial]
