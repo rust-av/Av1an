@@ -1322,7 +1322,7 @@ mod offline_cli {
     }
 
     #[test]
-    fn global_config_logging_and_offline_tq_crud_remain_supported() {
+    fn offline_target_quality_crud_accepts_global_config_log_and_verbose_flags_on_either_side() {
         let temp = tempfile::tempdir().expect("fixture");
         let configuration = root_edit_fixture(temp.path());
         let file = temp.path().join("custom.json");
@@ -2932,7 +2932,8 @@ mod crud {
 
     #[cfg(unix)]
     #[test]
-    fn cli_path_name_edits_are_offline_and_not_reported_as_missing_paths() {
+    fn encode_executable_crud_accepts_path_resolvable_name_without_probing_or_missing_path_warning()
+    {
         use california_condor::configuration::Configuration;
         use std::os::unix::fs::PermissionsExt;
 
@@ -2995,8 +2996,8 @@ mod crud {
         );
     }
 
-    #[test]
-    fn cli_format_errors_leave_saved_config_unchanged_without_indexing() {
+    fn check_format_crud(phase: u8) {
+        assert!((1..=3).contains(&phase));
         use andean_condor::models::input::{Ffms2Filter, ImportMethod};
         use california_condor::configuration::Configuration;
         let temp = tempfile::tempdir().expect("CLI format fixture");
@@ -3042,46 +3043,51 @@ mod crud {
                 }
             ]
         ));
-        let deferred = std::fs::read(&path).expect("deferred snapshot");
-        for format in ["nv12", "gbrp", "yuv440p"] {
-            std::fs::write(&path, &native).expect("restore native fixture");
-            let filter = format!("resize:format={format};width=16;");
-            let output = condor_cmd(&temp)
-                .args(["init", "set", "input", "--filters", &filter])
-                .assert()
-                .failure()
-                .get_output()
-                .stderr
-                .clone();
-            assert!(
-                String::from_utf8_lossy(&output).contains(format),
-                "{output:?}"
-            );
-            assert_eq!(
-                std::fs::read(&path).expect("native config after error"),
-                native
-            );
-            std::fs::write(&path, &deferred).expect("restore VS fixture");
-            condor_cmd(&temp)
-                .args(["init", "set", "input", "--filters", &filter])
-                .assert()
-                .success();
-            let explicit = std::fs::read(&path).expect("explicit VS format");
-            let output = condor_cmd(&temp)
-                .args(["init", "set", "input", "--decoder", "ffms2"])
-                .assert()
-                .failure()
-                .get_output()
-                .stderr
-                .clone();
-            assert!(
-                String::from_utf8_lossy(&output).contains(format),
-                "{output:?}"
-            );
-            assert_eq!(
-                std::fs::read(&path).expect("VS config after error"),
-                explicit
-            );
+        if phase >= 2 {
+            let deferred = std::fs::read(&path).expect("deferred snapshot");
+            for format in ["nv12", "gbrp", "yuv440p"] {
+                std::fs::write(&path, &native).expect("restore native fixture");
+                let filter = format!("resize:format={format};width=16;");
+                let output = condor_cmd(&temp)
+                    .args(["init", "set", "input", "--filters", &filter])
+                    .assert()
+                    .failure()
+                    .get_output()
+                    .stderr
+                    .clone();
+                assert!(
+                    String::from_utf8_lossy(&output).contains(format),
+                    "{output:?}"
+                );
+                assert_eq!(
+                    std::fs::read(&path).expect("native config after error"),
+                    native
+                );
+                if phase == 2 {
+                    continue;
+                }
+                std::fs::write(&path, &deferred).expect("restore VS fixture");
+                condor_cmd(&temp)
+                    .args(["init", "set", "input", "--filters", &filter])
+                    .assert()
+                    .success();
+                let explicit = std::fs::read(&path).expect("explicit VS format");
+                let output = condor_cmd(&temp)
+                    .args(["init", "set", "input", "--decoder", "ffms2"])
+                    .assert()
+                    .failure()
+                    .get_output()
+                    .stderr
+                    .clone();
+                assert!(
+                    String::from_utf8_lossy(&output).contains(format),
+                    "{output:?}"
+                );
+                assert_eq!(
+                    std::fs::read(&path).expect("VS config after error"),
+                    explicit
+                );
+            }
         }
         assert!(!temp.path().join("must-not-exist.ffindex").exists());
         let mut entries = std::fs::read_dir(temp.path())
@@ -3096,11 +3102,26 @@ mod crud {
         );
     }
 
+    #[test]
+    fn native_to_vapoursynth_decoder_edit_preserves_deferred_output_format() {
+        check_format_crud(1);
+    }
+
+    #[test]
+    fn cli_native_format_rejection_preserves_saved_bytes_without_indexing() {
+        check_format_crud(2);
+    }
+
+    #[test]
+    fn cli_vapoursynth_format_edit_saves_but_native_decoder_switch_refuses_unsupported_format() {
+        check_format_crud(3);
+    }
+
     /// The noise scaler defaults stay consistent when nothing is configured
     /// yet, so `info` never fails on a fresh configuration.
     #[serial]
     #[test]
-    fn info_works_on_a_fresh_configuration() {
+    fn component_info_on_fresh_job_emits_valid_json_without_materializing_noise_scaler() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -3208,7 +3229,7 @@ mod crud {
     /// run; the value it left behind is printed only under `--verbose`.
     #[serial]
     #[test]
-    fn set_and_reset_report_what_changed() {
+    fn benchmark_threshold_set_and_reset_print_values_only_with_verbose() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -3270,12 +3291,8 @@ mod crud {
         );
     }
 
-    /// `statistic` accepts positional values for `percentile` and
-    /// `standard-deviation-distance`, and rejects giving both positional and
-    /// flag forms at once.
-    #[serial]
-    #[test]
-    fn statistic_accepts_positional_values() {
+    fn check_positional_statistic(phase: u8) {
+        assert!((1..=3).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -3296,6 +3313,9 @@ mod crud {
             ProbeStatistic::Percentile(90.0),
             "positional percentile is set"
         );
+        if phase == 1 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["quality-check", "set", "statistic", "standard-deviation-distance", "-1.5"])
@@ -3311,6 +3331,9 @@ mod crud {
             ProbeStatistic::StandardDeviationDistance { sigma: -1.5 },
             "positional sigma is set"
         );
+        if phase == 2 {
+            return;
+        }
 
         // Passing both positional and flag is rejected.
         condor_cmd(&temp)
@@ -3319,11 +3342,25 @@ mod crud {
             .failure();
     }
 
-    /// `--stream-concurrently`, `encode set executable`, and missing-path
-    /// warnings work as configured.
     #[serial]
     #[test]
-    fn stream_concurrently_executable_and_missing_path_warnings() {
+    fn target_quality_percentile_crud_accepts_positional_value() {
+        check_positional_statistic(1);
+    }
+
+    #[serial]
+    #[test]
+    fn quality_check_standard_deviation_crud_accepts_negative_positional_sigma() {
+        check_positional_statistic(2);
+    }
+
+    #[serial]
+    #[test]
+    fn statistic_crud_rejects_simultaneous_positional_and_flag_value() {
+        check_positional_statistic(3);
+    }
+
+    fn check_streaming_and_executable(executable: bool) {
         if !ffmpeg_is_available() {
             return;
         }
@@ -3360,6 +3397,9 @@ mod crud {
             ),
             "stream_concurrently is false: {input:?}"
         );
+        if !executable {
+            return;
+        }
 
         // Setting executable on encode warns when the binary path does not
         // exist, and still saves the path; reset clears it.
@@ -3388,5 +3428,17 @@ mod crud {
             None,
             "custom executable is cleared"
         );
+    }
+
+    #[serial]
+    #[test]
+    fn init_script_input_crud_saves_stream_concurrently_off() {
+        check_streaming_and_executable(false);
+    }
+
+    #[serial]
+    #[test]
+    fn encode_missing_executable_crud_warns_saves_path_and_reset_clears_it() {
+        check_streaming_and_executable(true);
     }
 }
