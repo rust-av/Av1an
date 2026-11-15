@@ -120,9 +120,8 @@ mod tests {
         configuration
     }
 
-    #[serial]
-    #[test]
-    fn owning_noise_scaler_scene_edit_recovery_never_scales_twice() {
+    fn check_noise_recovery(phase: u8) {
+        assert!((1..=8).contains(&phase));
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("fixture");
         let path = temp.path().join("condor.json");
@@ -263,6 +262,12 @@ mod tests {
                     "19"
                 );
             }
+            if phase == 1 {
+                return;
+            }
+        }
+        if phase == 2 {
+            return;
         }
         // Legacy factor-only records cannot prove the original rounded ISO.
         let mut legacy_json = serde_json::to_value(&scaled).expect("legacy fixture");
@@ -287,6 +292,9 @@ mod tests {
             );
             assert_eq!(std::fs::read(&path).expect("legacy preserved"), json);
         }
+        if phase == 3 {
+            return;
+        }
         // A PhotonNoise edit must not ambiguously mix new ISO with scaled chroma.
         scaled.save(&path).expect("known producer record");
         let json = std::fs::read(&path).expect("before conflicting edit");
@@ -295,6 +303,9 @@ mod tests {
             .assert()
             .failure();
         assert_eq!(std::fs::read(&path).expect("conflict preserved"), json);
+        if phase == 4 {
+            return;
+        }
         condor_cmd(&temp)
             .args(["scenes", "0", "reset", "noise-scaling"])
             .assert()
@@ -334,6 +345,9 @@ mod tests {
             load(&path).condor.scenes[0].encoder.photon_noise().expect("new scale once").iso,
             402
         );
+        if phase == 5 {
+            return;
+        }
         // Global maximum, calibration and detector/source context are dependencies,
         // unlike CRF/preset options. Known-invalid scaling must be withdrawn.
         for dependency in ["maximum", "calibration", "detector"] {
@@ -426,6 +440,10 @@ mod tests {
                     "clearing the scaling record must not erase its proof that the measurement source changed"
                 );
             }
+        }
+
+        if phase == 6 {
+            return;
         }
 
         // An unsupported encoder still contributes to the global maximum.
@@ -556,6 +574,9 @@ mod tests {
                     .expect("unchanged other metadata")
                 );
             }
+            if phase == 7 {
+                continue;
+            }
             // Noise Detector's None-only scheduling can now remeasure every scene.
             // Supply fixed new measurement inputs; run the actual owning scaler.
             condor_cmd(&temp)
@@ -617,8 +638,57 @@ mod tests {
         }
     }
 
+    #[serial]
     #[test]
-    fn flags_and_crud_errors_preserve_memory_and_saved_bytes_offline() {
+    fn noise_scaling_parameter_edit_preserves_baseline_and_recovery_does_not_scale_twice() {
+        check_noise_recovery(1);
+    }
+
+    #[serial]
+    #[test]
+    fn noise_scaling_range_edit_restores_exact_original_iso_and_requires_new_measurement() {
+        check_noise_recovery(2);
+    }
+
+    #[serial]
+    #[test]
+    fn noise_scaling_legacy_factor_without_baseline_refuses_range_edit_or_reset() {
+        check_noise_recovery(3);
+    }
+
+    #[serial]
+    #[test]
+    fn noise_scaling_conflicting_photon_noise_edit_refuses_without_mutation() {
+        check_noise_recovery(4);
+    }
+
+    #[serial]
+    #[test]
+    fn noise_scaling_reset_restores_exact_luma_chroma_and_new_explicit_iso_scales_once() {
+        check_noise_recovery(5);
+    }
+
+    #[serial]
+    #[test]
+    fn noise_scaling_changed_population_maximum_or_calibration_refuses_execution_and_withdraws_results()
+     {
+        check_noise_recovery(6);
+    }
+
+    #[serial]
+    #[test]
+    fn noise_scaling_changed_detector_withdraws_population_measurements_including_unscaled_peers() {
+        check_noise_recovery(7);
+    }
+
+    #[serial]
+    #[test]
+    fn noise_scaling_new_population_measurements_recompute_once_from_original_baseline() {
+        check_noise_recovery(8);
+    }
+
+    fn check_invalid_noise_settings(phase: u8) {
+        assert!((1..=3).contains(&phase));
         use california_condor::commands::{
             config::ConfigCommand,
             handlers::scale_noise::{
@@ -664,17 +734,21 @@ mod tests {
                 }
             }
         }
-        let mut config = noise_scaler_configuration(temp.path());
-        let before = serde_json::to_vec(&config).expect("snapshot");
-        let result = ScaleNoiseCrud::restore(&mut config, Some(&ScaleNoiseKey::MaximumScaler));
-        if result.is_ok() || serde_json::to_vec(&config).expect("config") != before {
-            failures.push(format!("reset max below min accepted/mutated: {result:?}"));
-        }
-        config.condor.sequence_config.noise_scaler = None;
-        let before = serde_json::to_vec(&config).expect("snapshot");
-        let result = configure_noise_scaler(&mut config, Some(f64::NAN), None, None, false);
-        if result.is_ok() || serde_json::to_vec(&config).expect("config") != before {
-            failures.push("invalid flags materialized disabled section".into());
+        if phase >= 2 {
+            let mut config = noise_scaler_configuration(temp.path());
+            let before = serde_json::to_vec(&config).expect("snapshot");
+            let result = ScaleNoiseCrud::restore(&mut config, Some(&ScaleNoiseKey::MaximumScaler));
+            if result.is_ok() || serde_json::to_vec(&config).expect("config") != before {
+                failures.push(format!("reset max below min accepted/mutated: {result:?}"));
+            }
+            if phase == 3 {
+                config.condor.sequence_config.noise_scaler = None;
+                let before = serde_json::to_vec(&config).expect("snapshot");
+                let result = configure_noise_scaler(&mut config, Some(f64::NAN), None, None, false);
+                if result.is_ok() || serde_json::to_vec(&config).expect("config") != before {
+                    failures.push("invalid flags materialized disabled section".into());
+                }
+            }
         }
         assert!(!temp.path().join("scratch").exists());
         assert!(
@@ -684,7 +758,22 @@ mod tests {
     }
 
     #[test]
-    fn actual_cli_invalid_flags_set_reset_preserve_file_bytes_offline() {
+    fn noise_scaler_invalid_numeric_flags_or_crud_preserve_memory_and_saved_job() {
+        check_invalid_noise_settings(1);
+    }
+
+    #[test]
+    fn noise_scaler_reset_that_inverts_bounds_is_atomic() {
+        check_invalid_noise_settings(2);
+    }
+
+    #[test]
+    fn noise_scaler_invalid_edit_does_not_materialize_disabled_section() {
+        check_invalid_noise_settings(3);
+    }
+
+    #[test]
+    fn noise_scaler_cli_invalid_numeric_or_bound_edits_preserve_saved_bytes_without_backend_work() {
         let temp = tempfile::tempdir().expect("fixture");
         let path = temp.path().join("condor.json");
         let config = noise_scaler_configuration(temp.path());
@@ -723,8 +812,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn candidate_repair_defaults_and_crud_off_are_offline() {
+    fn check_noise_settings_repair(phase: u8) {
+        assert!((1..=4).contains(&phase));
         use california_condor::commands::{
             config::ConfigCommand,
             handlers::scale_noise::{
@@ -756,6 +845,9 @@ mod tests {
                 .scale_chroma,
             "false flag retains true"
         );
+        if phase == 1 {
+            return;
+        }
         ScaleNoiseCrud::apply(
             &mut repaired,
             &ScaleNoiseSet::ScaleChroma {
@@ -772,6 +864,9 @@ mod tests {
                 .expect("scaler")
                 .scale_chroma
         );
+        if phase == 2 {
+            return;
+        }
         config.save(&path).expect("bad bounds again");
         condor_cmd(&temp)
             .env("PATH", temp.path())
@@ -804,6 +899,9 @@ mod tests {
             .expect("repair before validation");
         ScaleNoiseCrud::restore(&mut config, None).expect("whole reset");
         assert!(config.condor.sequence_config.noise_scaler.is_none());
+        if phase == 3 {
+            return;
+        }
         ScaleNoiseCrud::restore(&mut config, Some(&ScaleNoiseKey::Threshold))
             .expect("disabled reset");
         assert!(config.condor.sequence_config.noise_scaler.is_none());
@@ -822,9 +920,30 @@ mod tests {
         assert!(!temp.path().join("must-not-open.mkv").exists());
     }
 
+    #[test]
+    fn noise_scaler_flags_repair_loaded_bounds_and_omitted_chroma_flag_retains_true() {
+        check_noise_settings_repair(1);
+    }
+
+    #[test]
+    fn noise_scaler_crud_can_disable_chroma_explicitly() {
+        check_noise_settings_repair(2);
+    }
+
+    #[test]
+    fn noise_scaler_crud_repair_or_reset_invalid_section_remains_offline() {
+        check_noise_settings_repair(3);
+    }
+
+    #[test]
+    fn noise_scaler_disabled_key_reset_is_noop_and_default_configuration_materializes_zero_settings()
+     {
+        check_noise_settings_repair(4);
+    }
+
     #[serial]
     #[test]
-    fn default_and_no_noise_detector_data() {
+    fn scale_noise_without_scenes_materializes_default_scaler_settings() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -865,7 +984,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_custom_options_and_iso_100() {
+    fn scale_noise_threshold_and_bounds_scale_only_eligible_iso_hundred_scenes() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -993,11 +1112,8 @@ mod tests {
             });
     }
 
-    /// `scale-noise` materializes its optional section, validates the scaler
-    /// bounds, and `reset` resets single settings.
-    #[serial]
-    #[test]
-    fn scale_noise_set_reset_and_validation() {
+    fn check_noise_crud(phase: u8) {
+        assert!((1..=3).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -1018,6 +1134,9 @@ mod tests {
             .args(["scale-noise", "set", "minimum-scaler", "1.5"])
             .assert()
             .failure();
+        if phase == 2 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["scale-noise", "set", "maximum-scaler", "2"])
@@ -1037,6 +1156,9 @@ mod tests {
         assert_eq!(scaler.minimum_scaler, 1.5, "minimum scaler is set");
         assert_eq!(scaler.maximum_scaler, 2.0, "maximum scaler is set");
         assert!(scaler.scale_chroma, "chroma scaling is on");
+        if phase == 1 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["scale-noise", "reset", "scale-chroma"])
@@ -1049,5 +1171,23 @@ mod tests {
             .expect("noise scaler still exists");
         assert!(!scaler.scale_chroma, "chroma scaling is off again");
         assert_eq!(scaler.threshold, 0.002, "the other settings are untouched");
+    }
+
+    #[serial]
+    #[test]
+    fn scale_noise_numeric_crud_saves_threshold_and_valid_scaler_bounds() {
+        check_noise_crud(1);
+    }
+
+    #[serial]
+    #[test]
+    fn scale_noise_minimum_above_current_maximum_is_rejected() {
+        check_noise_crud(2);
+    }
+
+    #[serial]
+    #[test]
+    fn scale_noise_chroma_reset_disables_chroma_without_changing_threshold() {
+        check_noise_crud(3);
     }
 }
