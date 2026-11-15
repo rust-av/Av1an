@@ -8,6 +8,277 @@ use california_condor::{
 };
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use andean_condor::{
+        models::{
+            encoder::photon_noise::PhotonNoise,
+            input::{Input, VapourSynthImportMethod},
+            sequence::parallel_encoder::ParallelEncoderConfig,
+        },
+        vapoursynth::{plugins::resize::Scaler, vapoursynth_filters::VapourSynthFilter},
+    };
+    use california_condor::commands::{
+        DecoderMethod, EncoderMethod,
+        handlers::{encode::encode_handler, init::init_handler},
+    };
+
+    #[test]
+    fn encode_handler_without_overrides_retains_default_encoder_settings_and_config_path() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let expected_config = default_config(&test_video, &output, &temp_abs);
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = encode_handler(
+            Some(&config_path),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("encode_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn encode_handler_applies_rav1e_passes_parameters_noise_workers_and_override_input() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let custom_filters = vec![VapourSynthFilter::Crop {
+            top: Some(140),
+            bottom: Some(140),
+            left: None,
+            right: None,
+        }];
+        let custom_vs_args = vec!["method=target quality".to_string()];
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        expected_config.condor.encoder = Encoder::default_from_base(&EncoderBase::RAV1E, false);
+        expected_config.condor.encoder.parameters_mut().insert(
+            "speed".to_owned(),
+            CLIParameter::Number {
+                prefix: "--".to_owned(),
+                delimiter: " ".to_owned(),
+                value: 10.0,
+            },
+        );
+        if let Some(encoder_passes) = expected_config.condor.encoder.passes_mut() {
+            *encoder_passes = EncoderPasses::All(2);
+        }
+        expected_config.condor.encoder.set_photon_noise(Some(PhotonNoise {
+            iso: 1600,
+            chroma_iso: Some(1600),
+            width: None,
+            height: None,
+            c_y: None,
+            ccb: None,
+            ccr: None,
+        }));
+        expected_config.condor.sequence_config.parallel_encoder = ParallelEncoderConfig {
+            input: Some(Input::VapourSynth {
+                path: input_abs.clone(),
+                import_method: VapourSynthImportMethod::DGDecNV {
+                    dgindexnv_executable: None,
+                },
+                cache_path: None,
+                filters: custom_filters.clone(),
+            }),
+            workers: Some(2),
+            scenes_directory: temp_abs.join("scenes"),
+            validate_frame_count: true,
+            max_tries: 3,
+        };
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = encode_handler(
+            Some(&config_path),
+            None,
+            Some(&test_video.path),
+            Some(&DecoderMethod::DGDecodeNV),
+            Some(&custom_filters),
+            Some(&custom_vs_args),
+            Some(2),
+            Some(&EncoderMethod::RAV1E),
+            Some(2),
+            Some("--speed 10"),
+            Some(1600),
+            Some(1600),
+            None,
+            None,
+        )
+        .expect("encode_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn encode_handler_filters_target_existing_override() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let custom_filters = vec![VapourSynthFilter::Resize {
+            scaler: Some(Scaler::Point),
+            width: Some(960),
+            height: Some(540),
+            format: None,
+        }];
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (mut config, _) =
+            load_configuration(Some(&config_path)).expect("load_configuration should succeed");
+        config.condor.sequence_config.parallel_encoder.input = Some(Input::VapourSynth {
+            path: input_abs,
+            import_method: VapourSynthImportMethod::DGDecNV {
+                dgindexnv_executable: None,
+            },
+            cache_path: None,
+            filters: vec![],
+        });
+        let mut expected = config.clone();
+        if let Some(Input::VapourSynth { filters, .. }) =
+            &mut expected.condor.sequence_config.parallel_encoder.input
+        {
+            *filters = custom_filters.clone();
+        }
+        config.save(&config_path).expect("save should succeed");
+        let (config, _) = encode_handler(
+            Some(&config_path),
+            None,
+            None,
+            None,
+            Some(&custom_filters),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("encode_handler should succeed");
+        assert_eq!(
+            serde_json::to_value(&config).expect("actual configuration"),
+            serde_json::to_value(&expected).expect("only override filters replaced")
+        );
+    }
+}
+
+#[cfg(test)]
 mod avm_persistence {
     use super::*;
     use andean_condor::models::encoder::photon_noise::PhotonNoise;
