@@ -1136,6 +1136,75 @@ mod tests {
             println!("SELECTED_TERMINAL_ASSERTIONS_COMPLETED");
             Ok(())
         }
+
+        #[cfg(unix)]
+        fn check_pty_logging(case: &str, test: &str) -> Result<()> {
+            if std::env::var_os("TUI_LOGGING_ROOT").is_some() {
+                assert_eq!(std::env::var("TUI_LOGGING_CASE")?, case);
+                assert_eq!(std::env::var("TUI_LOGGING_TEST")?, test);
+                run_console_logging()?;
+                println!("PTY_LOGGING_ASSERTIONS_COMPLETED");
+                return Ok(());
+            }
+            let output = std::process::Command::new("python3")
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/src/apps/pty_test_support.py"
+                ))
+                .arg(std::env::current_exe().unwrap())
+                .arg("logging")
+                .arg(case)
+                .output()
+                .expect("python3 is required for the Unix PTY regression test");
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let streams: &[&str] = match case {
+                "headless" => &["headless"],
+                "testmode" => &["stderr"],
+                _ => &["stderr", "stdout"],
+            };
+            for stream in streams {
+                assert!(
+                    stdout.contains(&format!(
+                        "{stream}/{case}: selected logging assertions completed"
+                    )),
+                    "{stdout}"
+                );
+            }
+            eprintln!("{stdout}");
+            Ok(())
+        }
+
+        #[cfg(unix)]
+        macro_rules! pty_logging_cases {
+            ($($name:ident, $case:literal;)+) => {
+                $(
+                    #[test]
+                    fn $name() -> Result<()> {
+                        check_pty_logging($case, concat!("apps::tests::internal_integration::", stringify!($name)))
+                    }
+                )+
+            };
+        }
+
+        #[cfg(unix)]
+        pty_logging_cases! {
+            console_stage_restore_resumes_diagnostics_with_live_or_deferred_selected_stream_routing, "normal";
+            console_backlog_overflow_is_bounded_and_utf8_safe_while_file_log_stays_complete, "overflow";
+            console_raw_mode_failure_cancels_and_flushes_file_diagnostics, "raw";
+            console_terminal_construction_failure_cancels_and_flushes_file_diagnostics, "construct";
+            console_draw_failure_restores_terminal_before_final_diagnostics_and_flushes_file, "draw";
+            console_restore_failure_keeps_error_and_flushes_file_after_terminal_cleanup, "restore";
+            console_owner_unwind_restores_terminal_before_prior_hook_and_flushes_file, "panic";
+            console_startup_panic_retires_owner_before_raw_mode_and_flushes_diagnostics, "startup";
+            headless_logging_emits_live_diagnostics_without_terminal_controls, "headless";
+            console_test_mode_logging_emits_live_diagnostics_without_terminal_controls, "testmode";
+        }
     }
 
     struct RenderFailureWriter {
@@ -1282,26 +1351,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn console_logging_preserves_terminal_and_output_lifecycle() {
-        let output = std::process::Command::new("python3")
-            .arg(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/apps/pty_test_support.py"
-            ))
-            .arg(std::env::current_exe().unwrap())
-            .arg("logging")
-            .output()
-            .expect("python3 is required for the Unix PTY regression test");
-        assert!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
     fn emit_console_diagnostics() {
         static STAGE: AtomicU64 = AtomicU64::new(0);
         let stage = STAGE.fetch_add(1, Ordering::SeqCst) + 1;
@@ -1361,8 +1410,7 @@ mod tests {
     // Isolated child only: actual global subscriber and terminal owner, never
     // a test-only pause switch. Removing owner integration must fail the driver.
     #[cfg(unix)]
-    #[test]
-    fn console_logging_child() -> Result<()> {
+    fn run_console_logging() -> Result<()> {
         let Ok(case) = std::env::var("TUI_LOGGING_CASE") else {
             return Ok(());
         };

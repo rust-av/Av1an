@@ -26,6 +26,20 @@ OWNERSHIP_CASES = {
 }
 
 
+LOGGING_CASES = {
+    "normal": "console_stage_restore_resumes_diagnostics_with_live_or_deferred_selected_stream_routing",
+    "overflow": "console_backlog_overflow_is_bounded_and_utf8_safe_while_file_log_stays_complete",
+    "raw": "console_raw_mode_failure_cancels_and_flushes_file_diagnostics",
+    "construct": "console_terminal_construction_failure_cancels_and_flushes_file_diagnostics",
+    "draw": "console_draw_failure_restores_terminal_before_final_diagnostics_and_flushes_file",
+    "restore": "console_restore_failure_keeps_error_and_flushes_file_after_terminal_cleanup",
+    "panic": "console_owner_unwind_restores_terminal_before_prior_hook_and_flushes_file",
+    "startup": "console_startup_panic_retires_owner_before_raw_mode_and_flushes_diagnostics",
+    "headless": "headless_logging_emits_live_diagnostics_without_terminal_controls",
+    "testmode": "console_test_mode_logging_emits_live_diagnostics_without_terminal_controls",
+}
+
+
 def check_stream(
     binary: str, stream: str, mode: str = "normal", root: str = "",
     cleanup_errors: list[str] | None = None,
@@ -61,6 +75,7 @@ def check_stream(
         if logging_case:
             env["TUI_LOGGING_CASE"] = logging_case
             env["TUI_LOGGING_ROOT"] = root
+            env["TUI_LOGGING_TEST"] = f"apps::tests::internal_integration::{LOGGING_CASES[logging_case]}"
             env.pop("RUST_LOG", None)
             if logging_case == "testmode":
                 env["CONDOR_TEST_MODE"] = "1"
@@ -79,7 +94,7 @@ def check_stream(
                      else "apps::tests::cli_panic_child" if panic_case.startswith("cli-")
                      else "apps::tests::application_panic_child")
                     if panic_case
-                    else "apps::tests::console_logging_child" if logging_case
+                    else env["TUI_LOGGING_TEST"] if logging_case
                     else {
                         "normal": env.get("TUI_SELECTED_TEST", ""),
                         "render-failure": env.get("TUI_SELECTED_TEST", ""),
@@ -189,6 +204,8 @@ def check_stream(
                     else terminal_output if stream == "stderr" else redirected_output
                 )
                 data = terminal_output if stream == "stdout" else redirected_output
+                assert b"1 passed; 0 failed" in data, evidence
+                assert b"PTY_LOGGING_ASSERTIONS_COMPLETED" in data, evidence
                 sentinel = b"TUI_LOGGING_BEGIN\nsource-output-sentinel\nTUI_LOGGING_END\n"
                 assert data.replace(b"\r\n", b"\n").split(b"TUI_LOGGING_BEGIN\n", 1)[1].split(b"TUI_LOGGING_END\n", 1)[0] == b"source-output-sentinel\n", evidence
                 assert sentinel in data.replace(b"\r\n", b"\n"), evidence
@@ -243,6 +260,7 @@ def check_stream(
                     assert diagnostic.count(b"TUI_LOGGING-prior-hook") == 1, evidence
                 routing = "live/full diagnostics" if live else "paused/bounded diagnostics"
                 print(f"{stream}/{logging_case}: {routing}, delivery handshake, file shutdown flush, owner controls passed")
+                print(f"{stream}/{logging_case}: selected logging assertions completed")
                 return
             if panic_case:
                 headless_stderr.seek(0)
@@ -491,7 +509,9 @@ def check_panics(binary: str) -> None:
     assert not failures, "\n".join(failures)
 
 
-if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "logging":
+def check_logging(binary: str, selected_case: str) -> None:
+    if selected_case not in LOGGING_CASES:
+        raise ValueError(f"unknown logging case {selected_case}")
     for selected_stream in ("stderr", "stdout", "headless"):
         cases = ("headless",) if selected_stream == "headless" else (
             "normal", "overflow", "raw", "construct", "draw", "restore", "panic", "startup",
@@ -499,8 +519,14 @@ if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "logging":
         if selected_stream == "stderr":
             cases += ("testmode",)
         for case in cases:
+            if case != selected_case:
+                continue
             with tempfile.TemporaryDirectory(prefix="logging-") as root:
-                check_stream(sys.argv[1], selected_stream, f"logging-{case}", root)
+                check_stream(binary, selected_stream, f"logging-{case}", root)
+
+
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "logging":
+    check_logging(sys.argv[1], sys.argv[3])
 elif __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "panic":
     check_panics(sys.argv[1])
 elif __name__ == "__main__":
