@@ -42,6 +42,13 @@ kernel expectation. No unrelated product fixes or performance benchmarks were ru
 - Fresh finite encoder/lifecycle fixture parents passed, including the stalled-
   tree watchdog. Required VMAF availability/library/model/clip/directory checks
   passed; required native/plugin CVVDP parity and its literal decode fixture passed.
+  The post-review VMAF rerun recorded `--exact`, `--nocapture`,
+  `AV_METRICS_REQUIRE_CPU=1`, both model paths and a 5,529,946-byte owned clip.
+  Both checks passed without `UNEXECUTED`. An unset-environment control also
+  reported two nominal passes, but printed `UNEXECUTED` and was rejected as
+  required-native evidence. The final verifier checks the arguments, environment,
+  clip size and absence of that marker, not just the pass count. These are
+  prerequisite/availability checks, not blanket CPU-scoring acceptance.
 - Linux CLI acceptance passed all 18 interrupt mode/route pairs, actual native
   ordered-frame/TQ propagation, partial restart, stale-identity refusal, terminal
   restoration and watchdog-counterexample rejection.
@@ -78,8 +85,42 @@ kernel expectation. No unrelated product fixes or performance benchmarks were ru
 
 ## Fresh whole-branch review
 
-Pending. The implementation, complete original-row map and ledgered decisions
-are the review input; findings and final disposition will be recorded here.
+**Assessment: ready. No Critical or Important findings.** One fresh-context
+review covered `ad238cc8..3ee181d8`; no second review or production/test fix pass
+was needed. The four original Minor findings have these dispositions: the VMAF
+evidence-provenance concern was addressed by the explicit positive/negative runs
+above; the remaining three are deferred below.
+
+The reviewer used targeted passes over the 336-file, approximately 4.25 MB diff,
+not a line-by-line read of every change. The passes checked production tokens,
+original-to-mapped gate attributes, child selector/completion proof, private hooks,
+the 1,009 source-unit selections, Python discovery/CI selections, consumer filters
+and sampled names against assertions. The review found no lost assertion or gate;
+all 68 original serial gates remain across 137 mapped cases, along with the
+original panic/ignore and module-level platform gates.
+
+The reviewer used source/grep and supplied artifacts, not graph queries, and ran
+only the workflow integration selection (one pass) and script unit selection
+(nine passes), not Cargo tests. The broader execution claims above are the
+implementer's recorded checks, not independent reviewer execution. Native
+Windows Rust tests were not type-checked on a Windows target. All eight behaviors
+the reviewer declined to judge have explicit dispositions in rulings 97–104 below.
+
+### Deferred minors
+
+1. `andean-condor/src/core/process/windows.rs:243–260` retains a registered child
+   route that returns when `PROCESS_LIFECYCLE_WINDOWS_ROOT` is absent. Count it
+   only as a helper identity, not scenario coverage. Its parents use the descendant
+   handshake; consider an ignored child role with a matching parent selector on a
+   Windows host.
+2. `.github/scripts/tests/integration/test_native_installers.py:408–508` silently
+   ignores unknown Windows fetch-case names. The current four selections cover
+   all 14 original cases; add membership/execution-count guards before extending
+   them so a future typo cannot silently reduce coverage.
+3. `california-condor/src/interrupt/tests/windows.rs:131–139` needs native
+   confirmation that redirected stdout survives `FreeConsole`/`AllocConsole` and
+   reaches the listener, retaining both exact-one summaries and completion markers.
+   Linux source checks do not establish this Windows console behavior.
 
 ## Rulings I made
 
@@ -277,3 +318,19 @@ retains each decision's rationale and cost if wrong; routine task logs are omitt
 95. Task 13: Ruling: retain nativePowerShell scratch/retry/collision protocol asone explicitcombinedcase andcandidate/PSDrive/download protocol asone descriptivecase ratherthan3/8proposedregistrations — theirsame-interpreter location/env/drive/finally andowned-scratch controls formexistingvalidatednativeprotocols;newWindows-onlybrancheswithoutanativehostwouldmakepreservationweaker — costifwrong: thoseWindows subphasesremaincoarselyselectable;entireoriginalscriptandallnegativecontrolsareunchanged,15requiredCIselectionsretainalloriginalnativebehavior. NativefetchmatrixsplitusesunchangedPSrunnerandverifiedcompletecasepartition,notnewPSprotocols.
 
 96. Task 13: Ruling: preserve cumulativeGit/publication snapshots acrosslateroutcomes — stale-run/tag/bodyandouter-repositorychecksdependonactualearliermutations — costifwrong: repeatedcheapownedGitsetup,notrealnetwork/nativebuilds. Namedphasesretainalloriginalstatementsandcleanup;nofakecertificateorremotecredentialbehavior substituted.
+
+97. Final: Ruling: retain internal retry replays of public cases in `andean-condor/src/core/sequence/parallel_encoder/tests/retry_progress.rs:66–131` — the source build executes private `after_failure` cleanup assertions that the external target cannot observe, so users retain both public behavior and private cleanup proof — cost if wrong: repeated fixture/runtime cost, not lost coverage or a widened API.
+
+98. Final: Ruling: retain the deliberately coupled pipelines in rulings 46, 51, 66, 69, 73, 82, 85, 88, 92 and 95 — shared producer, identity and lifecycle chains preserve the original assertions without mutable global fixtures or repeating complete native pipelines — cost if wrong: individual phases remain coarsely filterable; their stated scenario and ownership checks must stay intact.
+
+99. Final: Ruling: keep environment assertions on the 18 ignored California child entries even though naked `--include-ignored` fails — ordinary runs use their owning parents, which arrange isolation and check exact selection/completion; an unarranged child should fail rather than report vacuous success, and the baseline already required a model for an unfiltered ignored run — cost if wrong: ad hoc direct-child commands require their documented parent protocol; no supported all-ignored success claim is made.
+
+100. Final: Ruling: keep CUDA-stage constructor names with their feature-aware assertions in `av-metrics-vmaf/src/scorer/tests/setup.rs` — default builds check CPU fallback without entering CUDA, while the CUDA-feature build exercises the named injected stage; `just precommit` and the README retain both configurations — cost if wrong: a default-only pass could be mistaken for CUDA-stage or hardware proof, so neither is claimed here.
+
+101. Final: Ruling: keep the integration target named `core` in `andean-condor/tests/core.rs` despite shadowing the standard `core::` namespace — it is the approved source-mirrored target and explicit imports compile against the intended owner — cost if wrong: future ambiguous paths cause compile errors and need qualification; no runtime behavior is changed.
+
+102. Final: Ruling: retain the optional prerequisite gate's environment-absent success in ordinary VMAF suites — it explicitly prints `UNEXECUTED`, while required CI sets `AV_METRICS_REQUIRE_CPU=1`; the refreshed evidence and verifier now distinguish nominal success from executed prerequisite checks — cost if wrong: an ordinary pass counter remains easy to overread, so it is not accepted as required-native evidence.
+
+103. Final: Ruling: do not broaden the coverage filename regex to exclude inline `internal_integration` modules in production files — the existing report is file-based, inline test modules predate this branch, and excluding their owner would hide production coverage — cost if wrong: inline test lines may remain in coverage totals; no pure-production percentage or complete test-line exclusion is claimed.
+
+104. Final: Ruling: leave the disclosed schema/ONNX Runtime, model, native CPU fmetrics, optional AVM/VVenC, SVT capability, screenshot-warning and flake gaps unchanged — these are unavailable acceptance paths or pre-existing limitations, not demonstrated regressions from this naming/boundary refactor; users receive the explicit limits above, not invented passing claims — cost if wrong: platform/native defects or flakes may still surface when those gates become available; run the affected acceptance gates before relying on them.
