@@ -14,7 +14,7 @@ class GenerateChangelogTests(unittest.TestCase):
     def _changelog(
         self, repo: Path, output: Path, *args: str,
     ) -> subprocess.CompletedProcess[str]:
-        script = Path(__file__).resolve().parents[1] / "generate-changelog.sh"
+        script = Path(__file__).resolve().parents[2] / "generate-changelog.sh"
         return subprocess.run(
             ["bash", str(script), *args], cwd=repo, capture_output=True, text=True,
             env={**{key: value for key, value in os.environ.items()
@@ -24,7 +24,8 @@ class GenerateChangelogTests(unittest.TestCase):
                  "GIT_CEILING_DIRECTORIES": str(repo.parent.resolve())},
         )
 
-    def test_helpers_isolate_git_environment_and_parent_discovery(self) -> None:
+    def _check_git_isolation(self, phase: int) -> None:
+        assert 1 <= phase <= 3
         """Inherited routing must not write to a containing repo or leak its history."""
         with tempfile.TemporaryDirectory(prefix="changelog isolation ") as directory:
             base = Path(directory)
@@ -76,6 +77,8 @@ class GenerateChangelogTests(unittest.TestCase):
                 self.assertTrue((inner / ".git").is_dir())
                 self.assertEqual(git(inner, "log", "-1", "--format=%s"), "HISTORY_INNER")
                 self.assertEqual(git(inner, "tag", "--list"), "v0.5.1")
+                if phase == 1:
+                    return
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 body = output.read_text()
                 self.assertEqual(
@@ -83,6 +86,8 @@ class GenerateChangelogTests(unittest.TestCase):
                     ["HISTORY_INNER"],
                 )
                 self.assertIn(": HISTORY_INNER (Release Fixture)\n", body)
+                if phase == 2:
+                    return
 
                 not_git = outer / "not git"
                 not_git.mkdir()
@@ -93,6 +98,15 @@ class GenerateChangelogTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(output.read_text(), "existing=true\n")
                 self.assertEqual(outer_state(), before)
+
+    def test_git_fixture_helpers_ignore_inherited_routing_and_preserve_outer_repository(self) -> None:
+        self._check_git_isolation(1)
+
+    def test_changelog_nested_repository_uses_only_inner_history(self) -> None:
+        self._check_git_isolation(2)
+
+    def test_git_and_changelog_non_repository_do_not_discover_parent_or_mutate_output(self) -> None:
+        self._check_git_isolation(3)
 
     def test_previous_reachable_version_excludes_head_aliases_and_latest(self) -> None:
         """Current, moving, non-version, or numerically largest tags are not baselines."""
@@ -179,7 +193,7 @@ class GenerateChangelogTests(unittest.TestCase):
             )
             self.assertIn("Changes since v0.5.1:\n", body)
 
-    def test_body_protocol_notes_and_first_ten_commit_boundary(self) -> None:
+    def _check_changelog_body(self, overflow: bool) -> None:
         """Keep every subject exactly once, correct overflow counts, and spaced paths."""
         with tempfile.TemporaryDirectory(prefix="changelog body ") as directory:
             base = Path(directory)
@@ -209,14 +223,21 @@ class GenerateChangelogTests(unittest.TestCase):
                         [line[2:] for line in body.splitlines() if line.startswith("- ")],
                         subjects[::-1],
                     )
-                    inline = body.split("<details>")[0]
-                    self.assertEqual(inline.count("\n- history change"), min(count, 10))
-                    if count > 10:
-                        self.assertIn(f"<summary>... and {count - 10} more commits</summary>", body)
-                        self.assertEqual(body.count("</details>"), 1)
-                    else:
-                        self.assertNotIn("<details>", body)
+                    if overflow:
+                        inline = body.split("<details>")[0]
+                        self.assertEqual(inline.count("\n- history change"), min(count, 10))
+                        if count > 10:
+                            self.assertIn(f"<summary>... and {count - 10} more commits</summary>", body)
+                            self.assertEqual(body.count("</details>"), 1)
+                        else:
+                            self.assertNotIn("<details>", body)
                     self.assertTrue(body.endswith(f"\n---\n\n{notes.read_text()}\nCHANGELOG_EOF\n"))
+
+    def test_changelog_appends_github_output_protocol_and_verbatim_notes_from_spaced_path(self) -> None:
+        self._check_changelog_body(False)
+
+    def test_changelog_first_ten_commits_are_inline_and_remaining_count_is_exact(self) -> None:
+        self._check_changelog_body(True)
 
     def test_shallow_and_git_errors_fail_before_output_mutation(self) -> None:
         """Shallow roots must not masquerade as first releases, nor Git errors as success."""

@@ -11,7 +11,7 @@ import unittest
 class WorkflowTests(unittest.TestCase):
     def test_docker_and_ci_share_build_only_zig_pin(self) -> None:
         """Supplement runtime proof: a floating Arch tool must not enter any stage."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         docker = (root / "Dockerfile").read_text()
         metrics = docker.split("FROM base AS metrics\n", 1)[1].split("FROM base AS runtime", 1)[0]
         packages = re.search(r"RUN pacman .*?(?=\n\n)", metrics, re.S)[0]
@@ -38,9 +38,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("/opt/zig", other_stages)
         self.assertNotRegex(other_stages, r"COPY --from=metrics .*zig")
 
-    def test_pin_propagation_and_download_consumers(self) -> None:
+    def _check_pin_policies(self, policies: set[str]) -> None:
         """Supplement runtime checks: consumers must not detach from verified boundaries."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         pins = dict(re.findall(r"^([A-Za-z0-9_]+)=(\S+)$", (root / ".github/.env").read_text(), re.M))
         vmaf = (root / "av-metrics-vmaf/scripts/install-libvmaf-windows.ps1").read_text()
         vship = (root / "av-metrics-vship/scripts/install-libvship-windows.ps1").read_text()
@@ -69,26 +69,33 @@ class WorkflowTests(unittest.TestCase):
             for operation in ("$directories = ", "Move-Item ", "New-Item ", "Copy-Item "):
                 self.assertLess(source.index(normalize_destination), source.index(operation), "resolve Destination before discovery and writes")
 
-        with self.subTest(policy="release-pin"):
-            release_pin_policy(stage)
-        with self.subTest(policy="filesystem-only"):
-            filesystem_policy(vship)
-        with self.subTest(policy="destination-boundary"):
-            destination_policy(vship)
-        with self.assertRaises(AssertionError):
-            destination_policy(vship.replace(normalize_destination, ""))
-        with self.assertRaises(AssertionError):
-            destination_policy(vship.replace(normalize_destination, "").replace("$Sha256 = ", normalize_destination + "\n$Sha256 = ", 1))
-        with self.assertRaises(AssertionError):
-            destination_policy(vship.replace(normalize_destination, normalize_destination + "\n" + normalize_destination))
-        with self.assertRaises(AssertionError):
-            release_pin_policy(stage.replace(".Hash -ne (Get-Pin 'VSHIP_VULKAN_SHA256')", ".Hash -eq (Get-Pin 'VSHIP_VULKAN_SHA256')"))
-        with self.assertRaises(AssertionError):
-            filesystem_policy(vship.replace(anchored_candidate, "(Join-Path $directory $name)"))
-        with self.assertRaises(AssertionError):
-            filesystem_policy(vship.replace(anchored_candidate, "[IO.Path]::Combine($directory, $name)"))
-        with self.assertRaises(AssertionError):
-            filesystem_policy(vship.replace("[IO.Path]::GetDirectoryName($env:VSSCRIPT_PATH.Trim().Trim('\"'))", "(Split-Path -Parent $env:VSSCRIPT_PATH)"))
+        if "release" in policies:
+            with self.subTest(policy="release-pin"):
+                release_pin_policy(stage)
+        if "filesystem" in policies:
+            with self.subTest(policy="filesystem-only"):
+                filesystem_policy(vship)
+        if "destination" in policies:
+            with self.subTest(policy="destination-boundary"):
+                destination_policy(vship)
+            with self.assertRaises(AssertionError):
+                destination_policy(vship.replace(normalize_destination, ""))
+            with self.assertRaises(AssertionError):
+                destination_policy(vship.replace(normalize_destination, "").replace("$Sha256 = ", normalize_destination + "\n$Sha256 = ", 1))
+            with self.assertRaises(AssertionError):
+                destination_policy(vship.replace(normalize_destination, normalize_destination + "\n" + normalize_destination))
+        if "release" in policies:
+            with self.assertRaises(AssertionError):
+                release_pin_policy(stage.replace(".Hash -ne (Get-Pin 'VSHIP_VULKAN_SHA256')", ".Hash -eq (Get-Pin 'VSHIP_VULKAN_SHA256')"))
+        if "filesystem" in policies:
+            with self.assertRaises(AssertionError):
+                filesystem_policy(vship.replace(anchored_candidate, "(Join-Path $directory $name)"))
+            with self.assertRaises(AssertionError):
+                filesystem_policy(vship.replace(anchored_candidate, "[IO.Path]::Combine($directory, $name)"))
+            with self.assertRaises(AssertionError):
+                filesystem_policy(vship.replace("[IO.Path]::GetDirectoryName($env:VSSCRIPT_PATH.Trim().Trim('\"'))", "(Split-Path -Parent $env:VSSCRIPT_PATH)"))
+        if "pins" not in policies:
+            return
         self.assertIn("install-libvship-windows.ps1", stage, "staging must reuse installer candidate-preservation policy")
         self.assertIn("$vshipCandidate.Downloaded", stage, "local staging must not claim a newly verified download")
         for key, value in pins.items():
@@ -101,10 +108,14 @@ class WorkflowTests(unittest.TestCase):
             for line in source.splitlines():
                 if re.match(r"\s*(?:\$(?:\w+|null) = )?(?:Invoke-Download|Get-Asset|Save-File) -Uri", line):
                     self.assertIn("-Sha256 ", line, "download consumer skipped expected digest")
+        if "ffms" not in policies:
+            return
         steps = self._workflow("windows-build")["jobs"]["build"]["steps"]
         ffms = next(s["run"] for s in steps if s.get("name") == "FFMS2 installation")
         self.assertLess(ffms.index("Get-FileHash"), ffms.index("7z x"))
         self.assertIn("throw", ffms[ffms.index("Get-FileHash"):ffms.index("7z x")])
+        if "docker" not in policies:
+            return
         docker = (root / "Dockerfile").read_text()
         self.assertNotIn("--extra-index-url", docker)
         self.assertIn("--index-url https://pypi.org/simple --only-binary=:all:", docker)
@@ -123,9 +134,27 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("--no-deps --no-index", setup)
             self.assertRegex(setup, r"vapoursynth_vszip-24\.0\.0-py3-none-manylinux_2_17_x86_64\.whl#sha256=[0-9a-f]{64}")
 
+    def test_vship_release_digest_policy_rejects_inverted_guard(self) -> None:
+        self._check_pin_policies({"release"})
+
+    def test_vship_candidate_policy_uses_filesystem_only_powershell_anchored_paths(self) -> None:
+        self._check_pin_policies({"filesystem"})
+
+    def test_vship_destination_policy_requires_one_early_normalization(self) -> None:
+        self._check_pin_policies({"destination"})
+
+    def test_native_installer_pins_match_central_values_and_all_download_calls_pass_sha256(self) -> None:
+        self._check_pin_policies({"pins"})
+
+    def test_windows_ffms2_download_is_hashed_before_unpack(self) -> None:
+        self._check_pin_policies({"pins", "ffms"})
+
+    def test_docker_and_cpu_ci_use_only_pinned_binary_wheels_and_verified_downloads(self) -> None:
+        self._check_pin_policies({"pins", "ffms", "docker"})
+
     def _workflows(self) -> dict:
         names = {"tests", "linux-build", "windows-build", "release", "mdbook", "miri-grain"}
-        directory = Path(__file__).resolve().parents[1]
+        directory = Path(__file__).resolve().parents[2]
         self.assertEqual({p.stem for p in directory.glob("*.yml")}, names)
         return {name: self._workflow(name) for name in sorted(names)}
 
@@ -199,7 +228,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(docs["deploy"]["environment"]["name"], "github-pages")
 
     def _assert_deploy_gate(self, workflow: dict) -> None:
-        expression = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts/check-docker-policy.py"))["expression"]
+        expression = runpy.run_path(str(Path(__file__).resolve().parents[3] / "scripts/check-docker-policy.py"))["expression"]
         gate = " ".join(workflow["jobs"]["deploy"].get("if", "True").split())
         cases = [
             ("rust-av/Av1an", "push", "refs/heads/master", True),
@@ -215,20 +244,22 @@ class WorkflowTests(unittest.TestCase):
             context = {"github": SimpleNamespace(repository=repo, event_name=event, ref=ref)}
             self.assertEqual(bool(expression(gate, context)), wanted, (repo, event, ref))
 
-    def test_actual_least_privilege_pins_and_credential_boundaries(self) -> None:
+    def test_workflows_enforce_least_privilege_immutable_actions_and_explicit_credential_consumers(self) -> None:
         """Global Pages write, mutable uses, persisted checkout or token exports fail."""
         self._assert_policy(self._workflows())
-        directory = Path(__file__).resolve().parents[1]
+        directory = Path(__file__).resolve().parents[2]
         for path in directory.glob("*.yml"):
             for line in path.read_text().splitlines():
                 if "uses:" in line and "./.github/workflows/" not in line:
                     self.assertRegex(line, r"@[0-9a-f]{40} # (v\d[^\s]*|stable)$")
 
-    def test_actual_pages_gate_denies_manual_forks_and_prs(self) -> None:
+    def _check_pages_and_fork_policy(self, fork_permissions: bool) -> None:
         """A fork PR sees neither writable jobs nor explicit publication credentials."""
         workflows = self._workflows()
         self._assert_deploy_gate(workflows["mdbook"])
-        expression = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts/check-docker-policy.py"))["expression"]
+        if not fork_permissions:
+            return
+        expression = runpy.run_path(str(Path(__file__).resolve().parents[3] / "scripts/check-docker-policy.py"))["expression"]
         context = {"github": SimpleNamespace(repository="fork/Av1an", event_name="pull_request", ref="refs/pull/1/merge"),
                    "needs": SimpleNamespace(linux=SimpleNamespace(result="success"), windows=SimpleNamespace(result="success"))}
         for name, workflow in workflows.items():
@@ -241,10 +272,16 @@ class WorkflowTests(unittest.TestCase):
                         self.assertNotIn("secrets.", str(step), name)
                         self.assertNotIn("github.token", str(step), name)
 
-    def test_policy_mutations_are_rejected(self) -> None:
+    def test_pages_deploy_gate_allows_only_upstream_master_push(self) -> None:
+        self._check_pages_and_fork_policy(False)
+
+    def test_fork_pr_runnable_jobs_are_read_only_and_runnable_steps_have_no_publish_credentials(self) -> None:
+        self._check_pages_and_fork_policy(True)
+
+    def _check_policy_mutations(self, mutations: tuple[str, ...], gates: bool = False) -> None:
         """Exercise the same production-policy assertions on in-memory unsafe edits."""
         workflows = self._workflows()
-        for mutation in ("global-write", "native-write", "checkout", "mutable", "toolchain", "token-env", "token-argument", "token-output", "inherit", "metadata-write"):
+        for mutation in mutations:
             with self.subTest(mutation=mutation):
                 changed = deepcopy(workflows)
                 job = changed["linux-build"]["jobs"]["build"]
@@ -262,6 +299,8 @@ class WorkflowTests(unittest.TestCase):
                 else:
                     next(s for s in changed["mdbook"]["jobs"]["build"]["steps"] if s.get("id") == "pages")["with"]["enablement"] = "true"
                 with self.assertRaises(AssertionError): self._assert_policy(changed)
+        if not gates:
+            return
         for gate in ("True", "github.event_name == 'push' && github.ref == 'refs/heads/master'",
                      "github.repository == 'rust-av/Av1an' && github.ref == 'refs/heads/master'"):
             with self.subTest(gate=gate):
@@ -269,10 +308,25 @@ class WorkflowTests(unittest.TestCase):
                 changed["jobs"]["deploy"]["if"] = gate
                 with self.assertRaises(AssertionError): self._assert_deploy_gate(changed)
 
+    def test_workflow_policy_rejects_write_permission_mutations(self) -> None:
+        self._check_policy_mutations(("global-write", "native-write"))
+
+    def test_workflow_policy_rejects_mutable_actions_or_missing_checkout_toolchain_contracts(self) -> None:
+        self._check_policy_mutations(("checkout", "mutable", "toolchain"))
+
+    def test_workflow_policy_rejects_token_exports_arguments_outputs_or_inherited_secrets(self) -> None:
+        self._check_policy_mutations(("token-env", "token-argument", "token-output", "inherit"))
+
+    def test_pages_metadata_policy_rejects_site_enablement(self) -> None:
+        self._check_policy_mutations(("metadata-write",))
+
+    def test_pages_deploy_gate_rejects_missing_repository_event_or_ref_restrictions(self) -> None:
+        self._check_policy_mutations((), gates=True)
+
     def _workflow(self, name: str) -> dict:
         import yaml
 
-        path = Path(__file__).resolve().parents[1] / f"{name}.yml"
+        path = Path(__file__).resolve().parents[2] / f"{name}.yml"
         self.assertTrue(path.is_file(), f"missing production workflow: {path.name}")
         return yaml.load(path.read_text(), Loader=yaml.BaseLoader)
 

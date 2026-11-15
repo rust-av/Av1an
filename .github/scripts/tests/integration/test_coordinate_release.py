@@ -3,12 +3,10 @@
 import os
 import json
 from pathlib import Path
-import runpy
 import shutil
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -30,94 +28,12 @@ class CoordinateReleaseTests(unittest.TestCase):
     def _workflow(self, name: str) -> dict:
         import yaml
 
-        path = Path(__file__).resolve().parents[2] / f"workflows/{name}.yml"
+        path = Path(__file__).resolve().parents[3] / f"workflows/{name}.yml"
         self.assertTrue(path.is_file(), f"missing production workflow: {path.name}")
         return yaml.load(path.read_text(), Loader=yaml.BaseLoader)
 
-    def test_workflow_handoff_and_single_trusted_publisher(self) -> None:
-        """An independent publisher, ungated upload, or cross-run download must fail."""
-        for platform in ("linux", "windows"):
-            workflow = self._workflow(f"{platform}-build")
-            self.assertEqual(set(workflow["on"]), {"workflow_call", "workflow_dispatch"})
-            self.assertEqual(workflow["permissions"], {"contents": "read"})
-            self.assertEqual(set(workflow["jobs"]), {"build"})
-            self.assertNotIn("secrets.", str(workflow))
-            self.assertNotIn("action-gh-release", str(workflow))
-            steps = workflow["jobs"]["build"]["steps"]
-            checkout = next(s for s in steps if "actions/checkout@" in s.get("uses", ""))
-            self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
-            upload = next(i for i, s in enumerate(steps) if "actions/upload-artifact@" in s.get("uses", ""))
-            stage = next(i for i, s in enumerate(steps) if "coordinate-release.py stage" in s.get("run", ""))
-            self.assertLess(stage, upload)
-            self.assertNotIn("if", steps[stage])
-            self.assertNotIn("continue-on-error", steps[stage])
-            self.assertNotIn("if", steps[upload])
-            self.assertEqual(steps[upload]["with"], {
-                "name": f"av1an-{platform}-x64-${{{{ github.sha }}}}-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}",
-                "path": "dist/", "retention-days": "1", "if-no-files-found": "error",
-            })
-            if platform == "windows":
-                gate = next(i for i, s in enumerate(steps) if "--native" in s.get("run", ""))
-            else:
-                gate = next(i for i, s in enumerate(steps) if s.get("name") == "Smoke-test the archive")
-            self.assertLess(gate, stage)
-            self.assertNotIn("if", steps[gate])
-            self.assertNotIn("continue-on-error", steps[gate])
-
-        workflow = self._workflow("release")
-        self.assertEqual(workflow["on"]["push"], {"branches": ["master"], "tags": ["v*"]})
-        self.assertIn("workflow_dispatch", workflow["on"])
-        self.assertNotIn("concurrency", workflow, "must not cancel an in-flight publisher")
-        self.assertEqual(workflow["permissions"], {"contents": "read"})
-        jobs = workflow["jobs"]
-        self.assertEqual(set(jobs), {"linux", "windows", "release"})
-        for platform in ("linux", "windows"):
-            self.assertEqual(jobs[platform], {"uses": f"./.github/workflows/{platform}-build.yml"})
-        release = jobs["release"]
-        self.assertEqual(set(release["needs"]), {"linux", "windows"})
-        self.assertEqual(release["permissions"], {"contents": "write"})
-        self.assertEqual(release["concurrency"], {
-            "group": "condor-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}",
-            "cancel-in-progress": "false",
-        })
-        steps = release["steps"]
-        self.assertEqual(steps[0]["with"], {"fetch-depth": "0", "ref": "${{ github.sha }}", "persist-credentials": "false"})
-        downloads = [s["with"] for s in steps if "actions/download-artifact@" in s.get("uses", "")]
-        self.assertEqual(downloads, [{
-            "name": f"av1an-{p}-x64-${{{{ github.sha }}}}-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}",
-            "path": f"handoff/{p}",
-        } for p in ("linux", "windows")])
-        publishers = [s for s in steps if "coordinate-release.py publish" in s.get("run", "")]
-        self.assertEqual(len(publishers), 1)
-        self.assertEqual(steps[-1], publishers[0])
-        self.assertEqual(publishers[0]["env"], {"GH_TOKEN": "${{ github.token }}"})
-        self.assertTrue(all("GH_TOKEN" not in str(s) for s in steps[:-1]))
-
-    def test_actual_workflow_gate_denies_failure_manual_and_forks(self) -> None:
-        """Evaluate the production gate, not a copied release decision table."""
-        script = Path(__file__).resolve().parents[1] / "check-docker-policy.py"
-        expression = runpy.run_path(str(script))["expression"]
-        gate = " ".join(self._workflow("release")["jobs"]["release"]["if"].split())
-        cases = [
-            ("rust-av/Av1an", "push", "refs/heads/master", "success", "success", True),
-            ("rust-av/Av1an", "push", "refs/tags/v1.2.3", "success", "success", True),
-            ("rust-av/Av1an", "push", "refs/heads/master", "failure", "success", False),
-            ("rust-av/Av1an", "push", "refs/heads/master", "success", "cancelled", False),
-            ("rust-av/Av1an", "push", "refs/heads/master", "skipped", "success", False),
-            ("fork/Av1an", "push", "refs/heads/master", "success", "success", False),
-            ("fork/Av1an", "push", "refs/tags/v1.2.3", "success", "success", False),
-        ]
-        cases += [("rust-av/Av1an", "workflow_dispatch", ref, "success", "success", False)
-                  for ref in ("refs/heads/feature", "refs/heads/master", "refs/tags/v1.2.3")]
-        cases += [("rust-av/Av1an", "push", "refs/heads/feature", "success", "success", False)]
-        for repo, event, ref, linux, windows, wanted in cases:
-            with self.subTest(repo=repo, event=event, ref=ref, linux=linux, windows=windows):
-                context = {"github": SimpleNamespace(repository=repo, event_name=event, ref=ref),
-                           "needs": SimpleNamespace(linux=SimpleNamespace(result=linux), windows=SimpleNamespace(result=windows))}
-                self.assertEqual(bool(expression(gate, context)), wanted)
-
     def _release_fixture(self, base: Path) -> tuple[Path, dict]:
-        scripts = Path(__file__).resolve().parents[1]
+        scripts = Path(__file__).resolve().parents[2]
         helper = scripts / "coordinate-release.py"
         self.assertTrue(helper.is_file(), "missing production handoff/publisher helper")
         repo = base / "repo"
@@ -235,7 +151,8 @@ save()
         command = next(s["run"] for s in steps if "coordinate-release.py publish" in s.get("run", ""))
         return subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", command], cwd=repo, env=env, capture_output=True, text=True)
 
-    def test_publication_body_assets_tag_and_serialized_stale_order(self) -> None:
+    def _check_publication(self, phase: int) -> None:
+        assert 1 <= phase <= 3
         """Run production commands with real owned Git history and an inert GH boundary."""
         with tempfile.TemporaryDirectory(prefix="release publish ") as directory:
             base = Path(directory)
@@ -271,6 +188,10 @@ save()
                         self.assertFalse(any("git/refs" in " ".join(a) for a in state["calls"]))
                     state["calls"] = []
                     state_path.write_text(json.dumps(state))
+                if phase == 1:
+                    break
+            if phase <= 2:
+                return
 
             # A newer run publishes first, then the slow old build enters the lock.
             old_env = env.copy()
@@ -308,12 +229,23 @@ save()
             self.assertEqual(state["calls"], [["api", "repos/rust-av/Av1an/git/ref/heads/master"]])
             self.assertEqual(list((base / "temp").iterdir()), [])
 
-    def test_rejects_invalid_handoff_and_untrusted_runs_before_write(self) -> None:
+    def test_publish_master_uploads_both_archives_schema_and_changelog_and_moves_latest(self) -> None:
+        self._check_publication(1)
+
+    def test_publish_version_tag_resolves_lightweight_and_unicode_annotated_tags_without_moving_refs(self) -> None:
+        self._check_publication(2)
+
+    def test_publish_stale_master_run_preserves_newer_release_and_assets(self) -> None:
+        self._check_publication(3)
+
+    def _check_publication_refusal(self, selected: tuple[str, ...]) -> None:
         """Removing a provenance/schema/HEAD/policy check must expose a fake write."""
         cases = ("mixed-sha", "wrong-run", "wrong-attempt", "wrong-platform", "missing-platform",
                  "schema-mismatch", "checkout-sha", "tag-moved", "tag-missing", "tag-api-failure", "api-failure", "manual-master", "manual-tag", "manual-feature", "fork", "fork-tag")
         with tempfile.TemporaryDirectory(prefix="release reject ") as directory:
             for case in cases:
+                if case not in selected:
+                    continue
                 with self.subTest(case=case):
                     base = Path(directory) / case
                     base.mkdir()
@@ -364,7 +296,19 @@ save()
                     self.assertFalse(any("--method" in a or a[0] == "release" for a in state["calls"]))
                     self.assertEqual(list((base / "temp").iterdir()), [])
 
-    def test_create_latest_and_surface_partial_remote_failure(self) -> None:
+    def test_publish_invalid_handoff_or_checkout_refuses_before_remote_writes(self) -> None:
+        self._check_publication_refusal(("mixed-sha", "wrong-run", "wrong-attempt", "wrong-platform", "missing-platform", "schema-mismatch", "checkout-sha"))
+
+    def test_publish_moved_missing_or_unavailable_tag_refuses_after_read_only_lookup(self) -> None:
+        self._check_publication_refusal(("tag-moved", "tag-missing", "tag-api-failure"))
+
+    def test_publish_api_failure_refuses_before_remote_writes(self) -> None:
+        self._check_publication_refusal(("api-failure",))
+
+    def test_publish_manual_or_fork_run_skips_without_remote_writes(self) -> None:
+        self._check_publication_refusal(("manual-master", "manual-tag", "manual-feature", "fork", "fork-tag"))
+
+    def _check_latest_creation(self, failed_upload: bool) -> None:
         """A missing managed tag is created; failed uploads never report success."""
         with tempfile.TemporaryDirectory(prefix="release remote ") as directory:
             base = Path(directory)
@@ -378,12 +322,20 @@ save()
             state = json.loads(path.read_text())
             self.assertEqual(state["latest"], env["GITHUB_SHA"])
             self.assertEqual(len(state["releases"]["latest"]["assets"]), 3)
+            if not failed_upload:
+                return
             state["fail_upload"] = True
             path.write_text(json.dumps(state))
             result = self._publish_release(repo, env)
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn("Published", result.stdout)
             self.assertEqual(list((base / "temp").iterdir()), [])
+
+    def test_publish_missing_latest_creates_tag_release_and_three_assets(self) -> None:
+        self._check_latest_creation(False)
+
+    def test_publish_failed_asset_upload_returns_failure_without_success_message(self) -> None:
+        self._check_latest_creation(True)
 
 
 if __name__ == "__main__":

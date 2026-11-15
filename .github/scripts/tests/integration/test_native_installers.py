@@ -13,27 +13,14 @@ from support import git, init_repo
 
 
 class NativeInstallerTests(unittest.TestCase):
-    def test_pinned_lookup_source_and_required_native_gate(self) -> None:
-        """Supplement only: remove the dead automatic-variable/index lookup."""
-        root = Path(__file__).resolve().parents[3]
-        source = (root / "av-metrics-vmaf/scripts/install-libvmaf-windows.ps1").read_text()
-        self.assertNotRegex(source, r"(?i)Get-LatestPackage|\$matches\b")
-        self.assertIn("$PackageHashes.ContainsKey($package)", source)
-        self.assertIn("Save-File -Uri $candidates -OutFile $archive -Sha256 $PackageHashes[$package]", source)
-        workflow = (root / ".github/workflows/windows-build.yml").read_text()
-        for method in ("test_windows_missing_archive_never_uses_newer_index",
-                       "test_windows_missing_or_invalid_pin_refuses_before_use",
-                       "test_windows_package_hash_precedes_unpack"):
-            self.assertIn(f"test_native_installers.NativeInstallerTests.{method}", workflow)
-
     def _package_native(self, case: str) -> None:
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory(prefix="package native ") as directory:
             base = Path(directory)
             temp = base / "private temp"
             temp.mkdir()
             result = subprocess.run(
-                ["pwsh", "-NoProfile", "-File", str(Path(__file__).parent / "fixtures/native_installers.ps1"),
+                ["pwsh", "-NoProfile", "-File", str(Path(__file__).parents[1] / "fixtures/native_installers.ps1"),
                  "-PackageCase", case], cwd=base, capture_output=True, text=True,
                 env={**os.environ, "REPO": str(root), "FIXTURE": str(base),
                      "TEMP": str(temp), "TMP": str(temp)})
@@ -48,7 +35,7 @@ class NativeInstallerTests(unittest.TestCase):
         self._package_native("missing-archive")
 
     @unittest.skipUnless(os.name == "nt", "native PowerShell pin validation fixture runs on Windows CI")
-    def test_windows_missing_or_invalid_pin_refuses_before_use(self) -> None:
+    def test_windows_vmaf_missing_or_invalid_package_digest_refuses_before_download_or_unpack(self) -> None:
         """A missing or malformed expected digest must not reach transport/tar."""
         for case in ("missing-pin", "invalid-pin"):
             with self.subTest(case=case):
@@ -64,7 +51,7 @@ class NativeInstallerTests(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "Linux Vship installer uses Bash")
     def test_linux_vship_cleans_early_failure_and_retries(self) -> None:
         """A late EXIT trap leaks the missing-tool checkout; all retries stay owned."""
-        installer = Path(__file__).resolve().parents[3] / "av-metrics-vship/scripts/install-libvship-linux.sh"
+        installer = Path(__file__).resolve().parents[4] / "av-metrics-vship/scripts/install-libvship-linux.sh"
         with tempfile.TemporaryDirectory(prefix="installer linux ") as directory:
             base = Path(directory)
             env, commits = self._installer_fixture(base)
@@ -116,14 +103,14 @@ printf 'installer fixture inert library bytes\\n' > "$2/libvship.so"
                         self.assertFalse(target.exists(), logs)
 
     @unittest.skipUnless(os.name == "nt", "native PowerShell ownership fixture runs on Windows CI")
-    def test_windows_installers_private_scratch_and_retry(self) -> None:
+    def test_windows_installers_owned_scratch_survives_failures_retry_and_creation_collisions(self) -> None:
         """Real Get-Asset/Save-File and filesystem; only HTTP/unpack are inert doubles."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory(prefix="installer native ") as directory:
             base = Path(directory)
             temp = base / "private temp"
             temp.mkdir()
-            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(Path(__file__).parent / "fixtures/native_installers.ps1")],
+            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(Path(__file__).parents[1] / "fixtures/native_installers.ps1")],
                                     cwd=base, capture_output=True, text=True,
                                     env={**os.environ, "REPO": str(root), "FIXTURE": str(base),
                                          "TEMP": str(temp), "TMP": str(temp)})
@@ -133,7 +120,7 @@ printf 'installer fixture inert library bytes\\n' > "$2/libvship.so"
     @unittest.skipUnless(os.name == "nt", "native PowerShell PID ownership fixture runs on Windows CI")
     def test_windows_fmetrics_preserves_old_pid_checkout(self) -> None:
         """An unknown immutable pin must not adopt/delete an old same-PID directory."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory(prefix="installer pid ") as directory:
             base = Path(directory)
             env, _ = self._installer_fixture(base)
@@ -171,26 +158,10 @@ try {
             self.assertEqual((base / "destination/sentinel").read_text(), "preserve destination\n")
             self.assertEqual(list((base / "temp").iterdir()), [])
 
-    def test_powershell_ownership_source_and_required_gate(self) -> None:
-        """Supplement only: native Windows execution is mandatory CI, not Linux proof."""
-        root = Path(__file__).resolve().parents[3]
-        for relative, variable in (("av-metrics-vship/scripts/install-libvship-windows.ps1", "stageDir"),
-                                   ("av-metrics-vmaf/scripts/install-libvmaf-windows.ps1", "StageDir"),
-                                   ("av-metrics-fmetrics/scripts/install-fmetrics-windows.ps1", "work")):
-            with self.subTest(installer=relative):
-                source = (root / relative).read_text()
-                self.assertNotRegex(source, r"Join-Path \$(?:Destination|InstallDir) 'dl'|fmetrics-build-\$PID")
-                self.assertRegex(source, rf"\${variable} = Join-Path \(\[IO.Path\]::GetTempPath\(\)\).*NewGuid")
-                self.assertRegex(source, rf"New-Item -ItemType Directory -Path \${variable} \| Out-Null\s+try \{{")
-                self.assertRegex(source, rf"finally \{{\s*(?:#[^\n]*\n\s*)?if \(Test-Path -LiteralPath \${variable}\) \{{ Remove-Item -LiteralPath \${variable} -Recurse -Force")
-        workflow = (root / ".github/workflows/windows-build.yml").read_text()
-        for method in ("test_windows_installers_private_scratch_and_retry", "test_windows_fmetrics_preserves_old_pid_checkout"):
-            self.assertIn(f"test_native_installers.NativeInstallerTests.{method}", workflow)
-
     @unittest.skipIf(os.name == "nt", "Linux installer uses Bash and ELF tooling")
     def test_linux_requires_exact_zig_before_fetch(self) -> None:
         """Accepting another patch, malformed output or failed version must not fetch."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         installer = root / "av-metrics-fmetrics/scripts/install-fmetrics-linux.sh"
         with tempfile.TemporaryDirectory(prefix="toolchain version ") as directory:
             base = Path(directory)
@@ -269,7 +240,7 @@ exec "$FIXTURE_GIT" "$@"
     @unittest.skipUnless(os.name == "nt", "native PowerShell version fixture runs on Windows CI")
     def test_windows_requires_exact_zig_before_fetch(self) -> None:
         """Run actual PS with external -ZigPath/PATH tools, never a native compiler."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         installer = root / "av-metrics-fmetrics/scripts/install-fmetrics-windows.ps1"
         with tempfile.TemporaryDirectory(prefix="toolchain native ") as directory:
             base = Path(directory)
@@ -378,7 +349,7 @@ exit /b 79
     @unittest.skipIf(os.name == "nt", "Linux installer uses Bash and ELF tooling")
     def test_linux_fetches_exact_commit_before_compilation(self) -> None:
         """Branch-head checkout, ignored overrides or a fail-open fetch must fail."""
-        installer = Path(__file__).resolve().parents[3] / "av-metrics-fmetrics/scripts/install-fmetrics-linux.sh"
+        installer = Path(__file__).resolve().parents[4] / "av-metrics-fmetrics/scripts/install-fmetrics-linux.sh"
         with tempfile.TemporaryDirectory(prefix="installer fetch ") as directory:
             base = Path(directory)
             env, commits = self._installer_fixture(base)
@@ -434,10 +405,9 @@ exit 79
                     self.assertEqual((base / "destination/sentinel").read_text(), "preserve destination\n")
                     self.assertEqual(list((base / "temp").iterdir()), [], logs)
 
-    @unittest.skipUnless(os.name == "nt", "native PowerShell fetch fixture runs on Windows CI")
-    def test_windows_fetch_patch_and_ancestry_before_compilation(self) -> None:
+    def _check_windows_fetch(self, selected_cases: tuple[str, ...]) -> None:
         """Run actual PS/Git/apply; fake Zig never compiles or installs fixture bytes."""
-        installer = Path(__file__).resolve().parents[3] / "av-metrics-fmetrics/scripts/install-fmetrics-windows.ps1"
+        installer = Path(__file__).resolve().parents[4] / "av-metrics-fmetrics/scripts/install-fmetrics-windows.ps1"
         with tempfile.TemporaryDirectory(prefix="installer native ") as directory:
             base = Path(directory)
             env, commits = self._installer_fixture(base)
@@ -491,6 +461,8 @@ exit /b 79
                 ("apply-failure", commits["pin"], "main", [], commits["base"], True, None, "applying.*patch failed"),
             ]
             for case, selected, branch, arguments, upstream, bad_dep, payload, error in cases:
+                if case not in selected_cases:
+                    continue
                 with self.subTest(case=case):
                     marker, fetched = base / "compiler", base / "dependencies"
                     marker.unlink(missing_ok=True)
@@ -519,10 +491,26 @@ exit /b 79
                     self.assertEqual((base / "destination/sentinel").read_text(), "preserve destination\n")
                     self.assertEqual(list((base / "temp").iterdir()), [], logs)
 
+    @unittest.skipUnless(os.name == "nt", "native PowerShell fetch fixture runs on Windows CI")
+    def test_windows_fmetrics_fetches_exact_detached_commit_and_applies_portability_patch_before_build(self) -> None:
+        self._check_windows_fetch(("advanced-branch", "absent-branch", "environment", "explicit-override"))
+
+    @unittest.skipUnless(os.name == "nt", "native PowerShell fetch fixture runs on Windows CI")
+    def test_windows_fmetrics_invalid_or_unreachable_commit_never_builds(self) -> None:
+        self._check_windows_fetch(("short", "branch-as-pin", "nonhex", "newline", "unknown", "unreachable"))
+
+    @unittest.skipUnless(os.name == "nt", "native PowerShell fetch fixture runs on Windows CI")
+    def test_windows_fmetrics_wrong_or_missing_upstream_ancestry_never_fetches_dependencies(self) -> None:
+        self._check_windows_fetch(("wrong-ancestry", "missing-ancestry"))
+
+    @unittest.skipUnless(os.name == "nt", "native PowerShell fetch fixture runs on Windows CI")
+    def test_windows_fmetrics_missing_or_inapplicable_patch_never_compiles(self) -> None:
+        self._check_windows_fetch(("missing-patch", "apply-failure"))
+
     @unittest.skipUnless(os.name == "nt", "native PowerShell installer acceptance runs on Windows CI")
-    def test_windows_installer_boundaries_and_local_candidate(self) -> None:
+    def test_windows_vship_candidate_discovery_and_verified_downloads_preserve_existing_bytes(self) -> None:
         """Run real PS functions and installer; never load/execute fixture DLL bytes."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory(prefix="download native ") as directory:
             base = Path(directory)
             script = base / "check.ps1"

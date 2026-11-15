@@ -87,6 +87,23 @@ python3 -B -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v
 python3 -B -m unittest discover -s .github/workflows/tests -p 'test_*.py' -v
 ```
 
+Both roots recurse into `unit/` and `integration/`. Unit suites check in-memory
+parsers and read-only source/workflow policies; integrations execute scripts,
+Git, downloads through owned doubles, or real archive I/O. Source-policy checks
+are not native execution evidence.
+
+Run a boundary separately without changing the discovery/import root:
+
+```sh
+python3 -B -m unittest discover -s .github/scripts/tests -p 'test_*.py' -k 'unit.*' -v
+python3 -B -m unittest discover -s .github/scripts/tests -p 'test_*.py' -k 'integration.*' -v
+python3 -B -m unittest discover -s .github/workflows/tests -p 'test_*.py' -k 'unit.*' -v
+python3 -B -m unittest discover -s .github/workflows/tests -p 'test_*.py' -k 'integration.*' -v
+```
+
 Native-Windows installer cases are skipped on Linux. Run the Windows CI selections
 on native Windows and the separate Windows DLL gate above before claiming Windows
 acceptance; these discovery commands do not replace those gates.
+The exact selections in `.github/workflows/windows-build.yml` run from
+`.github/scripts/tests` and import only stdlib-based suites. They do not replace
+the subsequent clean-extracted native archive gate.

@@ -12,15 +12,14 @@ import unittest
 
 
 class CheckDockerPolicyTests(unittest.TestCase):
-    @unittest.skipIf(os.name == "nt", "Docker RUN boundary uses Bash")
-    def test_docker_download_verifies_before_tar_and_version(self) -> None:
+    def _check_docker_download(self, cases: tuple[str, ...]) -> None:
         """Run the production RUN with verified-download hashing; bad bytes never reach tar/Zig."""
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         metrics = (root / "Dockerfile").read_text().split("FROM base AS metrics\n", 1)[1].split("FROM base AS runtime", 1)[0]
         run = next(line[4:] for line in metrics.replace("\\\n", "").splitlines()
                    if line.startswith("RUN ") and "/tmp/cicd.env" in line)
         self.assertIn("download-verified.sh", run, "must execute the production verified download")
-        for case in ("good", "corrupt", "truncated", "http", "missing-hash", "wrong-version"):
+        for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory(prefix="toolchain docker ") as directory:
                 base = Path(directory)
                 tools, local, scratch = base / "bin", base / "usr/local/bin", base / "tmp"
@@ -96,11 +95,27 @@ if [ "$CASE" = wrong-version ]; then echo 0.16.1; else echo 0.16.0; fi
                                    "wrong-version": "expected exactly 0.16.0"}[case], logs)
                 self.assertEqual(list(scratch.iterdir()), [] if case == "good" else [scratch / "cicd.env"], logs)
 
+    @unittest.skipIf(os.name == "nt", "Docker RUN boundary uses Bash")
+    def test_docker_metrics_run_verified_zig_runs_both_installers(self) -> None:
+        self._check_docker_download(("good",))
+
+    @unittest.skipIf(os.name == "nt", "Docker RUN boundary uses Bash")
+    def test_docker_metrics_run_unverified_archive_never_reaches_tar_or_zig(self) -> None:
+        self._check_docker_download(("corrupt", "truncated", "http"))
+
+    @unittest.skipIf(os.name == "nt", "Docker RUN boundary uses Bash")
+    def test_docker_metrics_run_missing_digest_never_downloads(self) -> None:
+        self._check_docker_download(("missing-hash",))
+
+    @unittest.skipIf(os.name == "nt", "Docker RUN boundary uses Bash")
+    def test_docker_metrics_run_wrong_zig_version_never_runs_installers(self) -> None:
+        self._check_docker_download(("wrong-version",))
+
     def test_run_step_uses_selected_tmpdir_and_bash(self) -> None:
         """Catch host-specific paths without changing any host files or environment."""
         bash = shutil.which("bash")
         self.assertIsNotNone(bash, "Bash must be installed to run this regression")
-        checker = Path(__file__).resolve().parents[1] / "check-docker-policy.py"
+        checker = Path(__file__).resolve().parents[2] / "check-docker-policy.py"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             temp = root / "temp"

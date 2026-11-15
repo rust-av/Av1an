@@ -13,7 +13,7 @@ import unittest
 class LinuxBuildTests(unittest.TestCase):
     def test_archive_version_command_clears_build_host_overrides(self) -> None:
         """Catch runner-path overrides reaching the archive smoke command."""
-        workflow = Path(__file__).resolve().parents[1] / "linux-build.yml"
+        workflow = Path(__file__).resolve().parents[2] / "linux-build.yml"
         step = workflow.read_text().split("      - name: Smoke-test the archive\n", 1)[1]
         step = step.split("      - name:", 1)[0]
         body = textwrap.dedent(step.split("        run: |\n", 1)[1])

@@ -9,9 +9,9 @@ import unittest
 
 
 class DownloadVerifiedTests(unittest.TestCase):
-    def test_download_boundary_mirrors_http_overrides_and_preservation(self) -> None:
+    def _check_download(self, indices: tuple[int, ...]) -> None:
         """Bypassing the production digest or HTTP check must publish bad bytes."""
-        helper = Path(__file__).resolve().parents[1] / "download-verified.sh"
+        helper = Path(__file__).resolve().parents[2] / "download-verified.sh"
         self.assertTrue(helper.is_file(), "missing production verified-download boundary")
         with tempfile.TemporaryDirectory(prefix="download download ") as directory:
             base = Path(directory)
@@ -37,7 +37,7 @@ sys.exit(22 if url.endswith("/http") else 0)
                      (digest, ["http", "bad", "good"], True),
                      (digest, ["bad", "short"], False), ("", ["good"], False),
                      ("not-a-hash", ["good"], False)]
-            for expected, sources, accepted in cases:
+            for expected, sources, accepted in [cases[index] for index in indices]:
                 with self.subTest(expected=expected, sources=sources):
                     destination.write_bytes(b"existing destination")
                     calls.unlink(missing_ok=True)
@@ -51,6 +51,18 @@ sys.exit(22 if url.endswith("/http") else 0)
                     if expected in ("", "not-a-hash"):
                         self.assertFalse(calls.exists(), "missing/invalid expected hash must fail before downloading")
                     self.assertEqual(list(base.glob("*.part.*")), [], "partial payload leaked")
+
+    def test_verified_download_matching_override_url_publishes_readable_bytes(self) -> None:
+        self._check_download((0,))
+
+    def test_verified_download_http_or_digest_failure_preserves_destination_and_removes_parts(self) -> None:
+        self._check_download((1, 2, 3, 5))
+
+    def test_verified_download_falls_through_failed_mirrors_to_verified_bytes(self) -> None:
+        self._check_download((4,))
+
+    def test_verified_download_missing_or_malformed_digest_never_invokes_curl(self) -> None:
+        self._check_download((6, 7))
 
 
 if __name__ == "__main__":
