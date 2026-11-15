@@ -208,6 +208,160 @@ mod handler_configuration {
 }
 
 #[cfg(test)]
+mod flag_configuration {
+    use super::*;
+    use andean_condor::{
+        core::sequence::target_quality::TargetQuality,
+        models::{
+            input::Input,
+            sequence::target_quality::types::{
+                DEFAULT_XPSNR_TARGET_RANGE, ProbeStatistic, ProbeStrategy, SubsetProbeLength,
+                SubsetProbePosition,
+            },
+        },
+    };
+    use anyhow::Result;
+    use california_condor::{
+        commands::handlers::target_quality::configure_target_quality, configuration::Configuration,
+    };
+    use std::path::Path;
+
+    fn apply_target_quality_flags(configuration: &mut Configuration, flags: &[&str]) -> Result<()> {
+        use california_condor::commands::{Commands, CondorCli};
+        use clap::Parser;
+        let cli = CondorCli::try_parse_from([&["condor", "target-quality"][..], flags].concat())?;
+        let Some(Commands::TargetQuality {
+            input,
+            decoder,
+            filters,
+            vs_args,
+            params,
+            metric,
+            target,
+            minimum_quantizer,
+            maximum_quantizer,
+            profile,
+            ..
+        }) = cli.command
+        else {
+            panic!("TQ flags")
+        };
+        configure_target_quality(
+            configuration,
+            input.as_deref(),
+            decoder.as_ref(),
+            filters.as_deref(),
+            vs_args.as_deref(),
+            params.as_deref(),
+            metric.as_ref(),
+            target,
+            minimum_quantizer,
+            maximum_quantizer,
+            profile.as_ref(),
+        )
+    }
+
+    fn offline_target_quality_configuration(directory: &Path) -> Configuration {
+        let video = california_condor::test_helpers::TestVideo {
+            path: directory.join("must-not-open.vpy"),
+            width: 32,
+            height: 32,
+            frames: 2,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![(0, 2)],
+        };
+        let mut configuration =
+            default_config(&video, &directory.join("out.mkv"), &directory.join("work"));
+        configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+        configuration.condor.scenes[0].sequence_data.parallel_encoder.bytes = Some(1234);
+        configuration
+    }
+
+    #[test]
+    fn target_quality_existing_targetless_edits_change_only_tq_and_create_no_scratch() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let mut configuration = offline_target_quality_configuration(temp.path());
+        let before = serde_json::to_value(&configuration).expect("snapshot");
+        apply_target_quality_flags(&mut configuration, &[])
+            .expect("intentional absent/allNone no-op");
+        assert_eq!(
+            serde_json::to_value(&configuration).expect("unchanged"),
+            before
+        );
+        apply_target_quality_flags(&mut configuration, &["--target", "75"])
+            .expect("explicit creation");
+        let quality =
+            configuration.condor.sequence_config.target_quality.as_ref().expect("created");
+        assert_eq!(quality.metric.target_range(), (74.0, 76.0));
+        assert_eq!(
+            quality.quantizer_range,
+            TargetQuality::default_quantizer_range(&configuration.condor.encoder.base())
+        );
+        assert_eq!(
+            serde_json::to_value(&quality.probing).expect("default probing"),
+            serde_json::to_value(TargetQualityConfig::default().probing).expect("defaults")
+        );
+        let untouched = configuration.clone();
+        apply_target_quality_flags(
+            &mut configuration,
+            &[
+                "--metric",
+                "xpsnr",
+                "--profile",
+                "fast",
+                "--min-q",
+                "20",
+                "--max-q",
+                "40",
+                "--params",
+                "--preset=8",
+            ],
+        )
+        .expect("saved section is sufficient");
+        let quality = configuration.condor.sequence_config.target_quality.as_ref().expect("TQ");
+        assert!(matches!(quality.metric, QualityMetric::XPSNR { .. }));
+        assert_eq!(quality.metric.target_range(), DEFAULT_XPSNR_TARGET_RANGE);
+        assert_eq!(quality.quantizer_range, (20, 40));
+        assert_eq!(
+            quality.probing.strategy,
+            ProbeStrategy::Subset {
+                position: SubsetProbePosition::Middle,
+                length: SubsetProbeLength::Frames(11)
+            }
+        );
+        assert_eq!(quality.probing.statistic, ProbeStatistic::Mean);
+        assert_eq!(
+            quality.probing.encoder_options.as_ref().expect("params").get("preset"),
+            Some(&CLIParameter::new_number("--", "=", 8.0))
+        );
+        apply_target_quality_flags(
+            &mut configuration,
+            &["--input", "other.vpy", "--vs-args", "keep=yes"],
+        )
+        .expect("configured input edit stays offline");
+        let input = configuration
+            .condor
+            .sequence_config
+            .target_quality
+            .as_ref()
+            .expect("TQ")
+            .input
+            .as_ref()
+            .expect("override");
+        assert!(matches!(input, Input::VapourSynthScript { .. }));
+        let mut outside_tq = configuration.clone();
+        outside_tq.condor.sequence_config.target_quality =
+            untouched.condor.sequence_config.target_quality.clone();
+        assert_eq!(
+            serde_json::to_value(outside_tq).expect("unchanged outside TQ"),
+            serde_json::to_value(untouched).expect("snapshot")
+        );
+        assert!(!configuration.temp.exists());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::assert_matches;
 

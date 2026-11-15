@@ -770,10 +770,7 @@ pub fn config(config_path: Option<&Path>, action: &TargetQualityAction) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use andean_condor::models::{
-        encoder::{Encoder, EncoderBase, cli_parameter::CLIParameter},
-        input::Input,
-    };
+    use andean_condor::models::encoder::{Encoder, EncoderBase};
 
     use super::*;
     use crate::test_helpers::default_config;
@@ -939,10 +936,10 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
-    #[test]
-    fn noop_creation_and_configured_targetless_edits_preserve_contracts() {
-        let temp = tempfile::tempdir().expect("fixture");
-        let mut configuration = offline_target_quality_configuration(temp.path());
+    fn check_target_quality_creation(phase: u8) {
+        assert!((1..=2).contains(&phase));
+        let root = std::env::temp_dir().join("condor-target-creation-model-only");
+        let mut configuration = offline_target_quality_configuration(&root);
         let before = serde_json::to_value(&configuration).expect("snapshot");
         apply_target_quality_flags(&mut configuration, &[])
             .expect("intentional absent/allNone no-op");
@@ -950,6 +947,9 @@ mod tests {
             serde_json::to_value(&configuration).expect("unchanged"),
             before
         );
+        if phase == 1 {
+            return;
+        }
         apply_target_quality_flags(&mut configuration, &["--target", "75"])
             .expect("explicit creation");
         let quality =
@@ -963,62 +963,16 @@ mod tests {
             serde_json::to_value(&quality.probing).expect("default probing"),
             serde_json::to_value(TargetQualityConfig::default().probing).expect("defaults")
         );
-        let untouched = configuration.clone();
-        apply_target_quality_flags(
-            &mut configuration,
-            &[
-                "--metric",
-                "xpsnr",
-                "--profile",
-                "fast",
-                "--min-q",
-                "20",
-                "--max-q",
-                "40",
-                "--params",
-                "--preset=8",
-            ],
-        )
-        .expect("saved section is sufficient");
-        let quality = configuration.condor.sequence_config.target_quality.as_ref().expect("TQ");
-        assert!(matches!(quality.metric, QualityMetric::XPSNR { .. }));
-        assert_eq!(quality.metric.target_range(), DEFAULT_XPSNR_TARGET_RANGE);
-        assert_eq!(quality.quantizer_range, (20, 40));
-        assert_eq!(
-            quality.probing.strategy,
-            ProbeStrategy::Subset {
-                position: SubsetProbePosition::Middle,
-                length: SubsetProbeLength::Frames(11)
-            }
-        );
-        assert_eq!(quality.probing.statistic, ProbeStatistic::Mean);
-        assert_eq!(
-            quality.probing.encoder_options.as_ref().expect("params").get("preset"),
-            Some(&CLIParameter::new_number("--", "=", 8.0))
-        );
-        apply_target_quality_flags(
-            &mut configuration,
-            &["--input", "other.vpy", "--vs-args", "keep=yes"],
-        )
-        .expect("configured input edit stays offline");
-        let input = configuration
-            .condor
-            .sequence_config
-            .target_quality
-            .as_ref()
-            .expect("TQ")
-            .input
-            .as_ref()
-            .expect("override");
-        assert!(matches!(input, Input::VapourSynthScript { .. }));
-        let mut outside_tq = configuration.clone();
-        outside_tq.condor.sequence_config.target_quality =
-            untouched.condor.sequence_config.target_quality.clone();
-        assert_eq!(
-            serde_json::to_value(outside_tq).expect("unchanged outside TQ"),
-            serde_json::to_value(untouched).expect("snapshot")
-        );
-        assert!(!configuration.temp.exists());
+    }
+
+    #[test]
+    fn target_quality_no_options_leaves_configuration_unchanged() {
+        check_target_quality_creation(1);
+    }
+
+    #[test]
+    fn target_quality_explicit_target_initializes_metric_range_codec_bounds_and_default_probing() {
+        check_target_quality_creation(2);
     }
 
     #[test]
