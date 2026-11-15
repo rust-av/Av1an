@@ -835,6 +835,26 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn zero_retry_budget_fails_encoder_validation_without_opening_source_or_binary() {
+        use crate::test_helpers::{TestVideo, default_config};
+
+        let root = std::env::temp_dir().join("condor-zero-budget-model-only");
+        let video = TestVideo {
+            path: root.join("missing-source.vpy"),
+            width: 64,
+            height: 64,
+            frames: 3,
+            fps_rational: (24, 1),
+            format: super::FFPixelFormat::YUV420P,
+            scenes: vec![],
+        };
+        let mut config = default_config(&video, &root.join("out.mkv"), &root);
+        config.condor.encoder.set_executable(Some(root.join("missing-encoder")));
+        config.condor.sequence_config.parallel_encoder.max_tries = 0;
+        assert!(config.validate_encoder_settings().is_err());
+    }
+
     mod internal_integration {
         use super::super::*;
         #[cfg(target_os = "linux")]
