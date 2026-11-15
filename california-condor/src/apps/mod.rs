@@ -1094,6 +1094,48 @@ mod tests {
             terminal_unwind_cancels_releases_resources_and_restores_prior_hook_in_controlled_pty,
             "unwind", ["unwind"];
         }
+
+        #[cfg(unix)]
+        #[test]
+        fn tui_selected_pty_restore_renders_final_frame_and_keeps_redirected_stream_clean() {
+            check_selected_stream_pty();
+        }
+
+        #[cfg(unix)]
+        #[test]
+        #[ignore = "requires the paired parent's isolated controlling PTY"]
+        fn tui_selected_pty_restore_renders_final_frame_and_keeps_redirected_stream_clean_in_controlled_pty()
+        -> Result<()> {
+            assert!(std::env::var_os("TUI_PTY_STREAM").is_some());
+            assert_eq!(
+                std::env::var("TUI_SELECTED_TEST")?,
+                "apps::tests::internal_integration::tui_selected_pty_restore_renders_final_frame_and_keeps_redirected_stream_clean_in_controlled_pty"
+            );
+            run_selected_stream_pty_child()?;
+            println!("SELECTED_TERMINAL_ASSERTIONS_COMPLETED");
+            Ok(())
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn tui_render_write_failure_restores_terminal_and_returns_broken_pipe_with_cancellation() {
+            check_render_failure_pty();
+        }
+
+        #[cfg(unix)]
+        #[test]
+        #[ignore = "requires the paired parent's isolated controlling PTY"]
+        fn tui_render_write_failure_restores_terminal_and_returns_broken_pipe_with_cancellation_in_controlled_pty()
+        -> Result<()> {
+            assert!(std::env::var_os("TUI_PTY_STREAM").is_some());
+            assert_eq!(
+                std::env::var("TUI_SELECTED_TEST")?,
+                "apps::tests::internal_integration::tui_render_write_failure_restores_terminal_and_returns_broken_pipe_with_cancellation_in_controlled_pty"
+            );
+            run_render_failure_pty_child()?;
+            println!("SELECTED_TERMINAL_ASSERTIONS_COMPLETED");
+            Ok(())
+        }
     }
 
     struct RenderFailureWriter {
@@ -1891,8 +1933,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn real_pty_restores_selected_stream() {
+    fn check_selected_stream_pty() {
         let output = std::process::Command::new("python3")
             .arg(concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -1907,12 +1948,16 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            stdout.matches("SELECTED_TERMINAL_ASSERTIONS_COMPLETED").count(),
+            2
+        );
+        eprintln!("{stdout}");
     }
 
     #[cfg(unix)]
-    #[test]
-    #[ignore = "runs in an isolated controlling PTY via real_pty_restores_selected_stream"]
-    fn selected_stream_pty_child() -> Result<()> {
+    fn run_selected_stream_pty_child() -> Result<()> {
         if std::env::var_os("TUI_PTY_STREAM").is_none() {
             return Ok(());
         }
@@ -1930,8 +1975,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn real_pty_render_failure_restores_and_cancels() {
+    fn check_render_failure_pty() {
         let output = std::process::Command::new("python3")
             .arg(concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -1947,6 +1991,12 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            stdout.matches("SELECTED_TERMINAL_ASSERTIONS_COMPLETED").count(),
+            2
+        );
+        eprintln!("{stdout}");
     }
 
     #[cfg(unix)]
@@ -2154,9 +2204,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    #[ignore = "runs in an isolated controlling PTY via real_pty_render_failure_restores_and_cancels"]
-    fn render_failure_pty_child() -> Result<()> {
+    fn run_render_failure_pty_child() -> Result<()> {
         let Ok(stream) = std::env::var("TUI_PTY_STREAM") else {
             return Ok(());
         };

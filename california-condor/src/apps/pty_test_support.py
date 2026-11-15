@@ -51,6 +51,11 @@ def check_stream(
         env["TERM"] = "xterm-256color"
         if ownership_group:
             env["TUI_OWNERSHIP_TEST"] = f"apps::tests::internal_integration::{ownership_test}"
+        if mode in ("normal", "render-failure"):
+            env["TUI_SELECTED_TEST"] = "apps::tests::internal_integration::" + {
+                "normal": "tui_selected_pty_restore_renders_final_frame_and_keeps_redirected_stream_clean_in_controlled_pty",
+                "render-failure": "tui_render_write_failure_restores_terminal_and_returns_broken_pipe_with_cancellation_in_controlled_pty",
+            }[mode]
         panic_case = mode.removeprefix("panic-") if mode.startswith("panic-") else None
         logging_case = mode.removeprefix("logging-") if mode.startswith("logging-") else None
         if logging_case:
@@ -76,8 +81,8 @@ def check_stream(
                     if panic_case
                     else "apps::tests::console_logging_child" if logging_case
                     else {
-                        "normal": "apps::tests::selected_stream_pty_child",
-                        "render-failure": "apps::tests::render_failure_pty_child",
+                        "normal": env.get("TUI_SELECTED_TEST", ""),
+                        "render-failure": env.get("TUI_SELECTED_TEST", ""),
                         "matrix": env.get("TUI_OWNERSHIP_TEST", ""),
                     }[mode],
                     "--include-ignored",
@@ -319,6 +324,7 @@ def check_stream(
                 print(harness_output.decode())
                 print(f"{stream}/{ownership_group}: ownership cases passed; termios restored")
                 return
+            assert b"SELECTED_TERMINAL_ASSERTIONS_COMPLETED" in harness_output, evidence
             if mode == "render-failure":
                 assert b"TERMINAL_OWNERSHIP_ERROR_RETURNED_CANCEL_TRUE" in harness_output, evidence
             elif stream == "stderr":
@@ -337,6 +343,7 @@ def check_stream(
                 assert enter < leave < render < show, evidence
                 assert terminal_output[leave + 8 :].startswith(b"\r\n" * 6), evidence
             assert restored_mode == original_mode, evidence
+            print("SELECTED_TERMINAL_ASSERTIONS_COMPLETED")
             actions = (
                 "error+cancel/enter/leave/show"
                 if mode == "render-failure"
