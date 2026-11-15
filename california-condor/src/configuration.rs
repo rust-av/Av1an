@@ -836,6 +836,38 @@ pub enum ConfigError {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn legacy_output_and_schema_default_overwrite_to_false() {
+        use crate::test_helpers::{TestVideo, default_config};
+
+        let root = std::env::temp_dir().join("condor-output-default-model-only");
+        let video = TestVideo {
+            path: root.join("source.vpy"),
+            width: 32,
+            height: 16,
+            frames: 2,
+            fps_rational: (24, 1),
+            format: super::FFPixelFormat::YUV420P,
+            scenes: vec![],
+        };
+        let mut config = default_config(&video, &root.join("out.mkv"), &root.join("work"));
+        config.condor.output.overwrite = true;
+        let mut legacy = serde_json::to_value(config).expect("JSON");
+        legacy["condor"]["output"].as_object_mut().expect("output").remove("overwrite");
+        let restored: super::Configuration = serde_json::from_value(legacy).expect("legacy loads");
+        assert!(!restored.condor.output.overwrite);
+        let schema = schemars::schema_for!(super::Configuration);
+        let schema = serde_json::to_value(schema).expect("schema JSON");
+        assert_eq!(
+            schema["$defs"]["Output"]["properties"]["overwrite"]["default"],
+            false
+        );
+        assert_eq!(
+            schema["$defs"]["Output"]["properties"]["overwrite"]["type"],
+            "boolean"
+        );
+    }
+
+    #[test]
     fn zero_retry_budget_fails_encoder_validation_without_opening_source_or_binary() {
         use crate::test_helpers::{TestVideo, default_config};
 

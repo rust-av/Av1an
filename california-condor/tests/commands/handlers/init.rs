@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn landing_reports_actual_override_after_owning_root_execution() {
+    fn root_pipeline_writes_selected_concat_output_and_reports_it_in_landing_message() {
         let temp = tempfile::tempdir().expect("fixture");
         let source = temp.path().join("source.mkv");
         let encoded = std::process::Command::new("ffmpeg")
@@ -657,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_start_admits_output_before_native_work_and_save() {
+    fn existing_root_start_unsafe_output_refuses_before_source_open_or_resave() {
         use andean_condor::models::input::VapourSynthScriptSource;
         for case in ["root", "distinct", "new-scd", "new-tq", "missing-parent"] {
             let temp = tempfile::tempdir().expect("fixture");
@@ -717,8 +717,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn overwrite_routes_and_saved_revocation() {
+    fn check_overwrite_routes(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let temp = tempfile::tempdir().expect("fixture");
         std::fs::write(temp.path().join("source.vpy"),"import vapoursynth as vs\nvs.core.std.BlankClip(width=32,height=16,length=2,format=vs.YUV420P8).set_output()\n").expect("script");
         std::fs::write(temp.path().join("out.mkv"), b"old final").expect("old");
@@ -739,19 +739,22 @@ mod tests {
             load(&file).condor.output.overwrite,
             "omission retains saved consent even when native validation later fails"
         );
-        for args in [vec!["init", "set", "overwrite", "false"], vec!["init", "reset", "overwrite"]]
-        {
-            condor_cmd(&temp)
-                .env("PATH", "")
-                .args(["init", "set", "overwrite", "true"])
-                .assert()
-                .success();
-            condor_cmd(&temp).env("PATH", "").args(args).assert().success();
-            assert!(!load(&file).condor.output.overwrite);
+        if phase != 1 {
+            for args in
+                [vec!["init", "set", "overwrite", "false"], vec!["init", "reset", "overwrite"]]
+            {
+                condor_cmd(&temp)
+                    .env("PATH", "")
+                    .args(["init", "set", "overwrite", "true"])
+                    .assert()
+                    .success();
+                condor_cmd(&temp).env("PATH", "").args(args).assert().success();
+                assert!(!load(&file).condor.output.overwrite);
+            }
+            let before = std::fs::read(&file).expect("before refusal");
+            condor_cmd(&temp).env("PATH", "").assert().failure();
+            assert_eq!(std::fs::read(&file).expect("unchanged"), before);
         }
-        let before = std::fs::read(&file).expect("before refusal");
-        condor_cmd(&temp).env("PATH", "").assert().failure();
-        assert_eq!(std::fs::read(&file).expect("unchanged"), before);
         condor_cmd(&temp)
             .env("PATH", "")
             .env("CONDOR_TEST_MODE", "1")
@@ -766,23 +769,26 @@ mod tests {
             std::fs::read(temp.path().join("out.mkv")).expect("old"),
             b"old final"
         );
-        let mut legacy = serde_json::to_value(load(&file)).expect("JSON");
-        legacy["condor"]["output"].as_object_mut().expect("output").remove("overwrite");
-        let restored: california_condor::configuration::Configuration =
-            serde_json::from_value(legacy).expect("legacy loads");
-        assert!(!restored.condor.output.overwrite);
-        let schema = schemars::schema_for!(california_condor::configuration::Configuration);
-        let schema = serde_json::to_value(schema).expect("schema JSON");
-        assert_eq!(
-            schema["$defs"]["Output"]["properties"]["overwrite"]["default"],
-            false
-        );
-        assert_eq!(
-            schema["$defs"]["Output"]["properties"]["overwrite"]["type"],
-            "boolean"
-        );
+        if phase <= 2 {
+            return;
+        }
         condor_cmd(&temp).args(["scenes", "--overwrite"]).assert().failure();
         condor_cmd(&temp).args(["--overwrite", "scenes"]).assert().failure();
+    }
+
+    #[test]
+    fn init_and_root_overwrite_flags_persist_consent_and_omission_retains_it() {
+        check_overwrite_routes(1);
+    }
+
+    #[test]
+    fn overwrite_crud_false_or_reset_revokes_consent_and_next_run_refuses_without_resave() {
+        check_overwrite_routes(2);
+    }
+
+    #[test]
+    fn overwrite_flag_is_rejected_on_scenes_route() {
+        check_overwrite_routes(3);
     }
 
     #[test]
@@ -919,8 +925,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn new_init_and_empty_detection_use_selected_work_roots() {
+    fn check_selected_work_roots(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let temp = tempfile::tempdir().expect("fixture");
         let base = std::fs::canonicalize(temp.path()).expect("canonical fixture");
         let source = base.join("blank.vpy");
@@ -942,6 +948,9 @@ mod tests {
             base.join("initial/scenes")
         );
         assert!(!base.join("initial").exists());
+        if phase == 1 {
+            return;
+        }
         condor_cmd(&temp)
             .env("PATH", "")
             .env("CONDOR_TEST_MODE", "1")
@@ -966,6 +975,9 @@ mod tests {
             !base.join("initial").exists(),
             "nothing moved or written to the old root"
         );
+        if phase == 2 {
+            return;
+        }
         let before = std::fs::read(&file).expect("detected job bytes");
         condor_cmd(&temp)
             .env("PATH", "")
@@ -974,6 +986,21 @@ mod tests {
             .failure();
         assert_eq!(std::fs::read(file).expect("unchanged detected job"), before);
         assert!(!base.join("refused").exists());
+    }
+
+    #[test]
+    fn init_selected_temp_saves_derived_directories_without_creating_work() {
+        check_selected_work_roots(1);
+    }
+
+    #[test]
+    fn detect_scenes_on_empty_job_rebases_to_selected_temp_and_saves_scenes() {
+        check_selected_work_roots(2);
+    }
+
+    #[test]
+    fn encode_temp_change_after_scene_detection_refuses_without_save() {
+        check_selected_work_roots(3);
     }
 
     #[test]
@@ -1049,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn default() {
+    fn init_with_default_options_saves_configuration_without_scenes() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -1081,7 +1108,7 @@ mod tests {
     }
 
     #[test]
-    fn with_custom_paths() {
+    fn init_with_custom_config_temp_and_output_paths_saves_selected_configuration() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -1119,7 +1146,7 @@ mod tests {
     }
 
     #[test]
-    fn with_options() {
+    fn init_with_filters_aom_photon_noise_workers_and_cvvdp_target_saves_selected_options() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -1228,7 +1255,7 @@ mod tests {
     }
 
     #[test]
-    fn fails_if_config_already_exists() {
+    fn init_existing_config_refuses_and_preserves_original_bytes() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -1249,11 +1276,8 @@ mod tests {
         assert_eq!(config_content, "{}", "config file is unchanged");
     }
 
-    /// The input and output live at the top level, so `init` is where they are
-    /// edited; neither has a default to reset to.
-    #[serial]
-    #[test]
-    fn init_set_input_and_output() {
+    fn check_init_path_crud(phase: u8) {
+        assert!((1..=3).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -1268,6 +1292,9 @@ mod tests {
             .success();
         let condor = load(&config_path).condor;
         assert_eq!(condor.output.path, new_output, "output path is set");
+        if phase == 1 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["init", "set", "input", "--path", path_str(&video.path), "--decoder", "ffms2"])
@@ -1287,11 +1314,32 @@ mod tests {
 
         // A property with no flags changes nothing.
         condor_cmd(&temp).args(["init", "set", "input"]).assert().failure();
+        if phase == 2 {
+            return;
+        }
 
         // The paths are what `init` exists to capture, so there is no default
         // to restore - not for a key and not for the whole section.
         condor_cmd(&temp).args(["init", "reset", "input"]).assert().failure();
         condor_cmd(&temp).args(["init", "reset", "output"]).assert().failure();
         condor_cmd(&temp).args(["init", "reset"]).assert().failure();
+    }
+
+    #[serial]
+    #[test]
+    fn init_output_crud_updates_root_destination() {
+        check_init_path_crud(1);
+    }
+
+    #[serial]
+    #[test]
+    fn init_input_crud_saves_native_decoder_and_requires_at_least_one_flag() {
+        check_init_path_crud(2);
+    }
+
+    #[serial]
+    #[test]
+    fn init_path_or_whole_section_reset_has_no_default_and_refuses() {
+        check_init_path_crud(3);
     }
 }
