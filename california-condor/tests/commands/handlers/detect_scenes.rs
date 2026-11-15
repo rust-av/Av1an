@@ -271,7 +271,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn default() {
+    fn detect_scenes_default_method_saves_expected_boundaries_and_global_encoder_copies() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -332,7 +332,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_custom_input() {
+    fn detect_scenes_resized_input_override_preserves_expected_scene_boundaries() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -414,7 +414,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_fast_max_scene_length() {
+    fn detect_scenes_fast_two_second_limit_partitions_filtered_clip_every_forty_eight_frames() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -499,7 +499,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_none() {
+    fn detect_scenes_none_method_partitions_only_at_ten_second_limit() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -565,7 +565,7 @@ mod tests {
     #[serial]
     #[test]
     #[ignore = "requires the TransNetV2 model (~31 MB) to be present"]
-    fn with_transnetv2() {
+    fn detect_scenes_transnetv2_saves_contiguous_cuts_within_five_frames_and_final_end() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -773,10 +773,7 @@ mod tests {
         );
     }
 
-    /// `info` prints the saved value as JSON, `reset` restores the default.
-    #[serial]
-    #[test]
-    fn detect_scenes_info_and_reset() {
+    fn check_scene_detector_info_reset(reset: bool) {
         if !ffmpeg_is_available() {
             return;
         }
@@ -815,6 +812,9 @@ mod tests {
             method["AVSceneChange"]["minimum_length"], 30,
             "info method shows the saved method: {method}"
         );
+        if !reset {
+            return;
+        }
 
         condor_cmd(&temp).args(["detect-scenes", "reset", "method"]).assert().success();
         let restored = load(&config_path).condor.sequence_config.scene_detector.method;
@@ -832,11 +832,23 @@ mod tests {
         );
     }
 
+    #[serial]
+    #[test]
+    fn detect_scenes_info_emits_saved_section_or_method_as_json() {
+        check_scene_detector_info_reset(false);
+    }
+
+    #[serial]
+    #[test]
+    fn detect_scenes_reset_method_restores_default_limits_algorithm_and_score_flag() {
+        check_scene_detector_info_reset(true);
+    }
+
     /// `set input` builds the same override the run flags would, and an input
     /// property without flags changes nothing.
     #[serial]
     #[test]
-    fn detect_scenes_set_input_builds_an_override() {
+    fn detect_scenes_input_crud_requires_flags_saves_native_override_and_reset_clears_it() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -931,7 +943,7 @@ mod tests {
     /// flag is reported instead of dropped in silence.
     #[serial]
     #[test]
-    fn vs_args_on_a_native_input_warns() {
+    fn vs_args_on_inherited_or_rebuilt_non_script_input_warns_with_script_guidance() {
         if !ffmpeg_is_available() {
             return;
         }
