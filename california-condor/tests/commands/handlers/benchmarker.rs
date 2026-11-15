@@ -150,7 +150,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn default_and_no_scenes() {
+    fn benchmark_without_scenes_preserves_default_configuration() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -187,7 +187,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_custom_options() {
+    fn benchmark_with_threshold_selects_positive_workers_and_preserves_scene_count() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -259,7 +259,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_workers_preconfigured() {
+    fn benchmark_with_preconfigured_workers_preserves_workers_and_saves_threshold() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -304,10 +304,7 @@ mod tests {
         check_basic_config(&config, &expected_config);
     }
 
-    /// `benchmark` writes scalars and restores defaults per key.
-    #[serial]
-    #[test]
-    fn benchmark_set_and_reset() {
+    fn check_benchmark_crud(reset: bool) {
         if !ffmpeg_is_available() {
             return;
         }
@@ -331,6 +328,9 @@ mod tests {
         let benchmarker = load(&config_path).condor.sequence_config.benchmarker;
         assert_eq!(benchmarker.threshold, 8, "threshold is set");
         assert_eq!(benchmarker.max_memory, Some(8192), "max memory is set");
+        if !reset {
+            return;
+        }
 
         condor_cmd(&temp).args(["benchmark", "reset", "max-memory"]).assert().success();
         condor_cmd(&temp).args(["benchmark", "reset", "threshold"]).assert().success();
@@ -344,5 +344,17 @@ mod tests {
             benchmarker.max_memory, defaults.max_memory,
             "reset clears the max memory"
         );
+    }
+
+    #[serial]
+    #[test]
+    fn benchmark_threshold_and_memory_crud_persist_and_restore_defaults() {
+        check_benchmark_crud(true);
+    }
+
+    #[serial]
+    #[test]
+    fn benchmark_threshold_above_hundred_is_rejected_without_changing_saved_scalars() {
+        check_benchmark_crud(false);
     }
 }
