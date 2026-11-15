@@ -1565,7 +1565,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn default_and_no_scenes() {
+    fn encode_without_scenes_preserves_settings_and_creates_empty_scenes_directory() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -1629,7 +1629,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_options_and_no_scenes() {
+    fn encode_without_scenes_saves_x264_options_and_workers_without_creating_chunks() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -1713,7 +1713,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_custom_options() {
+    fn resized_encoding_creates_scene_count_files_and_both_concatenators_create_output() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -1842,7 +1842,7 @@ mod tests {
     /// rather than the input's.
     #[serial]
     #[test]
-    fn with_ffmpeg_filter() {
+    fn encode_ffmpeg_crop_filter_publishes_chunk_with_cropped_dimensions() {
         if !ffmpeg_is_available() {
             return;
         }
