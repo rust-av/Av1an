@@ -381,8 +381,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn tq_handler_and_cli_missing_target_preserve_saved_job() {
+    fn check_missing_target(phase: u8) {
+        assert!((1..=3).contains(&phase));
         use california_condor::commands::{
             QualityMetric as CliMetric,
             handlers::target_quality::{TargetQualityConfigError, target_quality_handler},
@@ -425,6 +425,9 @@ mod tests {
             assert_eq!(std::fs::read(&file).expect("no save"), before);
             assert!(!temp.path().join("opened").exists());
         }
+        if phase == 1 {
+            return;
+        }
         let error = target_quality_handler(
             Some(&file),
             None,
@@ -448,6 +451,9 @@ mod tests {
             "{error:#}"
         );
         assert_eq!(std::fs::read(&file).expect("no save"), before);
+        if phase == 2 {
+            return;
+        }
         // Positive settings-only control; legacy claimed chunks now require C14
         // admission rather than being resaved by a run handler.
         config.condor.scenes[0].sequence_data.parallel_encoder = Default::default();
@@ -485,9 +491,25 @@ mod tests {
         assert!(!temp.path().join("out.mkv").exists());
     }
 
+    #[test]
+    fn target_quality_cli_without_saved_target_refuses_before_source_open_or_save() {
+        check_missing_target(1);
+    }
+
+    #[test]
+    fn target_quality_handler_missing_target_returns_typed_error_without_save() {
+        check_missing_target(2);
+    }
+
+    #[test]
+    fn target_quality_configured_targetless_handler_saves_metric_without_changing_scene_history_or_output()
+     {
+        check_missing_target(3);
+    }
+
     #[serial]
     #[test]
-    fn with_custom_options() {
+    fn target_quality_custom_xpsnr_profile_persists_options_and_bounded_scene_probe_quantizers() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -638,11 +660,8 @@ mod tests {
         });
     }
 
-    /// `target-quality` materializes its optional section, folds the target
-    /// into the metric's range, and `reset` restores the default range.
-    #[serial]
-    #[test]
-    fn target_quality_set_target_metric_and_range() {
+    fn check_target_metric_range(phase: u8) {
+        assert!((1..=3).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -680,6 +699,9 @@ mod tests {
             DEFAULT_SSIMULACRA2_TARGET_RANGE,
             "reset restores the metric's default range"
         );
+        if phase == 1 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["target-quality", "set", "metric", "xpsnr"])
@@ -725,6 +747,9 @@ mod tests {
             .expect("target quality exists");
         assert_eq!(quality.quantizer_range, (18, 30), "range is set");
         assert_eq!(quality.maximum_probes, 12, "probes are set");
+        if phase == 3 {
+            return;
+        }
 
         let output = condor_cmd(&temp)
             .args(["target-quality", "info", "target"])
@@ -742,12 +767,26 @@ mod tests {
         );
     }
 
-    /// `target-quality` shares the probing strategy and statistic shapes with
-    /// `quality-check` (which pins their validation); here it keeps the encoder
-    /// options the user does not restate, and restores them on reset.
     #[serial]
     #[test]
-    fn target_quality_set_probing_strategy_statistic_and_params() {
+    fn target_quality_target_crud_materializes_metric_range_and_reset_restores_metric_default() {
+        check_target_metric_range(1);
+    }
+
+    #[serial]
+    #[test]
+    fn target_quality_metric_switch_restores_new_metric_default_target_range_and_info_reports_it() {
+        check_target_metric_range(2);
+    }
+
+    #[serial]
+    #[test]
+    fn target_quality_quantizer_range_and_probe_budget_crud_reject_invalid_values_and_save_valid_values()
+     {
+        check_target_metric_range(3);
+    }
+
+    fn check_probing_crud(params: bool) {
         if !ffmpeg_is_available() {
             return;
         }
@@ -770,24 +809,27 @@ mod tests {
         );
 
         // The params string is the run flag's, and omitted options stay.
-        condor_cmd(&temp)
-            .args(["target-quality", "set", "params", "crf=16"])
-            .assert()
-            .success();
-        condor_cmd(&temp)
-            .args(["target-quality", "set", "params", "tune=0"])
-            .assert()
-            .success();
-        let config = load(&config_path);
-        let quality = config.condor.sequence_config.target_quality.expect("target quality exists");
-        let mut expected = config.condor.encoder.base().default_parameters();
-        expected.extend(EncoderParamsParser::parse_string("crf=16").expect("parses"));
-        expected.extend(EncoderParamsParser::parse_string("tune=0").expect("parses"));
-        assert_eq!(
-            quality.probing.encoder_options,
-            Some(expected),
-            "a later set params keeps the earlier pairs"
-        );
+        if params {
+            condor_cmd(&temp)
+                .args(["target-quality", "set", "params", "crf=16"])
+                .assert()
+                .success();
+            condor_cmd(&temp)
+                .args(["target-quality", "set", "params", "tune=0"])
+                .assert()
+                .success();
+            let config = load(&config_path);
+            let quality =
+                config.condor.sequence_config.target_quality.expect("target quality exists");
+            let mut expected = config.condor.encoder.base().default_parameters();
+            expected.extend(EncoderParamsParser::parse_string("crf=16").expect("parses"));
+            expected.extend(EncoderParamsParser::parse_string("tune=0").expect("parses"));
+            assert_eq!(
+                quality.probing.encoder_options,
+                Some(expected),
+                "a later set params keeps the earlier pairs"
+            );
+        }
 
         // info prints the property, reset resets it.
         let output = condor_cmd(&temp)
@@ -809,7 +851,9 @@ mod tests {
             .args(["target-quality", "reset", "statistic"])
             .assert()
             .success();
-        condor_cmd(&temp).args(["target-quality", "reset", "params"]).assert().success();
+        if params {
+            condor_cmd(&temp).args(["target-quality", "reset", "params"]).assert().success();
+        }
         let quality = load(&config_path)
             .condor
             .sequence_config
@@ -820,10 +864,24 @@ mod tests {
             ProbeStatistic::default(),
             "reset restores the default statistic"
         );
-        assert!(
-            quality.probing.encoder_options.is_none(),
-            "reset drops the probing encoder options"
-        );
+        if params {
+            assert!(
+                quality.probing.encoder_options.is_none(),
+                "reset drops the probing encoder options"
+            );
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn target_quality_statistic_crud_reports_saved_percentile_and_reset_restores_default() {
+        check_probing_crud(false);
+    }
+
+    #[serial]
+    #[test]
+    fn target_quality_probe_params_crud_merges_omitted_pairs_and_reset_drops_override() {
+        check_probing_crud(true);
     }
 }
 
@@ -913,7 +971,8 @@ pub(super) mod validation {
     }
 
     #[test]
-    fn actual_flags_reject_before_save_or_input() {
+    fn target_quality_cli_invalid_rav1e_bounds_or_nonfinite_target_refuse_before_save_or_input_work()
+     {
         let temp = tempfile::tempdir().expect("fixture");
         let mut configuration = fixture(temp.path());
         configuration.condor.encoder = Encoder::default_from_base(&EncoderBase::RAV1E, false);
@@ -940,7 +999,8 @@ pub(super) mod validation {
     }
 
     #[test]
-    fn library_and_tui_reject_loaded_config_before_backend_work() {
+    fn target_quality_public_entries_reject_invalid_loaded_config_before_save_progress_or_backend_work()
+     {
         let temp = tempfile::tempdir().expect("fixture");
         for invalid in
             ["range", "target", "probes", "scene", "options", "nan", "infinity", "endpoint"]
@@ -1043,8 +1103,8 @@ pub(super) mod validation {
         }
     }
 
-    #[test]
-    fn loaded_edits_save_and_repairs_remain_offline() {
+    fn check_loaded_quality_repair(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let temp = tempfile::tempdir().expect("fixture");
         let mut configuration = fixture(temp.path());
         configuration
@@ -1080,6 +1140,9 @@ pub(super) mod validation {
             std::fs::read(&path).expect("unrelated CRUD cannot save invalid TQ"),
             before
         );
+        if phase == 1 {
+            return;
+        }
         target_quality::config(
             Some(&path),
             &ConfigAction::Set {
@@ -1125,6 +1188,9 @@ pub(super) mod validation {
             None,
         )
         .expect("explicit flags repair before validation");
+        if phase == 2 {
+            return;
+        }
         std::fs::write(&path, &before).expect("invalid fixture");
         target_quality::config(Some(&path), &ConfigAction::Reset { key: None })
             .expect("disable invalid TQ");
@@ -1139,6 +1205,21 @@ pub(super) mod validation {
         );
         assert!(!configuration.temp.exists());
         assert!(!temp.path().join("forbidden.ffindex").exists());
+    }
+
+    #[test]
+    fn invalid_loaded_target_quality_cannot_be_saved_by_unrelated_edits() {
+        check_loaded_quality_repair(1);
+    }
+
+    #[test]
+    fn target_quality_explicit_range_crud_or_flags_repairs_invalid_loaded_bounds_offline() {
+        check_loaded_quality_repair(2);
+    }
+
+    #[test]
+    fn target_quality_whole_section_reset_disables_invalid_loaded_config_offline() {
+        check_loaded_quality_repair(3);
     }
 
     fn check_crud_validation(phase: u8) {
@@ -1245,8 +1326,8 @@ pub(super) mod validation {
         check_crud_validation(3);
     }
 
-    #[test]
-    fn save_checks_each_effective_encoder_and_profile_can_repair_strategy() {
+    fn check_effective_quality_settings(phase: u8) {
+        assert!((1..=3).contains(&phase));
         use andean_condor::models::{
             encoder::cli_parameter::CLIParameter, sequence::target_quality::types::ProbeStrategy,
         };
@@ -1270,6 +1351,9 @@ pub(super) mod validation {
             "scene endpoint, not just global encoder"
         );
         assert_eq!(std::fs::read(&path).expect("unchanged"), before);
+        if phase == 1 {
+            return;
+        }
         configuration.condor.scenes[1].encoder = configuration.condor.encoder.clone();
         configuration.condor.scenes[1]
             .encoder
@@ -1288,6 +1372,9 @@ pub(super) mod validation {
             .probing
             .encoder_options = Some(EncoderBase::SVTAV1.default_parameters());
         configuration.save(&path).expect("actual probe override replaces scene options");
+        if phase == 2 {
+            return;
+        }
         configuration
             .condor
             .sequence_config
@@ -1316,10 +1403,24 @@ pub(super) mod validation {
     }
 
     #[test]
-    fn tui_keeps_cancelled_and_no_work_precedence() {
+    fn configuration_save_validates_each_scene_encoder_quantizer_endpoints() {
+        check_effective_quality_settings(1);
+    }
+
+    #[test]
+    fn configuration_save_uses_explicit_probe_options_instead_of_invalid_scene_options() {
+        check_effective_quality_settings(2);
+    }
+
+    #[test]
+    fn target_quality_profile_repairs_invalid_strategy_before_validation_and_save() {
+        check_effective_quality_settings(3);
+    }
+
+    fn check_tui_precedence(modes: &[&str]) {
         use andean_condor::utils::cancellation::Cancelled;
         let temp = tempfile::tempdir().expect("fixture");
-        for mode in ["cancelled", "empty", "disabled"] {
+        for &mode in modes {
             let mut configuration = fixture(temp.path());
             configuration
                 .condor
@@ -1349,7 +1450,18 @@ pub(super) mod validation {
     }
 
     #[test]
-    fn empty_scene_public_validation_rejects_global_config_before_detection() {
+    fn target_quality_tui_cancellation_precedes_invalid_config_validation() {
+        check_tui_precedence(&["cancelled"]);
+    }
+
+    #[test]
+    fn target_quality_tui_empty_or_disabled_job_returns_without_backend_work() {
+        check_tui_precedence(&["empty", "disabled"]);
+    }
+
+    #[test]
+    fn empty_scene_target_quality_validation_rejects_invalid_global_config_but_accepts_valid_or_disabled_config_without_detection()
+     {
         use andean_condor::{
             core::{AndeanCondor, DefaultAndeanCondor},
             models::sequence::{
