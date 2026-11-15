@@ -5,6 +5,175 @@ use california_condor::{
 };
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use andean_condor::{
+        models::{
+            input::{Input as InputModel, VapourSynthImportMethod},
+            sequence::noise_detector::NoiseDetectorConfig,
+        },
+        vapoursynth::vapoursynth_filters::VapourSynthFilter,
+    };
+    use california_condor::commands::{
+        DecoderMethod,
+        handlers::{detect_noise::detect_noise_handler, init::init_handler},
+    };
+
+    #[test]
+    fn detect_noise_handler_without_overrides_initializes_default_detector_and_retains_config_path()
+    {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        expected_config.condor.sequence_config.noise_detector =
+            Some(NoiseDetectorConfig::default());
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) =
+            detect_noise_handler(Some(&config_path), None, None, None, None, None)
+                .expect("detect_noise_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn detect_noise_handler_applies_reference_and_denoised_filters_with_requested_input_decoder() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let custom_vs_args = vec!["noise_level=2".to_string()];
+        let custom_reference_filters = vec![VapourSynthFilter::WNNM {
+            sigma: Some(vec![2.0, 0.0, 0.0]),
+            block_size: None,
+            block_step: None,
+            group_size: None,
+            bm_range: None,
+            radius: None,
+            ps_num: None,
+            ps_range: None,
+            residual: None,
+            adaptive_aggregation: None,
+        }];
+        let custom_denoised_filters = vec![VapourSynthFilter::WNNM {
+            sigma: Some(vec![4.0, 0.0, 0.0]),
+            block_size: None,
+            block_step: None,
+            group_size: None,
+            bm_range: None,
+            radius: None,
+            ps_num: None,
+            ps_range: None,
+            residual: None,
+            adaptive_aggregation: None,
+        }];
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        let input_filters = expected_config.condor.input.vapoursynth_filters().to_vec();
+        expected_config.condor.sequence_config.noise_detector = Some(NoiseDetectorConfig {
+            input: Some(InputModel::VapourSynth {
+                path: input_abs.clone(),
+                import_method: VapourSynthImportMethod::FFMS2 { index: None },
+                cache_path: None,
+                filters: input_filters,
+            }),
+            reference_filters: custom_reference_filters.clone(),
+            denoised_filters: custom_denoised_filters.clone(),
+        });
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = detect_noise_handler(
+            Some(&config_path),
+            Some(&test_video.path),
+            Some(&DecoderMethod::VSFFMS2),
+            Some(&custom_vs_args),
+            Some(&custom_reference_filters),
+            Some(&custom_denoised_filters),
+        )
+        .expect("detect_noise_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::time::SystemTime;
 
