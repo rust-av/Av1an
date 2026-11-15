@@ -8,6 +8,177 @@ use california_condor::{
 };
 
 #[cfg(test)]
+mod avm_persistence {
+    use super::*;
+    use andean_condor::models::encoder::photon_noise::PhotonNoise;
+    use california_condor::{
+        commands::{
+            EncoderMethod,
+            config::{ConfigAction, ConfigCommand},
+            handlers::encode::{
+                EncodeConfigError, EncodeCrud, EncodeKey, EncodeSet, config, encode_handler,
+            },
+        },
+        configuration::Configuration,
+    };
+    use std::fs;
+
+    fn check_avm_persistence(phase: u8) {
+        assert!((1..=4).contains(&phase));
+        use california_condor::test_helpers::TestVideo;
+        let temp = tempfile::tempdir().expect("configuration fixture");
+        let video = TestVideo {
+            path: temp.path().join("missing-source.mkv"),
+            width: 64,
+            height: 64,
+            frames: 1,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![],
+        };
+        let mut configuration = default_config(&video, &temp.path().join("out.mkv"), temp.path());
+        configuration.condor.encoder = Encoder::default_from_base(&EncoderBase::AVM, false);
+        configuration
+            .condor
+            .encoder
+            .set_executable(Some(temp.path().join("missing-avmenc")));
+        let path = temp.path().join("condor.json");
+        configuration.save(&path).expect("saved config");
+        let before = fs::read(&path).expect("original bytes");
+        let original = serde_json::to_value(&configuration).expect("original config");
+        let set = EncodeSet::PhotonNoise {
+            iso: 800,
+            chroma_noise: Some(400),
+        };
+        let error = EncodeCrud::apply(&mut configuration, &set).expect_err("atomic in-memory edit");
+        assert_eq!(
+            error.downcast_ref::<EncodeConfigError>(),
+            Some(&EncodeConfigError::PhotonNoiseNotSupported(
+                EncoderBase::AVM
+            ))
+        );
+        assert_eq!(
+            serde_json::to_value(&configuration).expect("unchanged config"),
+            original
+        );
+        let error = config(Some(&path), &ConfigAction::Set { setting: set })
+            .expect_err("atomic saved edit");
+        assert_eq!(
+            error.downcast_ref::<EncodeConfigError>(),
+            Some(&EncodeConfigError::PhotonNoiseNotSupported(
+                EncoderBase::AVM
+            ))
+        );
+        assert_eq!(fs::read(&path).expect("saved bytes"), before);
+        if phase == 1 {
+            return;
+        }
+        configuration.condor.encoder.set_photon_noise(Some(PhotonNoise {
+            iso: 800,
+            chroma_iso: Some(400),
+            width: None,
+            height: None,
+            c_y: None,
+            ccb: None,
+            ccr: None,
+        }));
+        configuration.save(&path).expect("legacy saved request");
+        let legacy = fs::read(&path).expect("legacy bytes");
+        let error = encode_handler(
+            Some(&path),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect_err("loaded noise must not silently run");
+        assert_eq!(
+            error.downcast_ref::<EncodeConfigError>(),
+            Some(&EncodeConfigError::PhotonNoiseNotSupported(
+                EncoderBase::AVM
+            ))
+        );
+        assert_eq!(fs::read(&path).expect("unchanged legacy bytes"), legacy);
+        config(
+            Some(&path),
+            &ConfigAction::Reset {
+                key: Some(EncodeKey::PhotonNoise),
+            },
+        )
+        .expect("clear legacy noise");
+        let repaired = Configuration::load(&path).expect("load").expect("saved repair");
+        assert!(repaired.condor.encoder.photon_noise().is_none());
+        assert_eq!(repaired.condor.encoder.validate_settings(), Ok(()));
+        if phase == 2 {
+            return;
+        }
+        config(
+            Some(&path),
+            &ConfigAction::Set {
+                setting: EncodeSet::Params {
+                    params: "--film-grain-table=caller-filmgrn2.tbl".into(),
+                },
+            },
+        )
+        .expect("raw native option stays available");
+        let raw = Configuration::load(&path).expect("load").expect("saved raw option");
+        assert_eq!(
+            raw.condor.encoder.parameters()["film-grain-table"].to_string_value(),
+            "caller-filmgrn2.tbl"
+        );
+        if phase == 3 {
+            return;
+        }
+        configuration.save(&path).expect("restore legacy fixture");
+        config(
+            Some(&path),
+            &ConfigAction::Set {
+                setting: EncodeSet::Encoder {
+                    encoder: EncoderMethod::AOM,
+                },
+            },
+        )
+        .expect("switch encoder to repair legacy settings");
+        let switched = Configuration::load(&path).expect("load").expect("saved switch");
+        assert_eq!(switched.condor.encoder.base(), EncoderBase::AOM);
+        assert_eq!(switched.condor.encoder.validate_settings(), Ok(()));
+        assert_eq!(
+            fs::read_dir(temp.path()).expect("no indexing or side effects").count(),
+            1
+        );
+    }
+
+    #[test]
+    fn avm_noise_crud_rejects_unsupported_edits_without_changing_saved_bytes() {
+        check_avm_persistence(1);
+    }
+
+    #[test]
+    fn avm_legacy_noise_clear_repairs_configuration_without_resolving_source_or_encoder() {
+        check_avm_persistence(2);
+    }
+
+    #[test]
+    fn avm_raw_grain_parameter_survives_offline_edit() {
+        check_avm_persistence(3);
+    }
+
+    #[test]
+    fn avm_switch_to_capable_encoder_repairs_legacy_noise_settings_without_indexing() {
+        check_avm_persistence(4);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use andean_condor::{
         ffmpeg::FFPixelFormat,
