@@ -138,7 +138,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn with_custom_options() {
+    fn optimize_bitrate_sigma_threshold_changes_outlier_scene_crf_and_keeps_peer_crfs() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -271,7 +271,7 @@ mod tests {
     /// `optimize-bitrate` owns an optional sigma threshold.
     #[serial]
     #[test]
-    fn optimize_bitrate_set_and_reset() {
+    fn optimize_bitrate_sigma_crud_accepts_positive_rejects_zero_and_reset_clears_threshold() {
         if !ffmpeg_is_available() {
             return;
         }
