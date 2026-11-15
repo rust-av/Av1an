@@ -187,7 +187,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn default_and_no_scenes() {
+    fn detect_noise_without_scenes_materializes_default_detector_settings() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -229,7 +229,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_custom_filters() {
+    fn detect_noise_with_custom_wnnm_filters_saves_expected_noise_for_each_scene() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -341,11 +341,7 @@ mod tests {
         });
     }
 
-    /// `detect-noise` owns its filter lists: replace, clear and reset, and
-    /// resetting a key from a never-enabled section stays a no-op.
-    #[serial]
-    #[test]
-    fn detect_noise_set_and_reset_filter_lists() {
+    fn check_noise_filter_crud(edit: bool) {
         if !ffmpeg_is_available() {
             return;
         }
@@ -356,6 +352,9 @@ mod tests {
         condor_cmd(&temp).args(["detect-noise", "reset", "input"]).assert().success();
         let detector = load(&config_path).condor.sequence_config.noise_detector;
         assert!(detector.is_none(), "noise detector stays unconfigured");
+        if !edit {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["detect-noise", "set", "reference-filters", "resize:width=960;height=540;"])
@@ -428,6 +427,18 @@ mod tests {
             1,
             "the default reference filter was restored"
         );
+    }
+
+    #[serial]
+    #[test]
+    fn detect_noise_reset_on_disabled_section_does_not_materialize_it() {
+        check_noise_filter_crud(false);
+    }
+
+    #[serial]
+    #[test]
+    fn detect_noise_reference_filter_crud_replaces_clears_and_reset_restores_one_filter() {
+        check_noise_filter_crud(true);
     }
 
     /// Resetting a filter list says how to empty it outright.
