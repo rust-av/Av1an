@@ -61,129 +61,160 @@ fn x265() -> EncoderMethod {
     EncoderMethod::X265
 }
 
-#[test]
-fn failed_edit_save_keeps_original_json_files_and_caller_state() {
-    let temp = tempfile::tempdir().expect("fixture");
-    let path = temp.path().join("condor.json");
-    let mut config = configuration(temp.path());
-    config.condor.scenes[0].sequence_data.parallel_encoder.bytes = Some(123);
-    config.save(&path).expect("original");
-    let json = std::fs::read(&path).expect("original bytes");
-    let before = config.condor.scenes.clone();
-    config.condor.scenes[0].encoder.set_quantizer(19.0);
-    let candidate = serde_json::to_value(&config).expect("candidate");
-    let blocked = temp.path().join("not-a-file");
-    std::fs::create_dir_all(&blocked).expect("publication barrier");
-    std::fs::write(blocked.join("user-sentinel"), b"preserve").expect("sentinel");
-    // Real Configuration::save stages a sibling then fails publishing over a directory.
-    assert!(save_edit(&config, &blocked, &before).is_err());
-    assert_eq!(
-        serde_json::to_value(&config).expect("no mutation"),
-        candidate
-    );
-    assert_eq!(std::fs::read(&path).expect("original JSON"), json);
-    assert_eq!(
-        std::fs::read(blocked.join("user-sentinel")).expect("sentinel"),
-        b"preserve"
-    );
-    config.condor.sequence_config.parallel_encoder.max_tries = 0;
-    assert!(save_edit(&config, &path, &before).is_err());
-    assert_eq!(std::fs::read(&path).expect("failed validation"), json);
-    assert!(
-        temp.path().read_dir().expect("files").all(|e| !e
-            .expect("entry")
-            .file_name()
-            .to_string_lossy()
-            .starts_with(".tmp"))
-    );
-}
+mod internal_integration {
+    use super::*;
 
-#[test]
-fn failed_publication_preserves_anchor_and_scaled_iso_proofs() {
-    use crate::zoner::{Zoner, ZonerConfig, parse_zone};
-    use andean_condor::{
-        core::sequence::{Sequence, noise_scaler::NoiseScaler},
-        models::{encoder::photon_noise::PhotonNoise, sequence::noise_scaler::NoiseScalerConfig},
-    };
-    let temp = tempfile::tempdir().expect("fixture");
-    let video = crate::test_helpers::get_test_video();
-    let mut config = default_config(&video, &temp.path().join("out.mkv"), temp.path());
-    config.condor.encoder.set_photon_noise(Some(PhotonNoise {
-        iso: 801,
-        chroma_iso: Some(403),
-        width: None,
-        height: None,
-        c_y: None,
-        ccb: None,
-        ccr: None,
-    }));
-    config.condor.scenes = video.mock_scenes(&config.condor.encoder);
-    for scene in &mut config.condor.scenes {
-        scene.sequence_data.noise_detection = Some(NoiseDetectorData {
-            noise: 0.6,
-            luminance: 0.3,
-            created_on: SystemTime::UNIX_EPOCH,
-        });
+    fn check_failed_edit_save(validation: bool) {
+        let temp = tempfile::tempdir().expect("fixture");
+        let path = temp.path().join("condor.json");
+        let mut config = configuration(temp.path());
+        config.condor.scenes[0].sequence_data.parallel_encoder.bytes = Some(123);
+        config.save(&path).expect("original");
+        let json = std::fs::read(&path).expect("original bytes");
+        let before = config.condor.scenes.clone();
+        config.condor.scenes[0].encoder.set_quantizer(19.0);
+        let candidate = serde_json::to_value(&config).expect("candidate");
+        let blocked = temp.path().join("not-a-file");
+        std::fs::create_dir_all(&blocked).expect("publication barrier");
+        std::fs::write(blocked.join("user-sentinel"), b"preserve").expect("sentinel");
+        // Real Configuration::save stages a sibling then fails publishing over a directory.
+        assert!(save_edit(&config, &blocked, &before).is_err());
+        assert_eq!(
+            serde_json::to_value(&config).expect("no mutation"),
+            candidate
+        );
+        assert_eq!(std::fs::read(&path).expect("original JSON"), json);
+        assert_eq!(
+            std::fs::read(blocked.join("user-sentinel")).expect("sentinel"),
+            b"preserve"
+        );
+        if !validation {
+            return;
+        }
+        config.condor.sequence_config.parallel_encoder.max_tries = 0;
+        assert!(save_edit(&config, &path, &before).is_err());
+        assert_eq!(std::fs::read(&path).expect("failed validation"), json);
+        assert!(
+            temp.path().read_dir().expect("files").all(|e| !e
+                .expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".tmp"))
+        );
     }
-    config.condor.sequence_config.zoner = Some(ZonerConfig {
-        zones: vec![parse_zone("0 121 svt-av1 \"--preset 3\"").expect("zone")],
-    });
-    config.condor.sequence_config.noise_scaler = Some(NoiseScalerConfig {
-        threshold: 0.2,
-        minimum_scaler: 0.5,
-        maximum_scaler: 0.5,
-        scale_chroma: true,
-    });
-    let mut job = config.instantiate_condor(Box::new(|_| Ok(()))).expect("native job");
-    Zoner::run(&mut job).expect("owning original zoning proof");
-    let (tx, _rx) = std::sync::mpsc::channel();
-    NoiseScaler::default()
-        .execute(
-            &mut job,
-            tx,
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
-        .expect("owning scaling proof");
-    config.condor = job.as_data();
-    let path = temp.path().join("condor.json");
-    config.save(&path).expect("original JSON");
-    let json = std::fs::read(&path).expect("bytes");
-    let before = config.condor.scenes.clone();
-    let proof =
-        serde_json::to_value(&before[0].sequence_data.zoner.lifecycle).expect("original lifecycle");
-    config.condor.scenes.remove(0);
-    config.condor.scenes[0].end_frame -= 1;
-    let candidate = serde_json::to_value(&config).expect("edited caller");
-    let blocked = temp.path().join("not-a-file");
-    std::fs::create_dir_all(&blocked).expect("publication barrier");
-    std::fs::write(blocked.join("sentinel"), b"preserve").expect("sentinel");
-    assert!(save_edit(&config, &blocked, &before).is_err());
-    assert_eq!(
-        serde_json::to_value(&config).expect("unchanged caller"),
-        candidate
-    );
-    assert_eq!(std::fs::read(&path).expect("old JSON"), json);
-    assert_eq!(
-        std::fs::read(blocked.join("sentinel")).expect("preserved sentinel"),
-        b"preserve"
-    );
-    save_edit(&config, &path, &before).expect("publish all staged changes");
-    let saved = Configuration::load(&path).expect("load").expect("saved");
-    assert_eq!(
-        serde_json::to_value(&saved.condor.scenes[0].sequence_data.zoner.lifecycle)
-            .expect("relocated"),
-        proof
-    );
-    assert_eq!(
-        saved.condor.scenes[0].encoder.photon_noise().expect("exact original ISO").iso,
-        801
-    );
-    assert_eq!(
-        config.condor.scenes[0].encoder.photon_noise().expect("caller still scaled").iso,
-        401
-    );
-    assert!(saved.condor.scenes[0].sequence_data.noise_detection.is_none());
-    assert!(saved.condor.scenes[0].sequence_data.noise_scaling.is_none());
+
+    #[test]
+    fn scene_edit_publication_failure_preserves_caller_saved_bytes_and_directory_sentinel() {
+        check_failed_edit_save(false);
+    }
+
+    #[test]
+    fn scene_edit_invalid_retry_budget_preserves_saved_bytes_and_removes_staging_files() {
+        check_failed_edit_save(true);
+    }
+
+    fn check_publication_proofs(publish: bool) {
+        use crate::zoner::{Zoner, ZonerConfig, parse_zone};
+        use andean_condor::{
+            core::sequence::{Sequence, noise_scaler::NoiseScaler},
+            models::{
+                encoder::photon_noise::PhotonNoise, sequence::noise_scaler::NoiseScalerConfig,
+            },
+        };
+        let temp = tempfile::tempdir().expect("fixture");
+        let video = crate::test_helpers::get_test_video();
+        let mut config = default_config(&video, &temp.path().join("out.mkv"), temp.path());
+        config.condor.encoder.set_photon_noise(Some(PhotonNoise {
+            iso: 801,
+            chroma_iso: Some(403),
+            width: None,
+            height: None,
+            c_y: None,
+            ccb: None,
+            ccr: None,
+        }));
+        config.condor.scenes = video.mock_scenes(&config.condor.encoder);
+        for scene in &mut config.condor.scenes {
+            scene.sequence_data.noise_detection = Some(NoiseDetectorData {
+                noise: 0.6,
+                luminance: 0.3,
+                created_on: SystemTime::UNIX_EPOCH,
+            });
+        }
+        config.condor.sequence_config.zoner = Some(ZonerConfig {
+            zones: vec![parse_zone("0 121 svt-av1 \"--preset 3\"").expect("zone")],
+        });
+        config.condor.sequence_config.noise_scaler = Some(NoiseScalerConfig {
+            threshold: 0.2,
+            minimum_scaler: 0.5,
+            maximum_scaler: 0.5,
+            scale_chroma: true,
+        });
+        let mut job = config.instantiate_condor(Box::new(|_| Ok(()))).expect("native job");
+        Zoner::run(&mut job).expect("owning original zoning proof");
+        let (tx, _rx) = std::sync::mpsc::channel();
+        NoiseScaler::default()
+            .execute(
+                &mut job,
+                tx,
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            )
+            .expect("owning scaling proof");
+        config.condor = job.as_data();
+        let path = temp.path().join("condor.json");
+        config.save(&path).expect("original JSON");
+        let json = std::fs::read(&path).expect("bytes");
+        let before = config.condor.scenes.clone();
+        let proof = serde_json::to_value(&before[0].sequence_data.zoner.lifecycle)
+            .expect("original lifecycle");
+        config.condor.scenes.remove(0);
+        config.condor.scenes[0].end_frame -= 1;
+        let candidate = serde_json::to_value(&config).expect("edited caller");
+        let blocked = temp.path().join("not-a-file");
+        std::fs::create_dir_all(&blocked).expect("publication barrier");
+        std::fs::write(blocked.join("sentinel"), b"preserve").expect("sentinel");
+        assert!(save_edit(&config, &blocked, &before).is_err());
+        assert_eq!(
+            serde_json::to_value(&config).expect("unchanged caller"),
+            candidate
+        );
+        assert_eq!(std::fs::read(&path).expect("old JSON"), json);
+        assert_eq!(
+            std::fs::read(blocked.join("sentinel")).expect("preserved sentinel"),
+            b"preserve"
+        );
+        if !publish {
+            return;
+        }
+        save_edit(&config, &path, &before).expect("publish all staged changes");
+        let saved = Configuration::load(&path).expect("load").expect("saved");
+        assert_eq!(
+            serde_json::to_value(&saved.condor.scenes[0].sequence_data.zoner.lifecycle)
+                .expect("relocated"),
+            proof
+        );
+        assert_eq!(
+            saved.condor.scenes[0].encoder.photon_noise().expect("exact original ISO").iso,
+            801
+        );
+        assert_eq!(
+            config.condor.scenes[0].encoder.photon_noise().expect("caller still scaled").iso,
+            401
+        );
+        assert!(saved.condor.scenes[0].sequence_data.noise_detection.is_none());
+        assert!(saved.condor.scenes[0].sequence_data.noise_scaling.is_none());
+    }
+
+    #[test]
+    fn scene_edit_failed_publication_preserves_zoning_anchor_saved_bytes_and_scaled_caller_iso() {
+        check_publication_proofs(false);
+    }
+
+    #[test]
+    fn scene_edit_successful_save_relocates_anchor_restores_original_iso_and_withdraws_noise_results()
+     {
+        check_publication_proofs(true);
+    }
 }
 
 #[test]
