@@ -14,6 +14,200 @@ use california_condor::{
 };
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use andean_condor::{
+        models::{
+            input::{Input, VapourSynthImportMethod},
+            sequence::target_quality::types::{
+                InterpolationMethod, ProbeStatistic, ProbeStrategy, SubsetProbeLength,
+                SubsetProbePosition,
+            },
+        },
+        vapoursynth::vapoursynth_filters::VapourSynthFilter,
+    };
+    use california_condor::commands::{
+        DecoderMethod, QualityMetric as QualityMetricBase, QualityProfile,
+        handlers::{init::init_handler, target_quality::target_quality_handler},
+    };
+
+    #[test]
+    fn target_quality_handler_without_overrides_retains_checked_defaults_and_config_path() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let expected_config = default_config(&test_video, &output, &temp_abs);
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = target_quality_handler(
+            Some(&config_path),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("target_quality_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn target_quality_handler_applies_butteraugli_target_quantizer_range_and_probe_settings() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let custom_filters = vec![VapourSynthFilter::Crop {
+            top: Some(140),
+            bottom: Some(140),
+            left: None,
+            right: None,
+        }];
+        let custom_vs_args = vec!["method=target quality".to_string()];
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        let mut tq_encoder_parameters = EncoderBase::SVTAV1.default_parameters();
+        tq_encoder_parameters.extend(CLIParameter::new_numbers(
+            "--",
+            " ",
+            &[("preset", 6.0), ("tune", 3.0)],
+        ));
+        expected_config.condor.sequence_config.target_quality = Some(TargetQualityConfig {
+            metric: QualityMetric::BUTTERAUGLI {
+                target_range: (1.4, 1.6),
+                resolution: None,
+                threads: None,
+                intensity_multiplier: None,
+                norm: None,
+                gpu_id: None,
+            },
+            maximum_probes: 4,
+            quantizer_range: (8, 40),
+            interpolators: (
+                InterpolationMethod::FritschCarlson,
+                InterpolationMethod::Pchip,
+            ),
+            input: Some(Input::VapourSynth {
+                path: input_abs.clone(),
+                import_method: VapourSynthImportMethod::LSMASHWorks { index: None },
+                cache_path: None,
+                filters: custom_filters.clone(),
+            }),
+            metric_input: None,
+            probing: TargetQualityProbing {
+                encoder_options: Some(tq_encoder_parameters),
+                statistic: ProbeStatistic::Mean,
+                strategy: ProbeStrategy::Subset {
+                    position: SubsetProbePosition::Middle,
+                    length: SubsetProbeLength::Frames(11),
+                },
+            },
+        });
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = target_quality_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            Some(&test_video.path),
+            Some(&DecoderMethod::LSMASHWorks),
+            Some(&custom_filters),
+            Some(&custom_vs_args),
+            Some("--preset 6 --tune 3"),
+            Some(&QualityMetricBase::BUTTERAUGLI),
+            Some(1.5),
+            Some(8),
+            Some(40),
+            Some(&QualityProfile::Fast),
+        )
+        .expect("target_quality_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::assert_matches;
 
