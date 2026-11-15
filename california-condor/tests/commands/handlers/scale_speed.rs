@@ -279,8 +279,7 @@ mod tests {
         configuration
     }
 
-    #[test]
-    fn flags_retain_loaded_fractional_quantizers_on_speed_only_edits() {
+    fn check_fractional_knots(quantizer_edit: bool) {
         use california_condor::commands::handlers::scale_speed::{
             configure_scale_speed, scale_speed_handler,
         };
@@ -299,6 +298,9 @@ mod tests {
             load(&path).condor.sequence_config.speed_scaler.speed_quantizers,
             vec![(5, 20.25), (7, 40.75), (9, 200.5)]
         );
+        if !quantizer_edit {
+            return;
+        }
         let mut config = config;
         configure_scale_speed(&mut config, Some(&[10, 20, 30]), None).expect("quantizer-only edit");
         assert_eq!(
@@ -310,7 +312,18 @@ mod tests {
     }
 
     #[test]
-    fn flags_and_crud_numeric_errors_preserve_memory_and_saved_bytes_offline() {
+    fn speed_only_handler_edits_retain_loaded_fractional_quantizers_including_out_of_range_values()
+    {
+        check_fractional_knots(false);
+    }
+
+    #[test]
+    fn quantizer_only_configuration_edit_replaces_knots_without_changing_speeds() {
+        check_fractional_knots(true);
+    }
+
+    #[test]
+    fn scale_speed_encoder_out_of_range_speeds_refuse_direct_handler_and_cli_edits_atomically() {
         use andean_condor::models::encoder::{Encoder, EncoderBase};
         use california_condor::commands::{
             config::ConfigCommand,
@@ -360,8 +373,7 @@ mod tests {
         assert!(!temp.path().join("scratch").exists());
     }
 
-    #[test]
-    fn actual_flags_duplicate_rejection_and_crud_repair_are_offline_and_atomic() {
+    fn check_duplicate_knots(repair: bool) {
         use california_condor::commands::handlers::scale_speed::scale_speed_handler;
         let temp = tempfile::tempdir().expect("fixture");
         let path = temp.path().join("condor.json");
@@ -380,6 +392,9 @@ mod tests {
             .assert()
             .failure();
         assert_eq!(std::fs::read(&path).expect("bytes"), before);
+        if !repair {
+            return;
+        }
         config.condor.sequence_config.speed_scaler.speed_quantizers = vec![(4, 20.0), (8, 20.0)];
         config.save(&path).expect("bad loaded config");
         let (repaired, _) = scale_speed_handler(Some(&path), Some(&[20, 40]), Some(&[4, 8]))
@@ -401,9 +416,19 @@ mod tests {
         assert!(!temp.path().join("scratch").exists());
     }
 
+    #[test]
+    fn scale_speed_cli_duplicate_quantizers_preserve_saved_job() {
+        check_duplicate_knots(false);
+    }
+
+    #[test]
+    fn scale_speed_handler_or_crud_complete_replacement_repairs_duplicate_loaded_knots_offline() {
+        check_duplicate_knots(true);
+    }
+
     #[serial]
     #[test]
-    fn default_and_no_scenes() {
+    fn scale_speed_without_scenes_preserves_default_configuration() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -440,7 +465,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_pairs_and_no_scenes() {
+    fn scale_speed_without_scenes_saves_requested_quantizer_speed_knots() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -495,7 +520,7 @@ mod tests {
 
     #[serial]
     #[test]
-    fn with_pairs_and_scenes() {
+    fn scale_speed_with_scenes_saves_requested_knots_and_preserves_scene_count() {
         if !ffmpeg_is_available() {
             return;
         }
@@ -561,11 +586,8 @@ mod tests {
         );
     }
 
-    /// `scale-speed` stores speed first, quantizer second, sorted by
-    /// quantizer, and refuses fewer than two pairs.
-    #[serial]
-    #[test]
-    fn scale_speed_set_points_store_speed_first() {
+    fn check_speed_points(phase: u8) {
+        assert!((1..=3).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -582,6 +604,9 @@ mod tests {
             vec![(6, 20.0), (2, 50.0)],
             "pairs are sorted by quantizer and stored speed-first"
         );
+        if phase == 1 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["scale-speed", "set", "speed-quantizers", "20=6"])
@@ -591,6 +616,9 @@ mod tests {
             .args(["scale-speed", "set", "speed-quantizers", "20=6", "20=4"])
             .assert()
             .failure();
+        if phase == 2 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["scale-speed", "reset", "speed-quantizers"])
@@ -598,5 +626,23 @@ mod tests {
             .success();
         let scaler = load(&config_path).condor.sequence_config.speed_scaler;
         assert!(scaler.speed_quantizers.is_empty(), "pairs were cleared");
+    }
+
+    #[serial]
+    #[test]
+    fn scale_speed_crud_stores_knots_speed_first_sorted_by_quantizer() {
+        check_speed_points(1);
+    }
+
+    #[serial]
+    #[test]
+    fn scale_speed_crud_rejects_single_or_duplicate_quantizer_knots() {
+        check_speed_points(2);
+    }
+
+    #[serial]
+    #[test]
+    fn scale_speed_reset_clears_knots() {
+        check_speed_points(3);
     }
 }
