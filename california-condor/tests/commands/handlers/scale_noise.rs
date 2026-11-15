@@ -11,6 +11,84 @@ use california_condor::{
 };
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use california_condor::commands::handlers::{
+        init::init_handler, scale_noise::scale_noise_handler,
+    };
+
+    #[test]
+    fn scale_noise_handler_applies_threshold_bounds_and_chroma_policy_and_keeps_scenes_nonempty() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        expected_config.condor.scenes = test_video.mock_scenes(&expected_config.condor.encoder);
+        expected_config.condor.sequence_config.noise_scaler = Some(NoiseScalerConfig {
+            threshold: 0.002,
+            minimum_scaler: 4.0,
+            maximum_scaler: 12.0,
+            scale_chroma: false,
+        });
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (mut config, _) =
+            load_configuration(Some(&config_path)).expect("load_config should succeed");
+        config.condor.scenes = test_video.mock_scenes(&config.condor.encoder);
+        config.save(&config_path).expect("save should succeed");
+        let (config, found_config_path) = scale_noise_handler(
+            Some(&config_path),
+            Some(0.002),
+            Some(4.0),
+            Some(12.0),
+            false,
+        )
+        .expect("scale_scenes_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(!config.condor.scenes.is_empty(), "scenes is not empty");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use andean_condor::models::sequence::noise_detector::NoiseDetectorConfig;
     use serial_test::serial;

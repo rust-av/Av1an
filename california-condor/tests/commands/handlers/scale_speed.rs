@@ -6,6 +6,253 @@ use california_condor::{
 };
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use california_condor::commands::handlers::{
+        init::init_handler,
+        scale_speed::{SpeedScalerError, scale_speed_handler},
+    };
+    use std::assert_matches;
+
+    #[test]
+    fn scale_speed_handler_without_overrides_retains_default_pairs_and_config_path() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let expected_config = default_config(&test_video, &output, &temp_abs);
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = scale_speed_handler(Some(&config_path), None, None)
+            .expect("scale_speed_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn scale_speed_handler_saves_requested_quantizer_speed_pairs_and_other_checked_settings() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        expected_config.condor.sequence_config.speed_scaler = SpeedScalerConfig {
+            speed_quantizers: vec![(8, 10.0), (5, 25.0), (3, 35.0)],
+        };
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, found_config_path) = scale_speed_handler(
+            Some(&config_path),
+            Some(&[10_i8, 25, 35]),
+            Some(&[8_i8, 5, 3]),
+        )
+        .expect("scale_speed_handler should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn scale_speed_handler_unequal_pair_counts_returns_typed_error_and_preserves_checked_saved_fields()
+     {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let expected_config = default_config(&test_video, &output, &temp_abs);
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let result =
+            scale_speed_handler(Some(&config_path), Some(&[8_i8, 5, 3]), Some(&[10_i8, 25]));
+        let error = result
+            .expect_err("scale_speed_handler should fail")
+            .downcast::<SpeedScalerError>()
+            .expect("scale_speed_handler error should be SpeedScalerError");
+        assert_matches!(
+            error,
+            SpeedScalerError::MismatchedPairs {
+                quantizers: 3,
+                speeds: 2
+            }
+        );
+        let (config, found_config_path) =
+            load_configuration(Some(&config_path)).expect("load_configuration should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn scale_speed_handler_fewer_than_two_pairs_returns_typed_error_and_preserves_checked_saved_fields()
+     {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let expected_config = default_config(&test_video, &output, &temp_abs);
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let result = scale_speed_handler(Some(&config_path), Some(&[8_i8]), Some(&[10_i8]));
+        let error = result
+            .expect_err("scale_speed_handler should fail")
+            .downcast::<SpeedScalerError>()
+            .expect("scale_speed_handler error should be SpeedScalerError");
+        assert_matches!(error, SpeedScalerError::MinimumPairsRequired);
+        let (config, found_config_path) =
+            load_configuration(Some(&config_path)).expect("load_configuration should succeed");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use serial_test::serial;
 
