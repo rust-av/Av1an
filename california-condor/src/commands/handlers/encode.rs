@@ -683,6 +683,216 @@ mod tests {
     use super::*;
 
     #[test]
+    fn configure_parallel_encoder_zero_attempt_budget_preserves_configuration() {
+        use crate::test_helpers::{TestVideo, default_config};
+        use andean_condor::{
+            ffmpeg::FFPixelFormat,
+            models::{
+                input::{ChromaSampling, Ffms2Filter, ImportMethod, Input},
+                sequence::{
+                    quality_check::QualityCheckConfig, target_quality::TargetQualityConfig,
+                },
+            },
+        };
+
+        let directory = std::env::temp_dir().join("condor-zero-attempt-model-only");
+        let video = TestVideo {
+            path: directory.join("root.mkv"),
+            width: 32,
+            height: 16,
+            frames: 2,
+            fps_rational: (24, 1),
+            format: FFPixelFormat::YUV420P,
+            scenes: vec![],
+        };
+        let mut configuration =
+            default_config(&video, &directory.join("out.mkv"), &directory.join("work"));
+        configuration.condor.input = Input::Video {
+            path: video.path,
+            import_method: ImportMethod::FFMS2 {
+                index: Some(0),
+                cache_path: Some(directory.join("root.ffindex")),
+            },
+            filters: vec![Ffms2Filter::OutputFormat {
+                bit_depth: Some(10),
+                chroma: Some(ChromaSampling::Yuv420),
+                width: None,
+                height: None,
+            }],
+        };
+        let mut reference = configuration.condor.input.clone();
+        if let Input::Video { path, .. } = &mut reference {
+            *path = directory.join("metric.mkv");
+        }
+        configuration.condor.sequence_config.target_quality = Some(TargetQualityConfig {
+            input: Some(reference.clone()),
+            metric_input: Some(reference.clone()),
+            ..Default::default()
+        });
+        configuration.condor.sequence_config.quality_check = Some(QualityCheckConfig {
+            input: Some(reference),
+            ..Default::default()
+        });
+        let before = serde_json::to_value(&configuration).expect("snapshot");
+        assert!(
+            configure_parallel_encoder(
+                &mut configuration,
+                None,
+                None,
+                None,
+                None,
+                Some(7),
+                Some(0)
+            )
+            .is_err()
+        );
+        assert_eq!(
+            serde_json::to_value(configuration).expect("invalid budget atomic"),
+            before
+        );
+    }
+
+    mod parameter_argv {
+        use super::super::configure_encoder;
+        use andean_condor::{
+            core::input::{clip_info::ClipInfo, pixel_format::PixelFormat},
+            models::encoder::{Encoder, EncoderBase},
+        };
+
+        fn clip_info() -> ClipInfo {
+            ClipInfo {
+                num_frames: 1,
+                format_info: PixelFormat::VapourSynth { bit_depth: 8 },
+                frame_rate: av_format::rational::Rational64::new(24, 1),
+                resolution: (64, 64),
+                color_range: None,
+                color_primaries: None,
+                color_transfer_characteristic: None,
+                color_space: None,
+                chroma_location: None,
+                mastering_display: None,
+                content_light_level: None,
+            }
+        }
+
+        #[test]
+        fn consecutive_flags_override_default_crf_in_encoder_argv() {
+            let root = std::env::temp_dir().join("condor-encoder-argv-model-only");
+            let output = root.join("out.mkv");
+            let stats = root.join("stats");
+            let mut encoder = Encoder::default_from_base(&EncoderBase::X265, false);
+            encoder.set_append_color_data(false);
+            let before = encoder
+                .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
+                .expect("default argv");
+            configure_encoder(
+                &mut encoder,
+                None,
+                None,
+                Some("--no-sao --crf 20"),
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("valid parameters");
+            let argv = encoder
+                .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
+                .expect("configured argv");
+            assert_eq!(argv.len(), before.len() + 1, "{argv:?}");
+            assert_eq!(argv.iter().filter(|arg| *arg == "--no-sao").count(), 1);
+            assert_eq!(argv.iter().filter(|arg| *arg == "--crf").count(), 1);
+            assert!(
+                argv.windows(2).any(|pair| pair == ["--crf", "20"]),
+                "{argv:?}"
+            );
+        }
+
+        #[test]
+        fn configured_parameters_reach_encoder_argv_without_resplitting() {
+            let root = std::env::temp_dir().join("condor-encoder-argv-model-only");
+            let output = root.join("out.mkv");
+            let stats = root.join("stats");
+            for (input, expected) in [
+                (
+                    r#"--key 'C:\my clips\source.y4m'"#,
+                    vec![vec!["--key", r"C:\my clips\source.y4m"]],
+                ),
+                (
+                    "--no-sao --crf 20",
+                    vec![vec!["--no-sao"], vec!["--crf", "20"]],
+                ),
+                (
+                    "--sharpness -2 --crf 20",
+                    vec![vec!["--sharpness", "-2"], vec!["--crf", "20"]],
+                ),
+                ("-an -sn", vec![vec!["-an"], vec!["-sn"]]),
+                ("--key=value", vec![vec!["--key=value"]]),
+                ("--key=a=b", vec![vec!["--key=a=b"]]),
+                (
+                    "--key\tvalue\n--other\tword",
+                    vec![vec!["--key", "value"], vec!["--other", "word"]],
+                ),
+                (r#"--key "a b""#, vec![vec!["--key", "a b"]]),
+                (r#"--key="a b""#, vec![vec!["--key=a b"]]),
+                (r#"--key "say \"hi\"""#, vec![vec!["--key", "say \"hi\""]]),
+                (r#"--key """#, vec![vec!["--key", ""]]),
+                ("--key=", vec![vec!["--key="]]),
+                ("--key -0.5", vec![vec!["--key", "-0.5"]]),
+                ("--key -1e-3", vec![vec!["--key", "-0.001"]]),
+                ("--key=-literal", vec![vec!["--key=-literal"]]),
+                ("crf=16 tune=0", vec![vec!["crf=16"], vec!["tune=0"]]),
+                ("crf 16", vec![vec!["crf", "16"]]),
+                ("-metadata:s:v 'a b'", vec![vec!["-metadata:s:v", "a b"]]),
+                (
+                    r#"--key '$HOME;$(echo literal)*'"#,
+                    vec![vec!["--key", "$HOME;$(echo literal)*"]],
+                ),
+                (
+                    "--key value # comment\n--other=word",
+                    vec![vec!["--key", "value"], vec!["--other=word"]],
+                ),
+                ("", vec![]),
+                (" \t\n ", vec![]),
+                ("\r\n \t\u{b}", vec![]),
+            ] {
+                let mut encoder = Encoder::default_from_base(&EncoderBase::X265, false);
+                encoder.parameters_mut().clear();
+                configure_encoder(
+                    &mut encoder,
+                    None,
+                    None,
+                    Some(input),
+                    None,
+                    None,
+                    None,
+                    Some(false),
+                )
+                .expect("valid encoder parameters");
+                let argv = encoder
+                    .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
+                    .expect("actual emitted encoder argv");
+                assert_eq!(
+                    argv.len(),
+                    3 + expected.iter().map(Vec::len).sum::<usize>(),
+                    "{input:?}: {argv:?}"
+                );
+                assert_eq!(argv[0], "-");
+                assert!(
+                    argv.windows(2).any(|pair| pair == ["-o", output.to_str().expect("UTF-8")]),
+                    "{argv:?}"
+                );
+                for tokens in expected {
+                    assert!(
+                        argv.windows(tokens.len()).any(|window| window == tokens),
+                        "{input:?}: missing {tokens:?} in {argv:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn avm_explicit_noise_edits_fail_atomically_offline() {
         for method in [None, Some(EncoderMethod::AVM)] {
             for (noise, chroma) in [(Some(800), None), (None, Some(400)), (Some(800), Some(400))] {

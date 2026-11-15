@@ -631,8 +631,7 @@ mod tests {
         check_filter_conversion(true);
     }
 
-    #[test]
-    fn rebuild_cli_explicit_filters_replace_gbrp_without_changing_references() {
+    fn check_native_filter_cli(invalid: bool) {
         use andean_condor::models::input::{ChromaSampling, Ffms2Filter, ImportMethod};
         let temp = tempfile::tempdir().expect("fixture");
         let file = temp.path().join("condor.json");
@@ -681,6 +680,9 @@ mod tests {
                 serde_json::to_value(expected)
                     .expect("root and separate reference configurations unchanged")
             );
+            if !invalid {
+                continue;
+            }
             configuration.save(&file).expect("restore RGB input");
             let disk = std::fs::read(&file).expect("snapshot");
             for (args, message) in [
@@ -718,6 +720,16 @@ mod tests {
             .collect::<Vec<_>>();
         entries.sort();
         assert_eq!(entries, ["condor.json", "condor.json.lock", "logs"]);
+    }
+
+    #[test]
+    fn encode_input_crud_explicit_native_filters_replace_gbrp_without_changing_references() {
+        check_native_filter_cli(false);
+    }
+
+    #[test]
+    fn encode_input_crud_omitted_or_invalid_native_filters_preserve_saved_bytes() {
+        check_native_filter_cli(true);
     }
 
     #[test]
@@ -988,7 +1000,8 @@ mod tests {
     }
 
     #[test]
-    fn failed_filter_and_decoder_candidates_preserve_configuration_and_disk() {
+    fn parallel_encoder_invalid_input_candidates_preserve_memory_and_saved_bytes_across_public_edit_routes()
+     {
         use andean_condor::models::input::VapourSynthImportMethod;
         use california_condor::commands::{
             DecoderMethod,
@@ -1097,32 +1110,13 @@ mod tests {
             );
             assert_eq!(std::fs::read(&file).expect("disk unchanged"), disk);
         }
-        let mut configuration = input_override_configuration(temp.path());
-        let before = serde_json::to_value(&configuration).expect("snapshot");
-        assert!(
-            configure_parallel_encoder(
-                &mut configuration,
-                None,
-                None,
-                None,
-                None,
-                Some(7),
-                Some(0)
-            )
-            .is_err()
-        );
-        assert_eq!(
-            serde_json::to_value(configuration).expect("invalid budget atomic"),
-            before
-        );
         assert_eq!(
             std::fs::read_dir(temp.path()).expect("no source/index work").count(),
             1
         );
     }
 
-    #[test]
-    fn cli_filters_only_edits_override_without_native_work() {
+    fn check_filters_only_cli(invalid: bool) {
         use andean_condor::models::input::Ffms2Filter;
         let temp = tempfile::tempdir().expect("fixture");
         let mut configuration = input_override_configuration(temp.path());
@@ -1162,14 +1156,16 @@ mod tests {
                 serde_json::to_value(&expected).expect("only effective filters changed")
             );
         }
-        let disk = std::fs::read(&file).expect("saved good edit");
-        for filter in ["resize:format=nv12", "resize:width=0"] {
-            condor_cmd(&temp)
-                .env("PATH", "")
-                .args(["encode", "set", "input", "--filters", filter])
-                .assert()
-                .failure();
-            assert_eq!(std::fs::read(&file).expect("failed CLI bytes"), disk);
+        if invalid {
+            let disk = std::fs::read(&file).expect("saved good edit");
+            for filter in ["resize:format=nv12", "resize:width=0"] {
+                condor_cmd(&temp)
+                    .env("PATH", "")
+                    .args(["encode", "set", "input", "--filters", filter])
+                    .assert()
+                    .failure();
+                assert_eq!(std::fs::read(&file).expect("failed CLI bytes"), disk);
+            }
         }
         let mut entries = std::fs::read_dir(temp.path())
             .expect("offline side effects")
@@ -1177,6 +1173,16 @@ mod tests {
             .collect::<Vec<_>>();
         entries.sort();
         assert_eq!(entries, ["condor.json", "condor.json.lock", "logs"]);
+    }
+
+    #[test]
+    fn encode_filters_only_cli_and_crud_save_effective_override_before_execution() {
+        check_filters_only_cli(false);
+    }
+
+    #[test]
+    fn encode_filters_only_invalid_crud_preserves_saved_job_without_native_work() {
+        check_filters_only_cli(true);
     }
 
     #[test]
@@ -1332,7 +1338,7 @@ mod tests {
     }
 
     #[test]
-    fn real_native_encode_publishes_new_root_chunk_and_owning_progress() {
+    fn parallel_encoder_temp_rebase_publishes_chunk_completion_and_tq_initializer_uses_new_root() {
         use andean_condor::{
             core::sequence::{
                 Sequence, SequenceCompletion, SequenceStatus, Status,
@@ -1487,7 +1493,7 @@ mod tests {
     }
 
     #[test]
-    fn populated_stage_overrides_do_not_replace_or_guard_the_root() {
+    fn stage_input_edits_on_populated_job_preserve_root_input_and_saved_scenes() {
         use andean_condor::models::input::ImportMethod;
         use california_condor::commands::handlers::encode::encode_handler;
         let temp = tempfile::tempdir().expect("fixture");
@@ -1933,11 +1939,8 @@ mod tests {
         );
     }
 
-    /// `encode` edits both `parallel_encoder` and `encoder`, validates
-    /// encoder-specific capabilities, and resets individual keys.
-    #[serial]
-    #[test]
-    fn encode_set_and_reset() {
+    fn check_encoder_crud(phase: u8) {
+        assert!((1..=5).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -1976,32 +1979,74 @@ mod tests {
             "workers is set"
         );
         assert_eq!(config.condor.encoder.total_passes(), 2, "passes is set");
+        if phase == 2 {
+            return;
+        }
         assert_eq!(
             config.condor.encoder.photon_noise().map(|pn| (pn.iso, pn.chroma_iso)),
             Some((800, Some(800))),
             "photon noise is set"
         );
+        if phase == 3 {
+            return;
+        }
         assert_eq!(
             config.condor.encoder.ffmpeg_filter(),
             Some("crop=iw-16:ih-16"),
             "ffmpeg filter is set"
         );
+        if phase == 4 {
+            return;
+        }
 
-        // Switching to x264 and attempting to set photon-noise is rejected.
-        condor_cmd(&temp).args(["encode", "set", "encoder", "x264"]).assert().success();
-        condor_cmd(&temp)
-            .args(["encode", "set", "photon-noise", "800"])
-            .assert()
-            .failure();
+        if phase != 1 {
+            // Switching to x264 and attempting to set photon-noise is rejected.
+            condor_cmd(&temp).args(["encode", "set", "encoder", "x264"]).assert().success();
+            condor_cmd(&temp)
+                .args(["encode", "set", "photon-noise", "800"])
+                .assert()
+                .failure();
 
-        // Resetting encoder restores the default SVT-AV1 encoder.
-        condor_cmd(&temp).args(["encode", "reset", "encoder"]).assert().success();
+            // Resetting encoder restores the default SVT-AV1 encoder.
+            condor_cmd(&temp).args(["encode", "reset", "encoder"]).assert().success();
+        }
         condor_cmd(&temp).args(["encode", "reset", "workers"]).assert().success();
         let config = load(&config_path);
         assert_eq!(
             config.condor.sequence_config.parallel_encoder.workers, None,
             "workers is cleared"
         );
+    }
+
+    #[serial]
+    #[test]
+    fn encode_workers_crud_saves_value_and_reset_clears_it() {
+        check_encoder_crud(1);
+    }
+
+    #[serial]
+    #[test]
+    fn encode_multipass_requires_vbr_parameters() {
+        check_encoder_crud(2);
+    }
+
+    #[serial]
+    #[test]
+    fn encode_photon_noise_crud_rejects_incompatible_chroma_atomically_and_saves_supported_values()
+    {
+        check_encoder_crud(3);
+    }
+
+    #[serial]
+    #[test]
+    fn encode_filter_crud_saves_filtergraph() {
+        check_encoder_crud(4);
+    }
+
+    #[serial]
+    #[test]
+    fn encode_x264_rejects_photon_noise_and_encoder_reset_succeeds() {
+        check_encoder_crud(5);
     }
 }
 
@@ -2014,9 +2059,7 @@ mod parameters {
             input::{ImportMethod, Input},
         },
     };
-    use california_condor::{
-        commands::handlers::encode::configure_encoder, configuration::Configuration,
-    };
+    use california_condor::configuration::Configuration;
 
     use crate::common::condor_cmd;
 
@@ -2036,124 +2079,7 @@ mod parameters {
         }
     }
 
-    #[test]
-    fn consecutive_flags_override_default_crf_in_encoder_argv() {
-        let temp = tempfile::tempdir().expect("argv paths");
-        let output = temp.path().join("out.mkv");
-        let stats = temp.path().join("stats");
-        let mut encoder = Encoder::default_from_base(&EncoderBase::X265, false);
-        encoder.set_append_color_data(false);
-        let before = encoder
-            .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
-            .expect("default argv");
-        configure_encoder(
-            &mut encoder,
-            None,
-            None,
-            Some("--no-sao --crf 20"),
-            None,
-            None,
-            None,
-            None,
-        )
-        .expect("valid parameters");
-        let argv = encoder
-            .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
-            .expect("configured argv");
-        assert_eq!(argv.len(), before.len() + 1, "{argv:?}");
-        assert_eq!(argv.iter().filter(|arg| *arg == "--no-sao").count(), 1);
-        assert_eq!(argv.iter().filter(|arg| *arg == "--crf").count(), 1);
-        assert!(
-            argv.windows(2).any(|pair| pair == ["--crf", "20"]),
-            "{argv:?}"
-        );
-    }
-
-    #[test]
-    fn configured_parameters_reach_encoder_argv_without_resplitting() {
-        let temp = tempfile::tempdir().expect("argv paths");
-        let output = temp.path().join("out.mkv");
-        let stats = temp.path().join("stats");
-        for (input, expected) in [
-            (
-                r#"--key 'C:\my clips\source.y4m'"#,
-                vec![vec!["--key", r"C:\my clips\source.y4m"]],
-            ),
-            (
-                "--no-sao --crf 20",
-                vec![vec!["--no-sao"], vec!["--crf", "20"]],
-            ),
-            (
-                "--sharpness -2 --crf 20",
-                vec![vec!["--sharpness", "-2"], vec!["--crf", "20"]],
-            ),
-            ("-an -sn", vec![vec!["-an"], vec!["-sn"]]),
-            ("--key=value", vec![vec!["--key=value"]]),
-            ("--key=a=b", vec![vec!["--key=a=b"]]),
-            (
-                "--key\tvalue\n--other\tword",
-                vec![vec!["--key", "value"], vec!["--other", "word"]],
-            ),
-            (r#"--key "a b""#, vec![vec!["--key", "a b"]]),
-            (r#"--key="a b""#, vec![vec!["--key=a b"]]),
-            (r#"--key "say \"hi\"""#, vec![vec!["--key", "say \"hi\""]]),
-            (r#"--key """#, vec![vec!["--key", ""]]),
-            ("--key=", vec![vec!["--key="]]),
-            ("--key -0.5", vec![vec!["--key", "-0.5"]]),
-            ("--key -1e-3", vec![vec!["--key", "-0.001"]]),
-            ("--key=-literal", vec![vec!["--key=-literal"]]),
-            ("crf=16 tune=0", vec![vec!["crf=16"], vec!["tune=0"]]),
-            ("crf 16", vec![vec!["crf", "16"]]),
-            ("-metadata:s:v 'a b'", vec![vec!["-metadata:s:v", "a b"]]),
-            (
-                r#"--key '$HOME;$(echo literal)*'"#,
-                vec![vec!["--key", "$HOME;$(echo literal)*"]],
-            ),
-            (
-                "--key value # comment\n--other=word",
-                vec![vec!["--key", "value"], vec!["--other=word"]],
-            ),
-            ("", vec![]),
-            (" \t\n ", vec![]),
-            ("\r\n \t\u{b}", vec![]),
-        ] {
-            let mut encoder = Encoder::default_from_base(&EncoderBase::X265, false);
-            encoder.parameters_mut().clear();
-            configure_encoder(
-                &mut encoder,
-                None,
-                None,
-                Some(input),
-                None,
-                None,
-                None,
-                Some(false),
-            )
-            .expect("valid encoder parameters");
-            let argv = encoder
-                .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
-                .expect("actual emitted encoder argv");
-            assert_eq!(
-                argv.len(),
-                3 + expected.iter().map(Vec::len).sum::<usize>(),
-                "{input:?}: {argv:?}"
-            );
-            assert_eq!(argv[0], "-");
-            assert!(
-                argv.windows(2).any(|pair| pair == ["-o", output.to_str().expect("UTF-8")]),
-                "{argv:?}"
-            );
-            for tokens in expected {
-                assert!(
-                    argv.windows(tokens.len()).any(|window| window == tokens),
-                    "{input:?}: missing {tokens:?} in {argv:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn cli_rejection_preserves_disk_and_valid_edits_preserve_argv() {
+    fn check_parameter_cli(valid_edit: bool) {
         let temp = tempfile::tempdir().expect("CLI fixture");
         let script = temp.path().join("blank.vpy");
         std::fs::write(&script, "from vapoursynth import core, YUV420P8\ncore.std.BlankClip(width=64,height=64,format=YUV420P8).set_output()\n").expect("script");
@@ -2210,6 +2136,9 @@ mod parameters {
                 assert!(!output.exists());
             }
         }
+        if !valid_edit {
+            return;
+        }
         condor_cmd(&temp)
             .args(["encode", "set", "params", r#"--no-sao --crf 20 --analysis-save 'a b.dat'"#])
             .assert()
@@ -2245,5 +2174,15 @@ mod parameters {
         );
         assert!(!temp.path().join("forbidden.ffindex").exists());
         assert!(!output.exists());
+    }
+
+    #[test]
+    fn encoder_parameter_cli_parse_errors_preserve_job_and_prevent_index_or_output_work() {
+        check_parameter_cli(false);
+    }
+
+    #[test]
+    fn encoder_parameter_crud_persists_flags_and_quoted_values_as_unsplit_argv() {
+        check_parameter_cli(true);
     }
 }
