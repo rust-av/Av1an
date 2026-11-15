@@ -10,6 +10,7 @@ mod quality_check;
 mod scale_noise;
 mod scale_speed;
 mod scenes;
+mod start;
 mod target_quality;
 mod zone;
 
