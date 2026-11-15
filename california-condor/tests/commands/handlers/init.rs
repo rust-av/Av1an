@@ -22,6 +22,245 @@ use crate::common::condor_cmd;
 use crate::common::config::{init_config, load};
 
 #[cfg(test)]
+mod handler_configuration {
+    use super::*;
+    use california_condor::commands::{
+        ConcatenationMethod, DecoderMethod, EncoderMethod, QualityMetric as QualityMetricBase,
+        handlers::init::init_handler,
+    };
+    use std::{assert_matches, path::Path};
+
+    #[test]
+    fn init_without_config_path_saves_condor_json_and_default_settings_in_current_directory() {
+        crate::common::config::isolated_default_path_test(
+            "commands::handlers::init::handler_configuration::init_without_config_path_saves_condor_json_and_default_settings_in_current_directory",
+            init_creates_default_config,
+        );
+    }
+
+    fn init_creates_default_config(temp: &Path) {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp_abs = path_abs::PathAbs::new(temp.join(hash_path(&input_abs)))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.join("out.mkv");
+        let config_path = temp.join("condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let expected_config = default_config(&test_video, &output, &temp_abs);
+        init_handler(
+            None,
+            None,
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        assert!(config_path.exists(), "config file exists");
+        let (config, found_config_path) =
+            load_configuration(Some(&config_path)).expect("config loads");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn init_saves_requested_input_encoder_workers_target_and_concatenation_settings() {
+        let test_video = get_test_video();
+        let input_abs = path_abs::PathAbs::new(&test_video.path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let temp_abs = path_abs::PathAbs::new(temp.path().join("custom-temp"))
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("custom-condor.json");
+        let config_path_abs = path_abs::PathAbs::new(&config_path)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let custom_filters = vec![VapourSynthFilter::Crop {
+            top: Some(2),
+            bottom: Some(2),
+            left: None,
+            right: None,
+        }];
+        let custom_vs_args = vec!["key=value".to_string()];
+        let mut custom_encoder_parameters = EncoderBase::AOM.default_parameters();
+        custom_encoder_parameters.insert(
+            "cpu-used".to_owned(),
+            CLIParameter::new_number("--", "=", 7.0),
+        );
+        let mut expected_config = default_config(&test_video, &output, &temp_abs);
+        expected_config.condor.input = InputModel::VapourSynth {
+            path: input_abs,
+            import_method: VapourSynthImportMethod::FFMS2 { index: None },
+            cache_path: None,
+            filters: custom_filters.clone(),
+        };
+        expected_config.condor.encoder = Encoder::AOM {
+            executable: None,
+            pass: EncoderPasses::All(2),
+            options: custom_encoder_parameters,
+            photon_noise: Some(PhotonNoise {
+                iso: 4800,
+                chroma_iso: None,
+                width: None,
+                height: None,
+                c_y: None,
+                ccb: None,
+                ccr: None,
+            }),
+            ffmpeg_filter: None,
+            append_color_data: true,
+        };
+        expected_config.condor.sequence_config.parallel_encoder.workers = Some(2);
+        expected_config.condor.sequence_config.target_quality = Some(TargetQualityConfig {
+            input: None,
+            metric: QualityMetric::SSIMULACRA2 {
+                target_range: (74.0, 76.0),
+                resolution: None,
+                threads: None,
+                gpu_id: None,
+            },
+            quantizer_range: TargetQuality::default_quantizer_range(&EncoderBase::AOM),
+            ..Default::default()
+        });
+        expected_config.condor.sequence_config.scene_concatenator.method =
+            ConcatMethod::FFmpeg(Default::default());
+        let expected_config = expected_config;
+        init_handler(
+            Some(&config_path),
+            Some(&temp.path().join("custom-temp")),
+            &test_video.path,
+            &output,
+            Some(&DecoderMethod::VSFFMS2),
+            Some(&custom_filters),
+            Some(&custom_vs_args),
+            Some(&ConcatenationMethod::FFmpeg),
+            None,
+            Some(2),
+            Some(&EncoderMethod::AOM),
+            Some("--cpu-used=7"),
+            Some(4800),
+            true,
+            Some(&QualityMetricBase::SSIMULACRA2),
+            Some(75.0),
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        assert!(config_path.exists(), "config file exists");
+        let (config, found_config_path) =
+            load_configuration(Some(&config_path)).expect("config loads");
+        assert_eq!(
+            found_config_path,
+            config_path_abs,
+            "config path is {}",
+            config_path_abs.display()
+        );
+        check_basic_config(&config, &expected_config);
+        assert!(config.condor.scenes.is_empty(), "scenes is empty");
+    }
+
+    #[test]
+    fn init_disable_color_data_turns_appending_off() {
+        let test_video = get_test_video();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        init_handler(
+            Some(&config_path),
+            None,
+            &test_video.path,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+            false,
+        )
+        .expect("init_handler should succeed");
+        let (config, _) = load_configuration(Some(&config_path)).expect("config loads");
+        assert!(
+            !config.condor.encoder.append_color_data(),
+            "append_color_data is false"
+        );
+    }
+
+    #[test]
+    fn init_missing_input_returns_error_without_creating_configuration() {
+        let test_video = std::env::temp_dir().join("not_found.mkv");
+        let input_abs = path_abs::PathAbs::new(&test_video)
+            .expect("path_abs should succeed")
+            .as_path()
+            .to_path_buf();
+        let temp = tempfile::tempdir().expect("temp directory");
+        let output = temp.path().join("out.mkv");
+        let config_path = temp.path().join("condor.json");
+        let result = init_handler(
+            Some(&config_path),
+            Some(&temp.path().join(hash_path(&input_abs))),
+            &test_video,
+            &output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            false,
+        );
+        assert_matches!(result, Err(_), "init_handler should fail");
+        assert!(!config_path.exists(), "config file does not exist");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use andean_condor::models::input::{ImportMethod, Input};
     use serial_test::serial;
