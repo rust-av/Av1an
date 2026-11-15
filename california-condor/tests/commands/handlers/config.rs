@@ -13,13 +13,13 @@ mod provenance {
 
     #[cfg(unix)]
     #[test]
-    fn tq_speed_scaler_parallel_and_cli_resume() {
+    fn inherited_probe_options_survive_speed_scaling_final_encode_and_cli_resume() {
         tq_speed_scaler_pipeline(false);
     }
 
     #[cfg(unix)]
     #[test]
-    fn reset_explicit_probe_options_after_speed_scaling_refuses() {
+    fn explicit_probe_options_survive_speed_scaling_but_reset_refuses_before_reprobe_or_resave() {
         tq_speed_scaler_pipeline(true);
     }
 
@@ -403,8 +403,7 @@ mod provenance {
         }
     }
 
-    #[test]
-    fn settings_only_upgrade_and_save_do_not_certify_legacy_results() {
+    fn check_legacy_settings_upgrade(claim_results: bool) {
         use california_condor::configuration::Configuration;
         let temp = tempfile::tempdir().expect("fixture");
         let mut config = root_edit_fixture(temp.path());
@@ -438,6 +437,9 @@ mod provenance {
         );
         let record = &mut upgraded.condor.scenes[0].sequence_data.parallel_encoder;
         assert!(record.provenance.is_none());
+        if !claim_results {
+            return;
+        }
         record.bytes = Some(999);
         upgraded.save(&file).expect("explicit raw offline save remains possible");
         let claimed = Configuration::load(&file).expect("legacy raw results parse").expect("job");
@@ -446,6 +448,16 @@ mod provenance {
             claimed.admit_results().is_err(),
             "save never mints result provenance"
         );
+    }
+
+    #[test]
+    fn settings_only_legacy_job_upgrades_offline_without_result_provenance() {
+        check_legacy_settings_upgrade(false);
+    }
+
+    #[test]
+    fn raw_configuration_save_never_certifies_unstamped_claimed_results() {
+        check_legacy_settings_upgrade(true);
     }
 }
 
@@ -538,8 +550,8 @@ fn wait_for_marker(child: &mut JobChild, marker: &std::path::Path) {
 mod job_lock {
     use super::*;
 
-    #[test]
-    fn cli_job_contention_survives_save_and_crash_without_lost_edits() {
+    fn check_job_contention(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let temp = tempfile::tempdir().expect("fixture");
         let mut config = root_edit_fixture(temp.path());
         config.condor.scenes[0].sequence_data = Default::default();
@@ -602,40 +614,59 @@ mod job_lock {
                 }
             }
         }
-        condor_cmd(&temp)
-            .timeout(std::time::Duration::from_secs(5))
-            .args(["--config-file", "job.other", "init", "set", "workers", "3"])
-            .assert()
-            .success();
-        assert_eq!(
-            load(&temp.path().join("job.other"))
-                .condor
-                .sequence_config
-                .parallel_encoder
-                .workers,
-            Some(3)
-        );
+        if phase >= 2 {
+            condor_cmd(&temp)
+                .timeout(std::time::Duration::from_secs(5))
+                .args(["--config-file", "job.other", "init", "set", "workers", "3"])
+                .assert()
+                .success();
+            assert_eq!(
+                load(&temp.path().join("job.other"))
+                    .condor
+                    .sequence_config
+                    .parallel_encoder
+                    .workers,
+                Some(3)
+            );
+        }
         if std::fs::read(&file).expect("contended bytes") != saved {
             failures.push("contender changed the holder's saved job".into());
         }
-        child.0.kill().expect("crash holder");
-        child.0.wait().expect("reap holder");
-        condor_cmd(&temp)
-            .args(["--config-file", "job.json", "scenes", "0", "set", "end", "11"])
-            .assert()
-            .success();
-        let recovered = load(&file);
-        assert_eq!(
-            recovered.condor.sequence_config.parallel_encoder.workers,
-            Some(2),
-            "holder edit retained after crash"
-        );
-        assert_eq!(recovered.condor.scenes[0].end_frame, 11);
-        assert!(
-            temp.path().join("job.json.lock").exists(),
-            "crash release does not delete stable sidecar"
-        );
+        if phase == 3 {
+            child.0.kill().expect("crash holder");
+            child.0.wait().expect("reap holder");
+            condor_cmd(&temp)
+                .args(["--config-file", "job.json", "scenes", "0", "set", "end", "11"])
+                .assert()
+                .success();
+            let recovered = load(&file);
+            assert_eq!(
+                recovered.condor.sequence_config.parallel_encoder.workers,
+                Some(2),
+                "holder edit retained after crash"
+            );
+            assert_eq!(recovered.condor.scenes[0].end_frame, 11);
+            assert!(
+                temp.path().join("job.json.lock").exists(),
+                "crash release does not delete stable sidecar"
+            );
+        }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn cli_job_lock_alias_contenders_remain_busy_after_holder_saves() {
+        check_job_contention(1);
+    }
+
+    #[test]
+    fn cli_job_lock_different_extension_allows_independent_edit() {
+        check_job_contention(2);
+    }
+
+    #[test]
+    fn cli_job_lock_holder_crash_releases_lock_without_losing_saved_edits() {
+        check_job_contention(3);
     }
 }
 
@@ -738,7 +769,7 @@ mod job_admission {
     }
 
     #[test]
-    fn only_creation_routes_prepare_missing_parents() {
+    fn init_and_new_root_create_missing_config_parents_and_lock_before_processing() {
         for root in [false, true] {
             let temp = tempfile::tempdir().expect("fixture");
             let source = temp.path().join("source.vpy");
@@ -772,7 +803,7 @@ mod job_admission {
     }
 
     #[test]
-    fn non_notfound_admission_errors_do_not_create_artifacts() {
+    fn config_parent_is_file_reports_context_without_missing_config_guidance_or_artifacts() {
         let temp = tempfile::tempdir().expect("fixture");
         std::fs::write(temp.path().join("blocked"), b"not a directory").expect("fixture");
         let result = condor_cmd(&temp)
@@ -793,8 +824,8 @@ mod job_admission {
         );
     }
 
-    #[test]
-    fn guard_admits_before_create_load_and_source_but_not_offline_controls() {
+    fn check_busy_job_admission(phase: u8) {
+        assert!((1..=4).contains(&phase));
         use california_condor::configuration::JobLock;
         let temp = tempfile::tempdir().expect("fixture");
         let config = root_edit_fixture(temp.path());
@@ -816,6 +847,9 @@ mod job_admission {
             assert!(!file.exists());
             assert!(!temp.path().join("source-opened").exists());
         }
+        if phase == 1 {
+            return;
+        }
         // A corrupt file proves busy admission precedes parsing, not just writes.
         std::fs::write(&file, b"not JSON").expect("corrupt config");
         for route in [
@@ -835,6 +869,9 @@ mod job_admission {
             assert_eq!(std::fs::read(&file).expect("bytes"), b"not JSON");
             assert!(!temp.path().join("source-opened").exists());
         }
+        if phase == 2 {
+            return;
+        }
         drop(guard);
         config.save(&file).expect("fresh valid snapshot after release");
         let guard = JobLock::acquire(&file).expect("reacquire despite existing sidecar");
@@ -848,6 +885,9 @@ mod job_admission {
             assert!(!message.contains("another process"), "{args:?}: {message}");
             assert_eq!(result.status.success(), args[0] != "clean");
         }
+        if phase == 3 {
+            return;
+        }
         let invalid = condor_cmd(&temp)
             .args(["--config-file", "job.json", "-w", "8", "encode"])
             .output()
@@ -856,6 +896,26 @@ mod job_admission {
         assert!(!String::from_utf8_lossy(&invalid.stderr).contains("another process"));
         assert!(!temp.path().join("source-opened").exists());
         drop(guard);
+    }
+
+    #[test]
+    fn busy_job_lock_refuses_new_job_before_config_creation_or_source_open() {
+        check_busy_job_admission(1);
+    }
+
+    #[test]
+    fn busy_job_lock_precedes_corrupt_config_parsing_for_existing_routes() {
+        check_busy_job_admission(2);
+    }
+
+    #[test]
+    fn help_version_and_unavailable_clean_bypass_busy_job_lock() {
+        check_busy_job_admission(3);
+    }
+
+    #[test]
+    fn misplaced_root_flags_fail_parsing_before_busy_job_lock() {
+        check_busy_job_admission(4);
     }
 
     #[test]
