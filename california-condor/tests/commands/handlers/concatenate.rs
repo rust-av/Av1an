@@ -899,17 +899,17 @@ mod attachments {
     }
 
     #[test]
-    fn native_discard_attachment1_keeps_audio1() {
+    fn mkvmerge_discard_attachment_id_one_preserves_colliding_audio_bytes_and_metadata() {
         native_discard(DiscardCategory::Attachment);
     }
 
     #[test]
-    fn native_discard_audio1_keeps_attachment1() {
+    fn mkvmerge_discard_audio_id_one_preserves_colliding_attachment_bytes_and_metadata() {
         native_discard(DiscardCategory::Audio);
     }
 
-    #[test]
-    fn cli_canonical_info_save_method_reset_and_ambiguous_load() {
+    fn check_attachment_namespace_crud(phase: u8) {
+        assert!((1..=4).contains(&phase));
         let dir = tempfile::tempdir().expect("fixture");
         let (source, _) = fixture(dir.path());
         common::condor_cmd(&dir)
@@ -933,6 +933,9 @@ mod attachments {
         assert_eq!(method["tracks"]["1"]["type"], "audio");
         assert_eq!(method["tracks"]["1"]["copy"], false);
         assert_eq!(method["attachments"]["1"]["copy"], false);
+        if phase == 1 {
+            return;
+        }
         let video = TestVideo {
             path: source.clone(),
             width: 32,
@@ -981,6 +984,9 @@ mod attachments {
                 .method,
             ConcatMethod::MKVMerge(settings)
         );
+        if phase == 2 {
+            return;
+        }
         common::condor_cmd(&dir)
             .args(["concatenate", "set", "method", "ffmpeg"])
             .assert()
@@ -1014,6 +1020,9 @@ mod attachments {
                 .method,
             ConcatMethod::MKVMerge(MkvmergeConfig::default())
         );
+        if phase == 3 {
+            return;
+        }
         let mut text = serde_json::to_value(&config).expect("JSON");
         text["condor"]["sequence_config"]["scene_concatenator"]["method"] =
             json!({"mkvmerge":{"tracks":{"1":{"type":"attachment"}},"attachments":{"1":{}}}});
@@ -1053,7 +1062,26 @@ mod attachments {
     }
 
     #[test]
-    fn native_extra_video1_attachment1_and_output_video0_stay_independent() {
+    fn init_discard_saves_audio_and_attachment_id_one_in_separate_namespaces() {
+        check_attachment_namespace_crud(1);
+    }
+
+    #[test]
+    fn concatenate_info_and_same_method_set_preserve_attachment_settings() {
+        check_attachment_namespace_crud(2);
+    }
+
+    #[test]
+    fn concatenate_method_switch_or_reset_restores_default_namespaces() {
+        check_attachment_namespace_crud(3);
+    }
+
+    #[test]
+    fn concatenate_ambiguous_or_duplicate_attachment_ids_refuse_without_resaving() {
+        check_attachment_namespace_crud(4);
+    }
+
+    fn check_extra_input_namespaces(audio_selection: bool) {
         let dir = tempfile::tempdir().expect("fixture");
         let (source, chunks) = fixture(dir.path());
         let extra = dir.path().join("extra.mkv");
@@ -1162,6 +1190,9 @@ mod attachments {
             assert_eq!(audio[0]["properties"]["language"], "jpn");
         }
         assert_eq!(std::fs::read(&extra).expect("extra unchanged"), original);
+        if !audio_selection {
+            return;
+        }
         for drop_audio in [false, true] {
             let settings: MkvmergeConfig = serde_json::from_value(json!({"extra_inputs":[{"path":source,"tracks":{"0":{"type":"video","copy":false},"1":{"type":"audio","copy":!drop_audio,"language":"jpn"}},"attachments":{"1":{"copy":drop_audio}}}]})).expect("extra audio1 attachment1");
             assert_eq!(
@@ -1203,7 +1234,17 @@ mod attachments {
     }
 
     #[test]
-    fn direct_rust_invalid_video_refuses_before_writes_and_unsupported_ids_stay_conservative() {
+    fn mkvmerge_extra_video_selection_and_new_attachment_bytes_use_independent_namespaces() {
+        check_extra_input_namespaces(false);
+    }
+
+    #[test]
+    fn mkvmerge_extra_audio_and_attachment_with_same_id_can_be_selected_independently() {
+        check_extra_input_namespaces(true);
+    }
+
+    fn check_unmapped_attachment_source(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let dir = tempfile::tempdir().expect("fixture");
         let (source, chunks) = fixture(dir.path());
         let output = dir.path().join("sentinel.mkv");
@@ -1237,6 +1278,9 @@ mod attachments {
             std::fs::read(&output).expect("unchanged"),
             b"existing output"
         );
+        if phase == 1 {
+            return;
+        }
         let y4m = dir.path().join("source.y4m");
         run(Command::new("ffmpeg")
             .args([
@@ -1271,6 +1315,9 @@ mod attachments {
             identify(&output)["attachments"].as_array().expect("attachments").len(),
             1
         );
+        if phase == 2 {
+            return;
+        }
         for copy in [true, false] {
             std::fs::write(&output, b"existing output").expect("sentinel");
             let settings = serde_json::from_value(json!({"attachments":{"1":{"copy":copy}}}))
@@ -1292,5 +1339,20 @@ mod attachments {
                 b"existing output"
             );
         }
+    }
+
+    #[test]
+    fn mkvmerge_invalid_output_video_id_refuses_before_scratch_or_output_write() {
+        check_unmapped_attachment_source(1);
+    }
+
+    #[test]
+    fn mkvmerge_unmapped_source_allows_new_attachment_file() {
+        check_unmapped_attachment_source(2);
+    }
+
+    #[test]
+    fn mkvmerge_unmapped_source_attachment_id_refuses_copy_and_drop_without_overwriting_output() {
+        check_unmapped_attachment_source(3);
     }
 }
