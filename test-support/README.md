@@ -107,3 +107,23 @@ acceptance; these discovery commands do not replace those gates.
 The exact selections in `.github/workflows/windows-build.yml` run from
 `.github/scripts/tests` and import only stdlib-based suites. They do not replace
 the subsequent clean-extracted native archive gate.
+
+## Rust unit-only selection
+
+`--lib` alone includes private-hook integrations. Exclude their explicit module
+component to select the source-owned units:
+
+```sh
+cargo +stable test --profile ci --workspace --lib -- --skip '::internal_integration::'
+```
+
+Pure fixture checks registered in integration targets are separate:
+
+```sh
+cargo +stable test --profile ci -p av-metrics-vmaf --test correctness common::unit::
+cargo +stable test --profile ci -p av-metrics-vship --test support fixtures::unit::
+```
+
+Do not treat all of `--test correctness` or `--test support` as unit-only: both
+also register real decoder or native-library integrations. Python policy units
+above read source/workflow files; they are not claims of native acceptance.
