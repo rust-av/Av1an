@@ -1205,6 +1205,113 @@ mod tests {
             headless_logging_emits_live_diagnostics_without_terminal_controls, "headless";
             console_test_mode_logging_emits_live_diagnostics_without_terminal_controls, "testmode";
         }
+
+        #[cfg(target_os = "linux")]
+        fn check_panic_case(case: &str, test: &str) -> Result<std::process::ExitCode> {
+            if std::env::var_os("TUI_PANIC_ROOT").is_some() {
+                assert_eq!(std::env::var("TUI_PANIC_CASE")?, case);
+                assert_eq!(std::env::var("TUI_PANIC_TEST")?, test);
+                return if case == "startup" {
+                    run_startup_panic().map(|()| std::process::ExitCode::SUCCESS)
+                } else if case.starts_with("cli-") {
+                    Ok(run_cli_panic())
+                } else {
+                    run_application_panic().map(|()| std::process::ExitCode::SUCCESS)
+                };
+            }
+            let output = std::process::Command::new("python3")
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/src/apps/pty_test_support.py"
+                ))
+                .arg(std::env::current_exe().unwrap())
+                .arg("panic")
+                .arg(case)
+                .output()
+                .expect("python3 is required for the Unix PTY regression test");
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let streams: &[&str] = if matches!(
+                case,
+                "main"
+                    | "progress"
+                    | "cli-worker"
+                    | "cli-error"
+                    | "cli-aggregate"
+                    | "cli-unreported"
+            ) {
+                &["stderr", "stdout", "headless"]
+            } else {
+                &["stderr", "stdout"]
+            };
+            for stream in streams {
+                assert!(
+                    stdout.contains(&format!(
+                        "{stream}/{case}: selected panic assertions completed"
+                    )),
+                    "{stdout}"
+                );
+            }
+            eprintln!("{stdout}");
+            Ok(std::process::ExitCode::SUCCESS)
+        }
+
+        #[cfg(target_os = "linux")]
+        macro_rules! panic_cases {
+            ($($name:ident, $case:literal;)+) => {
+                $(
+                    #[test]
+                    fn $name() -> Result<std::process::ExitCode> {
+                        check_panic_case($case, concat!("apps::tests::internal_integration::", stringify!($name)))
+                    }
+                )+
+            };
+        }
+
+        #[cfg(target_os = "linux")]
+        panic_cases! {
+            tui_render_panic_restores_terminal_reports_once_and_reaps_owned_tree, "ui";
+            tui_worker_panic_fails_application_after_terminal_restore_and_reaps_owned_tree, "worker";
+            tui_progress_mapper_panic_fails_application_and_reaps_owned_tree, "progress";
+            entry_panic_unwinds_library_boundary_and_reaps_owned_tree_after_terminal_restore, "main";
+            repeated_panics_restore_terminal_and_call_prior_hook_once_each, "subsequent";
+            startup_panic_retires_before_raw_and_writerless_cleanup_releases_raw_once, "startup";
+            cli_ui_panic_returns_failure_without_repeating_reported_payload, "cli-ui";
+            cli_worker_panic_preserves_typed_library_cause_without_duplicate_diagnostic, "cli-worker";
+            cli_stage_error_and_display_panic_preserve_primary_io_cause, "cli-mixed";
+            cli_plain_stage_error_keeps_context_without_panic_diagnostic, "cli-error";
+            cli_aggregate_panic_preserves_codec_output_and_nonpanic_failure, "cli-aggregate";
+            cli_unreported_panic_prints_original_payload_instead_of_diagnostic_above, "cli-unreported";
+        }
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn panic_fixture_cleanup_refuses_stale_identity_and_reaps_later_owned_lifetime() {
+            let output = std::process::Command::new("python3")
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/src/apps/pty_test_support.py"
+                ))
+                .arg(std::env::current_exe().unwrap())
+                .arg("panic-fixture-cleanup")
+                .output()
+                .expect("panic fixture cleanup supervisor");
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success(),
+                "{stdout}\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(stdout.contains(
+                "fixture safety: stale identity refused; later owned cleanup attempted and reaped"
+            ));
+            eprintln!("{stdout}");
+        }
     }
 
     struct RenderFailureWriter {
@@ -1559,26 +1666,6 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    #[test]
-    fn application_panics_restore_terminal_and_report_once() {
-        let output = std::process::Command::new("python3")
-            .arg(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/apps/pty_test_support.py"
-            ))
-            .arg(std::env::current_exe().unwrap())
-            .arg("panic")
-            .output()
-            .expect("python3 is required for the Unix PTY regression test");
-        assert!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    #[cfg(target_os = "linux")]
     fn owned_fixture(root: &std::path::Path) -> Result<andean_condor::core::process::OwnedProcess> {
         use andean_condor::{core::process::OwnedProcess, utils::cancellation::Cancellation};
         use std::{
@@ -1618,8 +1705,7 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    #[test]
-    fn startup_panic_child() -> Result<()> {
+    fn run_startup_panic() -> Result<()> {
         use std::sync::atomic::AtomicUsize;
         let Some(root) = std::env::var_os("TUI_PANIC_ROOT") else {
             return Ok(());
@@ -1680,12 +1766,12 @@ mod tests {
         drop(owned);
         record_reaped(&root)?;
         println!("TUI_PANIC_STARTUP_RETIRED_RAW_OFF");
+        println!("TUI_PANIC_ASSERTIONS_COMPLETED");
         Err(error)
     }
 
     #[cfg(target_os = "linux")]
-    #[test]
-    fn cli_panic_child() -> std::process::ExitCode {
+    fn run_cli_panic() -> std::process::ExitCode {
         let Ok(case) = std::env::var("TUI_PANIC_CASE") else {
             return std::process::ExitCode::SUCCESS;
         };
@@ -1812,13 +1898,14 @@ mod tests {
                 Err(error)
             }));
         });
-        crate::cli_entry_point()
+        let outcome = crate::cli_entry_point();
+        println!("TUI_PANIC_ASSERTIONS_COMPLETED");
+        outcome
     }
 
     // Exact-name subprocess protocol: no hook mutation in the parent libtest.
     #[cfg(target_os = "linux")]
-    #[test]
-    fn application_panic_child() -> Result<()> {
+    fn run_application_panic() -> Result<()> {
         use std::sync::atomic::AtomicUsize;
         let Ok(case) = std::env::var("TUI_PANIC_CASE") else {
             return Ok(());
@@ -1912,6 +1999,7 @@ mod tests {
             eprintln!("TUI_PANIC_PRIOR_COUNT=3");
         }
         // Return an error only after real unwind/join cleanup; no exit simulation.
+        println!("TUI_PANIC_ASSERTIONS_COMPLETED");
         anyhow::bail!("TUI_PANIC failed application outcome")
     }
 

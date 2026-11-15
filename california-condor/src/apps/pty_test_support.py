@@ -40,6 +40,22 @@ LOGGING_CASES = {
 }
 
 
+PANIC_CASES = {
+    "ui": "tui_render_panic_restores_terminal_reports_once_and_reaps_owned_tree",
+    "worker": "tui_worker_panic_fails_application_after_terminal_restore_and_reaps_owned_tree",
+    "progress": "tui_progress_mapper_panic_fails_application_and_reaps_owned_tree",
+    "main": "entry_panic_unwinds_library_boundary_and_reaps_owned_tree_after_terminal_restore",
+    "subsequent": "repeated_panics_restore_terminal_and_call_prior_hook_once_each",
+    "startup": "startup_panic_retires_before_raw_and_writerless_cleanup_releases_raw_once",
+    "cli-ui": "cli_ui_panic_returns_failure_without_repeating_reported_payload",
+    "cli-worker": "cli_worker_panic_preserves_typed_library_cause_without_duplicate_diagnostic",
+    "cli-mixed": "cli_stage_error_and_display_panic_preserve_primary_io_cause",
+    "cli-error": "cli_plain_stage_error_keeps_context_without_panic_diagnostic",
+    "cli-aggregate": "cli_aggregate_panic_preserves_codec_output_and_nonpanic_failure",
+    "cli-unreported": "cli_unreported_panic_prints_original_payload_instead_of_diagnostic_above",
+}
+
+
 def check_stream(
     binary: str, stream: str, mode: str = "normal", root: str = "",
     cleanup_errors: list[str] | None = None,
@@ -82,6 +98,7 @@ def check_stream(
         if panic_case:
             env["TUI_PANIC_CASE"] = panic_case
             env["TUI_PANIC_ROOT"] = root
+            env["TUI_PANIC_TEST"] = f"apps::tests::internal_integration::{PANIC_CASES[panic_case]}"
         with (
             tempfile.TemporaryFile() as redirected,
             tempfile.TemporaryFile() as headless_stderr,
@@ -90,10 +107,7 @@ def check_stream(
                 [
                     binary,
                     "--exact",
-                    ("apps::tests::startup_panic_child" if panic_case == "startup"
-                     else "apps::tests::cli_panic_child" if panic_case.startswith("cli-")
-                     else "apps::tests::application_panic_child")
-                    if panic_case
+                    env["TUI_PANIC_TEST"] if panic_case
                     else env["TUI_LOGGING_TEST"] if logging_case
                     else {
                         "normal": env.get("TUI_SELECTED_TEST", ""),
@@ -271,6 +285,8 @@ def check_stream(
                 data = terminal_output if stream == "stdout" else redirected_output
                 assert child.returncode != 0, evidence
                 cli = panic_case.startswith("cli-")
+                assert b"running 1 test" in data and b"0 passed; 1 failed" in data, evidence
+                assert b"TUI_PANIC_ASSERTIONS_COMPLETED" in data, evidence
                 payload_case = (
                     "main" if panic_case == "subsequent"
                     else "ui" if panic_case in ("cli-ui", "cli-mixed")
@@ -324,6 +340,7 @@ def check_stream(
                     f"{stream}/{panic_case}: diagnostic once, failed outcome, "
                     "owned unwind, terminal retired"
                 )
+                print(f"{stream}/{panic_case}: selected panic assertions completed")
                 return
             assert child.returncode == 0, evidence
             harness_output = (
@@ -471,11 +488,12 @@ def check_fixture_safety() -> None:
             raise AssertionError("; ".join(errors))
 
 
-def check_panics(binary: str) -> None:
+def check_panics(binary: str, selected_case: str) -> None:
+    if selected_case not in PANIC_CASES:
+        raise ValueError(f"unknown panic case {selected_case}")
     # Local to this test driver: adopt/reap fixture descendants even on RED.
     libc = ctypes.CDLL(None, use_errno=True)
     assert libc.prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
-    check_fixture_safety()
     failures = []
     for stream in ("stderr", "stdout", "headless"):
         cases = (
@@ -483,6 +501,8 @@ def check_panics(binary: str) -> None:
             if stream != "headless" else ("main", "progress", "cli-worker", "cli-error", "cli-aggregate", "cli-unreported")
         )
         for case in cases:
+            if case != selected_case:
+                continue
             with tempfile.TemporaryDirectory(prefix="panic-") as root:
                 Path(root, "source").write_bytes(b"source-sentinel")
                 Path(root, "output").write_bytes(b"output-sentinel")
@@ -528,7 +548,10 @@ def check_logging(binary: str, selected_case: str) -> None:
 if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "logging":
     check_logging(sys.argv[1], sys.argv[3])
 elif __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "panic":
-    check_panics(sys.argv[1])
+    check_panics(sys.argv[1], sys.argv[3])
+elif __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "panic-fixture-cleanup":
+    assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
+    check_fixture_safety()
 elif __name__ == "__main__":
     for selected_stream in ("stderr", "stdout"):
         check_stream(
