@@ -1017,6 +1017,83 @@ mod tests {
                 "apps::tests::internal_integration::interrupt_listener_join_drains_an_already_received_sigterm",
             )
         }
+
+        #[cfg(unix)]
+        fn check_terminal_ownership_in_pty(group: &str) {
+            let output = std::process::Command::new("python3")
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/src/apps/pty_test_support.py"
+                ))
+                .arg(std::env::current_exe().unwrap())
+                .arg(format!("matrix-{group}"))
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for stream in ["stderr", "stdout"] {
+                assert!(
+                    stdout.contains(&format!(
+                        "{stream}/{group}: ownership cases passed; termios restored"
+                    )),
+                    "{stdout}"
+                );
+            }
+            eprintln!("{stdout}");
+        }
+
+        #[cfg(unix)]
+        macro_rules! terminal_ownership_cases {
+            ($($parent:ident, $child:ident, $group:literal, [$($case:literal),+];)+) => {
+                $(
+                    #[test]
+                    fn $parent() {
+                        check_terminal_ownership_in_pty($group);
+                    }
+
+                    #[test]
+                    #[ignore = "requires the paired parent's isolated controlling PTY"]
+                    fn $child() -> Result<()> {
+                        assert!(std::env::var_os("TUI_PTY_STREAM").is_some());
+                        assert_eq!(
+                            std::env::var("TUI_OWNERSHIP_TEST")?,
+                            concat!("apps::tests::internal_integration::", stringify!($child))
+                        );
+                        check_terminal_ownership(&[$($case),+])
+                    }
+                )+
+            };
+        }
+
+        #[cfg(unix)]
+        terminal_ownership_cases! {
+            terminal_raw_enable_failure_does_not_clean_unacquired_screen,
+            terminal_raw_enable_failure_does_not_clean_unacquired_screen_in_controlled_pty,
+            "raw", ["raw"];
+            terminal_entry_or_construction_failure_cleans_acquired_resources_once,
+            terminal_entry_or_construction_failure_cleans_acquired_resources_once_in_controlled_pty,
+            "initialization", ["enter_write", "enter_flush", "construct"];
+            terminal_restore_error_retains_typed_cause_and_cancels,
+            terminal_restore_error_retains_typed_cause_and_cancels_in_controlled_pty,
+            "restore", ["resize", "final_draw", "raw_cleanup", "restore_flush"];
+            terminal_cleanup_error_attempts_remaining_resources_once_and_keeps_first_cause,
+            terminal_cleanup_error_attempts_remaining_resources_once_and_keeps_first_cause_in_controlled_pty,
+            "cleanup", ["leave_cleanup", "show_cleanup", "flush_cleanup", "broken"];
+            terminal_successful_restore_and_drop_are_idempotent_and_restore_prior_hook,
+            terminal_successful_restore_and_drop_are_idempotent_and_restore_prior_hook_in_controlled_pty,
+            "normal", ["normal"];
+            inactive_terminal_has_no_raw_or_screen_effects,
+            inactive_terminal_has_no_raw_or_screen_effects_in_controlled_pty,
+            "inactive", ["inactive"];
+            terminal_unwind_cancels_releases_resources_and_restores_prior_hook,
+            terminal_unwind_cancels_releases_resources_and_restores_prior_hook_in_controlled_pty,
+            "unwind", ["unwind"];
+        }
     }
 
     struct RenderFailureWriter {
@@ -1873,29 +1950,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn partial_init_releases_acquired_resources() {
-        let output = std::process::Command::new("python3")
-            .arg(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/apps/pty_test_support.py"
-            ))
-            .arg(std::env::current_exe().unwrap())
-            .arg("matrix")
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    #[ignore = "isolated PTY ownership matrix"]
-    fn terminal_ownership_child() -> Result<()> {
+    fn check_terminal_ownership(cases: &[&str]) -> Result<()> {
         if std::env::var_os("TUI_PTY_STREAM").is_none() {
             return Ok(());
         }
@@ -1926,23 +1981,7 @@ mod tests {
         std::panic::set_hook(Box::new(move |_| {
             calls.fetch_add(1, Ordering::SeqCst);
         }));
-        for case in [
-            "raw",
-            "enter_write",
-            "enter_flush",
-            "construct",
-            "resize",
-            "final_draw",
-            "raw_cleanup",
-            "leave_cleanup",
-            "show_cleanup",
-            "flush_cleanup",
-            "restore_flush",
-            "broken",
-            "normal",
-            "inactive",
-            "unwind",
-        ] {
+        for &case in cases {
             let recorder = Recorder::default();
             let cancelled = Arc::new(AtomicBool::new(false));
             RAW_ON.store(0, Ordering::SeqCst);
@@ -2110,7 +2149,7 @@ mod tests {
             println!("TERMINAL_OWNERSHIP_CASE_{case}_PASSED");
         }
         std::panic::set_hook(previous);
-        println!("TERMINAL_OWNERSHIP_MATRIX_PASSED");
+        println!("TERMINAL_OWNERSHIP_SELECTED_CASES_PASSED");
         Ok(())
     }
 

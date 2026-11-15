@@ -15,11 +15,26 @@ import time
 from pathlib import Path
 
 
+OWNERSHIP_CASES = {
+    "raw": ("terminal_raw_enable_failure_does_not_clean_unacquired_screen_in_controlled_pty", ("raw",)),
+    "initialization": ("terminal_entry_or_construction_failure_cleans_acquired_resources_once_in_controlled_pty", ("enter_write", "enter_flush", "construct")),
+    "restore": ("terminal_restore_error_retains_typed_cause_and_cancels_in_controlled_pty", ("resize", "final_draw", "raw_cleanup", "restore_flush")),
+    "cleanup": ("terminal_cleanup_error_attempts_remaining_resources_once_and_keeps_first_cause_in_controlled_pty", ("leave_cleanup", "show_cleanup", "flush_cleanup", "broken")),
+    "normal": ("terminal_successful_restore_and_drop_are_idempotent_and_restore_prior_hook_in_controlled_pty", ("normal",)),
+    "inactive": ("inactive_terminal_has_no_raw_or_screen_effects_in_controlled_pty", ("inactive",)),
+    "unwind": ("terminal_unwind_cancels_releases_resources_and_restores_prior_hook_in_controlled_pty", ("unwind",)),
+}
+
+
 def check_stream(
     binary: str, stream: str, mode: str = "normal", root: str = "",
     cleanup_errors: list[str] | None = None,
 ) -> None:
     errors = cleanup_errors if cleanup_errors is not None else []
+    ownership_group = mode.removeprefix("matrix-") if mode.startswith("matrix-") else None
+    if ownership_group:
+        ownership_test, ownership_cases = OWNERSHIP_CASES[ownership_group]
+        mode = "matrix"
     master, slave = os.openpty()
     try:
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 6, 80, 0, 0))
@@ -34,6 +49,8 @@ def check_stream(
         env.pop("CONDOR_TEST_MODE", None)
         env["TUI_PTY_STREAM"] = stream
         env["TERM"] = "xterm-256color"
+        if ownership_group:
+            env["TUI_OWNERSHIP_TEST"] = f"apps::tests::internal_integration::{ownership_test}"
         panic_case = mode.removeprefix("panic-") if mode.startswith("panic-") else None
         logging_case = mode.removeprefix("logging-") if mode.startswith("logging-") else None
         if logging_case:
@@ -61,7 +78,7 @@ def check_stream(
                     else {
                         "normal": "apps::tests::selected_stream_pty_child",
                         "render-failure": "apps::tests::render_failure_pty_child",
-                        "matrix": "apps::tests::terminal_ownership_child",
+                        "matrix": env.get("TUI_OWNERSHIP_TEST", ""),
                     }[mode],
                     "--include-ignored",
                     "--nocapture",
@@ -293,10 +310,14 @@ def check_stream(
             assert b"1 passed; 0 failed" in harness_output, evidence
             assert b"\x1b" not in redirected_output, evidence
             if mode == "matrix":
-                assert b"TERMINAL_OWNERSHIP_MATRIX_PASSED" in harness_output, evidence
-                assert harness_output.count(b"TERMINAL_OWNERSHIP_CASE_") == 15, evidence
+                assert ownership_group, "select a behavior-named ownership group"
+                assert b"TERMINAL_OWNERSHIP_SELECTED_CASES_PASSED" in harness_output, evidence
+                assert harness_output.count(b"TERMINAL_OWNERSHIP_CASE_") == len(ownership_cases), evidence
+                for case in ownership_cases:
+                    assert harness_output.count(f"TERMINAL_OWNERSHIP_CASE_{case}_PASSED".encode()) == 1, evidence
                 assert restored_mode == original_mode, evidence
-                print(f"{stream}: 15 ownership cases passed; termios restored")
+                print(harness_output.decode())
+                print(f"{stream}/{ownership_group}: ownership cases passed; termios restored")
                 return
             if mode == "render-failure":
                 assert b"TERMINAL_OWNERSHIP_ERROR_RETURNED_CANCEL_TRUE" in harness_output, evidence
