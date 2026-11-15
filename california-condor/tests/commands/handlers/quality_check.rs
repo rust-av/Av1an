@@ -187,7 +187,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn qc_cli_effective_reference_precedence_and_resume() {
+    fn quality_check_cli_prefers_own_reference_then_parallel_then_root_and_reuses_saved_measurement()
+     {
         use andean_condor::models::input::VapourSynthScriptSource;
         let temp = tempfile::tempdir().expect("fixture");
         let output = temp.path().join("out.mkv");
@@ -296,8 +297,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn qc_cli_plugin_scores_override_with_missing_root_like_fallback() {
+    fn check_plugin_output_history(phase: u8) {
+        assert!((1..=3).contains(&phase));
         let temp = tempfile::tempdir().expect("fixture");
         let source = temp.path().join("source.mkv");
         let actual = temp.path().join("actual.mkv");
@@ -383,36 +384,40 @@ mod tests {
             );
             assert!(scores.iter().all(|score| score.is_finite() && *score > 0.0));
             saved.admit_results().expect("current positional plugin history resumes");
-            let history =
-                serde_json::to_vec(&saved.condor.scenes[0].sequence_data.quality_check.quality)
-                    .expect("current history");
-            condor_cmd(&temp)
-                .env("CONDOR_TEST_MODE", "1")
-                .args(["quality-check"])
-                .assert()
-                .success();
-            assert_eq!(
-                serde_json::to_vec(
-                    &load(&file).condor.scenes[0].sequence_data.quality_check.quality
-                )
-                .expect("resumed history"),
-                history,
-                "resume preserves exact positional history"
-            );
-            let mut old = load(&file);
-            old.condor.scenes[0]
-                .sequence_data
-                .quality_check
-                .quality
-                .provenance
-                .as_mut()
-                .expect("plugin provenance")
-                .context
-                .as_object_mut()
-                .expect("context")
-                .remove("score_order");
-            old.admit_results()
-                .expect_err("unindexed historical plugin callbacks are not certified");
+            if phase >= 2 {
+                let history =
+                    serde_json::to_vec(&saved.condor.scenes[0].sequence_data.quality_check.quality)
+                        .expect("current history");
+                condor_cmd(&temp)
+                    .env("CONDOR_TEST_MODE", "1")
+                    .args(["quality-check"])
+                    .assert()
+                    .success();
+                assert_eq!(
+                    serde_json::to_vec(
+                        &load(&file).condor.scenes[0].sequence_data.quality_check.quality
+                    )
+                    .expect("resumed history"),
+                    history,
+                    "resume preserves exact positional history"
+                );
+            }
+            if phase == 3 {
+                let mut old = load(&file);
+                old.condor.scenes[0]
+                    .sequence_data
+                    .quality_check
+                    .quality
+                    .provenance
+                    .as_mut()
+                    .expect("plugin provenance")
+                    .context
+                    .as_object_mut()
+                    .expect("context")
+                    .remove("score_order");
+                old.admit_results()
+                    .expect_err("unindexed historical plugin callbacks are not certified");
+            }
             if let Some(baseline) = &baseline {
                 assert_eq!(
                     &scores, baseline,
@@ -437,6 +442,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn quality_check_xpsnr_scores_concat_output_override_when_root_output_is_missing() {
+        check_plugin_output_history(1);
+    }
+
+    #[test]
+    fn quality_check_xpsnr_matching_saved_history_is_reused_exactly() {
+        check_plugin_output_history(2);
+    }
+
+    #[test]
+    fn quality_check_unindexed_historical_plugin_scores_are_not_admitted() {
+        check_plugin_output_history(3);
+    }
+
     /// Downscaling the clip to 540p cuts the encode and metric cost roughly
     /// fourfold, and nothing here depends on the source resolution.
     const WIDTH: usize = 960;
@@ -444,14 +464,11 @@ mod tests {
     /// The subset profile scores this many frames per scene.
     const SCORED_FRAMES: u32 = 11;
 
-    /// One encode, then both quality-check paths run against it.
-    ///
-    /// Encoding dominates this file's runtime, so the full run and the resume
-    /// run share a single encode. The resume case rewrites the config to look
-    /// partially scored and re-runs the same command.
+    /// Share one encode between the initial and populated-history score-count checks.
     #[serial]
     #[test]
-    fn scores_every_scene_and_resumes_partial_scenes() {
+    fn quality_check_fast_xpsnr_initial_and_populated_history_rerun_report_eleven_scores_per_scene()
+    {
         if !ffmpeg_is_available() {
             return;
         }
@@ -563,9 +580,7 @@ mod tests {
             );
         });
 
-        // Now the resume path: mark two scenes as already scored and re-run the
-        // same command. Those scenes keep their existing scores, so this also
-        // covers that a partial run is not redone from scratch.
+        // This checks lengths, not sentinel preservation or unfinished-scene resumption.
         let mut config = load_configuration(Some(&config_path))
             .expect("load_configuration should succeed")
             .0;
@@ -605,11 +620,8 @@ mod tests {
         });
     }
 
-    /// `quality-check` probes and reduces exactly as configured, and refuses
-    /// flags that do not belong to the chosen kind.
-    #[serial]
-    #[test]
-    fn quality_check_set_strategy_and_statistic() {
+    fn check_quality_check_crud(phase: u8) {
+        assert!((1..=4).contains(&phase));
         if !ffmpeg_is_available() {
             return;
         }
@@ -652,6 +664,9 @@ mod tests {
             .args(["quality-check", "set", "strategy", "skip"])
             .assert()
             .failure();
+        if phase == 1 {
+            return;
+        }
         condor_cmd(&temp)
             .args(["quality-check", "set", "statistic", "percentile"])
             .assert()
@@ -675,6 +690,9 @@ mod tests {
             ProbeStatistic::Percentile(10.0),
             "statistic is set"
         );
+        if phase == 2 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["quality-check", "set", "metric", "xpsnr"])
@@ -690,6 +708,9 @@ mod tests {
             "metric is {:?}",
             check.metric
         );
+        if phase == 3 {
+            return;
+        }
 
         condor_cmd(&temp)
             .args(["quality-check", "reset", "strategy"])
@@ -705,5 +726,29 @@ mod tests {
             ProbeStrategy::default(),
             "reset restores the default strategy"
         );
+    }
+
+    #[serial]
+    #[test]
+    fn quality_check_strategy_crud_rejects_inapplicable_or_missing_arguments() {
+        check_quality_check_crud(1);
+    }
+
+    #[serial]
+    #[test]
+    fn quality_check_percentile_crud_requires_value_within_range_and_saves_it() {
+        check_quality_check_crud(2);
+    }
+
+    #[serial]
+    #[test]
+    fn quality_check_metric_crud_switches_to_xpsnr() {
+        check_quality_check_crud(3);
+    }
+
+    #[serial]
+    #[test]
+    fn quality_check_subset_strategy_crud_saves_end_percentage_and_reset_restores_default() {
+        check_quality_check_crud(4);
     }
 }
