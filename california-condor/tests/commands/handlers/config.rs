@@ -1,15 +1,14 @@
 use crate::common::condor_cmd;
 use crate::common::config::{init_config, load};
-use andean_condor::models::sequence::{
-    benchmarker::BenchmarkerConfig, target_quality::types::ProbeStatistic,
+use andean_condor::models::{
+    input::Input,
+    sequence::{benchmarker::BenchmarkerConfig, target_quality::types::ProbeStatistic},
 };
 use california_condor::test_helpers::*;
+use serial_test::serial;
 
 #[cfg(test)]
-mod tests {
-    use andean_condor::models::input::Input;
-    use serial_test::serial;
-
+mod provenance {
     use super::*;
 
     #[cfg(unix)]
@@ -448,6 +447,11 @@ mod tests {
             "save never mints result provenance"
         );
     }
+}
+
+#[cfg(test)]
+mod persistence {
+    use super::*;
 
     #[test]
     fn benchmarker_preserves_omitted_memory_and_persists_update_reset() {
@@ -499,32 +503,40 @@ mod tests {
         assert_eq!(saved.condor.sequence_config.benchmarker.threshold, 11);
         assert!(!temp.path().join("source-opened").exists());
     }
+}
 
-    struct JobChild(std::process::Child);
+#[cfg(test)]
+struct JobChild(std::process::Child);
 
-    impl Drop for JobChild {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
+#[cfg(test)]
+impl Drop for JobChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
     }
+}
 
-    fn wait_for_marker(child: &mut JobChild, marker: &std::path::Path) {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        while !marker.exists() {
-            assert!(
-                child.0.try_wait().expect("child status").is_none(),
-                "child exited before {}",
-                marker.display()
-            );
-            assert!(
-                std::time::Instant::now() < deadline,
-                "timed out waiting for {}",
-                marker.display()
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
+#[cfg(test)]
+fn wait_for_marker(child: &mut JobChild, marker: &std::path::Path) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !marker.exists() {
+        assert!(
+            child.0.try_wait().expect("child status").is_none(),
+            "child exited before {}",
+            marker.display()
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for {}",
+            marker.display()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
+}
+
+#[cfg(test)]
+mod job_lock {
+    use super::*;
 
     #[test]
     fn cli_job_contention_survives_save_and_crash_without_lost_edits() {
@@ -625,6 +637,11 @@ mod tests {
         );
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
+}
+
+#[cfg(test)]
+mod publication {
+    use super::*;
 
     #[test]
     fn save_preserves_caller_owned_fixed_temp_sentinel() {
@@ -649,6 +666,11 @@ mod tests {
             ["a.vpy", "b.vpy", "job.json", "job.temp"].map(std::ffi::OsString::from)
         );
     }
+}
+
+#[cfg(test)]
+mod job_admission {
+    use super::*;
 
     #[test]
     fn missing_existing_job_routes_leave_no_artifacts() {
@@ -921,59 +943,64 @@ mod tests {
             "callback update retained after later edit"
         );
     }
+}
 
-    fn root_edit_fixture(
-        directory: &std::path::Path,
-    ) -> california_condor::configuration::Configuration {
-        use andean_condor::models::input::VapourSynthScriptSource;
-        let source = directory.join("a.vpy");
-        for (name, color) in [("a.vpy", 16), ("b.vpy", 235)] {
-            let marker = serde_json::to_string(&directory.join("source-opened"))
-                .expect("Python path literal");
-            std::fs::write(directory.join(name), format!("from pathlib import Path\nPath({marker}).write_text('opened')\nimport vapoursynth as vs\nvs.core.std.BlankClip(width=32,height=16,length=12,format=vs.YUV420P8,color=[{color},128,128]).set_output()\n")).expect("equal-length script sources");
-        }
-        let video = TestVideo {
-            path: source.clone(),
-            width: 32,
-            height: 16,
-            frames: 12,
-            fps_rational: (24, 1),
-            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
-            scenes: vec![(0, 12)],
-        };
-        let mut configuration = default_config(
-            &video,
-            &directory.join("out.mkv"),
-            &directory.join(california_condor::utils::hash_path::hash_path(&source)),
-        );
-        configuration.condor.input = Input::VapourSynthScript {
-            source: VapourSynthScriptSource::Path(source),
-            variables: [("keep".into(), "yes".into())].into(),
-            index: 0,
-            filters: vec![],
-            stream_concurrently: false,
-        };
-        configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
-        let data = &mut configuration.condor.scenes[0].sequence_data;
-        data.parallel_encoder.started_on = Some(10);
-        data.parallel_encoder.completed_on = Some(20);
-        data.parallel_encoder.bytes = Some(1234);
-        data.quality_check.quality.scores = vec![91.5, 92.5];
-        data.target_quality.passes.push(data.quality_check.quality.clone());
-        configuration
+#[cfg(test)]
+fn root_edit_fixture(
+    directory: &std::path::Path,
+) -> california_condor::configuration::Configuration {
+    use andean_condor::models::input::VapourSynthScriptSource;
+    let source = directory.join("a.vpy");
+    for (name, color) in [("a.vpy", 16), ("b.vpy", 235)] {
+        let marker =
+            serde_json::to_string(&directory.join("source-opened")).expect("Python path literal");
+        std::fs::write(directory.join(name), format!("from pathlib import Path\nPath({marker}).write_text('opened')\nimport vapoursynth as vs\nvs.core.std.BlankClip(width=32,height=16,length=12,format=vs.YUV420P8,color=[{color},128,128]).set_output()\n")).expect("equal-length script sources");
     }
+    let video = TestVideo {
+        path: source.clone(),
+        width: 32,
+        height: 16,
+        frames: 12,
+        fps_rational: (24, 1),
+        format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+        scenes: vec![(0, 12)],
+    };
+    let mut configuration = default_config(
+        &video,
+        &directory.join("out.mkv"),
+        &directory.join(california_condor::utils::hash_path::hash_path(&source)),
+    );
+    configuration.condor.input = Input::VapourSynthScript {
+        source: VapourSynthScriptSource::Path(source),
+        variables: [("keep".into(), "yes".into())].into(),
+        index: 0,
+        filters: vec![],
+        stream_concurrently: false,
+    };
+    configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+    let data = &mut configuration.condor.scenes[0].sequence_data;
+    data.parallel_encoder.started_on = Some(10);
+    data.parallel_encoder.completed_on = Some(20);
+    data.parallel_encoder.bytes = Some(1234);
+    data.quality_check.quality.scores = vec![91.5, 92.5];
+    data.target_quality.passes.push(data.quality_check.quality.clone());
+    configuration
+}
 
-    fn root_edit_args(
-        path: std::path::PathBuf,
-    ) -> california_condor::commands::config::InputOverride {
-        california_condor::commands::config::InputOverride {
-            path: Some(path),
-            decoder: None,
-            filters: None,
-            vs_args: None,
-            stream_concurrently: None,
-        }
+#[cfg(test)]
+fn root_edit_args(path: std::path::PathBuf) -> california_condor::commands::config::InputOverride {
+    california_condor::commands::config::InputOverride {
+        path: Some(path),
+        decoder: None,
+        filters: None,
+        vs_args: None,
+        stream_concurrently: None,
     }
+}
+
+#[cfg(test)]
+mod offline_cli {
+    use super::*;
 
     #[test]
     fn clean_is_an_offline_error_and_preserves_all_job_files() {
@@ -1354,6 +1381,11 @@ mod tests {
         assert!(!temp.path().join("source-opened").exists());
         assert!(!temp.path().join("condor.json").exists());
     }
+}
+
+#[cfg(test)]
+mod output {
+    use super::*;
 
     #[test]
     fn output_crud_rejects_alias_without_mutation() {
@@ -1552,6 +1584,11 @@ mod tests {
         assert!(!missing.parent().expect("parent").exists());
         assert!(!temp.path().join("source-opened").exists());
     }
+}
+
+#[cfg(test)]
+mod temp {
+    use super::*;
 
     #[test]
     fn empty_temp_edit_rebases_only_derived_directories() {
@@ -2075,6 +2112,11 @@ mod tests {
             assert!(!selected.exists());
         }
     }
+}
+
+#[cfg(test)]
+mod input {
+    use super::*;
 
     #[test]
     fn populated_root_direct_edits_refuse_before_mutation() {
@@ -2882,6 +2924,11 @@ mod tests {
             assert!(!temp.path().join("source-opened").exists());
         }
     }
+}
+
+#[cfg(test)]
+mod crud {
+    use super::*;
 
     #[cfg(unix)]
     #[test]
