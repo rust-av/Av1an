@@ -68,6 +68,39 @@ mod tests {
     }
 
     #[test]
+    fn encoder_crud_offline_save_preserves_requested_executable_identity() {
+        use california_condor::{
+            commands::{
+                config::ConfigCommand,
+                handlers::encode::{EncodeCrud, EncodeKey, EncodeSet},
+            },
+            configuration::Configuration,
+        };
+        use serde_json::json;
+
+        let temp = tempfile::tempdir().expect("fixture");
+        let video = test_video();
+        let mut configuration = default_config(&video, &temp.path().join("out.mkv"), temp.path());
+        configuration.condor.scenes = video.mock_scenes(&configuration.condor.encoder);
+        let requested = PathBuf::from("missing-custom-encoder");
+        EncodeCrud::apply(
+            &mut configuration,
+            &EncodeSet::Executable {
+                path: requested.clone(),
+            },
+        )
+        .expect("offline global edit");
+        assert_eq!(
+            EncodeCrud::render(&configuration, Some(&EncodeKey::Executable)).expect("info"),
+            json!("missing-custom-encoder")
+        );
+        let file = temp.path().join("condor.json");
+        configuration.save(&file).expect("save");
+        let saved = Configuration::load(&file).expect("load").expect("saved config");
+        assert_eq!(saved.condor.encoder.executable(), requested);
+    }
+
+    #[test]
     fn cli_edit_persists_cleared_results_and_blocks_inherited_quality() {
         let temp = tempfile::tempdir().expect("temp directory");
         let path = scenes_config(&temp);
