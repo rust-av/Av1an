@@ -1458,18 +1458,20 @@ mod tests {
         assert_eq!(lines[0].spans[0].content.as_ref(), "link");
     }
 
-    /// The real `av1an --version --verbose` report (rendered by ironmark,
-    /// which emits OSC 8 hyperlinks) must not leak escape bytes like `]8;;`
-    /// into the buffer — the reported screenshot bug.
-    #[test]
-    fn version_report_has_no_escape_leak() {
-        let text = super::render_version(true).expect("render --version --verbose");
-        for (i, line) in ansi_lines(&text).iter().enumerate() {
-            let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            assert!(
-                !rendered.contains("]8;;") && !rendered.contains('\x1b'),
-                "escape leaked on line {i}: {rendered:?}"
-            );
+    mod internal_integration {
+        use super::*;
+
+        #[test]
+        fn ansi_parser_actual_verbose_version_report_contains_no_osc_hyperlink_or_escape_fragments()
+        {
+            let text = super::super::render_version(true).expect("render --version --verbose");
+            for (i, line) in ansi_lines(&text).iter().enumerate() {
+                let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+                assert!(
+                    !rendered.contains("]8;;") && !rendered.contains('\x1b'),
+                    "escape leaked on line {i}: {rendered:?}"
+                );
+            }
         }
     }
 
