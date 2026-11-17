@@ -144,6 +144,12 @@ and VapourSynth >=75; the wheel's Python tag covers the CI Python 3.14, but actu
 Arch native compatibility must still pass CI. `--no-index --no-deps` preserves
 Arch's VapourSynth and prevents a newly preferred wheel changing the payload.
 
+Both CPU jobs also install the SHA-256-pinned `vapoursynth-lsmas` 1282.0.0.post2
+wheel from `.github/docker-requirements.txt`. Its bundled FFmpeg libraries avoid
+the CI image's unmanaged lsmas plugin breaking when Arch upgrades FFmpeg's ABI.
+Update the lsmas URL/hash in both `.github/workflows/tests.yml` setup blocks
+together with the Docker requirements entry.
+
 `.github/docker-requirements.txt` retains `vsjetpack[full]` 2.2.4 and `vsfgs`
 0.7.0 and binds their Linux native plugin dependencies to exact wheel URLs and
 SHA-256 fragments. Pip checks each fragment before installing. These are existing

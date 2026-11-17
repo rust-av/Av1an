@@ -63,10 +63,33 @@ jobs:
           # Provision jq so install-action does not bootstrap it with a partial upgrade.
           pacman -Syu --noconfirm --needed git gcc clang nasm vapoursynth vmaf ffmpeg jq python-pip
 
-          # WNNM integration tests need VSZip; keep Arch's VapourSynth installation.
+          # lsmas bundles FFmpeg: the image's unmanaged plugin breaks on ABI upgrades.
+          # Reuse the audited wheel pins from docker-requirements.txt without replacing Arch's VapourSynth.
           python -m pip install --no-cache-dir --break-system-packages \
             --only-binary=:all: --no-deps --no-index \
-            'https://files.pythonhosted.org/packages/e5/e5/3213ac70eb8796b55f97c5cd7e454d9e6a6edd7dcd0c5300f349b1ffe51d/vapoursynth_vszip-24.0.0-py3-none-manylinux_2_17_x86_64.whl#sha256=abf1be51f3b4733500eca04f7179236f8383e09b298ac4ca2c8e8959a93a92da'
+            'https://files.pythonhosted.org/packages/e5/e5/3213ac70eb8796b55f97c5cd7e454d9e6a6edd7dcd0c5300f349b1ffe51d/vapoursynth_vszip-24.0.0-py3-none-manylinux_2_17_x86_64.whl#sha256=abf1be51f3b4733500eca04f7179236f8383e09b298ac4ca2c8e8959a93a92da' \
+            'https://files.pythonhosted.org/packages/0b/63/0166631b4f90d25090a9310f5062d631aecbebe09a1e52075d651ca82c52/vapoursynth_lsmas-1282.0.0.post2-py3-none-manylinux_2_28_x86_64.whl#sha256=9ae5b9f93af007f22557e9fff6b04d049ba101bb91a1b69e9e07f9f5548191ae'
+
+          # Isolated test PATHs hide both R81's Python configuration and library discovery CLI.
+          vapoursynth config
+          vsscript_path="$(vapoursynth get-vsscript)"
+          test -f "$vsscript_path"
+          # R81's config command can report failure with a successful exit status.
+          grep -qF "\"$vsscript_path\" = " \
+            "${XDG_CONFIG_HOME:-$HOME/.config}/vapoursynth/vapoursynth.toml"
+          echo "VSSCRIPT_PATH=$vsscript_path" | tee -a "$GITHUB_ENV"
+
+          python - <<'PY'
+          import vapoursynth as vs
+
+          print(f"VapourSynth: {vs.__version__}")
+          for namespace, function in (
+              ("std", "BlankClip"), ("ffms2", "Source"), ("bs", "VideoSource"),
+              ("lsmas", "LWLibavSource"), ("vszip", "WNNM"),
+          ):
+              getattr(getattr(vs.core, namespace), function)
+              print(f"{namespace}.{function}: available")
+          PY
 
           # Arch's `vmaf` package installs the models to /usr/share/model rather
           # than compiling them in. All nine upstream models are there, so point
@@ -200,10 +223,33 @@ jobs:
           # Provision jq so install-action does not bootstrap it with a partial upgrade.
           pacman -Syu --noconfirm --needed git gcc clang nasm vapoursynth vmaf ffmpeg jq python-pip
 
-          # WNNM integration tests need VSZip; keep Arch's VapourSynth installation.
+          # lsmas bundles FFmpeg: the image's unmanaged plugin breaks on ABI upgrades.
+          # Reuse the audited wheel pins from docker-requirements.txt without replacing Arch's VapourSynth.
           python -m pip install --no-cache-dir --break-system-packages \
             --only-binary=:all: --no-deps --no-index \
-            'https://files.pythonhosted.org/packages/e5/e5/3213ac70eb8796b55f97c5cd7e454d9e6a6edd7dcd0c5300f349b1ffe51d/vapoursynth_vszip-24.0.0-py3-none-manylinux_2_17_x86_64.whl#sha256=abf1be51f3b4733500eca04f7179236f8383e09b298ac4ca2c8e8959a93a92da'
+            'https://files.pythonhosted.org/packages/e5/e5/3213ac70eb8796b55f97c5cd7e454d9e6a6edd7dcd0c5300f349b1ffe51d/vapoursynth_vszip-24.0.0-py3-none-manylinux_2_17_x86_64.whl#sha256=abf1be51f3b4733500eca04f7179236f8383e09b298ac4ca2c8e8959a93a92da' \
+            'https://files.pythonhosted.org/packages/0b/63/0166631b4f90d25090a9310f5062d631aecbebe09a1e52075d651ca82c52/vapoursynth_lsmas-1282.0.0.post2-py3-none-manylinux_2_28_x86_64.whl#sha256=9ae5b9f93af007f22557e9fff6b04d049ba101bb91a1b69e9e07f9f5548191ae'
+
+          # Isolated test PATHs hide both R81's Python configuration and library discovery CLI.
+          vapoursynth config
+          vsscript_path="$(vapoursynth get-vsscript)"
+          test -f "$vsscript_path"
+          # R81's config command can report failure with a successful exit status.
+          grep -qF "\"$vsscript_path\" = " \
+            "${XDG_CONFIG_HOME:-$HOME/.config}/vapoursynth/vapoursynth.toml"
+          echo "VSSCRIPT_PATH=$vsscript_path" | tee -a "$GITHUB_ENV"
+
+          python - <<'PY'
+          import vapoursynth as vs
+
+          print(f"VapourSynth: {vs.__version__}")
+          for namespace, function in (
+              ("std", "BlankClip"), ("ffms2", "Source"), ("bs", "VideoSource"),
+              ("lsmas", "LWLibavSource"), ("vszip", "WNNM"),
+          ):
+              getattr(getattr(vs.core, namespace), function)
+              print(f"{namespace}.{function}: available")
+          PY
 
           # Arch's package installs the models to /usr/share/model, which the
           # crate searches on its own. Set this anyway so coverage does not
