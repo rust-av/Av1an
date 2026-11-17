@@ -464,33 +464,60 @@ fi
             fs::write(&output, "caller output").expect("sentinel");
             fs::write(root.join("scene0.stat"), "caller statistics").expect("sentinel");
             if case == "parent" {
-                for parent in [root.join("missing"), root.join("readonly")] {
+                let not_directory = root.join("not-directory");
+                fs::write(&not_directory, "caller file").expect("non-directory parent");
+                for parent in [root.join("missing"), not_directory.clone(), root.join("readonly")] {
                     if parent.ends_with("readonly") {
                         fs::create_dir_all(&parent).expect("readonly parent");
                         fs::set_permissions(&parent, fs::Permissions::from_mode(0o500))
                             .expect("permissions");
+                        // Root/capabilities can bypass chmod; probe the operation preflight uses.
+                        match tempfile::tempdir_in(&parent) {
+                            Ok(probe) => {
+                                probe.close().expect("remove permission probe");
+                                fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
+                                    .expect("restore permissions for cleanup");
+                                eprintln!(
+                                    "spool parent: read-only permissions bypassed; missing and non-directory checks remain enforced"
+                                );
+                                continue;
+                            },
+                            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {},
+                            Err(error) => {
+                                fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
+                                    .expect("restore permissions for cleanup");
+                                panic!("unexpected read-only parent probe error: {error}");
+                            },
+                        }
                     }
                     let (tx, rx) = crossbeam_channel::bounded(1);
                     tx.send(Cursor::new(b"not consumed".to_vec())).expect("input");
+                    // A preflight regression must fail an assertion, not wait forever for EOF.
+                    drop(tx);
                     let peek = rx.clone();
                     let settings = format!("{encoder:?}");
-                    let error = encoder
-                        .encode_with_stream(
-                            rx,
-                            &parent.join("out.ivf"),
-                            mpsc::channel().0,
-                            &crate::core::encoder::tests::clip_info(),
-                        )
-                        .expect_err("bad output parent must fail before input/child");
+                    let result = encoder.encode_with_stream(
+                        rx,
+                        &parent.join("out.ivf"),
+                        mpsc::channel().0,
+                        &crate::core::encoder::tests::clip_info(),
+                    );
+                    if parent.ends_with("readonly") {
+                        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
+                            .expect("restore permissions for cleanup");
+                    }
+                    let error = result.expect_err("bad output parent must fail before input/child");
                     assert!(error.to_string().contains("Creating pass statistics"));
                     assert_eq!(peek.len(), 1, "preflight must not consume input");
                     assert_eq!(settings, format!("{encoder:?}"));
-                    if parent.exists() {
-                        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
-                            .expect("restore permissions for cleanup");
+                    if parent.is_dir() {
                         assert_eq!(fs::read_dir(parent).expect("no artifacts").count(), 0);
                     }
                 }
+                assert_eq!(
+                    fs::read_to_string(not_directory).expect("non-directory sentinel"),
+                    "caller file"
+                );
                 assert!(!root.join("order").exists(), "no child on parent error");
                 return;
             }
