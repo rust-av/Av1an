@@ -72,8 +72,8 @@ if a[0] == "api":
     assert endpoint.startswith(prefix), a
     endpoint = endpoint[len(prefix):]
     method = value("--method") if "--method" in a else "GET"
-    if endpoint == "git/ref/heads/master" and method == "GET":
-        print(json.dumps({"object": {"sha": s["master"]}}))
+    if endpoint == "git/ref/heads/main" and method == "GET":
+        print(json.dumps({"object": {"sha": s["main"]}}))
     # Independent literal oracle: Get a commit documents tags/TAG_NAME, not refs/tags/.
     elif endpoint in ("commits/tags/v1.2.3", "commits/tags/v1.2.3%2B%E9%9B%AA%23%25") and method == "GET":
         if s.get("tag_error"):
@@ -112,7 +112,7 @@ save()
 ''')
         gh.chmod(0o755)
         (base / "state.json").write_text(json.dumps({
-            "master": sha, "tag_commit": sha, "latest": "0" * 40,
+            "main": sha, "tag_commit": sha, "latest": "0" * 40,
             "releases": {"latest": {}}, "calls": [],
         }))
         temp = base / "temp"
@@ -123,7 +123,7 @@ save()
                "GIT_CEILING_DIRECTORIES": str(base), "GH_TOKEN": "OFFLINE_RELEASE_INERT",
                "GITHUB_SHA": sha, "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2",
                "GITHUB_REPOSITORY": "rust-av/Av1an", "GITHUB_EVENT_NAME": "push",
-               "GITHUB_REF": "refs/heads/master", "FAKE_STATE": str(base / "state.json")}
+               "GITHUB_REF": "refs/heads/main", "FAKE_STATE": str(base / "state.json")}
         self._stage_release(repo, env)
         return repo, env
 
@@ -166,13 +166,13 @@ save()
                 self.assertEqual(git(repo, "cat-file", "-t", "refs/tags/v1.2.3"), "commit")
                 self.assertEqual(git(repo, "cat-file", "-t", "refs/tags/v1.2.3+雪#%"), "tag")
                 self.assertEqual(git(repo, "rev-parse", "refs/tags/v1.2.3+雪#%^{commit}"), env["GITHUB_SHA"])
-            for ref in ("refs/heads/master", *tag_endpoints):
+            for ref in ("refs/heads/main", *tag_endpoints):
                 with self.subTest(ref=ref):
                     env["GITHUB_REF"] = ref
                     result = self._publish_release(repo, env)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     state = json.loads(state_path.read_text())
-                    tag = "latest" if ref.endswith("master") else ref.removeprefix("refs/tags/")
+                    tag = "latest" if ref.endswith("main") else ref.removeprefix("refs/tags/")
                     release = state["releases"][tag]
                     self.assertIn(f"Latest build from {env['GITHUB_SHA']}\n", release["body"])
                     self.assertIn("- RELEASE_NEW\n", release["body"])
@@ -195,16 +195,16 @@ save()
 
             # A newer run publishes first, then the slow old build enters the lock.
             old_env = env.copy()
-            old_env["GITHUB_REF"] = "refs/heads/master"
+            old_env["GITHUB_REF"] = "refs/heads/main"
             (repo / "handoff").rename(repo / "old-handoff")
             with patch.dict(os.environ, env, clear=True):
                 git(repo, "commit", "--allow-empty", "-m", "RELEASE_NEWER")
                 env["GITHUB_SHA"] = git(repo, "rev-parse", "HEAD")
             env["GITHUB_RUN_ID"] = "124"
-            env["GITHUB_REF"] = "refs/heads/master"
+            env["GITHUB_REF"] = "refs/heads/main"
             self._stage_release(repo, env)
             state = json.loads(state_path.read_text())
-            state["master"] = env["GITHUB_SHA"]
+            state["main"] = env["GITHUB_SHA"]
             state_path.write_text(json.dumps(state))
             result = self._publish_release(repo, env)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -226,22 +226,22 @@ save()
             self.assertIn("stale", result.stdout.lower())
             state = json.loads(state_path.read_text())
             self.assertEqual(state["releases"], before)
-            self.assertEqual(state["calls"], [["api", "repos/rust-av/Av1an/git/ref/heads/master"]])
+            self.assertEqual(state["calls"], [["api", "repos/rust-av/Av1an/git/ref/heads/main"]])
             self.assertEqual(list((base / "temp").iterdir()), [])
 
-    def test_publish_master_uploads_both_archives_schema_and_changelog_and_moves_latest(self) -> None:
+    def test_publish_main_uploads_both_archives_schema_and_changelog_and_moves_latest(self) -> None:
         self._check_publication(1)
 
     def test_publish_version_tag_resolves_lightweight_and_unicode_annotated_tags_without_moving_refs(self) -> None:
         self._check_publication(2)
 
-    def test_publish_stale_master_run_preserves_newer_release_and_assets(self) -> None:
+    def test_publish_stale_main_run_preserves_newer_release_and_assets(self) -> None:
         self._check_publication(3)
 
     def _check_publication_refusal(self, selected: tuple[str, ...]) -> None:
         """Removing a provenance/schema/HEAD/policy check must expose a fake write."""
         cases = ("mixed-sha", "wrong-run", "wrong-attempt", "wrong-platform", "missing-platform",
-                 "schema-mismatch", "checkout-sha", "tag-moved", "tag-missing", "tag-api-failure", "api-failure", "manual-master", "manual-tag", "manual-feature", "fork", "fork-tag")
+                 "schema-mismatch", "checkout-sha", "tag-moved", "tag-missing", "tag-api-failure", "api-failure", "manual-main", "manual-tag", "manual-feature", "fork", "fork-tag")
         with tempfile.TemporaryDirectory(prefix="release reject ") as directory:
             for case in cases:
                 if case not in selected:
@@ -278,7 +278,7 @@ save()
                         state_path.write_text(json.dumps(state))
                     elif case.startswith("manual"):
                         env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
-                        env["GITHUB_REF"] = {"manual-master": "refs/heads/master", "manual-tag": "refs/tags/v1.2.3", "manual-feature": "refs/heads/feature"}[case]
+                        env["GITHUB_REF"] = {"manual-main": "refs/heads/main", "manual-tag": "refs/tags/v1.2.3", "manual-feature": "refs/heads/feature"}[case]
                     elif case.startswith("fork"):
                         env["GITHUB_REPOSITORY"] = "fork/Av1an"
                         if case == "fork-tag":
@@ -306,7 +306,7 @@ save()
         self._check_publication_refusal(("api-failure",))
 
     def test_publish_manual_or_fork_run_skips_without_remote_writes(self) -> None:
-        self._check_publication_refusal(("manual-master", "manual-tag", "manual-feature", "fork", "fork-tag"))
+        self._check_publication_refusal(("manual-main", "manual-tag", "manual-feature", "fork", "fork-tag"))
 
     def _check_latest_creation(self, failed_upload: bool) -> None:
         """A missing managed tag is created; failed uploads never report success."""

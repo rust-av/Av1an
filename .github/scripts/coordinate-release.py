@@ -85,7 +85,7 @@ def publish() -> None:
     ref = os.environ.get("GITHUB_REF", "")
     if (os.environ.get("GITHUB_REPOSITORY") != UPSTREAM
             or os.environ.get("GITHUB_EVENT_NAME") != "push"
-            or not (ref == "refs/heads/master" or ref.startswith("refs/tags/v"))):
+            or not (ref == "refs/heads/main" or ref.startswith("refs/tags/v"))):
         print("Build only: untrusted or manual event; publication skipped")
         return
 
@@ -103,7 +103,7 @@ def publish() -> None:
         raise ValueError("Linux/Windows configuration schema mismatch for source SHA")
     assets.append(str(Path("handoff/linux") / SCHEMA))
     sha = os.environ["GITHUB_SHA"]
-    latest = ref == "refs/heads/master"
+    latest = ref == "refs/heads/main"
     tag = "latest" if latest else ref.removeprefix("refs/tags/")
 
     with tempfile.TemporaryDirectory(prefix="av1an-release-") as temp:
@@ -127,9 +127,9 @@ def publish() -> None:
         # SECURITY: Check the trusted live source inside the same lock as ALL
         # writes. An older build may arrive here after a newer publisher finished.
         if latest:
-            master = api("git/ref/heads/master")
-            if master["object"]["sha"] != sha:
-                print(f"Stale master build {sha}; publication skipped")
+            main = api("git/ref/heads/main")
+            if main["object"]["sha"] != sha:
+                print(f"Stale main build {sha}; publication skipped")
                 return
         elif api(f"commits/tags/{quote(tag, safe='')}")["sha"] != sha:
             raise ValueError("Version tag no longer matches source SHA; refusing publication")

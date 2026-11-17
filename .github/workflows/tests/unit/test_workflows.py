@@ -9,6 +9,12 @@ import unittest
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_ci_and_pages_triggers_target_main(self) -> None:
+        ci = self._workflow("tests")
+        self.assertEqual(ci["on"]["push"]["branches"], ["main"])
+        self.assertEqual(ci["on"]["pull_request"]["branches"], ["main"])
+        self.assertEqual(self._workflow("mdbook")["on"]["push"]["branches"], ["main"])
+
     def test_docker_and_ci_share_build_only_zig_pin(self) -> None:
         """Supplement runtime proof: a floating Arch tool must not enter any stage."""
         root = Path(__file__).resolve().parents[4]
@@ -231,12 +237,12 @@ class WorkflowTests(unittest.TestCase):
         expression = runpy.run_path(str(Path(__file__).resolve().parents[3] / "scripts/check-docker-policy.py"))["expression"]
         gate = " ".join(workflow["jobs"]["deploy"].get("if", "True").split())
         cases = [
-            ("rust-av/Av1an", "push", "refs/heads/master", True),
+            ("rust-av/Av1an", "push", "refs/heads/main", True),
             ("rust-av/Av1an", "push", "refs/heads/feature", False),
             ("rust-av/Av1an", "push", "refs/tags/v1.2.3", False),
-            ("rust-av/Av1an", "workflow_dispatch", "refs/heads/master", False),
-            ("fork/Av1an", "push", "refs/heads/master", False),
-            ("fork/Av1an", "workflow_dispatch", "refs/heads/master", False),
+            ("rust-av/Av1an", "workflow_dispatch", "refs/heads/main", False),
+            ("fork/Av1an", "push", "refs/heads/main", False),
+            ("fork/Av1an", "workflow_dispatch", "refs/heads/main", False),
             ("rust-av/Av1an", "pull_request", "refs/pull/1/merge", False),
             ("fork/Av1an", "pull_request", "refs/pull/1/merge", False),
         ]
@@ -272,7 +278,7 @@ class WorkflowTests(unittest.TestCase):
                         self.assertNotIn("secrets.", str(step), name)
                         self.assertNotIn("github.token", str(step), name)
 
-    def test_pages_deploy_gate_allows_only_upstream_master_push(self) -> None:
+    def test_pages_deploy_gate_allows_only_upstream_main_push(self) -> None:
         self._check_pages_and_fork_policy(False)
 
     def test_fork_pr_runnable_jobs_are_read_only_and_runnable_steps_have_no_publish_credentials(self) -> None:
@@ -301,8 +307,8 @@ class WorkflowTests(unittest.TestCase):
                 with self.assertRaises(AssertionError): self._assert_policy(changed)
         if not gates:
             return
-        for gate in ("True", "github.event_name == 'push' && github.ref == 'refs/heads/master'",
-                     "github.repository == 'rust-av/Av1an' && github.ref == 'refs/heads/master'"):
+        for gate in ("True", "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+                     "github.repository == 'rust-av/Av1an' && github.ref == 'refs/heads/main'"):
             with self.subTest(gate=gate):
                 changed = deepcopy(workflows["mdbook"])
                 changed["jobs"]["deploy"]["if"] = gate

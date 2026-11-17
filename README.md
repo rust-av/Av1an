@@ -12,7 +12,7 @@ Av1an is a video encoding Rust library and command-line tool designed to be as f
 
 ## Branch changes and legacy Av1an
 
-The default branch has been renamed from `master` to [`main`](https://github.com/rust-av/Av1an/tree/main).
+The default branch is [`main`](https://github.com/rust-av/Av1an/tree/main).
 `main` now includes the Condor rewrite of Av1an, whose executable is `av1an`.
 The [`v0` branch](https://github.com/rust-av/Av1an/tree/v0) contains the latest
 stable release of legacy Av1an.

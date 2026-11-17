@@ -139,4 +139,4 @@ cargo test --features screenshots --test screenshots
 
 GitHub Actions regenerates the media on every deploy of the documentation site
 (see `.github/workflows/mdbook.yml`), so the published page always matches the
-interface on `master`.
+interface on `main`.

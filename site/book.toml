@@ -13,7 +13,7 @@ git-repository-url = "https://github.com/rust-av/Av1an"
 # The `california-condor/` prefix absorbs that `..`; without it the link resolves
 # to `california-condor/california-condor/docs/page.md`, which does not exist.
 # CI overrides this with the repository that actually built the site.
-edit-url-template = "https://github.com/rust-av/Av1an/edit/master/california-condor/{path}"
+edit-url-template = "https://github.com/rust-av/Av1an/edit/main/california-condor/{path}"
 site-url = "/Av1an/"
 no-section-label = true
 # Keeps each screenshot link's target on the theme its thumbnail shows.

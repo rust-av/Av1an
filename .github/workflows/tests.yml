@@ -2,12 +2,12 @@ name: tests
 on:
   push:
     branches:
-      - master
+      - main
     tags:
       - 'v*'
   pull_request:
     branches:
-      - master
+      - main
   workflow_dispatch:
 
 permissions:
@@ -316,7 +316,7 @@ jobs:
     # Forks, PRs and manual runs never enter a job with publishing credentials.
     if: >-
       github.repository == 'rust-av/Av1an' && github.event_name == 'push' &&
-      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     steps:
       - name: Check publishing credentials
         id: credentials

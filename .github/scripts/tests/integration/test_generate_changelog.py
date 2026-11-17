@@ -119,7 +119,7 @@ class GenerateChangelogTests(unittest.TestCase):
              ["HISTORY_CHANGE", "HISTORY_ROOT"], "the beginning of history"),
             ("secondtag", [root, previous, change, ("tag", "v0.5.2")],
              ["HISTORY_CHANGE"], "v0.5.1"),
-            ("masteraftertag", [root, previous, change, head],
+            ("mainaftertag", [root, previous, change, head],
              ["HISTORY_HEAD", "HISTORY_CHANGE"], "v0.5.1"),
             ("stale-latest-ancestor", [root, previous, change, ("tag", "latest"), head],
              ["HISTORY_HEAD", "HISTORY_CHANGE"], "v0.5.1"),

@@ -9,10 +9,10 @@ tags are already available; check the registry before using a published tag.
 
 CI is configured to publish `<DOCKERHUB_USERNAME>/av1an`, where the owner comes from
 the upstream repository's `DOCKERHUB_USERNAME` secret, not a hardcoded fork owner.
-Only pushes in `rust-av/Av1an` to `master` or `v*` tags can publish, after the build
+Only pushes in `rust-av/Av1an` to `main` or `v*` tags can publish, after the build
 and test gates pass and both Docker Hub credentials are configured:
 
-- `master` pushes produce `:master` and `:sha-#######`, not `:latest`.
+- `main` pushes produce `:main` and `:sha-#######`, not `:latest`.
 - Stable semantic version tags such as `v1.2.3` produce `:1.2.3`, `:1.2`, `:1`,
   `:latest` and a SHA tag. Prereleases follow Docker metadata-action's semver policy
   and do not update `:latest`; non-semver `v*` tags produce only a SHA tag.

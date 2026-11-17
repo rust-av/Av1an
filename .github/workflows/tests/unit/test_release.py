@@ -46,7 +46,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         if phase == 1:
             return
         workflow = self._workflow("release")
-        self.assertEqual(workflow["on"]["push"], {"branches": ["master"], "tags": ["v*"]})
+        self.assertEqual(workflow["on"]["push"], {"branches": ["main"], "tags": ["v*"]})
         self.assertIn("workflow_dispatch", workflow["on"])
         self.assertNotIn("concurrency", workflow, "must not cancel an in-flight publisher")
         self.assertEqual(workflow["permissions"], {"contents": "read"})
@@ -58,7 +58,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(set(release["needs"]), {"linux", "windows"})
         self.assertEqual(release["permissions"], {"contents": "write"})
         self.assertEqual(release["concurrency"], {
-            "group": "condor-release-${{ github.repository }}-${{ github.ref == 'refs/heads/master' && 'latest' || github.ref }}",
+            "group": "condor-release-${{ github.repository }}-${{ github.ref == 'refs/heads/main' && 'latest' || github.ref }}",
             "cancel-in-progress": "false",
         })
         steps = release["steps"]
@@ -85,21 +85,21 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_release_workflow_exposes_publish_token_only_to_final_publish_step(self) -> None:
         self._check_handoff(3)
 
-    def test_release_gate_allows_only_successful_upstream_master_or_version_tag_pushes(self) -> None:
+    def test_release_gate_allows_only_successful_upstream_main_or_version_tag_pushes(self) -> None:
         script = Path(__file__).resolve().parents[3] / "scripts/check-docker-policy.py"
         expression = runpy.run_path(str(script))["expression"]
         gate = " ".join(self._workflow("release")["jobs"]["release"]["if"].split())
         cases = [
-            ("rust-av/Av1an", "push", "refs/heads/master", "success", "success", True),
+            ("rust-av/Av1an", "push", "refs/heads/main", "success", "success", True),
             ("rust-av/Av1an", "push", "refs/tags/v1.2.3", "success", "success", True),
-            ("rust-av/Av1an", "push", "refs/heads/master", "failure", "success", False),
-            ("rust-av/Av1an", "push", "refs/heads/master", "success", "cancelled", False),
-            ("rust-av/Av1an", "push", "refs/heads/master", "skipped", "success", False),
-            ("fork/Av1an", "push", "refs/heads/master", "success", "success", False),
+            ("rust-av/Av1an", "push", "refs/heads/main", "failure", "success", False),
+            ("rust-av/Av1an", "push", "refs/heads/main", "success", "cancelled", False),
+            ("rust-av/Av1an", "push", "refs/heads/main", "skipped", "success", False),
+            ("fork/Av1an", "push", "refs/heads/main", "success", "success", False),
             ("fork/Av1an", "push", "refs/tags/v1.2.3", "success", "success", False),
         ]
         cases += [("rust-av/Av1an", "workflow_dispatch", ref, "success", "success", False)
-                  for ref in ("refs/heads/feature", "refs/heads/master", "refs/tags/v1.2.3")]
+                  for ref in ("refs/heads/feature", "refs/heads/main", "refs/tags/v1.2.3")]
         cases += [("rust-av/Av1an", "push", "refs/heads/feature", "success", "success", False)]
         for repo, event, ref, linux, windows, wanted in cases:
             with self.subTest(repo=repo, event=event, ref=ref, linux=linux, windows=windows):
