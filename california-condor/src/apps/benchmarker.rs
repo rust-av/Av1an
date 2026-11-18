@@ -157,6 +157,33 @@ impl TuiApp for BenchmarkerApp {
         }
     }
 
+    fn progress_snapshot(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> Option<super::progress::ProgressSnapshot> {
+        let current = self.cached_state.results.iter().next_back();
+        Some(if let Some((workers, trial)) = current {
+            super::progress::ProgressSnapshot {
+                stage: "Benchmarker",
+                phase: format!("{workers} workers"),
+                completed: trial.current_frame,
+                total: Some(trial.total_frames),
+                initial: trial.initial_frame,
+                elapsed: trial
+                    .finished
+                    .unwrap_or_else(std::time::Instant::now)
+                    .saturating_duration_since(trial.started),
+                ..Default::default()
+            }
+        } else {
+            super::progress::ProgressSnapshot {
+                stage: "Benchmarker",
+                elapsed,
+                ..Default::default()
+            }
+        })
+    }
+
     fn render(&self, frame: &mut Frame) {
         let layout = Layout::default()
             .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])

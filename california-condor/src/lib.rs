@@ -64,6 +64,42 @@ pub const DEFAULT_CONFIG_PATH: &str = "./condor.json";
 pub const DEFAULT_LOG_PATH: &str = "./logs/condor.log";
 
 #[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use apps::progress::JobReport;
+
+    #[test]
+    fn root_success_report_waits_for_listener_and_pending_interrupts() {
+        for (interrupt, join_error) in [(false, false), (true, false), (false, true)] {
+            let cancellation = interrupt::Interrupt::default();
+            if interrupt {
+                cancellation.request(130).unwrap();
+            }
+            let mut output = Vec::new();
+            let result = finish_cli_run(
+                &cancellation,
+                Ok(()),
+                if join_error {
+                    Err(anyhow::anyhow!("listener cleanup failed"))
+                } else {
+                    Ok(())
+                },
+                Some(JobReport {
+                    elapsed: std::time::Duration::from_secs(3),
+                    output: "not-created.mkv".into(),
+                }),
+                &mut output,
+            );
+            assert_eq!(result.is_ok(), !interrupt && !join_error);
+            assert_eq!(
+                String::from_utf8(output).unwrap().contains("Job completed"),
+                !interrupt && !join_error
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 type TestEntryRun = Box<dyn FnOnce() -> Result<()>>;
 
 #[cfg(test)]
@@ -81,7 +117,26 @@ pub fn entry_point() -> anyhow::Result<()> {
 pub fn entry_point_cancel(cancellation: impl Into<interrupt::Interrupt>) -> anyhow::Result<()> {
     apps::install_panic_hook();
     let cancellation = cancellation.into();
-    cancellation.finish(run(&cancellation))
+    let mut report = None;
+    let result = cancellation.finish(run(&cancellation, &mut report));
+    apps::progress::publish_job(result, report, &mut std::io::stderr())
+}
+
+fn finish_cli_run(
+    cancellation: &interrupt::Interrupt,
+    result: Result<()>,
+    joined: Result<()>,
+    report: Option<apps::progress::JobReport>,
+    writer: &mut impl std::io::Write,
+) -> Result<()> {
+    let result = match (result, joined) {
+        (Err(error), Err(cleanup)) => {
+            Err(error.context(format!("interrupt listener cleanup: {cleanup:#}")))
+        },
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), result) => result,
+    };
+    apps::progress::publish_job(cancellation.finish(result), report, writer)
 }
 
 /// Process frontend: preserve library errors, but do not print a caught panic's
@@ -91,15 +146,17 @@ pub fn cli_entry_point() -> std::process::ExitCode {
     let cancellation = interrupt::Interrupt::default();
     let result = (|| {
         let mut listener = interrupt::Listener::start(cancellation.clone())?;
-        let result = entry_point_cancel(cancellation.clone());
+        apps::install_panic_hook();
+        let mut report = None;
+        let result = run(&cancellation, &mut report);
         let joined = listener.join();
-        match (result, joined) {
-            (Err(error), Err(cleanup)) => {
-                Err(error.context(format!("interrupt listener cleanup: {cleanup:#}")))
-            },
-            (Err(error), Ok(())) => Err(error),
-            (Ok(()), result) => result,
-        }
+        finish_cli_run(
+            &cancellation,
+            result,
+            joined,
+            report,
+            &mut std::io::stderr(),
+        )
     })();
     match cancellation.finish(result) {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -189,7 +246,11 @@ fn write_cli_cause(
     Ok(())
 }
 
-fn run(cancellation: &interrupt::Interrupt) -> anyhow::Result<()> {
+fn run(
+    cancellation: &interrupt::Interrupt,
+    report: &mut Option<apps::progress::JobReport>,
+) -> anyhow::Result<()> {
+    let started = std::time::Instant::now();
     #[cfg(test)]
     if let Some(run) = TEST_ENTRY_RUN.with_borrow_mut(Option::take) {
         return run();
@@ -203,6 +264,7 @@ fn run(cancellation: &interrupt::Interrupt) -> anyhow::Result<()> {
     cli.reject_indexed_add(&mut cmd);
     cli.reject_unused_temp(&mut cmd);
     commands::set_verbose(cli.verbose);
+    commands::set_progress_mode(cli.progress);
 
     if cli.version {
         return print_version(cli.verbose);
@@ -620,11 +682,12 @@ fn run(cancellation: &interrupt::Interrupt) -> anyhow::Result<()> {
                     // Zoner publishes definitions and their scene/barrier state together.
                 }
 
-                run_condor_cancel(
+                run_condor_reported(
                     &configuration,
                     &save_file,
                     cli.skip_scd,
                     cancellation.clone(),
+                    report,
                 )?;
             },
         }
@@ -632,6 +695,9 @@ fn run(cancellation: &interrupt::Interrupt) -> anyhow::Result<()> {
         Ok(())
     })();
     let result = cancellation.finish(result);
+    if let Some(report) = report {
+        report.elapsed = started.elapsed();
+    }
     debug!(result = ?result, "CLI job cleanup complete");
     result
 }
@@ -694,7 +760,24 @@ pub fn run_condor_cancel(
     skip_scd: bool,
     cancellation: impl Into<interrupt::Interrupt>,
 ) -> Result<()> {
-    let cancellation_token = cancellation.into();
+    run_condor_reported(
+        configuration,
+        save_file,
+        skip_scd,
+        cancellation.into(),
+        &mut None,
+    )
+}
+
+fn run_condor_reported(
+    configuration: &Configuration,
+    save_file: &Path,
+    skip_scd: bool,
+    cancellation: interrupt::Interrupt,
+    report: &mut Option<apps::progress::JobReport>,
+) -> Result<()> {
+    let started = std::time::Instant::now();
+    let cancellation_token = cancellation;
     let mut condor = instantiate_saved_condor(configuration, save_file, &cancellation_token.token)?;
 
     if !skip_scd {
@@ -765,6 +848,15 @@ pub fn run_condor_cancel(
             .display()
     );
     info!("Have a nice day!");
+
+    *report = Some(apps::progress::JobReport {
+        elapsed: started.elapsed(),
+        output: condor
+            .sequence_config
+            .scene_concatenator
+            .effective_output(&condor.output.path)
+            .to_path_buf(),
+    });
 
     Ok(())
 }

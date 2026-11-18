@@ -92,6 +92,21 @@ impl TuiApp for SceneDetectionApp {
         false
     }
 
+    fn progress_snapshot(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> Option<super::progress::ProgressSnapshot> {
+        Some(super::progress::ProgressSnapshot {
+            stage: "Scene detection",
+            completed: self.cached_state.frames_processed,
+            total: Some(self.total_frames),
+            initial: self.initial_frames,
+            elapsed,
+            detail: format!("{} scenes found", self.cached_state.scenes_len),
+            ..Default::default()
+        })
+    }
+
     fn render(&self, frame: &mut Frame) {
         let theme = crate::theme::Theme::current();
         let main: Color = theme.main;

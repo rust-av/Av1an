@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io::IsTerminal, sync::Arc};
+use std::{collections::BTreeMap, fmt::Write as _, io::IsTerminal, sync::Arc};
 
 use andean_condor::{
     core::{
@@ -258,6 +258,73 @@ impl TuiApp for ParallelEncoderApp {
         }
     }
 
+    fn progress_snapshot(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> Option<super::progress::ProgressSnapshot> {
+        let state = &self.cached_state;
+        let mut detail = format!(
+            "{}/{} scenes{}",
+            state.completed_scenes_count,
+            state.scenes.len(),
+            if state.estimated_bytes > 0 {
+                format!(
+                    ", {:.1} kbps, est. video {:.1} MB",
+                    state.estimated_bitrate / 1000.0,
+                    state.estimated_bytes as f64 / 1e6
+                )
+            } else {
+                String::new()
+            }
+        );
+        if let Some((done, total)) = state.validation {
+            detail = format!("{done}/{total} chunks validated, {detail}");
+        }
+        Some(super::progress::ProgressSnapshot {
+            stage: "Encoding",
+            phase: state.validation.map_or_else(String::new, |_| "validating".into()),
+            completed: state.scenes.values().map(|(done, _)| *done).sum(),
+            total: Some(self.total_frames),
+            initial: state.initial_frames,
+            elapsed,
+            detail,
+            ..Default::default()
+        })
+    }
+
+    fn stage_report(&self, elapsed: std::time::Duration) -> Option<super::progress::StageReport> {
+        let mut progress = self.progress_snapshot(elapsed)?;
+        let (frames, bytes) = self
+            .cached_state
+            .scenes
+            .values()
+            .filter(|(_, scene)| scene.bytes.is_some())
+            .fold((0u64, 0u64), |(frames, bytes), (_, scene)| {
+                (
+                    frames + (scene.end_frame - scene.start_frame) as u64,
+                    bytes + scene.bytes.unwrap_or(0),
+                )
+            });
+        progress.completed = frames;
+        progress.phase.clear();
+        progress.detail = format!(
+            "{}/{} scenes",
+            self.cached_state.completed_scenes_count,
+            self.cached_state.scenes.len()
+        );
+        if frames > 0 {
+            let fps = *self.clip_info.frame_rate.numer() as f64
+                / *self.clip_info.frame_rate.denom() as f64;
+            let _ = write!(
+                progress.detail,
+                ", video {:.1} MB, {:.1} kbps",
+                bytes as f64 / 1e6,
+                bytes as f64 * 8.0 * fps / frames as f64 / 1000.0
+            );
+        }
+        Some(super::progress::StageReport { progress, elapsed })
+    }
+
     fn render(&self, frame: &mut Frame) {
         let theme = crate::theme::Theme::current();
         let main: Color = theme.main;
@@ -401,7 +468,8 @@ impl ParallelEncoderApp {
         scenes: &BTreeMap<u64, (u64, SceneDisplay)>,
         clip_info: &ClipInfo,
     ) -> (f64, u64) {
-        let total_frames = clip_info.num_frames;
+        let total_frames: usize =
+            scenes.values().map(|(_, scene)| scene.end_frame - scene.start_frame).sum();
         let (frames_completed, bytes_completed) =
             scenes.iter().filter(|(_, (_, scene))| scene.bytes.is_some()).fold(
                 (0, 0),
@@ -485,6 +553,50 @@ mod tests {
     use crate::{apps::TuiApp, configuration::CliSequenceData, test_helpers::TestVideo};
 
     const FRAMES: usize = 400;
+
+    #[test]
+    fn progress_report_counts_only_validated_outputs_and_selected_duration() {
+        let mut selected = scenes();
+        selected.retain(|index, _| *index < 2);
+        let mut app = app(1, encoder(), selected, clip_info());
+        let mut state = app.shared_progress.read();
+        ParallelEncoderApp::map_progress(custom(0, "resumed-size", 1000.0), &mut state);
+        ParallelEncoderApp::map_progress(progress(1, (1, 1), 80), &mut state);
+        app.on_snapshot(state.clone());
+        let live = app.progress_snapshot(std::time::Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            (live.completed, live.initial, live.total),
+            (180, 100, Some(200))
+        );
+        assert_eq!(state.estimated_bytes, 2000);
+        let report = app.stage_report(std::time::Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            report.progress.completed, 100,
+            "unvalidated frames are not final output"
+        );
+        ParallelEncoderApp::map_progress(custom(1, "attempt", 0.0), &mut state);
+        app.on_snapshot(state);
+        assert_eq!(
+            app.progress_snapshot(std::time::Duration::from_secs(10)).unwrap().completed,
+            100
+        );
+    }
+
+    #[test]
+    fn resumed_validation_counts_do_not_bypass_plain_output_throttle() {
+        let mut app = app(1, encoder(), scenes(), clip_info());
+        let mut presenter = super::super::progress::Presenter::new(false);
+        let mut lines = 0;
+        for completed in 1..=3 {
+            app.cached_state.validation = Some((completed, 4));
+            let elapsed = std::time::Duration::from_millis(completed * 100);
+            let snapshot = app.progress_snapshot(elapsed).unwrap();
+            if presenter.update(&snapshot, None, elapsed).is_some() {
+                lines += 1;
+            }
+        }
+        assert_eq!(lines, 1);
+    }
 
     #[test]
     fn parallel_snapshot_drops_raw_scene_payloads() {

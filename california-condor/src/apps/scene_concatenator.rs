@@ -78,6 +78,22 @@ impl TuiApp for SceneConcatenatorApp {
         false
     }
 
+    fn progress_snapshot(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> Option<super::progress::ProgressSnapshot> {
+        Some(super::progress::ProgressSnapshot {
+            stage: "Concatenation",
+            completed: self.cached_state.percent.clamp(0.0, 100.0) as u64,
+            total: Some(100),
+            unit: "percent",
+            elapsed,
+            measure_rate: false,
+            detail: format!("{} scenes", self.scenes_len),
+            ..Default::default()
+        })
+    }
+
     fn render(&self, frame: &mut Frame) {
         let theme = crate::theme::Theme::current();
         let main: Color = theme.main;

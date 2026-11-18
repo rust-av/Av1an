@@ -46,6 +46,15 @@ Defaults to `./logs/condor.log` in the current directory.
 "#;
 pub const HELP_LOGS_SHORT: &str = short_help(HELP_LOGS);
 
+pub const HELP_PROGRESS: &str = r#"Progress display: full-screen TUI or compact inline output.
+
+`full` keeps the current TUI when a terminal is available. `compact` writes
+one updating line to stderr without taking over the terminal, or occasional
+plain lines when stderr is redirected. Both modes retain final statistics.
+This option is not saved in the job configuration.
+"#;
+pub const HELP_PROGRESS_SHORT: &str = short_help(HELP_PROGRESS);
+
 /// Input template
 macro_rules! input_template {
     ($text:literal) => {

@@ -56,6 +56,42 @@ TUI commands: `detect-scenes`, `detect-noise`, `benchmark`, `target-quality`, `e
 
 Non-TUI commands: `init`, `zone`, `scale-noise`, `optimize-bitrate`, `scale-speed`, `clean`.
 
+### Progress display
+
+`--progress full` is the default. Use `--progress compact` for batch encoding:
+each active stage updates one stderr line without an alternate screen, raw mode,
+or keyboard capture. Warnings remain visible, and completed stage statistics stay
+in terminal history in **both** modes.
+
+```bash
+av1an --progress compact -i "input.mp4" -o "output.mkv" -w 4
+av1an encode --progress compact -w 4
+```
+
+The first command runs the pipeline; the second encodes an existing job. Set the
+worker count to skip automatic worker benchmarking. The presentation choice is
+not saved, so pass it on each invocation.
+
+On interactive stderr, compact updates at most ten times per second. Redirected
+stderr receives plain lines at most every five seconds, plus immediate phase
+changes and final reports; existing stdout progress events keep their format.
+For separate batch logs:
+
+```bash
+av1an encode --progress compact -w 4 >events.log 2>progress.log
+```
+
+Encoding speed excludes validated resumed frames. Estimated size and bitrate
+describe video chunks, not audio or container overhead. After successful
+concatenation, the output path and actual file size are reported separately;
+standalone `encode` does not claim to have created a final muxed file.
+Interrupted or failed stages are labelled accordingly rather than completed.
+Ctrl-C requests graceful shutdown; press it again to force joined child cleanup.
+
+For test automation, `CONDOR_TEST_MODE=1` keeps the legacy headless behavior and
+suppresses the new human progress/statistics regardless of `--progress`.
+Existing Quality Check metric tables and report files are unchanged.
+
 ## Inputs, Decoders, Filters
 
 Complex types are documented in the [type reference](./types.md).

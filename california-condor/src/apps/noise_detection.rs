@@ -114,6 +114,22 @@ impl TuiApp for NoiseDetectionApp {
         }
     }
 
+    fn progress_snapshot(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> Option<super::progress::ProgressSnapshot> {
+        Some(super::progress::ProgressSnapshot {
+            stage: "Noise detection",
+            completed: self.cached_state.frames_processed,
+            total: Some(self.total_frames),
+            initial: self.initial_completed,
+            elapsed,
+            unit: "scenes",
+            detail: format!("{} results", self.cached_state.scene_noise.len()),
+            ..Default::default()
+        })
+    }
+
     fn render(&self, frame: &mut Frame) {
         let theme = crate::theme::Theme::current();
         let layout = Layout::default()
