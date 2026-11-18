@@ -523,7 +523,229 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, io::Read, rc::Rc};
+
+    use crate::{
+        core::{
+            input::{clip_info::ClipInfo, pixel_format::PixelFormat},
+            output::Output,
+        },
+        models::{
+            encoder::{Encoder, EncoderBase},
+            input::ImportMethod,
+            scene::SubScene,
+            sequence::{DefaultSequenceConfig, DefaultSequenceData},
+        },
+    };
+
     use super::*;
+
+    type TestCondor = Condor<DefaultSequenceData, DefaultSequenceConfig>;
+    type Saves = Rc<RefCell<Vec<serde_json::Value>>>;
+
+    fn fixture(frames: usize, previous_end: usize) -> (TestCondor, Saves) {
+        // Header-only input: fixed splitting must use metadata without decoding frames.
+        let reader: Box<dyn Read> = Box::new(&b"YUV4MPEG2 W2 H2 F24:1 Ip A1:1 C420\n"[..]);
+        let decoder = av_decoders::Decoder::from_decoder_impl(av_decoders::DecoderImpl::Y4m(
+            av_decoders::Y4mDecoder::new(reader).expect("Y4M header"),
+        ))
+        .expect("Rust decoder");
+        let input = Input::Video {
+            path: "scene-detector-unused.y4m".into(),
+            import_method: ImportMethod::FFMS2 {
+                index: None,
+                cache_path: None,
+            },
+            filters: vec![],
+            source_details: *decoder.get_video_details(),
+            decoder,
+            clip_info: Some(ClipInfo {
+                num_frames: frames,
+                format_info: PixelFormat::FFmpeg {
+                    format: crate::ffmpeg::FFPixelFormat::YUV420P,
+                },
+                frame_rate: av_format::rational::Rational64::new(24, 1),
+                resolution: (2, 2),
+                color_range: None,
+                color_primaries: None,
+                color_transfer_characteristic: None,
+                color_space: None,
+                chroma_location: None,
+                mastering_display: None,
+                content_light_level: None,
+            }),
+        };
+        let mut encoder = Encoder::default_from_base(&EncoderBase::AOM, true);
+        encoder.set_executable(Some("scene-detector-must-not-run".into()));
+        encoder.set_speed(5);
+        let mut scenes = vec![];
+        if previous_end > 0 {
+            let mut previous_encoder = encoder.clone();
+            previous_encoder.set_speed(1);
+            scenes.push(Scene {
+                start_frame: 0,
+                end_frame: previous_end,
+                sub_scenes: Some(vec![SubScene {
+                    start_frame: 0,
+                    end_frame: previous_end,
+                }]),
+                encoder: previous_encoder,
+                sequence_data: DefaultSequenceData::default(),
+            });
+        }
+        let saved = Saves::default();
+        let callback = Rc::clone(&saved);
+        let condor = Condor::new(
+            input,
+            Output {
+                path: "scene-detector-unused.mkv".into(),
+                overwrite: false,
+                tags: Default::default(),
+                video_tags: Default::default(),
+            },
+            encoder,
+            scenes,
+            None,
+            Box::new(move |data| {
+                callback.borrow_mut().push(serde_json::to_value(&data.scenes)?);
+                Ok(())
+            }),
+        );
+        (condor, saved)
+    }
+
+    #[test]
+    fn scene_detector_validation_rejects_unusable_lengths() {
+        for (minimum_length, maximum_length, diagnostic) in [
+            (0, 0, Some("at least one frame")),
+            (48, 24, Some("exceeds maximum length")),
+            (0, 1, None),
+            (24, 24, None),
+        ] {
+            for method in [
+                SceneDetectionMethod::None {
+                    minimum_length,
+                    maximum_length,
+                },
+                SceneDetectionMethod::AVSceneChange {
+                    minimum_length,
+                    maximum_length,
+                    method: ScenecutMethod::Standard,
+                    save_scores: false,
+                },
+                SceneDetectionMethod::TransNetV2 {
+                    minimum_length,
+                    maximum_length,
+                    model_path: None,
+                    save_scores: false,
+                },
+            ] {
+                let (mut condor, saved) = fixture(48, 0);
+                let mut detector = SceneDetector::new(method);
+                let result = detector.validate(&mut condor);
+                if let Some(diagnostic) = diagnostic {
+                    let error = result.expect_err("unusable lengths must fail validation");
+                    assert!(
+                        error.to_string().contains(diagnostic),
+                        "{:?}: {error:#}",
+                        detector.method
+                    );
+                } else {
+                    result.expect("usable lengths pass validation");
+                }
+                assert!(saved.borrow().is_empty(), "validation must not save scenes");
+            }
+        }
+    }
+
+    #[test]
+    fn none_zero_maximum_rejects_without_changing_or_saving_scenes() {
+        let (mut condor, saved) = fixture(14, 5);
+        let before = serde_json::to_value(&condor.scenes).expect("existing scenes");
+        let mut detector = SceneDetector::new(SceneDetectionMethod::None {
+            minimum_length: 0,
+            maximum_length: 0,
+        });
+        let (tx, rx) = sync::mpsc::channel();
+
+        let error = detector
+            .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+            .expect_err("direct execution must reject zero maximum");
+
+        assert!(
+            error.to_string().contains("at least one frame"),
+            "{error:#}"
+        );
+        assert_eq!(
+            serde_json::to_value(&condor.scenes).expect("scenes"),
+            before
+        );
+        assert!(saved.borrow().is_empty());
+        assert!(
+            !rx.try_iter()
+                .any(|event| matches!(event, SequenceStatus::Whole(Status::Completed { .. })))
+        );
+    }
+
+    #[test]
+    fn none_fixed_chunks_resume_and_clamp_to_input_end() {
+        for (previous_end, frames, maximum_length, expected) in [
+            (5, 14, 4, vec![(5, 9), (9, 13), (13, 14)]),
+            (5, 14, usize::MAX, vec![(5, 14)]),
+            (4, 12, 4, vec![(4, 8), (8, 12)]),
+            (0, 1, 1, vec![(0, 1)]),
+        ] {
+            let (mut condor, saved) = fixture(frames, previous_end);
+            let before = serde_json::to_value(&condor.scenes).expect("existing scenes");
+            let existing_count = condor.scenes.len();
+            let mut detector = SceneDetector::new(SceneDetectionMethod::None {
+                minimum_length: 0,
+                maximum_length,
+            });
+            let (tx, rx) = sync::mpsc::channel();
+
+            detector
+                .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+                .expect("fixed chunk splitting");
+
+            let appended = &condor.scenes[existing_count..];
+            assert_eq!(
+                appended
+                    .iter()
+                    .map(|scene| (scene.start_frame, scene.end_frame))
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(
+                serde_json::to_value(&condor.scenes[..existing_count]).expect("retained scenes"),
+                before
+            );
+            let encoder = serde_json::to_value(&condor.encoder).expect("global encoder");
+            for scene in appended {
+                assert_eq!(
+                    serde_json::to_value(&scene.encoder).expect("scene encoder"),
+                    encoder
+                );
+                assert!(scene.sub_scenes.is_none());
+            }
+            let after = serde_json::to_value(&condor.scenes).expect("completed scenes");
+            assert_eq!(saved.borrow().as_slice(), std::slice::from_ref(&after));
+            assert!(matches!(
+                rx.try_iter().collect::<Vec<_>>().as_slice(),
+                [SequenceStatus::Whole(Status::Completed { id })] if id == DETAILS.name
+            ));
+
+            let (tx, _rx) = sync::mpsc::channel();
+            detector
+                .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+                .expect("completed run is a no-op");
+            assert_eq!(
+                serde_json::to_value(&condor.scenes).expect("unchanged scenes"),
+                after
+            );
+            assert_eq!(saved.borrow().len(), 1, "completed repeat must not save");
+        }
+    }
 
     fn scenecut_result(inter_cost: f64) -> ScenecutResult {
         ScenecutResult {

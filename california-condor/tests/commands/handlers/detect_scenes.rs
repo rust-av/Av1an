@@ -735,6 +735,74 @@ mod tests {
         );
     }
 
+    #[serial]
+    #[test]
+    fn detect_scenes_invalid_runtime_lengths_leave_saved_job_unchanged() {
+        let temp = tempfile::tempdir().expect("test directory");
+        let config_path = init_config(&temp);
+        let mut configuration = load(&config_path);
+        configuration.condor.scenes.push(andean_condor::models::scene::Scene {
+            start_frame: 0,
+            end_frame: 48,
+            sub_scenes: None,
+            encoder: configuration.condor.encoder.clone(),
+            sequence_data: Default::default(),
+        });
+        configuration.admit_results().expect("baseline results are usable");
+        configuration.save(&config_path).expect("save partial job");
+        let before = std::fs::read(&config_path).expect("saved job");
+        let first_scene =
+            serde_json::to_value(&configuration.condor.scenes[0]).expect("partial scene");
+
+        for (arguments, diagnostic) in [
+            (
+                vec!["detect-scenes", "--method", "none", "--max-scene-seconds", "0"],
+                "at least one frame",
+            ),
+            (
+                vec![
+                    "detect-scenes",
+                    "--method",
+                    "none",
+                    "--min-scene-seconds",
+                    "11",
+                    "--max-scene-seconds",
+                    "10",
+                ],
+                "exceeds maximum length",
+            ),
+        ] {
+            let result = condor_cmd(&temp)
+                .env("CONDOR_TEST_MODE", "1")
+                .timeout(std::time::Duration::from_secs(60))
+                .args(&arguments)
+                .assert()
+                .failure();
+            let stderr = String::from_utf8_lossy(&result.get_output().stderr);
+            assert!(stderr.contains(diagnostic), "{arguments:?}: {stderr}");
+            assert_eq!(
+                std::fs::read(&config_path).expect("saved job after rejection"),
+                before,
+                "invalid runtime flags must not publish settings or change saved scenes"
+            );
+        }
+
+        condor_cmd(&temp)
+            .env("CONDOR_TEST_MODE", "1")
+            .timeout(std::time::Duration::from_secs(60))
+            .args(["detect-scenes", "--method", "none"])
+            .assert()
+            .success();
+        let scenes = load(&config_path).condor.scenes;
+        assert_eq!(
+            serde_json::to_value(&scenes[0]).expect("retained partial scene"),
+            first_scene
+        );
+        let ranges: Vec<_> =
+            scenes.iter().map(|scene| (scene.start_frame, scene.end_frame)).collect();
+        assert_eq!(ranges, [(0, 48), (48, 288), (288, 528), (528, 720)]);
+    }
+
     /// An impossible frame range is rejected before anything is written.
     #[serial]
     #[test]

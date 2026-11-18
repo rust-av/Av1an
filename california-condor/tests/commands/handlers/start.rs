@@ -588,6 +588,69 @@ mod handler_configuration {
     }
 
     #[test]
+    fn start_invalid_saved_scene_lengths_do_not_publish_configuration() {
+        use crate::common::config::{init_config, load};
+        use andean_condor::models::sequence::scene_detector::SceneDetectionMethod;
+
+        let temp = tempfile::tempdir().expect("test directory");
+        let config_path = init_config(&temp);
+        let mut configuration = load(&config_path);
+        for (minimum_length, maximum_length, diagnostic) in
+            [(0, 0, "at least one frame"), (48, 24, "exceeds maximum length")]
+        {
+            configuration.condor.sequence_config.scene_detector.method =
+                SceneDetectionMethod::None {
+                    minimum_length,
+                    maximum_length,
+                };
+            configuration.save(&config_path).expect("save invalid lengths");
+            let before = fs::read(&config_path).expect("saved job");
+            let result = start_handler(
+                Some(&config_path),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(2),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+            );
+            let error = result.expect_err("invalid saved lengths must fail preparation");
+            assert!(error.to_string().contains(diagnostic), "{error:#}");
+            assert_eq!(
+                fs::read(&config_path).expect("saved job after rejection"),
+                before,
+                "failed preparation must not publish the worker override"
+            );
+        }
+    }
+
+    #[test]
     fn start_missing_main_input_returns_error_without_creating_configuration() {
         let invalid_input = std::env::temp_dir().join("not_found.mkv");
         let input_abs = path_abs::PathAbs::new(&invalid_input)
