@@ -1120,24 +1120,36 @@ mod tests {
         const TEST: &str = "tui::tests::compact_write_failure_cancels_and_joins_live_receiver";
         if std::env::var_os("COMPACT_BROKEN_CHILD").is_some() {
             use std::io::Read as _;
+
+            use andean_condor::core::sequence::{SequenceStatus, Status};
+
+            // The driver deliberately breaks stderr; keep child failures visible.
+            let prior = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                println!("{info}");
+                prior(info);
+            }));
             std::io::stdin().read_exact(&mut [0u8]).unwrap();
             crate::commands::set_progress_mode(crate::commands::ProgressMode::Compact);
             let (clip, _) = crate::test_helpers::quality_scene_fixture();
             let mut app = SceneConcatenatorApp::new(clip, 1, Default::default());
             let interrupt = Interrupt::default();
             let (tx, rx) = mpsc::channel();
-            let threads = std::fs::read_dir("/proc/self/task").unwrap().count();
             let error = app.run(rx, interrupt.clone()).unwrap_err();
             assert_eq!(
                 error.downcast_ref::<std::io::Error>().unwrap().kind(),
                 std::io::ErrorKind::BrokenPipe
             );
             assert!(interrupt.token.is_cancelled());
-            assert_eq!(
-                std::fs::read_dir("/proc/self/task").unwrap().count(),
-                threads
+            // Linux can retain /proc task entries after join. Check receiver
+            // shutdown directly, without letting sender disconnect cause it.
+            assert!(
+                tx.send(SequenceStatus::Whole(Status::Completed {
+                    id: "after run".into(),
+                }))
+                .is_err(),
+                "progress receiver must be dropped before run returns"
             );
-            drop(tx); // Receiver shutdown must not depend on sender disconnect.
             println!("COMPACT_BROKEN_PIPE_ASSERTIONS_COMPLETED");
             return;
         }
