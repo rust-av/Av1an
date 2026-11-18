@@ -32,12 +32,22 @@ use crate::{
 };
 #[derive(Clone)]
 pub struct TargetQualityState {
+    pub phase: Option<PhaseTiming>,
     // Frame-only snapshots share the chart; new results copy only the changed scene's history.
     pub quality_passes: Arc<BTreeMap<u64, Arc<Vec<QualityPass>>>>,
     pub current_pass: u8,
     pub frames_encoded: u64,
     pub frames_compared: u64,
     pub total_frames: u64,
+}
+
+/// Presentation timing captured at event application, not at a later display tick.
+#[derive(Clone)]
+pub struct PhaseTiming {
+    pub name: &'static str,
+    pub pass: u8,
+    pub started: std::time::Instant,
+    pub finished: Option<std::time::Instant>,
 }
 
 pub struct TargetQualityApp {
@@ -240,6 +250,41 @@ impl TuiApp for TargetQualityApp {
         self.cached_state = snapshot;
     }
 
+    fn progress_mapper(
+        &self,
+    ) -> impl FnMut(SequenceStatus, &mut Self::State) -> bool + Send + 'static {
+        |status, state| Self::map_progress_at(status, state, std::time::Instant::now())
+    }
+
+    fn progress_snapshot(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> Option<super::progress::ProgressSnapshot> {
+        let state = &self.cached_state;
+        let phase = state.phase.as_ref();
+        let comparing = phase.is_some_and(|phase| phase.name == "Compare");
+        Some(super::progress::ProgressSnapshot {
+            stage: "Target Quality",
+            phase: phase.map_or_else(
+                || format!("pass {}", state.current_pass),
+                |phase| format!("{} pass {}", phase.name, phase.pass),
+            ),
+            completed: if comparing {
+                state.frames_compared
+            } else {
+                state.frames_encoded
+            },
+            total: Some(state.total_frames),
+            elapsed: phase.map_or(elapsed, |phase| {
+                phase
+                    .finished
+                    .unwrap_or_else(std::time::Instant::now)
+                    .saturating_duration_since(phase.started)
+            }),
+            ..Default::default()
+        })
+    }
+
     fn render(&self, frame: &mut Frame) {
         let theme = crate::theme::Theme::current();
         let main: Color = theme.main;
@@ -358,6 +403,59 @@ impl TuiApp for TargetQualityApp {
 }
 
 impl TargetQualityApp {
+    fn map_progress_at(
+        status: SequenceStatus,
+        state: &mut TargetQualityState,
+        now: std::time::Instant,
+    ) -> bool {
+        let event = match &status {
+            SequenceStatus::Whole(Status::Processing {
+                id,
+                completion: SequenceCompletion::Frames { completed, total },
+            }) => Some((id.as_str(), state.current_pass, *completed, *total)),
+            SequenceStatus::Subprocess {
+                parent:
+                    Status::Processing {
+                        completion:
+                            SequenceCompletion::Passes {
+                                completed: pass, ..
+                            },
+                        ..
+                    },
+                child:
+                    Status::Processing {
+                        id,
+                        completion: SequenceCompletion::Frames { completed, total },
+                    },
+            } => Some((id.as_str(), *pass, *completed, *total)),
+            _ => None,
+        };
+        if let Some((name @ ("Encode" | "Compare"), pass, completed, total)) = event {
+            let name = if name == "Encode" {
+                "Encode"
+            } else {
+                "Compare"
+            };
+            if state
+                .phase
+                .as_ref()
+                .is_none_or(|phase| phase.name != name || phase.pass != pass)
+            {
+                state.phase = Some(PhaseTiming {
+                    name,
+                    pass,
+                    started: now,
+                    finished: None,
+                });
+            }
+            if completed >= total
+                && let Some(phase) = &mut state.phase
+            {
+                phase.finished.get_or_insert(now);
+            }
+        }
+        Self::map_progress(status, state)
+    }
     /// The bar's top-left title once every frame it tracks is done.
     #[inline]
     fn completed_title(state: &TargetQualityState, attempted_cancel: bool) -> String {
@@ -441,6 +539,7 @@ impl TargetQualityApp {
             })
             .collect::<anyhow::Result<_>>()?;
         let state = TargetQualityState {
+            phase: None,
             quality_passes: Arc::new(quality_passes),
             current_pass: 1,
             frames_encoded: 0,
@@ -490,6 +589,33 @@ pub struct QualityPass {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn compact_phase_clock_survives_coalesced_encode_and_compare_at_zero() {
+        use super::*;
+        use std::time::{Duration, Instant};
+        let mut snapshot = state(1, 0, 0);
+        let start = Instant::now();
+        for (id, completed, seconds) in
+            [("Encode", 0, 0), ("Encode", 100, 10), ("Compare", 0, 12), ("Compare", 20, 14)]
+        {
+            TargetQualityApp::map_progress_at(
+                SequenceStatus::Whole(Status::Processing {
+                    id: id.into(),
+                    completion: SequenceCompletion::Frames {
+                        completed,
+                        total: 100,
+                    },
+                }),
+                &mut snapshot,
+                start + Duration::from_secs(seconds),
+            );
+            if id == "Compare" {
+                let clock = snapshot.phase.as_ref().unwrap();
+                assert_eq!(clock.name, "Compare");
+                assert_eq!(clock.started, start + Duration::from_secs(12));
+            }
+        }
+    }
     #[test]
     fn tq_frame_snapshots_share_all_display_history() {
         use crate::apps::TuiApp;
@@ -892,6 +1018,7 @@ mod tests {
 
     fn state(current_pass: u8, frames_encoded: u64, frames_compared: u64) -> TargetQualityState {
         TargetQualityState {
+            phase: None,
             quality_passes: Default::default(),
             current_pass,
             frames_encoded,

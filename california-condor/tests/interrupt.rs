@@ -86,6 +86,12 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn cli_compact_cooked_ctrl_c_preserves_graceful_and_forced_child_cleanup() {
+        check_cli_interrupt(&["compact-key-graceful", "compact-key-force"]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn cli_keyboard_then_signal_interrupt_forces_joined_cleanup() {
         check_cli_interrupt(&["key-mixed"]);
     }

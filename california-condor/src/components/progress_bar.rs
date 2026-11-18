@@ -43,23 +43,7 @@ impl Default for ProgressBar {
 impl ProgressBar {
     /// Rates measure this run's work, excluding the owner's restored baseline.
     fn rates(&self, elapsed: f64) -> (f64, f64) {
-        let done = self.completed.saturating_sub(self.initial_completed);
-        if done == 0 || !elapsed.is_finite() || elapsed <= 0.0 {
-            return (0.0, 0.0);
-        }
-        let rate = done as f64 / elapsed;
-        if !rate.is_finite() {
-            return (0.0, 0.0);
-        }
-        let remaining = self.total.saturating_sub(self.completed) as f64 / rate;
-        (
-            rate,
-            if remaining.is_finite() {
-                remaining
-            } else {
-                0.0
-            },
-        )
+        crate::apps::progress::rates(self.completed, self.initial_completed, self.total, elapsed)
     }
 
     /// SAFETY: `Gauge::ratio()` panics if the value is not between 0.0 and

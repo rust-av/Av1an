@@ -90,6 +90,10 @@ mod tests {
             help.contains("Usage: av1an"),
             "unexpected CLI identity:\n{help}"
         );
+        assert!(
+            help.contains("--progress") && help.contains("compact") && help.contains("full"),
+            "{help}"
+        );
     }
 
     #[test]

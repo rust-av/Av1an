@@ -1,6 +1,6 @@
 use std::{
     path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use andean_condor::{
@@ -34,7 +34,7 @@ mod tests;
     about = "A simple, extensible Commandline tool for the Condor chunked encoding framework.",
     version,
     disable_version_flag = true,
-    after_help = "Put execution options after the selected command (e.g. av1an encode -w 8). Root execution options require no subcommand. --config-file, --logs and --verbose work at either level. Target Quality run options need --target or an existing saved target."
+    after_help = "Put execution options after the selected command (e.g. av1an encode -w 8). Root execution options require no subcommand. --config-file, --logs, --verbose and --progress work at either level. Target Quality run options need --target or an existing saved target."
 )]
 pub struct CondorCli {
     #[command(subcommand)]
@@ -48,6 +48,8 @@ pub struct CondorCli {
     /// Enable verbose output and logging.
     #[arg(long, global = true, default_value_t = false)]
     pub verbose: bool,
+    #[arg(long, global = true, value_enum, default_value = "full", help = HELP_PROGRESS_SHORT, long_help = HELP_PROGRESS)]
+    pub progress: ProgressMode,
     /// Display Encoder, VapourSynth and quality metric library installation
     /// information.
     #[arg(short('v'), long, global = true, default_value_t = false)]
@@ -217,6 +219,28 @@ impl CondorCli {
 /// print optional detail can consult it without threading it through every
 /// call.
 static VERBOSE: AtomicBool = AtomicBool::new(false);
+
+/// Process-level presentation choice; never saved in a job configuration.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ProgressMode {
+    #[default]
+    Full,
+    Compact,
+}
+
+static PROGRESS_MODE: AtomicU8 = AtomicU8::new(0);
+
+pub fn set_progress_mode(mode: ProgressMode) {
+    PROGRESS_MODE.store(u8::from(mode == ProgressMode::Compact), Ordering::Relaxed);
+}
+
+pub fn progress_mode() -> ProgressMode {
+    if PROGRESS_MODE.load(Ordering::Relaxed) == 1 {
+        ProgressMode::Compact
+    } else {
+        ProgressMode::Full
+    }
+}
 
 /// Records the global `--verbose` flag; called once at startup.
 pub fn set_verbose(verbose: bool) {

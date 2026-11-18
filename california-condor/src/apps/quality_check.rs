@@ -227,6 +227,20 @@ impl TuiApp for QualityCheckApp {
         }
     }
 
+    fn progress_snapshot(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> Option<super::progress::ProgressSnapshot> {
+        Some(super::progress::ProgressSnapshot {
+            stage: "Quality Check",
+            completed: self.cached_state.frames_compared,
+            total: Some(self.cached_state.total_frames),
+            initial: self.cached_state.initial_completed,
+            elapsed,
+            ..Default::default()
+        })
+    }
+
     fn render(&self, frame: &mut Frame) {
         let theme = crate::theme::Theme::current();
         let layout = Layout::default()

@@ -17,6 +17,78 @@ mod cli_parser {
     use super::*;
 
     #[test]
+    fn progress_is_global_and_defaults_to_full() {
+        use crate::commands::ProgressMode;
+        use clap::{CommandFactory, FromArgMatches};
+        assert_eq!(
+            CondorCli::try_parse_from(["av1an"]).unwrap().progress,
+            ProgressMode::Full
+        );
+        for args in [
+            vec!["av1an", "--progress", "compact"],
+            vec!["av1an", "--progress", "compact", "encode"],
+            vec!["av1an", "encode", "--progress", "compact"],
+            vec!["av1an", "encode", "info", "--progress", "compact"],
+        ] {
+            let mut cmd = CondorCli::command();
+            let matches = cmd.try_get_matches_from_mut(args).unwrap();
+            CondorCli::admit_root_arguments(&matches, &mut cmd).unwrap();
+            assert_eq!(
+                CondorCli::from_arg_matches(&matches).unwrap().progress,
+                ProgressMode::Compact
+            );
+        }
+        assert_eq!(
+            CondorCli::try_parse_from(["av1an", "--progress", "full"]).unwrap().progress,
+            ProgressMode::Full
+        );
+        for args in [vec!["av1an", "--progress"], vec!["av1an", "--progress", "minimal"]] {
+            assert!(CondorCli::try_parse_from(args).is_err());
+        }
+        let help = CondorCli::try_parse_from(["av1an", "encode", "info", "--help"])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            help.contains("--progress") && help.contains("compact") && help.contains("full"),
+            "{help}"
+        );
+    }
+
+    #[test]
+    fn progress_selection_respects_stderr_and_test_override() {
+        use crate::{
+            apps::progress::{DisplayMode, select_display},
+            commands::ProgressMode,
+        };
+        for stdout in [false, true] {
+            for stderr in [false, true] {
+                assert_eq!(
+                    select_display(ProgressMode::Full, stdout, stderr, false),
+                    if stdout || stderr {
+                        DisplayMode::Full
+                    } else {
+                        DisplayMode::Headless
+                    }
+                );
+                assert_eq!(
+                    select_display(ProgressMode::Compact, stdout, stderr, false),
+                    if stderr {
+                        DisplayMode::Inline
+                    } else {
+                        DisplayMode::Plain
+                    }
+                );
+                for mode in [ProgressMode::Full, ProgressMode::Compact] {
+                    assert_eq!(
+                        select_display(mode, stdout, stderr, true),
+                        DisplayMode::Headless
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn root_execution_options_conflict_with_subcommands() {
         for flags in [
             vec!["-w", "8"],

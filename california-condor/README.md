@@ -79,6 +79,15 @@ $ av1an encode
 $ av1an concatenate
 ```
 
+For batch-friendly progress without the full-screen TUI:
+
+```bash
+av1an --progress compact -i "input.mp4" -o "output.mkv" -w 4
+```
+
+Both progress modes retain final statistics. See [progress display](docs/guide.md#progress-display)
+for redirection, resume statistics, and standalone commands.
+
 *Encode a 1080p 10-bit AV1 video with Film Grain Synthesis using rav1e. Use FFMS2 to decode. Downscale scene detection input to 540p for faster detection. Target SSIMULACRA 2 score 85 with the fast profile. Concatenate with mkvmerge.*
 
 ```bash

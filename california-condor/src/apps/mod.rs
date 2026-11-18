@@ -26,6 +26,7 @@ use tracing::debug;
 pub mod benchmarker;
 pub mod noise_detection;
 pub mod parallel_encoder;
+pub mod progress;
 pub mod quality_check;
 pub mod scene_concatenator;
 pub mod scene_detection;
@@ -63,6 +64,7 @@ pub(crate) fn install_panic_hook() {
             }
             // No owner/registry lock spans an arbitrary host hook callback.
             PANIC_REPORTS.fetch_add(1, Ordering::SeqCst);
+            crate::logging::panic_inline_cleanup();
             prior(info);
         }));
     });
@@ -320,18 +322,6 @@ pub fn is_test_mode() -> bool {
     std::env::var("CONDOR_TEST_MODE").is_ok_and(|v| v == "1")
 }
 
-/// Whether the app should drive the TUI or wait headlessly instead.
-///
-/// The TUI renders to stdout when it is a terminal and to stderr otherwise,
-/// and it needs raw mode plus the alternate screen on whichever it picks.
-/// With *neither* stream on a terminal — output piped into a file, a CI job,
-/// or a container started without `-t` — enabling raw mode fails with
-/// `ENXIO` (`No such device or address`) because there is no controlling
-/// terminal to take over.
-fn run_headless(stdout_is_terminal: bool, stderr_is_terminal: bool, test_mode: bool) -> bool {
-    test_mode || !(stdout_is_terminal || stderr_is_terminal)
-}
-
 fn selected_writer(use_stdout: bool) -> Box<dyn Write + Send> {
     #[cfg(test)]
     if let Some(writer) = tests::TEST_WRITER.with_borrow_mut(Option::take) {
@@ -412,6 +402,11 @@ impl<State: Clone + Send + 'static> SharedProgress<State> {
         let guard = self.state.lock().expect("SharedProgress lock");
         guard.clone()
     }
+
+    /// A mapper panic can leave partially mutated state; never turn it into a report.
+    pub(crate) fn read_for_report(&self) -> Option<State> {
+        self.state.lock().ok().map(|state| state.clone())
+    }
 }
 
 // Every clone shares the same `Arc`-backed state.
@@ -475,6 +470,16 @@ pub trait TuiApp: Send + Sync + 'static {
     /// Optional hook invoked once after the loop terminates (both TTY and
     /// headless paths). Used for post-run reports. Defaults to a no-op.
     fn after_loop(&mut self) {}
+
+    /// Human presentation only; implementations must not mutate result accounting.
+    fn progress_snapshot(&self, _elapsed: Duration) -> Option<progress::ProgressSnapshot> {
+        None
+    }
+
+    fn stage_report(&self, elapsed: Duration) -> Option<progress::StageReport> {
+        self.progress_snapshot(elapsed)
+            .map(|progress| progress::StageReport { progress, elapsed })
+    }
 
     fn init(&mut self, cancelled: Arc<AtomicBool>) -> Result<StdOutOrErrTerminal> {
         let use_stdout = stdout().is_terminal();
@@ -598,14 +603,16 @@ pub trait TuiApp: Send + Sync + 'static {
 
         let shared_progress = self.shared_progress().clone();
         let mut map_progress = self.progress_mapper();
-        let terminal = if run_headless(
+        let display = progress::select_display(
+            crate::commands::progress_mode(),
             stdout().is_terminal(),
             stderr().is_terminal(),
             is_test_mode(),
-        ) {
-            None
-        } else {
+        );
+        let terminal = if display == progress::DisplayMode::Full {
             Some(self.init(Arc::clone(&cancelled))?)
+        } else {
+            None
         };
         let quit = Arc::new(AtomicBool::new(false));
         let quit_flag = Arc::clone(&quit);
@@ -638,18 +645,55 @@ pub trait TuiApp: Send + Sync + 'static {
         let Some(mut terminal) = terminal else {
             // No terminal to take over (or test mode): avoid any terminal
             // operations - headless wait.
-            while !quit.load(Ordering::Acquire) {
-                thread::sleep(Duration::from_millis(10));
-                panic_stage.check()?;
-                #[cfg(test)]
-                tests::HEADLESS_TICK.with_borrow_mut(|hook| {
-                    if let Some(hook) = hook {
-                        hook();
+            let started = std::time::Instant::now();
+            let compact = matches!(
+                display,
+                progress::DisplayMode::Inline | progress::DisplayMode::Plain
+            );
+            let interactive = display == progress::DisplayMode::Inline;
+            let mut presenter = progress::Presenter::new(interactive);
+            let line = crate::logging::InlineProgress;
+            let result = (|| -> Result<()> {
+                while !quit.load(Ordering::Acquire) {
+                    panic_stage.check()?;
+                    if compact {
+                        if let Some(snapshot) = self.shared_progress().read_if_dirty() {
+                            self.on_snapshot(snapshot);
+                        }
+                        if cancellation.token.is_cancelled() && !self.attempted_cancel() {
+                            *self.attempted_cancel_mut() = true;
+                            tracing::info!("{}", self.cancel_message());
+                        }
+                        if let Some(mut snapshot) = self.progress_snapshot(started.elapsed()) {
+                            if self.attempted_cancel() {
+                                snapshot.phase = "shutting down".into();
+                            }
+                            let width = interactive.then(progress::compact_width).flatten();
+                            // No reliable width means plain lines, never cursor queries or wrapping.
+                            if let Some(text) =
+                                presenter.update(&snapshot, width, started.elapsed())
+                            {
+                                line.write(&text, interactive && width.is_some())?;
+                            }
+                        }
                     }
-                });
-                while event_rx.try_recv().is_ok() {}
+                    thread::sleep(Duration::from_millis(10));
+                    #[cfg(test)]
+                    tests::HEADLESS_TICK.with_borrow_mut(|hook| {
+                        if let Some(hook) = hook {
+                            hook();
+                        }
+                    });
+                    while event_rx.try_recv().is_ok() {}
+                }
+                Ok(())
+            })();
+            if result.is_err() {
+                cancelled.store(true, Ordering::SeqCst);
             }
             drop(progress_thread);
+            drop(line);
+            result?;
             panic_stage.check()?;
             let snapshot = self.shared_progress().read();
             self.on_snapshot(snapshot);
@@ -2376,24 +2420,5 @@ mod tests {
         );
         println!("TERMINAL_OWNERSHIP_ERROR_RETURNED_CANCEL_TRUE");
         Ok(())
-    }
-
-    #[test]
-    fn always_run_headless_in_test_mode() {
-        assert!(run_headless(true, true, true));
-        assert!(run_headless(false, false, true));
-    }
-
-    #[test]
-    fn a_terminal_on_either_stream_runs_the_tui() {
-        assert!(!run_headless(true, false, false));
-        assert!(!run_headless(false, true, false));
-        assert!(!run_headless(true, true, false));
-    }
-
-    #[test]
-    fn no_terminal_at_all_runs_headless() {
-        // The `docker run` without `-t` case: raw mode would fail with ENXIO.
-        assert!(run_headless(false, false, false));
     }
 }

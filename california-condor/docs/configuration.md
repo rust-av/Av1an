@@ -12,6 +12,7 @@ For the full `condor.json` struct reference, see [Configuration](./configuration
 | [Temporary](#temporary---temp)                    | `--temp`        | Path   | Input file name hash |
 | [Log File](#log-file---logs)                      | `--logs`        | Path   | `./logs/condor.log`  |
 | [Verbose](#verbose---verbose)                     | `--verbose`     |        |                      |
+| [Progress](#progress---progress)                  | `--progress`    | `full`, `compact` | `full`       |
 | [Version](#version--v---version)                   | `-v`, `--version` |      |                      |
 
 ## Config File `--config-file`
@@ -55,6 +56,15 @@ If not specified, logs to `./logs/condor.log`.
 ## Verbose `--verbose`
 
 Enable verbose output and logging.
+
+## Progress `--progress`
+
+Choose `full` (the default full-screen TUI) or `compact` (inline progress without
+taking over the terminal). The option works before or after a subcommand and is
+not saved in `condor.json`. Both modes leave final stage statistics on stderr.
+
+For batch jobs, use `av1an encode --progress compact` with an existing job,
+or see the [progress display guide](./guide.md#progress-display) for a full run.
 
 ## Version `-v`, `--version`
 

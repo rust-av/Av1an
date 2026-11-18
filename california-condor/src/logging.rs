@@ -27,15 +27,55 @@ static CONSOLE: Mutex<ConsoleState> = Mutex::new(ConsoleState {
     count: 0,
     dropped: 0,
     truncated: 0,
+    inline: false,
 });
 
 struct ConsoleState {
+    inline: bool,
     owners: usize,
     events: [[u8; DEFERRED_BYTES]; DEFERRED_EVENTS],
     lengths: [usize; DEFERRED_EVENTS],
     count: usize,
     dropped: usize,
     truncated: usize,
+}
+
+fn clear_inline(state: &mut ConsoleState, writer: &mut impl io::Write) -> io::Result<()> {
+    if std::mem::take(&mut state.inline) {
+        writer.write_all(b"\r\x1b[2K")?;
+        writer.flush()?;
+    }
+    Ok(())
+}
+
+/// Inline output uses the console lock, but never full-screen diagnostic suppression.
+pub(crate) struct InlineProgress;
+
+impl InlineProgress {
+    pub(crate) fn write(&self, line: &str, inline: bool) -> io::Result<()> {
+        let mut state = CONSOLE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut writer = io::stderr().lock();
+        if !inline {
+            clear_inline(&mut state, &mut writer)?;
+        }
+        // A partial write still needs cleanup on an error.
+        state.inline = inline;
+        crate::apps::progress::write_progress(&mut writer, line, inline)
+    }
+}
+
+impl Drop for InlineProgress {
+    fn drop(&mut self) {
+        let mut state = CONSOLE.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = clear_inline(&mut state, &mut io::stderr().lock());
+    }
+}
+
+pub(crate) fn panic_inline_cleanup() {
+    // The panicking writer may hold this lock; the host panic hook must not wait.
+    if let Ok(mut state) = CONSOLE.try_lock() {
+        let _ = clear_inline(&mut state, &mut io::stderr().lock());
+    }
 }
 
 /// Silences only console events until the terminal owner's final flush.
@@ -117,7 +157,9 @@ impl<'a> MakeWriter<'a> for Console {
 impl io::Write for ConsoleWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         if self.state.owners == 0 {
-            return io::stderr().write(bytes);
+            let mut writer = io::stderr().lock();
+            clear_inline(&mut self.state, &mut writer)?;
+            return writer.write(bytes);
         }
         // ponytail: retain the first eight warning/error prefixes only. File
         // logging is independent; a larger UI message subsystem is not needed.

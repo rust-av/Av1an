@@ -860,6 +860,7 @@ fn tui_screens() -> Vec<Screen> {
         )
         .expect("valid screenshot measurements");
         app.on_snapshot(TargetQualityState {
+            phase: None,
             quality_passes: passes,
             current_pass: 2,
             frames_encoded: 6040,
@@ -890,6 +891,7 @@ fn tui_screens() -> Vec<Screen> {
         )
         .expect("valid screenshot measurements");
         app.on_snapshot(TargetQualityState {
+            phase: None,
             quality_passes: passes,
             current_pass: 2,
             frames_encoded: CLIP_FRAMES as u64,

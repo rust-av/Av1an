@@ -145,8 +145,11 @@ does not guarantee every metric, GPU driver or transitive runtime works wherever
 `av1an` starts. The Linux archive smoke gate checks CPU metric discovery; GPU and
 other platform acceptance must run in their own environments.
 
-Run without a terminal — a CI job, or output redirected to a file — and `av1an`
-skips the TUI on its own, printing JSON progress events on stdout.
+When neither stdout nor stderr is a terminal, `av1an` skips the full TUI
+automatically, keeping its existing JSON progress events on stdout and printing
+final statistics on stderr. For batch jobs even on a terminal, use
+`--progress compact`: inline stderr progress, or occasional plain lines when
+stderr is redirected. See [progress display](guide.md#progress-display).
 
 For the unpublished Rust library, use the [Andean Condor local path dependency](index.md#library).
 

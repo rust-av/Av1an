@@ -51,6 +51,9 @@ out.write_bytes(b'complete')
 
 def run(binary: str, template: Path, base: Path, mode: str, route: str) -> None:
     """Exercise dispatch through a joined encoder/index owner and real input."""
+    label = mode
+    compact = mode.startswith("compact-")
+    mode = mode.removeprefix("compact-")
     with tempfile.TemporaryDirectory(prefix='cli-interrupt-', dir=base) as directory:
         root = Path(directory)
         config = json.loads(template.read_text())
@@ -87,6 +90,7 @@ def run(binary: str, template: Path, base: Path, mode: str, route: str) -> None:
         terminal = bytearray()
         with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
             child = subprocess.Popen([binary, '--config-file', str(job), '--logs', str(root/'events.log')]
+                + (['--progress', 'compact'] if compact else [])
                 + (['encode'] if route == 'standalone' else ['--skip-scd']),
                 stdin=slave, stdout=stdout, stderr=slave if mode.startswith('key') else stderr,
                 env=env, preexec_fn=controlling_terminal)
@@ -103,7 +107,9 @@ def run(binary: str, template: Path, base: Path, mode: str, route: str) -> None:
                         os.write(master, b'\x1b[1;1R'); observed += 1
                     if not (root/'active').exists():
                         continue
-                    if mode.startswith('key') and not terminal.count(b'\x1b[?1049h'):
+                    if compact:
+                        assert termios.tcgetattr(slave) == original, "compact enabled raw mode"
+                    if mode.startswith('key') and not compact and not terminal.count(b'\x1b[?1049h'):
                         continue
                     if requests == 0:
                         if mode.startswith('key'):
@@ -115,6 +121,8 @@ def run(binary: str, template: Path, base: Path, mode: str, route: str) -> None:
                     elif requests == 1 and time.monotonic() - sent > .3:
                         assert child.poll() is None, 'first request killed active encoder'
                         assert not (root/'completed').exists()
+                        if compact:
+                            assert b"Waiting for Encoders to finish" in terminal, "compact did not acknowledge graceful Ctrl-C"
                         if mode.endswith('graceful'):
                             (root/'release').touch()
                         elif mode == 'key-force':
@@ -138,7 +146,11 @@ def run(binary: str, template: Path, base: Path, mode: str, route: str) -> None:
                 assert status == (143 if mode.startswith('term') else 130), (mode, status, data, diagnostic)
                 assert requests == 2
                 assert restored == original, 'raw terminal mode not restored'
-                if mode.startswith('key'):
+                if compact:
+                    assert b'\x1b[?1049' not in terminal and b'\x1b[?25' not in terminal
+                    assert b'Encoding cancelled:' in diagnostic, diagnostic
+                    assert b'Job completed' not in diagnostic, diagnostic
+                elif mode.startswith('key'):
                     assert terminal.count(b'\x1b[?1049h') == terminal.count(b'\x1b[?1049l') == 1
                     assert terminal.count(b'\x1b[?25h') == 1
                     assert diagnostic.index(b'\x1b[?25h') < diagnostic.index(b'Error:')
@@ -167,7 +179,7 @@ def run(binary: str, template: Path, base: Path, mode: str, route: str) -> None:
                     assert (root/'media.mkv').read_bytes() == b'source-index-sentinel'
                 leader = int((root/'pids').read_text().split()[0])
                 assert not Path(f'/proc/{leader}').exists(), 'direct child not reaped at outcome'
-                print(f'{mode}/{route}: status={status}, joined/restored, one scene, sentinels, child reaped')
+                print(f'{label}/{route}: status={status}, joined/restored, one scene, sentinels, child reaped')
             finally:
                 if child.poll() is None: child.kill()
                 child.wait(timeout=5)
@@ -585,7 +597,7 @@ elif __name__ == '__main__' and len(sys.argv) == 5 and sys.argv[3] == 'listener'
     listener(sys.argv[1], Path(sys.argv[2]), int(sys.argv[4]))
 elif __name__ == '__main__':
     assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
-    all_modes = ('key-graceful', 'key-force', 'key-mixed', 'int-graceful', 'int-force', 'term-graceful', 'term-force', 'open-force', 'override-force')
+    all_modes = ('key-graceful', 'key-force', 'key-mixed', 'int-graceful', 'int-force', 'term-graceful', 'term-force', 'open-force', 'override-force', 'compact-key-graceful', 'compact-key-force')
     if sys.argv[1] == '--cli-modes':
         binary, base = sys.argv[2:4]
         modes = tuple(sys.argv[4:])

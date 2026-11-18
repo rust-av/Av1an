@@ -545,7 +545,122 @@ def check_logging(binary: str, selected_case: str) -> None:
                 check_stream(binary, selected_stream, f"logging-{case}", root)
 
 
-if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "logging":
+def check_compact(binary: str, test: str) -> None:
+    """Exercise actual inline lifecycle/log coordination across two stages."""
+    for stdout_tty, stderr_tty, testmode, no_ctty in (
+        (False, False, False, False), (True, False, False, False),
+        (False, True, False, False), (True, True, False, False),
+        (False, True, True, False), (False, True, False, True),
+    ):
+        with tempfile.TemporaryDirectory(prefix="compact-") as root:
+            master, slave = os.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 100, 0, 0))
+            original = termios.tcgetattr(slave)
+            env = os.environ.copy()
+            env.pop("CONDOR_TEST_MODE", None)
+            env["COMPACT_PROGRESS_ROOT"] = root
+            env["TERM"] = "xterm-256color"
+            # Detect a terminal-size implementation that shells out to tput.
+            tput = Path(root, "tput")
+            tput.write_text(f"#!{sys.executable}\nfrom pathlib import Path\nPath({str(Path(root, 'tput-called'))!r}).touch()\nprint(80)\n")
+            tput.chmod(0o755)
+            env["PATH"] = root + os.pathsep + env.get("PATH", "")
+            if testmode:
+                env["CONDOR_TEST_MODE"] = "1"
+            def controlling_terminal() -> None:
+                os.setsid()
+                if not no_ctty:
+                    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+            with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+                child = subprocess.Popen(
+                    [binary, "--exact", test, "--nocapture", "--quiet"],
+                    stdin=slave, stdout=slave if stdout_tty else stdout,
+                    stderr=slave if stderr_tty else stderr,
+                    env=env, preexec_fn=controlling_terminal,
+                )
+                terminal = bytearray()
+                released = set()
+                try:
+                    deadline = time.monotonic() + 25
+                    while child.poll() is None:
+                        assert time.monotonic() < deadline, ("compact watchdog", terminal)
+                        if select.select([master], [], [], .01)[0]:
+                            terminal.extend(os.read(master, 65536))
+                        assert termios.tcgetattr(slave) == original, "compact changed live termios"
+                        diagnostic = bytes(terminal) if stderr_tty else os.pread(stderr.fileno(), 1048576, 0)
+                        for stage in (1, 2):
+                            if not Path(root, f"started-{stage}").exists():
+                                continue
+                            if testmode or b"Concatenation" in diagnostic:
+                                Path(root, f"log-{stage}").touch()
+                            marker = f"COMPACT-LIVE-{stage}-".encode() + "鳥".encode() * 200
+                            if Path(root, f"logged-{stage}").exists() and marker in diagnostic:
+                                Path(root, f"release-{stage}").touch()
+                                released.add(stage)
+                    assert child.wait(timeout=5) == 0, terminal
+                    assert termios.tcgetattr(slave) == original
+                    os.close(slave)
+                    slave = -1
+                    while True:
+                        try:
+                            data = os.read(master, 65536)
+                        except OSError as error:
+                            if error.errno != errno.EIO:
+                                raise
+                            break
+                        if not data:
+                            break
+                        terminal.extend(data)
+                    diagnostic = bytes(terminal) if stderr_tty else os.pread(stderr.fileno(), 1048576, 0)
+                    data = bytes(terminal) if stdout_tty else os.pread(stdout.fileno(), 1048576, 0)
+                    assert released == {1, 2}, (released, diagnostic)
+                    for forbidden in (b"\x1b[?1049", b"\x1b[?25", b"\x1b[2J", b"\x1b[6n"):
+                        assert forbidden not in bytes(terminal), terminal
+                    assert b"COMPACT_ASSERTIONS_COMPLETED" in data, data
+                    assert diagnostic.count(b"Concatenation completed:") == (0 if testmode else 2), diagnostic
+                    if not stderr_tty:
+                        assert b"\r" not in diagnostic and b"\x1b" not in diagnostic, diagnostic
+                    if not stdout_tty:
+                        assert b"\x1b" not in data and b"Concatenation completed:" not in data, data
+                        assert data.count(b'[Scene Concatenator][Progress]: {"Processed":20.0}') == 2, data
+                    assert not Path(root, "tput-called").exists(), "compact spawned tput to guess the width"
+                    assert Path(root, "events.log").read_text().count("COMPACT-LIVE-") == 2
+                finally:
+                    if child.poll() is None:
+                        child.kill()
+                    child.wait(timeout=5)
+                    if slave >= 0:
+                        os.close(slave)
+                    os.close(master)
+    print("COMPACT_MATRIX_PASSED=6")
+
+
+def check_broken_progress(binary: str, test: str) -> None:
+    """Break the real stderr pipe before rendering, retaining a live sender."""
+    env = os.environ.copy()
+    env.pop("CONDOR_TEST_MODE", None)
+    env["COMPACT_BROKEN_CHILD"] = "1"
+    child = subprocess.Popen(
+        [binary, "--exact", test, "--nocapture"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+    )
+    try:
+        child.stderr.close()
+        child.stderr = None
+        stdout, _ = child.communicate(input=b"x", timeout=5)
+        assert child.returncode == 0, stdout
+        assert b"COMPACT_BROKEN_PIPE_ASSERTIONS_COMPLETED" in stdout, stdout
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=5)
+
+
+if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "compact-broken":
+    check_broken_progress(sys.argv[1], sys.argv[3])
+elif __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "compact":
+    check_compact(sys.argv[1], sys.argv[3])
+elif __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "logging":
     check_logging(sys.argv[1], sys.argv[3])
 elif __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[2] == "panic":
     check_panics(sys.argv[1], sys.argv[3])

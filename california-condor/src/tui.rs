@@ -92,6 +92,103 @@ pub(crate) fn finish_stage(
     }
 }
 
+type ReportedDisplay = (Result<()>, Option<crate::apps::progress::StageReport>);
+
+fn run_reported(
+    mut app: impl TuiApp,
+    progress: std::sync::mpsc::Receiver<andean_condor::core::sequence::SequenceStatus>,
+    interrupt: Interrupt,
+) -> ReportedDisplay {
+    let started = Instant::now();
+    let result = app.run(progress, interrupt);
+    let elapsed = started.elapsed();
+    let report = app.shared_progress().read_for_report().and_then(|snapshot| {
+        app.on_snapshot(snapshot);
+        app.stage_report(elapsed)
+    });
+    (result, report)
+}
+
+fn finish_reported_stage_to(
+    stage: &str,
+    executed: Result<((), Vec<anyhow::Error>)>,
+    join_display: impl FnOnce() -> thread::Result<ReportedDisplay>,
+    interrupt: &Interrupt,
+    writer: &mut impl Write,
+) -> Result<()> {
+    let execution_failed = executed.as_ref().is_err_and(|e| {
+        !e.is::<andean_condor::utils::cancellation::Cancelled>()
+            && !e.is::<crate::interrupt::Interrupted>()
+    });
+    let mut report = None;
+    let mut display_failed = false;
+    let result = finish_stage(stage, executed, || {
+        join_display().map(|(result, data)| {
+            display_failed = result.is_err();
+            report = data;
+            result
+        })
+    });
+    let result = interrupt.finish(result);
+    let outcome = if execution_failed || display_failed {
+        "failed"
+    } else if result.is_err() {
+        "cancelled"
+    } else {
+        "completed"
+    };
+    if let Some(report) = report {
+        let printed = writeln!(writer, "{}", report.line(outcome)).and_then(|()| writer.flush());
+        if let Err(error) = printed {
+            return match result {
+                Ok(()) => Err(error.into()),
+                Err(primary) => Err(primary.context(format!("progress report failed: {error}"))),
+            };
+        }
+    }
+    result
+}
+
+fn finish_reported_stage(
+    stage: &str,
+    executed: Result<((), Vec<anyhow::Error>)>,
+    join_display: impl FnOnce() -> thread::Result<ReportedDisplay>,
+    interrupt: &Interrupt,
+) -> Result<()> {
+    if crate::apps::is_test_mode() {
+        return finish_stage(stage, executed, || join_display().map(|(result, _)| result));
+    }
+    finish_reported_stage_to(
+        stage,
+        executed,
+        join_display,
+        interrupt,
+        &mut std::io::stderr(),
+    )
+}
+
+fn recovery_notice(
+    compact: bool,
+    stdout_tty: bool,
+    remaining: u64,
+    stdout: &mut impl Write,
+    stderr: &mut impl Write,
+) -> std::io::Result<()> {
+    if compact {
+        if remaining == 5 {
+            writeln!(stderr, "Resuming in 5 seconds...")?;
+            stderr.flush()?;
+        }
+    } else if stdout_tty {
+        write!(stdout, "\rResuming in {remaining} seconds...")?;
+        stdout.flush()?;
+    } else {
+        write!(stderr, "\rResuming in {remaining} seconds...")?;
+        stderr.flush()?;
+    }
+    Ok(())
+}
+
 /// Opens `data`, logging its progress, if available.
 ///
 /// Only FFMS2 and DGDecNV report real progress. A VapourSynth input indexes
@@ -204,13 +301,13 @@ pub fn run_scene_detector_tui(
             if elapsed >= Duration::from_secs(5) {
                 break;
             }
-            if std::io::stdout().is_terminal() {
-                print!("\rResuming in {} seconds...", 5 - elapsed.as_secs());
-                std::io::stdout().flush()?;
-            } else {
-                eprint!("\rResuming in {} seconds...", 5 - elapsed.as_secs());
-                std::io::stderr().flush()?;
-            }
+            recovery_notice(
+                crate::commands::progress_mode() == crate::commands::ProgressMode::Compact,
+                std::io::stdout().is_terminal(),
+                5 - elapsed.as_secs(),
+                &mut std::io::stdout(),
+                &mut std::io::stderr(),
+            )?;
             thread::sleep(Duration::from_secs(1));
         }
 
@@ -254,18 +351,23 @@ pub fn run_scene_detector_tui(
     debug!("Running Scene Detector");
     let ctrlc_cancelled = cancelled.clone();
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let tui_handle = thread::spawn(move || -> Result<()> {
-        let mut scd_app = SceneDetectionApp::new(
+    let report_interrupt = cancelled.clone();
+    let tui_handle = thread::spawn(move || {
+        let scd_app = SceneDetectionApp::new(
             initial_frames,
             clip_info.num_frames as u64,
             initial_scenes,
             clip_info,
         );
-        scd_app.run(progress_rx, ctrlc_cancelled)?;
-        Ok(())
+        run_reported(scd_app, progress_rx, ctrlc_cancelled)
     });
     let executed = scene_detector.execute_cancel(condor, progress_tx, cancelled.token);
-    finish_stage("Scene Detection", executed, || tui_handle.join())
+    finish_reported_stage(
+        "Scene Detection",
+        executed,
+        || tui_handle.join(),
+        &report_interrupt,
+    )
 }
 
 #[tracing::instrument(skip_all)]
@@ -313,15 +415,18 @@ pub fn run_noise_detector_tui(
     }
 
     debug!("Running Noise Detector");
-    let mut nd_app = NoiseDetectionApp::new(&condor.scenes, clip_info);
+    let nd_app = NoiseDetectionApp::new(&condor.scenes, clip_info);
     let ctrlc_cancelled = cancelled.clone();
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let tui_handle = thread::spawn(move || -> Result<()> {
-        nd_app.run(progress_rx, ctrlc_cancelled)?;
-        Ok(())
-    });
+    let report_interrupt = cancelled.clone();
+    let tui_handle = thread::spawn(move || run_reported(nd_app, progress_rx, ctrlc_cancelled));
     let executed = noise_detector.execute_cancel(condor, progress_tx, cancelled.token);
-    finish_stage("Noise Detection", executed, || tui_handle.join())
+    finish_reported_stage(
+        "Noise Detection",
+        executed,
+        || tui_handle.join(),
+        &report_interrupt,
+    )
 }
 
 #[tracing::instrument(skip_all)]
@@ -391,13 +496,31 @@ pub fn run_benchmarker_tui(
 
     let ctrlc_cancelled = cancelled.clone();
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let tui_handle = thread::spawn(move || -> Result<()> {
-        let mut benchmarker_app = BenchmarkerApp::new(encoder, clip_info);
-        benchmarker_app.run(progress_rx, ctrlc_cancelled)?;
-        Ok(())
+    let report_interrupt = cancelled.clone();
+    let tui_handle = thread::spawn(move || {
+        run_reported(
+            BenchmarkerApp::new(encoder, clip_info),
+            progress_rx,
+            ctrlc_cancelled,
+        )
     });
     let executed = benchmarker.execute_cancel(condor, progress_tx, cancelled.token);
-    finish_stage("Benchmarker", executed, || tui_handle.join())
+    finish_reported_stage(
+        "Benchmarker",
+        executed,
+        || {
+            tui_handle.join().map(|(result, report)| {
+                let report = report.map(|mut report| {
+                    if let Some(workers) = condor.sequence_config.parallel_encoder.workers {
+                        report.progress.detail = format!("selected {workers} workers");
+                    }
+                    report
+                });
+                (result, report)
+            })
+        },
+        &report_interrupt,
+    )
 }
 
 fn target_quality_app(
@@ -481,7 +604,7 @@ pub fn run_target_quality_tui(
         .target_quality
         .as_ref()
         .expect("target_quality is required");
-    let mut tq_app = target_quality_app(
+    let tq_app = target_quality_app(
         clip_info,
         &condor.scenes,
         &condor.encoder,
@@ -489,12 +612,15 @@ pub fn run_target_quality_tui(
     )?;
     let ctrlc_cancelled = cancelled.clone();
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let tui_handle = thread::spawn(move || -> Result<()> {
-        tq_app.run(progress_rx, ctrlc_cancelled)?;
-        Ok(())
-    });
+    let report_interrupt = cancelled.clone();
+    let tui_handle = thread::spawn(move || run_reported(tq_app, progress_rx, ctrlc_cancelled));
     let executed = target_quality.execute_cancel(condor, progress_tx, cancelled.token);
-    finish_stage("Target Quality", executed, || tui_handle.join())
+    finish_reported_stage(
+        "Target Quality",
+        executed,
+        || tui_handle.join(),
+        &report_interrupt,
+    )
 }
 
 #[tracing::instrument(skip_all)]
@@ -545,7 +671,7 @@ pub fn run_quality_check_tui(
         .expect("quality_check is required");
     let metric = quality_check_config.metric.clone();
     let statistic = quality_check_config.statistic;
-    let mut qc_app = QualityCheckApp::new(
+    let qc_app = QualityCheckApp::new(
         clip_info,
         &condor.scenes,
         metric,
@@ -554,12 +680,15 @@ pub fn run_quality_check_tui(
     )?;
     let ctrlc_cancelled = cancelled.clone();
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let tui_handle = thread::spawn(move || -> Result<()> {
-        qc_app.run(progress_rx, ctrlc_cancelled)?;
-        Ok(())
-    });
+    let report_interrupt = cancelled.clone();
+    let tui_handle = thread::spawn(move || run_reported(qc_app, progress_rx, ctrlc_cancelled));
     let executed = quality_check.execute_cancel(condor, progress_tx, cancelled.token);
-    finish_stage("Quality Check", executed, || tui_handle.join())
+    finish_reported_stage(
+        "Quality Check",
+        executed,
+        || tui_handle.join(),
+        &report_interrupt,
+    )
 }
 
 #[tracing::instrument(skip_all)]
@@ -680,13 +809,21 @@ pub fn run_parallel_encoder_tui(
 
     let ctrlc_cancelled = cancelled.clone();
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let tui_handle = thread::spawn(move || -> Result<()> {
-        let mut pe_app = ParallelEncoderApp::new(workers, encoder, scenes_map, clip_info);
-        pe_app.run(progress_rx, ctrlc_cancelled)?;
-        Ok(())
+    let report_interrupt = cancelled.clone();
+    let tui_handle = thread::spawn(move || {
+        run_reported(
+            ParallelEncoderApp::new(workers, encoder, scenes_map, clip_info),
+            progress_rx,
+            ctrlc_cancelled,
+        )
     });
     let executed = parallel_encoder.execute_cancel(condor, progress_tx, cancelled.token);
-    finish_stage("Parallel Encoder", executed, || tui_handle.join())
+    finish_reported_stage(
+        "Parallel Encoder",
+        executed,
+        || tui_handle.join(),
+        &report_interrupt,
+    )
 }
 
 #[tracing::instrument(skip_all)]
@@ -716,13 +853,28 @@ pub fn run_scene_concatenator_tui(
     debug!("Running Scene Concatenator");
     let ctrlc_cancelled = cancelled.clone();
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
-    let tui_handle = thread::spawn(move || -> Result<()> {
-        let mut sc_app = SceneConcatenatorApp::new(clip_info, scenes_len, method);
-        sc_app.run(progress_rx, ctrlc_cancelled)?;
-        Ok(())
+    let report_interrupt = cancelled.clone();
+    let tui_handle = thread::spawn(move || {
+        run_reported(
+            SceneConcatenatorApp::new(clip_info, scenes_len, method),
+            progress_rx,
+            ctrlc_cancelled,
+        )
     });
     let executed = scene_concatenator.execute_cancel(condor, progress_tx, cancelled.token);
-    finish_stage("Scene Concatenator", executed, || tui_handle.join())
+    finish_reported_stage(
+        "Scene Concatenator",
+        executed,
+        || tui_handle.join(),
+        &report_interrupt,
+    )?;
+    if !crate::apps::is_test_mode() {
+        let output =
+            condor.sequence_config.scene_concatenator.effective_output(&condor.output.path);
+        // Metadata diagnostics acquire the console lock before writing stderr.
+        crate::apps::progress::write_output(&mut std::io::stderr(), output)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, ThisError)]
@@ -747,6 +899,272 @@ mod tests {
     use tracing_subscriber::{Layer, layer::SubscriberExt};
 
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn compact_progress_preserves_terminal_and_live_diagnostics() {
+        const TEST: &str = "tui::tests::compact_progress_preserves_terminal_and_live_diagnostics";
+        if let Some(root) = std::env::var_os("COMPACT_PROGRESS_ROOT") {
+            let root = std::path::PathBuf::from(root);
+            crate::commands::set_progress_mode(crate::commands::ProgressMode::Compact);
+            let _logging = crate::logging::init_logging(
+                tracing::level_filters::LevelFilter::INFO,
+                &root.join("events.log"),
+                tracing::level_filters::LevelFilter::DEBUG,
+            )
+            .unwrap();
+            let (clip, _) = crate::test_helpers::quality_scene_fixture();
+            for stage in 1..=2 {
+                let interrupt = Interrupt::default();
+                let (tx, rx) = mpsc::channel();
+                let app = SceneConcatenatorApp::new(clip, 1, Default::default());
+                let other = interrupt.clone();
+                let display = thread::spawn(move || run_reported(app, rx, other));
+                tx.send(andean_condor::core::sequence::SequenceStatus::Whole(
+                    andean_condor::core::sequence::Status::Processing {
+                        id: "Concatenation".into(),
+                        completion: andean_condor::core::sequence::SequenceCompletion::Percentage(
+                            20.0,
+                        ),
+                    },
+                ))
+                .unwrap();
+                std::fs::write(root.join(format!("started-{stage}")), "").unwrap();
+                let deadline = Instant::now() + Duration::from_secs(15);
+                while !root.join(format!("log-{stage}")).exists() {
+                    assert!(Instant::now() < deadline, "log handshake timed out");
+                    thread::sleep(Duration::from_millis(5));
+                }
+                warn!("COMPACT-LIVE-{stage}-{}", "鳥".repeat(200));
+                std::fs::write(root.join(format!("logged-{stage}")), "").unwrap();
+                while !root.join(format!("release-{stage}")).exists() {
+                    assert!(Instant::now() < deadline, "diagnostic handshake timed out");
+                    thread::sleep(Duration::from_millis(5));
+                }
+                drop(tx);
+                finish_reported_stage(
+                    "Concatenation",
+                    Ok(((), vec![])),
+                    || display.join(),
+                    &interrupt,
+                )
+                .unwrap();
+            }
+            println!("COMPACT_ASSERTIONS_COMPLETED");
+            return;
+        }
+        let output = Command::new("python3")
+            .args(["-B", concat!(env!("CARGO_MANIFEST_DIR"), "/src/apps/pty_test_support.py")])
+            .arg(std::env::current_exe().unwrap())
+            .args(["compact", TEST])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("COMPACT_MATRIX_PASSED=6"));
+    }
+
+    #[test]
+    fn reported_stage_waits_for_outcome_and_preserves_execution_error() {
+        use crate::apps::progress::{ProgressSnapshot, StageReport};
+        for (fail, interrupt, display_fail, expected) in [
+            (false, false, false, "completed"),
+            (true, false, false, "failed"),
+            (false, true, false, "cancelled"),
+            (true, false, true, "failed"),
+        ] {
+            let cancellation = Interrupt::default();
+            if interrupt {
+                cancellation.request(130).unwrap();
+            }
+            let report = StageReport {
+                progress: ProgressSnapshot {
+                    stage: "Encoding",
+                    completed: 100,
+                    total: Some(100),
+                    ..Default::default()
+                },
+                elapsed: Duration::from_secs(1),
+            };
+            let mut bytes = Vec::new();
+            let mut joined = false;
+            let executed = if fail {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "late publication failure",
+                )
+                .into())
+            } else {
+                Ok(((), vec![]))
+            };
+            let result = finish_reported_stage_to(
+                "Encoding",
+                executed,
+                || {
+                    joined = true;
+                    Ok((
+                        if display_fail {
+                            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe).into())
+                        } else {
+                            Ok(())
+                        },
+                        Some(report),
+                    ))
+                },
+                &cancellation,
+                &mut bytes,
+            );
+            assert!(joined);
+            assert!(String::from_utf8(bytes).unwrap().contains(&format!("Encoding {expected}:")));
+            if fail {
+                assert_eq!(
+                    result.unwrap_err().downcast_ref::<std::io::Error>().unwrap().kind(),
+                    std::io::ErrorKind::InvalidData
+                );
+            } else {
+                assert_eq!(result.is_ok(), !interrupt);
+            }
+        }
+    }
+
+    #[test]
+    fn broken_display_then_executor_cancellation_is_reported_as_failure() {
+        use crate::apps::progress::{ProgressSnapshot, StageReport};
+        let interrupt = Interrupt::default();
+        interrupt.token.legacy_flag().store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut output = Vec::new();
+        let error = finish_reported_stage_to(
+            "Encoding",
+            Err(andean_condor::utils::cancellation::Cancelled::Graceful.into()),
+            || {
+                Ok((
+                    Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe).into()),
+                    Some(StageReport {
+                        progress: ProgressSnapshot {
+                            stage: "Encoding",
+                            ..Default::default()
+                        },
+                        elapsed: Duration::ZERO,
+                    }),
+                ))
+            },
+            &interrupt,
+            &mut output,
+        )
+        .unwrap_err();
+        assert!(String::from_utf8(output).unwrap().starts_with("Encoding failed:"));
+        let secondary = error.downcast_ref::<SecondaryDisplayFailure>().unwrap();
+        assert_eq!(
+            secondary.display.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::BrokenPipe
+        );
+    }
+
+    #[test]
+    fn reported_mapper_panic_does_not_panic_again_reading_poisoned_progress() {
+        const TEST: &str =
+            "tui::tests::reported_mapper_panic_does_not_panic_again_reading_poisoned_progress";
+        if std::env::var_os("REPORTED_PANIC_CHILD").is_some() {
+            let (clip, _) = crate::test_helpers::quality_scene_fixture();
+            let (tx, rx) = mpsc::channel();
+            tx.send(andean_condor::core::sequence::SequenceStatus::Whole(
+                andean_condor::core::sequence::Status::Completed {
+                    id: "invalid worker id".into(),
+                },
+            ))
+            .unwrap();
+            drop(tx);
+            let before = crate::apps::panic_reports();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_reported(
+                    BenchmarkerApp::new(Default::default(), clip),
+                    rx,
+                    Interrupt::default(),
+                )
+            }));
+            let (result, report) =
+                result.expect("report collection must not panic after a mapper panic");
+            assert!(result.is_err());
+            assert!(
+                report.is_none(),
+                "partially mutated state is not reportable"
+            );
+            assert_eq!(
+                crate::apps::panic_reports() - before,
+                1,
+                "preserve the original diagnostic only"
+            );
+            return;
+        }
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST, "--nocapture"])
+            .env("REPORTED_PANIC_CHILD", "1")
+            .env("CONDOR_TEST_MODE", "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn compact_write_failure_cancels_and_joins_live_receiver() {
+        const TEST: &str = "tui::tests::compact_write_failure_cancels_and_joins_live_receiver";
+        if std::env::var_os("COMPACT_BROKEN_CHILD").is_some() {
+            use std::io::Read as _;
+            std::io::stdin().read_exact(&mut [0u8]).unwrap();
+            crate::commands::set_progress_mode(crate::commands::ProgressMode::Compact);
+            let (clip, _) = crate::test_helpers::quality_scene_fixture();
+            let mut app = SceneConcatenatorApp::new(clip, 1, Default::default());
+            let interrupt = Interrupt::default();
+            let (tx, rx) = mpsc::channel();
+            let threads = std::fs::read_dir("/proc/self/task").unwrap().count();
+            let error = app.run(rx, interrupt.clone()).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<std::io::Error>().unwrap().kind(),
+                std::io::ErrorKind::BrokenPipe
+            );
+            assert!(interrupt.token.is_cancelled());
+            assert_eq!(
+                std::fs::read_dir("/proc/self/task").unwrap().count(),
+                threads
+            );
+            drop(tx); // Receiver shutdown must not depend on sender disconnect.
+            println!("COMPACT_BROKEN_PIPE_ASSERTIONS_COMPLETED");
+            return;
+        }
+        let output = Command::new("python3")
+            .args(["-B", concat!(env!("CARGO_MANIFEST_DIR"), "/src/apps/pty_test_support.py")])
+            .arg(std::env::current_exe().unwrap())
+            .args(["compact-broken", TEST])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn compact_recovery_notice_is_one_plain_stderr_message() {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        recovery_notice(true, true, 5, &mut stdout, &mut stderr).unwrap();
+        assert!(stdout.is_empty());
+        assert_eq!(stderr, b"Resuming in 5 seconds...\n");
+        recovery_notice(true, true, 3, &mut stdout, &mut stderr).unwrap();
+        assert_eq!(std::str::from_utf8(&stderr).unwrap().lines().count(), 1);
+    }
 
     #[test]
     fn frame_mismatch_displays_both_counts_and_filter_hint() {
