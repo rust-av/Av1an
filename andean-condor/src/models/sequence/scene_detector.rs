@@ -159,6 +159,26 @@ impl SceneDetectionMethod {
         }
     }
 
+    /// Rejects scene length settings that cannot produce progress.
+    ///
+    /// A zero maximum length would leave the splitter without a chunk size,
+    /// and an inverted range can never be satisfied.
+    #[inline]
+    pub fn validate_lengths(&self) -> Result<()> {
+        let minimum_length = self.minimum_length();
+        let maximum_length = self.maximum_length();
+        if maximum_length == 0 {
+            bail!("scene detection maximum length must be at least one frame");
+        }
+        if minimum_length > maximum_length {
+            bail!(
+                "scene detection minimum length ({minimum_length}) exceeds maximum length \
+                 ({maximum_length})"
+            );
+        }
+        Ok(())
+    }
+
     #[inline]
     pub fn set_maximum_length(&mut self, length: usize) -> Result<()> {
         match self {
@@ -257,5 +277,43 @@ impl ScenecutScore {
             forward_adjusted_cost: result.forward_adjusted_cost,
             threshold: result.threshold,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_zero_maximum_length_is_rejected() {
+        let method = SceneDetectionMethod::None {
+            minimum_length: 24,
+            maximum_length: 0,
+        };
+        assert!(method.validate_lengths().is_err());
+    }
+
+    #[test]
+    fn an_inverted_length_range_is_rejected() {
+        let method = SceneDetectionMethod::AVSceneChange {
+            minimum_length: 48,
+            maximum_length: 24,
+            method: ScenecutMethod::Standard,
+            save_scores: false,
+        };
+        assert!(method.validate_lengths().is_err());
+    }
+
+    #[test]
+    fn usable_lengths_are_accepted() {
+        assert!(SceneDetectionMethod::default().validate_lengths().is_ok());
+        assert!(
+            SceneDetectionMethod::None {
+                minimum_length: 0,
+                maximum_length: 1,
+            }
+            .validate_lengths()
+            .is_ok()
+        );
     }
 }

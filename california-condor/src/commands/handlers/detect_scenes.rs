@@ -213,7 +213,7 @@ pub fn configure_scene_detector_cancel(
         .method
         .set_maximum_length(max_scene_frames)?;
 
-    Ok(())
+    configuration.condor.sequence_config.scene_detector.method.validate_lengths()
 }
 
 /// The scene detection algorithms `detect-scenes set method` can choose.
