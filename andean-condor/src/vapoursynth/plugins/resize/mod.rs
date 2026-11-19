@@ -135,3 +135,83 @@ pub enum DitherType {
     #[strum(serialize = "error_diffusion")]
     ErrorDiffusion,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vapoursynth::script_builder::{VapourSynthPluginScript, script::Line};
+
+    #[test]
+    fn resize_script_quotes_dither_and_keeps_clip_as_a_variable() {
+        let dither_type = Some(DitherType::ErrorDiffusion);
+        let scalers: [(&str, &dyn VapourSynthPluginScript); 8] = [
+            (
+                "Bicubic",
+                &bicubic::Bicubic {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Bilinear",
+                &bilinear::Bilinear {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Bob",
+                &bob::Bob {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Lanczos",
+                &lanczos::Lanczos {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Point",
+                &point::Point {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Spline16",
+                &spline16::Spline16 {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Spline36",
+                &spline36::Spline36 {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+            (
+                "Spline64",
+                &spline64::Spline64 {
+                    dither_type,
+                    ..Default::default()
+                },
+            ),
+        ];
+
+        for (name, scaler) in scalers {
+            let (_, lines) = scaler.generate_script("clip".into()).expect("generate resize script");
+            let [Line::Expression(_, call)] = lines.as_slice() else {
+                panic!("expected one expression for {name}");
+            };
+            assert_eq!(
+                call,
+                &format!(r#"core.resize.{name}(clip = clip, dither_type = "error_diffusion")"#)
+            );
+        }
+    }
+}

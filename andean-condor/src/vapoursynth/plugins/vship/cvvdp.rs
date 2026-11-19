@@ -277,6 +277,34 @@ fn collect_scene_values_with<'core>(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn cvvdp_script_quotes_or_omits_model_name() {
+        for (model_name, expected) in [
+            (
+                Some(DisplayModel::Standard4K),
+                r#"core.vship.CVVDP(reference = ref_clip, distorted = dist_clip, model_name = "standard_4k")"#,
+            ),
+            (
+                None,
+                "core.vship.CVVDP(reference = ref_clip, distorted = dist_clip)",
+            ),
+        ] {
+            let plugin = CVVDP {
+                reference_node_name: "ref_clip".into(),
+                distorted_node_name: "dist_clip".into(),
+                model_name,
+                ..Default::default()
+            };
+            let (_, lines) = plugin.generate_script("clip".into()).expect("generate CVVDP script");
+            let [Line::Expression(_, call)] = lines.as_slice() else {
+                panic!("expected one CVVDP expression");
+            };
+            assert_eq!(call, expected);
+        }
+    }
+
     mod internal_integration {
         use super::super::*;
         use std::{cell::Cell, sync::mpsc};
@@ -512,7 +540,11 @@ impl VapourSynthPluginScript for CVVDP {
                 write!(&mut line, ", gpu_id = {}", gpu_id)?;
             }
             if let Some(model_name) = &self.model_name {
-                write!(&mut line, ", model_name = {}", model_name)?;
+                write!(
+                    &mut line,
+                    ", model_name = {}",
+                    python_string_literal(&model_name.to_string())
+                )?;
             }
             if let Some(model_config_json) = &self.model_config_json {
                 write!(

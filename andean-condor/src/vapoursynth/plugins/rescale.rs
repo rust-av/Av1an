@@ -780,4 +780,36 @@ mod tests {
             "Bilinear(border_handling = BorderHandling.MIRROR)"
         );
     }
+
+    #[test]
+    fn rescale_script_quotes_or_omits_descale_mode() {
+        for (builder, expect_mode) in [
+            (RescaleBuilder::default(), true),
+            (
+                RescaleBuilder {
+                    mode: None,
+                    ..Default::default()
+                },
+                false,
+            ),
+        ] {
+            let (_, lines) =
+                builder.generate_script("clip".into()).expect("generate rescale script");
+            let descale = lines
+                .iter()
+                .find_map(|line| match line {
+                    Line::Expression(_, call) if call.starts_with("rescale_builder.descale(") => {
+                        Some(call)
+                    },
+                    _ => None,
+                })
+                .expect("descale call");
+
+            if expect_mode {
+                assert!(descale.contains(r#", mode = "hw")"#), "{descale}");
+            } else {
+                assert!(!descale.contains("mode ="), "{descale}");
+            }
+        }
+    }
 }
