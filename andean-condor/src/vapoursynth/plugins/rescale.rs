@@ -327,15 +327,11 @@ impl RescaleBuilder {
             } => {
                 modules.insert(kernel.to_string(), None);
                 modules.insert("BorderHandling".to_owned(), None);
-                let b_str = b.as_ref().map_or_else(String::new, |b| format!("b = {},", b));
-                let c_str = c.as_ref().map_or_else(String::new, |c| format!("c = {},", c));
+                let b_str = b.map_or_else(String::new, |b| format!("b = {b}, "));
+                let c_str = c.map_or_else(String::new, |c| format!("c = {c}, "));
                 format!(
-                    "{}({}{}linear = {}, border_handling = BorderHandling.{})",
-                    b_str,
-                    c_str,
-                    kernel,
-                    if *linear { "True" } else { "False" },
-                    border_handling
+                    "{kernel}({b_str}{c_str}linear = {linear}, border_handling = BorderHandling.{border_handling})",
+                    linear = if *linear { "True" } else { "False" },
                 )
             },
             VSJETKernel::Spline16 {
@@ -397,14 +393,10 @@ impl RescaleBuilder {
             } => {
                 modules.insert(kernel.to_string(), None);
                 modules.insert("BorderHandling".to_owned(), None);
-                let taps_str =
-                    taps.as_ref().map_or_else(String::new, |taps| format!("taps = {},", taps));
+                let taps_str = taps.map_or_else(String::new, |taps| format!("taps = {taps}, "));
                 format!(
-                    "{}({}linear = {}, border_handling = BorderHandling.{})",
-                    taps_str,
-                    kernel,
-                    if *linear { "True" } else { "False" },
-                    border_handling
+                    "{kernel}({taps_str}linear = {linear}, border_handling = BorderHandling.{border_handling})",
+                    linear = if *linear { "True" } else { "False" },
                 )
             },
             VSJETKernel::Point {
@@ -761,6 +753,56 @@ pub enum Waifu2xModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rescale_script_places_bicubic_auto_arguments_inside_constructor() {
+        for (b, c, expected) in [
+            (
+                None,
+                None,
+                "BicubicAuto(linear = False, border_handling = BorderHandling.MIRROR)",
+            ),
+            (
+                Some(0.25),
+                None,
+                "BicubicAuto(b = 0.25, linear = False, border_handling = BorderHandling.MIRROR)",
+            ),
+            (
+                None,
+                Some(0.5),
+                "BicubicAuto(c = 0.5, linear = False, border_handling = BorderHandling.MIRROR)",
+            ),
+        ] {
+            let (_, call) = RescaleBuilder::kernel_details(&VSJETKernel::BicubicAuto {
+                b,
+                c,
+                linear: false,
+                border_handling: BorderHandling::Mirror,
+            });
+            assert_eq!(call, expected);
+        }
+    }
+
+    #[test]
+    fn rescale_script_places_lanczos_taps_inside_constructor() {
+        for (taps, expected) in [
+            (
+                None,
+                "Lanczos(linear = True, border_handling = BorderHandling.MIRROR)",
+            ),
+            (
+                Some(4),
+                "Lanczos(taps = 4, linear = True, border_handling = BorderHandling.MIRROR)",
+            ),
+        ] {
+            let (_, call) = RescaleBuilder::kernel_details(&VSJETKernel::Lanczos {
+                taps,
+                linear: true,
+                border_handling: BorderHandling::Mirror,
+            });
+            assert_eq!(call, expected);
+        }
+    }
 
     #[test]
     fn bilinear_rescale_kernel_renders_mirror_border_handling() {
