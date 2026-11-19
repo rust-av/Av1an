@@ -175,10 +175,10 @@ impl VapourSynthPluginScript for Bicubic {
                 )?;
             }
             if let Some(a) = self.a {
-                write!(&mut line, ", a = {}", a)?;
+                write!(&mut line, ", filter_param_a = {}", a)?;
             }
             if let Some(b) = self.b {
-                write!(&mut line, ", b = {}", b)?;
+                write!(&mut line, ", filter_param_b = {}", b)?;
             }
             write!(&mut line, ")")?;
             line
@@ -187,5 +187,42 @@ impl VapourSynthPluginScript for Bicubic {
         lines.push(Line::Expression(node_name, line));
 
         Ok((None, lines))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bicubic_script_uses_vapoursynth_coefficient_keywords() {
+        for (a, b, expected_params) in [
+            (
+                Some(0.25),
+                Some(0.5),
+                ", filter_param_a = 0.25, filter_param_b = 0.5",
+            ),
+            (Some(0.25), None, ", filter_param_a = 0.25"),
+            (None, Some(0.5), ", filter_param_b = 0.5"),
+        ] {
+            let scaler = Bicubic {
+                width: Some(16),
+                height: Some(16),
+                a,
+                b,
+                ..Default::default()
+            };
+            let (_, lines) =
+                scaler.generate_script("clip".into()).expect("generate Bicubic script");
+            let [Line::Expression(_, call)] = lines.as_slice() else {
+                panic!("expected one Bicubic expression");
+            };
+            assert_eq!(
+                call,
+                &format!(
+                    "core.resize.Bicubic(clip = clip, width = 16, height = 16{expected_params})"
+                )
+            );
+        }
     }
 }
