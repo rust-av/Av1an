@@ -14,7 +14,7 @@ use crate::vapoursynth::{
     },
     script_builder::{
         NodeVariableName, VapourSynthPluginScript,
-        script::{Imports, Line},
+        script::{Imports, Line, python_string_literal},
     },
 };
 
@@ -160,7 +160,11 @@ impl VapourSynthPluginScript for Spline36 {
                 write!(&mut line, ", chromaloc_in = {}", chromaloc_in as i64)?;
             }
             if let Some(dither_type) = self.dither_type {
-                write!(&mut line, ", dither_type = {}", dither_type)?;
+                write!(
+                    &mut line,
+                    ", dither_type = {}",
+                    python_string_literal(&dither_type.to_string())
+                )?;
             }
             write!(&mut line, ")")?;
             line

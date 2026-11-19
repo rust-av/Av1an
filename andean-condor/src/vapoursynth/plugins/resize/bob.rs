@@ -168,7 +168,11 @@ impl VapourSynthPluginScript for Bob {
                 write!(&mut line, ", chromaloc_in = {}", chromaloc_in as i64)?;
             }
             if let Some(dither_type) = self.dither_type {
-                write!(&mut line, ", dither_type = {}", dither_type)?;
+                write!(
+                    &mut line,
+                    ", dither_type = {}",
+                    python_string_literal(&dither_type.to_string())
+                )?;
             }
             if let Some(filter) = self.filter.as_ref() {
                 write!(&mut line, ", filter = {}", python_string_literal(filter))?;
