@@ -562,6 +562,7 @@ mod tests {
 
     /// Runs the full CLI path through TransNetV2. Ignored by default because
     /// it needs the ~31 MB model resolved from one of the search locations.
+    #[cfg(feature = "transnetv2")]
     #[serial]
     #[test]
     #[ignore = "requires the TransNetV2 model (~31 MB) to be present"]
