@@ -39,7 +39,7 @@ nom = "8.0.0"
 once_cell = { workspace = true }
 # Pinned: later rcs drop the x86_64-apple-darwin prebuilt and enforce strict
 # execution-provider dist matching.
-ort = "=2.0.0-rc.12"
+ort = "=2.0.0-rc.15"
 pastey = "0.2.0"
 path_abs = { workspace = true }
 schemars = "1.2.2"
