@@ -61,6 +61,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = encode_handler(
@@ -171,6 +172,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = encode_handler(
@@ -235,6 +237,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (mut config, _) =
@@ -1289,23 +1292,38 @@ mod tests {
                     .expect("override")
             };
             let cancelled = Arc::new(AtomicBool::new(false));
-            let (mut decoded, info) =
-                open_input(effective, &cancelled).expect("actual FFMS2 filtered decode");
+            let (mut decoded, info) = open_input(
+                effective,
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &cancelled,
+                )),
+            )
+            .expect("actual FFMS2 filtered decode");
             assert_eq!(info.resolution, (16, 8), "{case}");
             assert_eq!(
                 decoded.y4m_frame(0).expect("real first frame").into_inner().len(),
                 6 + 16 * 8 * 3 / 2,
                 "{case}: FRAME header plus 8-bit 420 planes"
             );
-            let (mut reference, info) =
-                open_input(&original.condor.input, &cancelled).expect("unmodified root decode");
+            let (mut reference, info) = open_input(
+                &original.condor.input,
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &cancelled,
+                )),
+            )
+            .expect("unmodified root decode");
             assert_eq!(info.resolution, (32, 16));
             assert_eq!(
                 reference.y4m_frame(0).expect("reference frame").into_inner().len(),
                 6 + 32 * 16 * 3 / 2
             );
-            let (mut source, info) =
-                open_input(&override_input, &cancelled).expect("unmodified override source decode");
+            let (mut source, info) = open_input(
+                &override_input,
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &cancelled,
+                )),
+            )
+            .expect("unmodified override source decode");
             assert_eq!(info.resolution, (48, 24));
             assert_eq!(
                 source.y4m_frame(0).expect("source frame").into_inner().len(),
@@ -1441,12 +1459,15 @@ mod tests {
         let template = configuration.clone();
         let saved_file = file.clone();
         let mut condor = configuration
-            .instantiate_condor(Box::new(move |model| {
-                let mut saved = template.clone();
-                saved.condor = model;
-                saved.save(&saved_file)?;
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |model| {
+                    let mut saved = template.clone();
+                    saved.condor = model;
+                    saved.save(&saved_file)?;
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("real native FFMS2 input");
         let (tx, rx) = std::sync::mpsc::channel();
         let mut sequence = ParallelEncoder::default();
@@ -2095,8 +2116,15 @@ mod parameters {
         let script = temp.path().join("blank.vpy");
         std::fs::write(&script, "from vapoursynth import core, YUV420P8\ncore.std.BlankClip(width=64,height=64,format=YUV420P8).set_output()\n").expect("script");
         let output = temp.path().join("out.mkv");
-        let mut config =
-            Configuration::new(&script, &output, Some(temp.path()), None, None).expect("config");
+        let mut config = Configuration::new(
+            &script,
+            &output,
+            Some(temp.path()),
+            None,
+            None,
+            &Default::default(),
+        )
+        .expect("config");
         let source = temp.path().join("must-not-open.mkv");
         std::fs::write(&source, b"not a video").expect("inert input");
         config.condor.input = Input::Video {

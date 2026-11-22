@@ -21,7 +21,6 @@ use ratatui::{
     },
     prelude::CrosstermBackend,
 };
-use tracing::debug;
 
 pub mod benchmarker;
 pub mod noise_detection;
@@ -532,33 +531,9 @@ pub trait TuiApp: Send + Sync + 'static {
         result.and(cleanup)
     }
 
-    /// Legacy graceful bool API. A `true` result indicates a repeated request,
-    /// never permission to exit before joining the runtime's process owners.
-    fn handle_ctrl_c(
-        &mut self,
-        key: event::KeyEvent,
-        cancelled: &Arc<AtomicBool>,
-        stdout_is_terminal: bool,
-    ) -> bool {
-        if key.code == KeyCode::Char('c')
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-            && key.is_press()
-        {
-            *self.attempted_cancel_mut() = true;
-            let already_cancelled = cancelled.swap(true, Ordering::SeqCst);
-            if already_cancelled {
-                debug!("Force quit Condor");
-                return true;
-            } else if !stdout_is_terminal {
-                eprintln!("{}", self.cancel_message());
-            }
-        }
-        false
-    }
-
     /// Keyboard and OS events advance the same E12 root. Keep rendering until
     /// the producer disconnects, including after force; never detach its owners.
-    fn handle_ctrl_c_cancel(
+    fn handle_ctrl_c(
         &mut self,
         key: event::KeyEvent,
         cancelled: &crate::interrupt::Interrupt,
@@ -711,7 +686,7 @@ pub trait TuiApp: Send + Sync + 'static {
                 // input is exhausted or no terminal can be read (`Err`).
                 while matches!(event::poll(Duration::ZERO), Ok(true)) {
                     if let Ok(TermEvent::Key(key)) = event::read() {
-                        self.handle_ctrl_c_cancel(key, &cancellation)?;
+                        self.handle_ctrl_c(key, &cancellation)?;
                     }
                 }
 
@@ -1013,7 +988,7 @@ mod tests {
                     },
                     filters: vec![],
                 };
-                let error = crate::tui::open_input_cancel(&input, &cancellation.token)
+                let error = crate::tui::open_input(&input, &cancellation.token)
                     .err()
                     .expect("forced opening");
                 assert!(error.is::<andean_condor::utils::cancellation::Cancelled>());
@@ -1984,7 +1959,9 @@ mod tests {
                         panic!("TUI_PANIC-main-payload");
                     }));
                 });
-                return crate::entry_point();
+                return crate::entry_point(
+                    andean_condor::utils::cancellation::Cancellation::default(),
+                );
             }
             let (tx, rx) = mpsc::channel();
             let worker = (case == "worker").then(|| {

@@ -121,6 +121,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) =
@@ -180,6 +181,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = concatenate_handler(
@@ -386,7 +388,7 @@ mod tests {
         config.condor.output.overwrite = true;
         config.condor.sequence_config.scene_concatenator.method = ConcatMethod::Ivf;
         let mut condor = config
-            .instantiate_condor(Box::new(|_| Ok(())))
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
             .expect("open inline source, retain declared identity");
         assert!(
             SceneConcatenator::default().validate(&mut condor).is_err(),

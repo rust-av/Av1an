@@ -18,14 +18,14 @@ use crate::{
             benchmarker::benchmarker_handler,
             concatenate::concatenate_handler,
             detect_noise::detect_noise_handler,
-            detect_scenes::detect_scenes_handler_cancel,
+            detect_scenes::detect_scenes_handler,
             encode::encode_handler,
-            init::init_handler_cancel,
+            init::init_handler,
             optimize_bitrate::optimize_bitrate_handler,
             quality_check::quality_check_handler,
             scale_noise::scale_noise_handler,
             scale_speed::scale_speed_handler,
-            start::start_handler_cancel,
+            start::start_handler,
             target_quality::target_quality_handler,
             zone::{configure_zoner, zone_handler},
         },
@@ -108,13 +108,8 @@ thread_local! {
     static TEST_ENTRY_RUN: std::cell::RefCell<Option<TestEntryRun>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Entry point used by both `main()` binary and externally (e.g., tests).
-pub fn entry_point() -> anyhow::Result<()> {
-    entry_point_cancel(interrupt::Interrupt::default())
-}
-
 /// Library entry with explicit cancellation; does not install OS handlers.
-pub fn entry_point_cancel(cancellation: impl Into<interrupt::Interrupt>) -> anyhow::Result<()> {
+pub fn entry_point(cancellation: impl Into<interrupt::Interrupt>) -> anyhow::Result<()> {
     apps::install_panic_hook();
     let cancellation = cancellation.into();
     let mut report = None;
@@ -345,7 +340,7 @@ fn run(
                 }
                 let (input, output) =
                     commands::handlers::init::require_paths(input.as_deref(), output.as_deref())?;
-                init_handler_cancel(
+                init_handler(
                     config_path.as_deref(),
                     temp.as_deref(),
                     input,
@@ -383,7 +378,7 @@ fn run(
                         &edit,
                     );
                 }
-                let (configuration, save_file) = detect_scenes_handler_cancel(
+                let (configuration, save_file) = detect_scenes_handler(
                     config_path.as_deref(),
                     temp.as_deref(),
                     input.as_deref(),
@@ -396,7 +391,7 @@ fn run(
                     &cancellation.token,
                 )?;
 
-                run_scene_detector_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_scene_detector(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::Benchmark {
                 edit,
@@ -413,7 +408,7 @@ fn run(
                     max_memory,
                 )?;
 
-                run_benchmarker_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_benchmarker(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::Zone { zones, dry_run, .. }) => {
                 let (configuration, save_file) = zone_handler(config_path.as_deref(), &zones)?;
@@ -423,11 +418,11 @@ fn run(
                      be saved"
                     );
                     let mut condor = configuration
-                        .instantiate_condor_cancel(Box::new(|_| Ok(())), &cancellation.token)?;
+                        .instantiate_condor(Box::new(|_| Ok(())), &cancellation.token)?;
                     Zoner::run(&mut condor, cancellation.token.clone())?;
                     info!("Zoner dry-run complete: no configuration changes were saved");
                 } else {
-                    run_zoner_cancel(&configuration, &save_file, cancellation.clone())?;
+                    run_zoner(&configuration, &save_file, cancellation.clone())?;
                 }
             },
             Some(Commands::Scenes { index, action }) => {
@@ -460,7 +455,7 @@ fn run(
                     denoised_filters.as_deref(),
                 )?;
 
-                run_noise_detector_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_noise_detector(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::ScaleNoise {
                 edit,
@@ -480,7 +475,7 @@ fn run(
                     scale_chroma,
                 )?;
 
-                run_noise_scaler_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_noise_scaler(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::TargetQuality {
                 edit,
@@ -516,7 +511,7 @@ fn run(
                     profile.as_ref(),
                 )?;
 
-                run_target_quality_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_target_quality(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::OptimizeBitrate {
                 edit,
@@ -531,7 +526,7 @@ fn run(
                 let (configuration, save_file) =
                     optimize_bitrate_handler(config_path.as_deref(), sigma_threshold)?;
 
-                run_bitrate_optimizer_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_bitrate_optimizer(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::ScaleSpeed {
                 edit,
@@ -547,7 +542,7 @@ fn run(
                     speeds.as_deref(),
                 )?;
 
-                run_speed_scaler_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_speed_scaler(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::Encode {
                 edit,
@@ -584,7 +579,7 @@ fn run(
                     max_tries,
                 )?;
 
-                run_encoder_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_encoder(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::Concatenate {
                 edit,
@@ -603,7 +598,7 @@ fn run(
                     overwrite,
                 )?;
 
-                run_concatenator_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_concatenator(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::QualityCheck {
                 edit,
@@ -631,7 +626,7 @@ fn run(
                     profile.as_ref(),
                 )?;
 
-                run_quality_check_cancel(&configuration, &save_file, cancellation.clone())?;
+                run_quality_check(&configuration, &save_file, cancellation.clone())?;
             },
             Some(Commands::Clean { all: _ }) => {
                 anyhow::bail!(
@@ -640,7 +635,7 @@ fn run(
                 );
             },
             None => {
-                let (mut configuration, save_file) = start_handler_cancel(
+                let (mut configuration, save_file) = start_handler(
                     config_path.as_deref(),
                     temp.as_deref(),
                     cli.input.as_deref(),
@@ -731,7 +726,7 @@ fn instantiate_editable_condor(
         config
     });
 
-    configuration.instantiate_condor_cancel(
+    configuration.instantiate_condor(
         Box::new(move |data| {
             let mut config = config_copy.clone();
             config.condor = data;
@@ -743,18 +738,8 @@ fn instantiate_editable_condor(
     )
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_condor(configuration: &Configuration, save_file: &Path, skip_scd: bool) -> Result<()> {
-    run_condor_cancel(
-        configuration,
-        save_file,
-        skip_scd,
-        interrupt::Interrupt::default(),
-    )
-}
-
 /// Runs all stages with one root, including source/override input opening.
-pub fn run_condor_cancel(
+pub fn run_condor(
     configuration: &Configuration,
     save_file: &Path,
     skip_scd: bool,
@@ -861,13 +846,8 @@ fn run_condor_reported(
     Ok(())
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_scene_detector(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_scene_detector_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_scene_detector_cancel(
+pub fn run_scene_detector(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -877,15 +857,8 @@ pub fn run_scene_detector_cancel(
     cancellation.finish(run_scene_detector_tui(&mut condor, cancellation.clone()))
 }
 
-/// Applies the configured zones to the scenes already in the configuration,
-/// without a TUI.
-#[tracing::instrument(skip_all)]
-pub fn run_zoner(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_zoner_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Editable scene transaction with cancellation-aware source opening.
-pub fn run_zoner_cancel(
+pub fn run_zoner(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -895,13 +868,8 @@ pub fn run_zoner_cancel(
     cancellation.finish(Zoner::run(&mut condor, cancellation.token.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_benchmarker(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_benchmarker_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_benchmarker_cancel(
+pub fn run_benchmarker(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -911,13 +879,8 @@ pub fn run_benchmarker_cancel(
     cancellation.finish(run_benchmarker_tui(&mut condor, cancellation.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_noise_detector(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_noise_detector_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_noise_detector_cancel(
+pub fn run_noise_detector(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -927,13 +890,8 @@ pub fn run_noise_detector_cancel(
     cancellation.finish(run_noise_detector_tui(&mut condor, cancellation.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_noise_scaler(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_noise_scaler_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_noise_scaler_cancel(
+pub fn run_noise_scaler(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -943,13 +901,8 @@ pub fn run_noise_scaler_cancel(
     cancellation.finish(run_noise_scaler_tui(&mut condor, cancellation.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_target_quality(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_target_quality_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_target_quality_cancel(
+pub fn run_target_quality(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -959,13 +912,8 @@ pub fn run_target_quality_cancel(
     cancellation.finish(run_target_quality_tui(&mut condor, cancellation.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_bitrate_optimizer(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_bitrate_optimizer_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_bitrate_optimizer_cancel(
+pub fn run_bitrate_optimizer(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -975,13 +923,8 @@ pub fn run_bitrate_optimizer_cancel(
     cancellation.finish(run_bitrate_optimizer_tui(&mut condor, cancellation.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_speed_scaler(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_speed_scaler_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_speed_scaler_cancel(
+pub fn run_speed_scaler(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -991,13 +934,8 @@ pub fn run_speed_scaler_cancel(
     cancellation.finish(run_speed_scaler_tui(&mut condor, cancellation.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_encoder(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_encoder_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_encoder_cancel(
+pub fn run_encoder(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -1007,13 +945,8 @@ pub fn run_encoder_cancel(
     cancellation.finish(run_parallel_encoder_tui(&mut condor, cancellation.clone()))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_concatenator(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_concatenator_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_concatenator_cancel(
+pub fn run_concatenator(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,
@@ -1026,13 +959,8 @@ pub fn run_concatenator_cancel(
     ))
 }
 
-#[tracing::instrument(skip_all)]
-pub fn run_quality_check(configuration: &Configuration, save_file: &Path) -> Result<()> {
-    run_quality_check_cancel(configuration, save_file, interrupt::Interrupt::default())
-}
-
 /// Standalone sequence with caller-owned cancellation; no OS registration.
-pub fn run_quality_check_cancel(
+pub fn run_quality_check(
     configuration: &Configuration,
     save_file: &Path,
     cancellation: impl Into<interrupt::Interrupt>,

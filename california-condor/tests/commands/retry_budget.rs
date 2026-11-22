@@ -117,6 +117,7 @@ fn check_retry_budget(phase: u8) {
             None,
             value,
             false,
+            &Default::default(),
         )
     };
     assert_eq!(
@@ -227,7 +228,7 @@ fn check_retry_budget(phase: u8) {
     fs::remove_file(&video.path).expect("zero must not open source");
     assert!(
         config
-            .instantiate_condor(Box::new(|_| Ok(())))
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
             .err()
             .expect("zero before backend IO")
             .to_string()
@@ -269,6 +270,7 @@ fn check_retry_budget(phase: u8) {
             None,
             Some(0),
             false,
+            &Default::default()
         )
         .expect_err("init zero before backend IO")
         .to_string()

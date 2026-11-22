@@ -265,19 +265,8 @@ impl Configuration {
         )
     }
 
-    #[inline]
-    pub fn new(
-        input: &Path,
-        output: &Path,
-        temp: Option<&Path>,
-        vs_args: Option<&[String]>,
-        decoder: Option<&DecoderMethod>,
-    ) -> Result<Self> {
-        Self::new_cancel(input, output, temp, vs_args, decoder, &Default::default())
-    }
-
     /// Startup metadata/index opening using the same root as subsequent execution.
-    pub fn new_cancel(
+    pub fn new(
         input: &Path,
         output: &Path,
         temp: Option<&Path>,
@@ -296,7 +285,7 @@ impl Configuration {
         let input_data = Self::new_input_model(input, decoder, vs_args, None, None)?;
         // The startup open, needed here for the frame rate. This is also what
         // builds a missing index, which `open_input` reports on the log.
-        let (_, clip_info) = crate::tui::open_input_cancel(&input_data, cancellation)?;
+        let (_, clip_info) = crate::tui::open_input(&input_data, cancellation)?;
         let fps = *clip_info.frame_rate.numer() as f64 / *clip_info.frame_rate.denom() as f64;
 
         let scenes_directory = temp.join("scenes");
@@ -425,16 +414,8 @@ impl Configuration {
         Ok(Some(data))
     }
 
-    #[inline]
+    /// Opens the saved job's input using the same cancellation token as its stages.
     pub fn instantiate_condor(
-        &self,
-        save_callback: SaveCallback<CliSequenceData, CliSequenceConfig>,
-    ) -> Result<Condor<CliSequenceData, CliSequenceConfig>> {
-        self.instantiate_condor_cancel(save_callback, &Default::default())
-    }
-
-    /// Explicit E12 root retained by runtime input/index children and all stages.
-    pub fn instantiate_condor_cancel(
         &self,
         save_callback: SaveCallback<CliSequenceData, CliSequenceConfig>,
         cancellation: &andean_condor::utils::cancellation::Cancellation,
@@ -445,7 +426,7 @@ impl Configuration {
         // The input carries its own filters, so every input kind is opened the
         // same way — and opened once here, so the `Input` every later phase
         // reads through `condor.input` is the one indexed here.
-        let (input, _clip_info) = crate::tui::open_input_cancel(&self.condor.input, cancellation)?;
+        let (input, _clip_info) = crate::tui::open_input(&self.condor.input, cancellation)?;
         let output = Output::new(&self.condor.output)?;
 
         let mut sequence_config = self.condor.sequence_config.clone();

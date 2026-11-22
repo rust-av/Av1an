@@ -238,12 +238,15 @@ mod tests {
         std::fs::write(blocked.join("sentinel"), b"preserve").expect("sentinel");
         let candidate = legacy.clone();
         let mut direct = legacy
-            .instantiate_condor(Box::new(move |data| {
-                let mut staged = candidate.clone();
-                staged.condor = data;
-                staged.save(&blocked)?;
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |data| {
+                    let mut staged = candidate.clone();
+                    staged.condor = data;
+                    staged.save(&blocked)?;
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("direct");
         let before = serde_json::to_value(direct.as_data()).expect("runtime");
         assert!(
@@ -323,7 +326,10 @@ mod tests {
         condor_cmd(&temp).arg("zone").assert().success();
         assert_eq!(std::fs::read(&path).expect("current no save"), bytes);
         let mut direct = migrated
-            .instantiate_condor(Box::new(|_| anyhow::bail!("no extra save")))
+            .instantiate_condor(
+                Box::new(|_| anyhow::bail!("no extra save")),
+                &Default::default(),
+            )
             .expect("current roundtrip");
         Zoner::run(&mut direct, Default::default()).expect("current exact definitions skip");
     }
@@ -419,13 +425,16 @@ mod tests {
             let publication = legacy.clone();
             let publication_path = path.clone();
             let mut direct = legacy
-                .instantiate_condor(Box::new(move |data| {
-                    observed.set(observed.get() + 1);
-                    let mut staged = publication.clone();
-                    staged.condor = data;
-                    staged.save(&publication_path)?;
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |data| {
+                        observed.set(observed.get() + 1);
+                        let mut staged = publication.clone();
+                        staged.condor = data;
+                        staged.save(&publication_path)?;
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("owning direct Zoner");
             let mut expected = serde_json::to_value(direct.as_data()).expect("all original state");
             expected["scenes"][0]["sequence_data"]["zoner"]["lifecycle"]["algorithm_revision"] =
@@ -457,15 +466,18 @@ mod tests {
             let publication = legacy.clone();
             let observed = Rc::clone(&saves);
             let mut failed = legacy
-                .instantiate_condor(Box::new(move |data| {
-                    observed.set(observed.get() + 1);
-                    let mut staged = publication.clone();
-                    staged.condor = data;
-                    staged
-                        .save(&blocked)
-                        .map_err(|error| anyhow::anyhow!("scene publication failed: {error:#}"))?;
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |data| {
+                        observed.set(observed.get() + 1);
+                        let mut staged = publication.clone();
+                        staged.condor = data;
+                        staged.save(&blocked).map_err(|error| {
+                            anyhow::anyhow!("scene publication failed: {error:#}")
+                        })?;
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("rollback job");
             let before = serde_json::to_value(failed.as_data()).expect("before failure");
             let error = Zoner::run(&mut failed, Default::default())
@@ -644,12 +656,15 @@ mod tests {
         std::fs::write(blocked.join("sentinel"), b"preserve").expect("sentinel");
         let staged_config = config.clone();
         let mut direct = config
-            .instantiate_condor(Box::new(move |data| {
-                let mut candidate = staged_config.clone();
-                candidate.condor = data;
-                candidate.save(&blocked)?;
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |data| {
+                    let mut candidate = staged_config.clone();
+                    candidate.condor = data;
+                    candidate.save(&blocked)?;
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("direct");
         let runtime_before = serde_json::to_value(direct.as_data()).expect("runtime before");
         let (tx, _rx) = std::sync::mpsc::channel();
@@ -695,10 +710,13 @@ mod tests {
         config.condor = roundtrip;
         let observed = Rc::clone(&saves);
         let mut direct = config
-            .instantiate_condor(Box::new(move |_| {
-                observed.set(observed.get() + 1);
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |_| {
+                    observed.set(observed.get() + 1);
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("reload");
         Zoner::run(&mut direct, Default::default()).expect("known unchanged");
         let (tx, _rx) = std::sync::mpsc::channel();
@@ -719,8 +737,9 @@ mod tests {
         }
         let mut removed = config.clone();
         removed.condor.sequence_config.zoner = None;
-        let mut restored =
-            removed.instantiate_condor(Box::new(|_| Ok(()))).expect("remove length cap");
+        let mut restored = removed
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+            .expect("remove length cap");
         Zoner::run(&mut restored, Default::default()).expect("restore original partition");
         assert_eq!(
             restored.scenes.iter().map(|s| (s.start_frame, s.end_frame)).collect::<Vec<_>>(),
@@ -872,9 +891,10 @@ mod tests {
                     .is_none())
             );
             let mut direct = edited
-                .instantiate_condor(Box::new(|_| {
-                    anyhow::bail!("unchanged definitions must not save")
-                }))
+                .instantiate_condor(
+                    Box::new(|_| anyhow::bail!("unchanged definitions must not save")),
+                    &Default::default(),
+                )
                 .expect("direct");
             Zoner::run(&mut direct, Default::default()).expect("direct unchanged skip after edit");
             if phase >= 2 {

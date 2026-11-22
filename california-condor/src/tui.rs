@@ -1,6 +1,5 @@
 use std::{
     io::{IsTerminal, Write},
-    sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, Instant},
 };
@@ -189,24 +188,8 @@ fn recovery_notice(
     Ok(())
 }
 
-/// Opens `data`, logging its progress, if available.
-///
-/// Only FFMS2 and DGDecNV report real progress. A VapourSynth input indexes
-/// inside its source plugin, where no callback can reach it, so it only gets
-/// the single `Opening input...` line.
-///
-/// Returns the input together with its probed clip info, so callers do not have
-/// to reopen it just to read the header.
-pub fn open_input(data: &InputModel, cancelled: &Arc<AtomicBool>) -> Result<(Input, ClipInfo)> {
-    // Legacy flags are graceful-only; retain one explicit token for force support.
-    open_input_cancel(
-        data,
-        &andean_condor::utils::cancellation::Cancellation::from(Arc::clone(cancelled)),
-    )
-}
-
 /// Library callers can retain this token across opening and sequence execution.
-pub fn open_input_cancel(
+pub fn open_input(
     data: &InputModel,
     cancellation: &andean_condor::utils::cancellation::Cancellation,
 ) -> Result<(Input, ClipInfo)> {
@@ -256,7 +239,7 @@ pub fn run_scene_detector_tui(
     // its own, so re-opening the same model here would only index it twice.
     let (input, clip_info) = if let Some(configured) = &condor.sequence_config.scene_detector.input
     {
-        let (input, clip_info) = open_input_cancel(configured, &cancelled.token)?;
+        let (input, clip_info) = open_input(configured, &cancelled.token)?;
         (Some(input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -313,7 +296,7 @@ pub fn run_scene_detector_tui(
 
         let mut combined = scd_input_data;
         combined.append_input_filters(&main_input_data)?;
-        let (scd_input, clip_info) = open_input_cancel(&combined, &cancelled.token)?;
+        let (scd_input, clip_info) = open_input(&combined, &cancelled.token)?;
 
         // Double check that the frames match
         if clip_info.num_frames != condor.input.clip_info()?.num_frames {
@@ -383,7 +366,7 @@ pub fn run_noise_detector_tui(
     };
 
     let (input, clip_info) = if let Some(input) = &noise_detector_config.input {
-        let (nd_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+        let (nd_input, clip_info) = open_input(input, &cancelled.token)?;
         (Some(nd_input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -560,11 +543,11 @@ pub fn run_target_quality_tui(
     let (target_quality_input, clip_info) = if let Some(Some(input)) =
         &condor.sequence_config.target_quality.as_ref().map(|tq| tq.input.clone())
     {
-        let (tq_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+        let (tq_input, clip_info) = open_input(input, &cancelled.token)?;
         (Some(tq_input), clip_info)
     } else if let Some(pe_input) = &condor.sequence_config.parallel_encoder.input {
         debug!("Falling back to Parallel Encoder input");
-        let (tq_input, clip_info) = open_input_cancel(pe_input, &cancelled.token)?;
+        let (tq_input, clip_info) = open_input(pe_input, &cancelled.token)?;
         (Some(tq_input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -575,7 +558,7 @@ pub fn run_target_quality_tui(
         .as_ref()
         .and_then(|tq| tq.metric_input.clone())
     {
-        Some(input) => Some(open_input_cancel(&input, &cancelled.token)?.0),
+        Some(input) => Some(open_input(&input, &cancelled.token)?.0),
         None => None,
     };
 
@@ -638,7 +621,7 @@ pub fn run_quality_check_tui(
     );
     let (quality_check_input, clip_info) = if !std::ptr::eq(reference, &root) {
         let input = reference;
-        let (qc_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+        let (qc_input, clip_info) = open_input(input, &cancelled.token)?;
         (Some(qc_input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -771,7 +754,7 @@ pub fn run_parallel_encoder_tui(
     debug!("Instantiating Parallel Encoder Input");
     let (parallel_encoder_input, clip_info) =
         if let Some(input) = &condor.sequence_config.parallel_encoder.input {
-            let (pe_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+            let (pe_input, clip_info) = open_input(input, &cancelled.token)?;
             (Some(pe_input), clip_info)
         } else {
             (None, condor.input.clip_info()?)
@@ -1268,6 +1251,7 @@ mod tests {
 
     mod internal_integration {
         use super::*;
+        use std::sync::Arc;
 
         #[derive(Clone, Copy, Debug)]
         enum StageOutcome {

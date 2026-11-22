@@ -69,6 +69,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = target_quality_handler(
@@ -179,6 +180,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = target_quality_handler(
@@ -1078,7 +1080,9 @@ pub(super) mod validation {
                     },
                     "execute" => sequence.execute(&mut condor, tx, Default::default()).map(|_| ()),
                     "tui" => run_target_quality_tui(&mut condor, Arc::new(AtomicBool::new(false))),
-                    _ => configuration.instantiate_condor(Box::new(|_| Ok(()))).map(|_| ()),
+                    _ => configuration
+                        .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+                        .map(|_| ()),
                 };
                 let error = result.expect_err("invalid TQ rejected");
                 assert!(

@@ -137,12 +137,15 @@ mod provenance {
         let original = config.clone();
         let saved_path = file.clone();
         let mut job = config
-            .instantiate_condor(Box::new(move |data| {
-                let mut saved = original.clone();
-                saved.condor = data;
-                saved.save(&saved_path)?;
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |data| {
+                    let mut saved = original.clone();
+                    saved.condor = data;
+                    saved.save(&saved_path)?;
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("native job");
         let (tx, _rx) = std::sync::mpsc::channel();
         TargetQuality::default()
@@ -261,10 +264,13 @@ mod provenance {
             let saves = std::rc::Rc::new(std::cell::Cell::new(0));
             let observed = std::rc::Rc::clone(&saves);
             let mut resumed = reset
-                .instantiate_condor(Box::new(move |_| {
-                    observed.set(observed.get() + 1);
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |_| {
+                        observed.set(observed.get() + 1);
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("owning direct job");
             let before = serde_json::to_vec(&resumed.scenes).expect("saved history/q");
             let (tx, rx) = std::sync::mpsc::channel();
@@ -3099,6 +3105,7 @@ mod crud {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("config");
         let file = temp.path().join("condor.json");
@@ -3162,6 +3169,7 @@ mod crud {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("seed config");
         let source = temp.path().join("configuration-only.mkv");

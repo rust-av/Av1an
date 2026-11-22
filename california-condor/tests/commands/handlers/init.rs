@@ -74,6 +74,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         assert!(config_path.exists(), "config file exists");
@@ -176,6 +177,7 @@ mod handler_configuration {
             Some(75.0),
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         assert!(config_path.exists(), "config file exists");
@@ -216,6 +218,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, _) = load_configuration(Some(&config_path)).expect("config loads");
@@ -254,6 +257,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         );
         assert_matches!(result, Err(_), "init_handler should fail");
         assert!(!config_path.exists(), "config file does not exist");
@@ -334,6 +338,7 @@ mod tests {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect_err("metric needs target");
         assert!(
@@ -398,6 +403,7 @@ mod tests {
             cli.target_profile.as_ref(),
             cli.max_tries,
             cli.overwrite,
+            &Default::default(),
         )
         .expect_err("metric needs target");
         assert!(
@@ -483,6 +489,7 @@ mod tests {
                 cli.target_profile.as_ref(),
                 cli.max_tries,
                 cli.overwrite,
+                &Default::default(),
             )
             .expect_err("shadowed explicit output");
             format!("{error:#}")
@@ -867,6 +874,7 @@ mod tests {
                 None,
                 None,
                 false,
+                &Default::default(),
             )
             .expect("empty combined direct handler");
             assert_eq!(direct.input, replacement);
@@ -1064,6 +1072,7 @@ mod tests {
             cli.target_profile.as_ref(),
             cli.max_tries,
             cli.overwrite,
+            &Default::default(),
         )
         .expect_err("source guard precedes unrelated encoder validation");
         let message = format!("{error:#}");

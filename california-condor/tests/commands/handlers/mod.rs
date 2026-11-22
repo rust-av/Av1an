@@ -62,6 +62,7 @@ mod input_configuration {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("configuration");
         let media = temp.path().join("not-a-decodable-source.mkv");
@@ -164,9 +165,15 @@ mod input_configuration {
              height=16, format=vs.YUV420P8)\nclip.set_output(0)\n",
         )
         .expect("script file writes to disk");
-        let configuration =
-            Configuration::new(&script, &PathBuf::from("out.mkv"), None, None, None)
-                .expect("a configuration can be built from a script");
+        let configuration = Configuration::new(
+            &script,
+            &PathBuf::from("out.mkv"),
+            None,
+            None,
+            None,
+            &Default::default(),
+        )
+        .expect("a configuration can be built from a script");
         let rebuilt = configure_input(
             &configuration,
             &script_input(false),
@@ -226,6 +233,7 @@ mod encoder_admission {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("seed config");
         let source = temp.path().join("must-not-open.mkv");
@@ -381,6 +389,7 @@ mod encoder_admission {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("config");
         let source = temp.path().join("must-not-open.mkv");
@@ -595,6 +604,7 @@ mod filter_rejection {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("seed config");
         let source = temp.path().join("must-not-be-decoded.mkv");
@@ -1177,6 +1187,7 @@ mod target_quality_admission {
                         cli.target_profile.as_ref(),
                         cli.max_tries,
                         cli.overwrite,
+                        &Default::default(),
                     );
                     if let Err(error) = result {
                         failures.push(format!("{case}/{entry}: {error:#}"));

@@ -50,6 +50,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = optimize_bitrate_handler(Some(&config_path), None)
@@ -106,6 +107,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = optimize_bitrate_handler(Some(&config_path), Some(3))

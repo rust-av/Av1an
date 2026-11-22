@@ -226,7 +226,9 @@ mod tests {
         let dir = config.condor.sequence_config.parallel_encoder.scenes_directory.clone();
         std::fs::create_dir_all(dir.join("Target Quality/1/Scene Concatenator")).expect("scratch");
         std::fs::create_dir_all(dir.join("Scene Concatenator")).expect("final concat scratch");
-        let mut job = config.instantiate_condor(Box::new(|_| Ok(()))).expect("native job");
+        let mut job = config
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+            .expect("native job");
         let (tx, _rx) = std::sync::mpsc::channel();
         TargetQuality::default()
             .execute(&mut job, tx, Default::default())
@@ -383,10 +385,13 @@ mod tests {
             let saves = Rc::new(Cell::new(0));
             let observed = Rc::clone(&saves);
             let mut direct = edited
-                .instantiate_condor(Box::new(move |_| {
-                    observed.set(observed.get() + 1);
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |_| {
+                        observed.set(observed.get() + 1);
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("direct job");
             let before = serde_json::to_value(direct.as_data()).expect("before");
             let (tx, rx) = std::sync::mpsc::channel();
@@ -418,7 +423,10 @@ mod tests {
             .expect("empty workdir");
         assert!(edited.admit_results().is_err());
         let mut absent = edited
-            .instantiate_condor(Box::new(|_| anyhow::bail!("must not save")))
+            .instantiate_condor(
+                Box::new(|_| anyhow::bail!("must not save")),
+                &Default::default(),
+            )
             .expect("absent artifacts");
         let (tx, rx) = std::sync::mpsc::channel();
         let error = ParallelEncoder::default()
@@ -433,8 +441,9 @@ mod tests {
             scene.sequence_data.parallel_encoder = Default::default();
         }
         edited.condor.sequence_config.target_quality = None;
-        let mut recovered =
-            edited.instantiate_condor(Box::new(|_| Ok(()))).expect("explicit reset");
+        let mut recovered = edited
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+            .expect("explicit reset");
         let (tx, _rx) = std::sync::mpsc::channel();
         ParallelEncoder::default()
             .execute(&mut recovered, tx, Default::default())
