@@ -146,7 +146,7 @@ mod provenance {
             .expect("native job");
         let (tx, _rx) = std::sync::mpsc::channel();
         TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real TQ");
         let measured = job.scenes[0].sequence_data.target_quality.passes.clone();
         let raw_encoder = job.scenes[0].encoder.clone();
@@ -172,7 +172,7 @@ mod provenance {
             Box::new(|_| anyhow::bail!("speed save failure")),
         );
         let (tx, _rx) = std::sync::mpsc::channel();
-        assert!(SpeedScaler::default().execute_cancel(&mut job, tx, Default::default()).is_err());
+        assert!(SpeedScaler::default().execute(&mut job, tx, Default::default()).is_err());
         assert_eq!(
             serde_json::to_vec(&job.scenes).expect("full rollback"),
             before
@@ -180,7 +180,7 @@ mod provenance {
         job.save_callback = save;
         let (tx, _rx) = std::sync::mpsc::channel();
         SpeedScaler::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("actual downstream speed transition");
         assert_eq!(
             job.scenes[0].encoder.parameters()["preset"].to_string_value(),
@@ -196,7 +196,7 @@ mod provenance {
                     vec![(speed, 0.0), (speed, 51.0)];
                 let (tx, _rx) = std::sync::mpsc::channel();
                 SpeedScaler::default()
-                    .execute_cancel(&mut job, tx, Default::default())
+                    .execute(&mut job, tx, Default::default())
                     .expect("legitimate repeated speed transition");
                 Configuration::load(&file)
                     .expect("saved")
@@ -209,7 +209,7 @@ mod provenance {
             *tq.metric.target_range_mut() = (-999.0, 999.0);
             let (tx, _rx) = std::sync::mpsc::channel();
             TargetQuality::default()
-                .execute_cancel(&mut job, tx, Default::default())
+                .execute(&mut job, tx, Default::default())
                 .expect("target/budget reuse under unchanged Some options");
             assert_eq!(
                 std::fs::read(temp.path().join("calls")).expect("no reprobe"),
@@ -217,7 +217,7 @@ mod provenance {
             );
         }
         let (tx, _rx) = std::sync::mpsc::channel();
-        ParallelEncoder::default().execute_cancel(&mut job,tx,Default::default()).expect("H1: first TQ -> SpeedScaler -> PE must accept certified probe input and actual final preset");
+        ParallelEncoder::default().execute(&mut job,tx,Default::default()).expect("H1: first TQ -> SpeedScaler -> PE must accept certified probe input and actual final preset");
         let saved = Configuration::load(&file).expect("saved model").expect("job");
         saved.admit_results().expect("saved CLI admission after speed scaling");
         let calls = std::fs::read(temp.path().join("calls")).expect("encode counter");
@@ -268,8 +268,7 @@ mod provenance {
                 .expect("owning direct job");
             let before = serde_json::to_vec(&resumed.scenes).expect("saved history/q");
             let (tx, rx) = std::sync::mpsc::channel();
-            let direct =
-                TargetQuality::default().execute_cancel(&mut resumed, tx, Default::default());
+            let direct = TargetQuality::default().execute(&mut resumed, tx, Default::default());
             let cli = condor_cmd(&temp)
                 .args(["encode", "-w", "2"])
                 .output()

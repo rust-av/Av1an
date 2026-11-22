@@ -1350,7 +1350,6 @@ mod tests {
             },
         };
         use california_condor::commands::handlers::encode::encode_handler;
-        use std::sync::{Arc, atomic::AtomicBool};
 
         let temp = tempfile::tempdir().expect("fixture");
         let base = std::fs::canonicalize(temp.path()).expect("canonical fixture");
@@ -1453,10 +1452,18 @@ mod tests {
         let mut sequence = ParallelEncoder::default();
         sequence.validate(&mut condor).expect("real FFmpeg + frame-count prerequisites");
         sequence
-            .initialize(&mut condor, tx.clone())
+            .initialize(
+                &mut condor,
+                tx.clone(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
             .expect("owning work directory initialization");
         sequence
-            .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+            .execute(
+                &mut condor,
+                tx,
+                andean_condor::utils::cancellation::Cancellation::default(),
+            )
             .expect("finite real FFmpeg encode and decoder-backed validation");
         let chunk = selected.join("scenes/00000.mkv");
         let bytes = std::fs::metadata(&chunk).expect("new-root published chunk").len();
@@ -1486,7 +1493,11 @@ mod tests {
         condor.sequence_config.target_quality = Some(target);
         let (tx, _rx) = std::sync::mpsc::channel();
         TargetQuality::default()
-            .initialize(&mut condor, tx)
+            .initialize(
+                &mut condor,
+                tx,
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
             .expect("actual probe directory model");
         assert!(selected.join("scenes/Target Quality").is_dir());
         assert!(!old.join("scenes").exists());

@@ -140,8 +140,8 @@ impl NativeScenes {
         let (tx, _rx) = sync::mpsc::channel();
         let token = Cancellation::default();
         match method {
-            ConcatMethod::Ivf => SceneConcatenator::ivf_cancel(&output, &paths, &tx, &token),
-            ConcatMethod::FFmpeg(_) => SceneConcatenator::ffmpeg_cancel(
+            ConcatMethod::Ivf => SceneConcatenator::ivf(&output, &paths, &tx, &token),
+            ConcatMethod::FFmpeg(_) => SceneConcatenator::ffmpeg(
                 self.root(),
                 &output,
                 &paths,
@@ -152,7 +152,7 @@ impl NativeScenes {
                 &tx,
                 &token,
             ),
-            ConcatMethod::MKVMerge(_) => SceneConcatenator::mkvmerge_cancel(
+            ConcatMethod::MKVMerge(_) => SceneConcatenator::mkvmerge(
                 self.root(),
                 &output,
                 &paths,

@@ -25,7 +25,7 @@ mod internal_integration {
                     qpfile_content: "1 I\n2 I\n".to_owned(),
                     config_content: String::new(),
                 };
-                ZoneEncoder::encode_tasks(input, tasks, plan, tx, cancelled)
+                ZoneEncoder::encode_tasks(input, tasks, plan, tx, cancelled, true)
                     .expect_err("zone failure")
             },
         );

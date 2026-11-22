@@ -1,3 +1,4 @@
+use crate::utils::cancellation::Cancellation;
 use std::{
     collections::BTreeMap,
     sync::{
@@ -70,34 +71,37 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let mut warnings = vec![];
+        super::check_sequence(cancellation, || {
+            let mut warnings = vec![];
 
-        // Getting clip_info may be a long running process, so do it after
-        // data/config validation but before execution
-        if let Some(input) = &mut self.input {
-            progress_tx.send(SequenceStatus::Whole(Status::Processing {
-                id: Self::DETAILS.name.to_owned(),
-                completion: SequenceCompletion::Custom {
-                    name: "Indexing Input".to_owned(),
-                    completed: 0.0,
-                    total: 1.0,
-                },
-            }))?;
-            let input_frames = input.clip_info()?.num_frames;
-            progress_tx.send(SequenceStatus::Whole(Status::Completed {
-                id: Self::DETAILS.name.to_owned(),
-            }))?;
-            let condor_input_frames = condor.input.clip_info()?.num_frames;
-            if input_frames != condor_input_frames {
-                warnings.push(anyhow::Error::new(SceneDetectorError::InputFrameMismatch(
-                    condor_input_frames,
-                    input_frames,
-                )));
+            // Getting clip_info may be a long running process, so do it after
+            // data/config validation but before execution
+            if let Some(input) = &mut self.input {
+                progress_tx.send(SequenceStatus::Whole(Status::Processing {
+                    id: Self::DETAILS.name.to_owned(),
+                    completion: SequenceCompletion::Custom {
+                        name: "Indexing Input".to_owned(),
+                        completed: 0.0,
+                        total: 1.0,
+                    },
+                }))?;
+                let input_frames = input.clip_info()?.num_frames;
+                progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                    id: Self::DETAILS.name.to_owned(),
+                }))?;
+                let condor_input_frames = condor.input.clip_info()?.num_frames;
+                if input_frames != condor_input_frames {
+                    warnings.push(anyhow::Error::new(SceneDetectorError::InputFrameMismatch(
+                        condor_input_frames,
+                        input_frames,
+                    )));
+                }
             }
-        }
 
-        Ok(((), warnings))
+            Ok(((), warnings))
+        })
     }
 
     #[inline]
@@ -105,231 +109,238 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
+        cancellation: Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let warnings = vec![];
-        let condor_data = condor.as_data();
-        let input = self.input.as_mut().unwrap_or(&mut condor.input);
-        let frames = input.clip_info()?.num_frames;
+        super::check_sequence(&cancellation, || {
+            let cancelled = cancellation.legacy_flag();
+            let warnings = vec![];
+            let condor_data = condor.as_data();
+            let input = self.input.as_mut().unwrap_or(&mut condor.input);
+            let frames = input.clip_info()?.num_frames;
 
-        // Skip if already completed
-        if let Some(last_scene) = condor.scenes.last() {
-            if last_scene.end_frame == frames {
-                debug!("All scenes already detected");
-                progress_tx.send(SequenceStatus::Whole(Status::Completed {
-                    id: DETAILS.name.to_owned(),
-                }))?;
-                return Ok(((), warnings));
-            }
-
-            if matches!(
-                self.method,
-                SceneDetectionMethod::AVSceneChange { .. }
-                    | SceneDetectionMethod::TransNetV2 { .. }
-            ) {
-                trace!("Skipping {} frames by seeking", last_scene.end_frame);
-                input.decoder().seek_to_frame(last_scene.end_frame).map_err(|_| {
-                    SceneDetectorError::SceneDetectionFailed("Failed to seek to frame".to_owned())
-                })?;
-                progress_tx.send(SequenceStatus::Whole(Status::Processing {
-                    id: DETAILS.name.to_owned(),
-                    completion: SequenceCompletion::Frames {
-                        completed: last_scene.end_frame as u64,
-                        total: frames as u64,
-                    },
-                }))?;
-                trace!("Skipping {} frames took {} ms", last_scene.end_frame, 0);
-                if cancelled.load(Ordering::Relaxed) {
+            // Skip if already completed
+            if let Some(last_scene) = condor.scenes.last() {
+                if last_scene.end_frame == frames {
+                    debug!("All scenes already detected");
+                    progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                        id: DETAILS.name.to_owned(),
+                    }))?;
                     return Ok(((), warnings));
                 }
-            }
-        }
 
-        match self.method {
-            SceneDetectionMethod::AVSceneChange {
-                minimum_length,
-                maximum_length,
-                method,
-                save_scores,
-            } => {
-                let options = DetectionOptions {
-                    min_scenecut_distance: Some(minimum_length),
-                    analysis_speed: match method {
-                        ScenecutMethod::Fast => av_scenechange::SceneDetectionSpeed::Fast,
-                        ScenecutMethod::Standard => av_scenechange::SceneDetectionSpeed::Standard,
-                    },
-                    max_scenecut_distance: Some(maximum_length),
-                    ..Default::default()
-                };
-
-                debug!(
-                    "Detecting scenes with AVSceneChange {} with lengths {} - {}",
-                    method, minimum_length, maximum_length
-                );
-
-                let last_frame =
-                    condor.scenes.last().map(|scene| scene.end_frame).unwrap_or_default();
-                let previous_end = AtomicUsize::new(last_frame);
-                let keyframes_count = AtomicUsize::new(1);
-                let scenes = sync::Arc::new(Mutex::new(condor.scenes.clone()));
-                let cb = |frames_analyzed, keyframes| {
-                    progress_tx
-                        .send(SequenceStatus::Whole(Status::Processing {
-                            id: DETAILS.name.to_owned(),
-                            completion: SequenceCompletion::Frames {
-                                completed: (last_frame + frames_analyzed) as u64,
-                                total: frames as u64,
-                            },
-                        }))
-                        .expect("failed to send progres");
-                    if keyframes == keyframes_count.load(Ordering::Relaxed) {
-                        return;
+                if matches!(
+                    self.method,
+                    SceneDetectionMethod::AVSceneChange { .. }
+                        | SceneDetectionMethod::TransNetV2 { .. }
+                ) {
+                    trace!("Skipping {} frames by seeking", last_scene.end_frame);
+                    input.decoder().seek_to_frame(last_scene.end_frame).map_err(|_| {
+                        SceneDetectorError::SceneDetectionFailed(
+                            "Failed to seek to frame".to_owned(),
+                        )
+                    })?;
+                    progress_tx.send(SequenceStatus::Whole(Status::Processing {
+                        id: DETAILS.name.to_owned(),
+                        completion: SequenceCompletion::Frames {
+                            completed: last_scene.end_frame as u64,
+                            total: frames as u64,
+                        },
+                    }))?;
+                    trace!("Skipping {} frames took {} ms", last_scene.end_frame, 0);
+                    if cancelled.load(Ordering::Relaxed) {
+                        return Ok(((), warnings));
                     }
-                    keyframes_count.fetch_add(1, Ordering::Relaxed);
-                    let mut scenes_lock: sync::MutexGuard<'_, Vec<Scene<DataHandler>>> =
-                        scenes.lock().expect("mutex should acquire lock");
-                    let start = previous_end.load(Ordering::Relaxed);
-                    let end = last_frame + (frames_analyzed - 1);
-                    previous_end.store(end, Ordering::Relaxed);
-                    trace!("New Scene detected: {} - {}", start, end);
-                    scenes_lock.push(Scene {
-                        start_frame: start,
-                        end_frame: end,
-                        sub_scenes: None,
-                        encoder: condor.encoder.clone(),
-                        sequence_data: DataHandler::default(),
-                    });
-                    progress_tx
-                        .send(SequenceStatus::Whole(Status::Processing {
-                            id: DETAILS.name.to_owned(),
-                            completion: SequenceCompletion::Custom {
-                                name: "new-scene".to_owned(),
-                                completed: start as f64,
-                                total: end as f64,
-                            },
-                        }))
-                        .expect("failed to send progress");
-
-                    let mut data = condor_data.clone();
-                    data.scenes = scenes_lock.clone();
-                    (condor.save_callback)(data).expect("failed to save data");
-                };
-
-                let results = if input.clip_info()?.format_info.as_bit_depth()? > 8 {
-                    detect_scene_changes::<u16>(
-                        input.decoder(),
-                        options,
-                        None,
-                        Some(&cb),
-                        Some(Arc::clone(&cancelled)),
-                    )
-                } else {
-                    detect_scene_changes::<u8>(
-                        input.decoder(),
-                        options,
-                        None,
-                        Some(&cb),
-                        Some(Arc::clone(&cancelled)),
-                    )
-                }?;
-
-                let scores = &results.scores;
-                append_detected_scenes(
-                    condor,
-                    &results.scene_changes,
-                    last_frame,
-                    frames,
-                    &progress_tx,
-                    |start, end, data| {
-                        if save_scores {
-                            data.scenecut_scores =
-                                Some(scenecut_scores(scores, last_frame, start, end));
-                        }
-                    },
-                    &cancelled,
-                )?;
-                if cancelled.load(Ordering::Relaxed) {
-                    return Ok(((), warnings));
                 }
-            },
-            SceneDetectionMethod::TransNetV2 {
-                minimum_length,
-                maximum_length,
-                ref model_path,
-                save_scores,
-            } => {
-                let last_frame =
-                    condor.scenes.last().map(|scene| scene.end_frame).unwrap_or_default();
-                debug!(
-                    "Detecting scenes with TransNetV2 with lengths {} - {}",
-                    minimum_length, maximum_length
-                );
-                let (cuts, predictions) = transnetv2::detect_cuts(
-                    input,
-                    frames,
-                    last_frame,
+            }
+
+            match self.method {
+                SceneDetectionMethod::AVSceneChange {
                     minimum_length,
                     maximum_length,
-                    model_path.as_deref(),
-                    &progress_tx,
-                    &cancelled,
-                )?;
-                let mut starts = Vec::with_capacity(cuts.len() + 1);
-                starts.push(0);
-                starts.extend(cuts);
-                append_detected_scenes(
-                    condor,
-                    &starts,
-                    last_frame,
-                    frames,
-                    &progress_tx,
-                    |start, end, data| {
-                        if save_scores {
-                            data.transnetv2_scores =
-                                Some(transnetv2_scores(&predictions, last_frame, start, end));
-                        }
-                    },
-                    &cancelled,
-                )?;
-                if cancelled.load(Ordering::Relaxed) {
-                    return Ok(((), warnings));
-                }
-            },
-            SceneDetectionMethod::None { maximum_length, .. } => {
-                debug!(
-                    "Scene Detection Disabled. Splitting into {} frame chunks",
-                    maximum_length
-                );
-                let mut scenes_vec = Vec::new();
-                let mut prev_end = condor.scenes.last().map_or(0, |scene| scene.end_frame);
-                while prev_end < frames {
-                    // A zero length leaves `end` equal to `prev_end` forever, and a
-                    // length near `usize::MAX` overflows. Validation rejects the first;
-                    // saturating addition and this guard also cover direct callers.
-                    let end = prev_end.saturating_add(maximum_length).min(frames);
-                    if end <= prev_end {
-                        bail!("scene detection maximum length must be at least one frame");
-                    }
-                    let scene = Scene {
-                        start_frame: prev_end,
-                        end_frame: end,
-                        sub_scenes: None,
-                        encoder: condor.encoder.clone(),
-                        sequence_data: DataHandler::default(),
+                    method,
+                    save_scores,
+                } => {
+                    let options = DetectionOptions {
+                        min_scenecut_distance: Some(minimum_length),
+                        analysis_speed: match method {
+                            ScenecutMethod::Fast => av_scenechange::SceneDetectionSpeed::Fast,
+                            ScenecutMethod::Standard => {
+                                av_scenechange::SceneDetectionSpeed::Standard
+                            },
+                        },
+                        max_scenecut_distance: Some(maximum_length),
+                        ..Default::default()
                     };
-                    scenes_vec.push(scene);
-                    prev_end = end;
-                }
 
-                condor.scenes.extend(scenes_vec);
-                condor.save()?;
-            },
-        };
-        progress_tx.send(SequenceStatus::Whole(Status::Completed {
-            id: DETAILS.name.to_owned(),
-        }))?;
+                    debug!(
+                        "Detecting scenes with AVSceneChange {} with lengths {} - {}",
+                        method, minimum_length, maximum_length
+                    );
 
-        Ok(((), warnings))
+                    let last_frame =
+                        condor.scenes.last().map(|scene| scene.end_frame).unwrap_or_default();
+                    let previous_end = AtomicUsize::new(last_frame);
+                    let keyframes_count = AtomicUsize::new(1);
+                    let scenes = sync::Arc::new(Mutex::new(condor.scenes.clone()));
+                    let cb = |frames_analyzed, keyframes| {
+                        progress_tx
+                            .send(SequenceStatus::Whole(Status::Processing {
+                                id: DETAILS.name.to_owned(),
+                                completion: SequenceCompletion::Frames {
+                                    completed: (last_frame + frames_analyzed) as u64,
+                                    total: frames as u64,
+                                },
+                            }))
+                            .expect("failed to send progres");
+                        if keyframes == keyframes_count.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        keyframes_count.fetch_add(1, Ordering::Relaxed);
+                        let mut scenes_lock: sync::MutexGuard<'_, Vec<Scene<DataHandler>>> =
+                            scenes.lock().expect("mutex should acquire lock");
+                        let start = previous_end.load(Ordering::Relaxed);
+                        let end = last_frame + (frames_analyzed - 1);
+                        previous_end.store(end, Ordering::Relaxed);
+                        trace!("New Scene detected: {} - {}", start, end);
+                        scenes_lock.push(Scene {
+                            start_frame: start,
+                            end_frame: end,
+                            sub_scenes: None,
+                            encoder: condor.encoder.clone(),
+                            sequence_data: DataHandler::default(),
+                        });
+                        progress_tx
+                            .send(SequenceStatus::Whole(Status::Processing {
+                                id: DETAILS.name.to_owned(),
+                                completion: SequenceCompletion::Custom {
+                                    name: "new-scene".to_owned(),
+                                    completed: start as f64,
+                                    total: end as f64,
+                                },
+                            }))
+                            .expect("failed to send progress");
+
+                        let mut data = condor_data.clone();
+                        data.scenes = scenes_lock.clone();
+                        (condor.save_callback)(data).expect("failed to save data");
+                    };
+
+                    let results = if input.clip_info()?.format_info.as_bit_depth()? > 8 {
+                        detect_scene_changes::<u16>(
+                            input.decoder(),
+                            options,
+                            None,
+                            Some(&cb),
+                            Some(Arc::clone(&cancelled)),
+                        )
+                    } else {
+                        detect_scene_changes::<u8>(
+                            input.decoder(),
+                            options,
+                            None,
+                            Some(&cb),
+                            Some(Arc::clone(&cancelled)),
+                        )
+                    }?;
+
+                    let scores = &results.scores;
+                    append_detected_scenes(
+                        condor,
+                        &results.scene_changes,
+                        last_frame,
+                        frames,
+                        &progress_tx,
+                        |start, end, data| {
+                            if save_scores {
+                                data.scenecut_scores =
+                                    Some(scenecut_scores(scores, last_frame, start, end));
+                            }
+                        },
+                        &cancelled,
+                    )?;
+                    if cancelled.load(Ordering::Relaxed) {
+                        return Ok(((), warnings));
+                    }
+                },
+                SceneDetectionMethod::TransNetV2 {
+                    minimum_length,
+                    maximum_length,
+                    ref model_path,
+                    save_scores,
+                } => {
+                    let last_frame =
+                        condor.scenes.last().map(|scene| scene.end_frame).unwrap_or_default();
+                    debug!(
+                        "Detecting scenes with TransNetV2 with lengths {} - {}",
+                        minimum_length, maximum_length
+                    );
+                    let (cuts, predictions) = transnetv2::detect_cuts(
+                        input,
+                        frames,
+                        last_frame,
+                        minimum_length,
+                        maximum_length,
+                        model_path.as_deref(),
+                        &progress_tx,
+                        &cancelled,
+                    )?;
+                    let mut starts = Vec::with_capacity(cuts.len() + 1);
+                    starts.push(0);
+                    starts.extend(cuts);
+                    append_detected_scenes(
+                        condor,
+                        &starts,
+                        last_frame,
+                        frames,
+                        &progress_tx,
+                        |start, end, data| {
+                            if save_scores {
+                                data.transnetv2_scores =
+                                    Some(transnetv2_scores(&predictions, last_frame, start, end));
+                            }
+                        },
+                        &cancelled,
+                    )?;
+                    if cancelled.load(Ordering::Relaxed) {
+                        return Ok(((), warnings));
+                    }
+                },
+                SceneDetectionMethod::None { maximum_length, .. } => {
+                    debug!(
+                        "Scene Detection Disabled. Splitting into {} frame chunks",
+                        maximum_length
+                    );
+                    let mut scenes_vec = Vec::new();
+                    let mut prev_end = condor.scenes.last().map_or(0, |scene| scene.end_frame);
+                    while prev_end < frames {
+                        // A zero length leaves `end` equal to `prev_end` forever, and a
+                        // length near `usize::MAX` overflows. Validation rejects the first;
+                        // saturating addition and this guard also cover direct callers.
+                        let end = prev_end.saturating_add(maximum_length).min(frames);
+                        if end <= prev_end {
+                            bail!("scene detection maximum length must be at least one frame");
+                        }
+                        let scene = Scene {
+                            start_frame: prev_end,
+                            end_frame: end,
+                            sub_scenes: None,
+                            encoder: condor.encoder.clone(),
+                            sequence_data: DataHandler::default(),
+                        };
+                        scenes_vec.push(scene);
+                        prev_end = end;
+                    }
+
+                    condor.scenes.extend(scenes_vec);
+                    condor.save()?;
+                },
+            };
+            progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                id: DETAILS.name.to_owned(),
+            }))?;
+
+            Ok(((), warnings))
+        })
     }
 }
 
@@ -669,7 +680,11 @@ mod tests {
         let (tx, rx) = sync::mpsc::channel();
 
         let error = detector
-            .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+            .execute(
+                &mut condor,
+                tx,
+                crate::utils::cancellation::Cancellation::default(),
+            )
             .expect_err("direct execution must reject zero maximum");
 
         assert!(
@@ -705,7 +720,11 @@ mod tests {
             let (tx, rx) = sync::mpsc::channel();
 
             detector
-                .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+                .execute(
+                    &mut condor,
+                    tx,
+                    crate::utils::cancellation::Cancellation::default(),
+                )
                 .expect("fixed chunk splitting");
 
             let appended = &condor.scenes[existing_count..];
@@ -737,7 +756,11 @@ mod tests {
 
             let (tx, _rx) = sync::mpsc::channel();
             detector
-                .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+                .execute(
+                    &mut condor,
+                    tx,
+                    crate::utils::cancellation::Cancellation::default(),
+                )
                 .expect("completed run is a no-op");
             assert_eq!(
                 serde_json::to_value(&condor.scenes).expect("unchanged scenes"),

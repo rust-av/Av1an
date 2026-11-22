@@ -806,7 +806,9 @@ mod attachments {
             (24, 1).into(),
             Some(&settings),
             &tx,
-            &Arc::new(AtomicBool::new(false)),
+            &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                &Arc::new(AtomicBool::new(false)),
+            )),
         )
         .expect("native final mux");
         let ids = identify(&output);
@@ -1128,7 +1130,9 @@ mod attachments {
                 (24, 1).into(),
                 Some(&settings),
                 &tx,
-                &Arc::new(AtomicBool::new(false)),
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &Arc::new(AtomicBool::new(false)),
+                )),
             )
             .expect("native extra namespaces");
             let ids = identify(&output);
@@ -1212,7 +1216,9 @@ mod attachments {
                 (24, 1).into(),
                 Some(&settings),
                 &tx,
-                &Arc::new(AtomicBool::new(false)),
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &Arc::new(AtomicBool::new(false)),
+                )),
             )
             .expect("extra independent audio/attachment");
             let ids = identify(&output);
@@ -1269,7 +1275,9 @@ mod attachments {
             (24, 1).into(),
             Some(&settings),
             &tx,
-            &Arc::new(AtomicBool::new(false)),
+            &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                &Arc::new(AtomicBool::new(false)),
+            )),
         )
         .expect_err("direct invalid config");
         assert!(error.to_string().contains("video track entry must use track ID 0"));
@@ -1308,7 +1316,9 @@ mod attachments {
             (24, 1).into(),
             Some(&settings),
             &tx,
-            &Arc::new(AtomicBool::new(false)),
+            &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                &Arc::new(AtomicBool::new(false)),
+            )),
         )
         .expect("new file needs no unsupported source ID");
         assert_eq!(
@@ -1330,7 +1340,9 @@ mod attachments {
                 (24, 1).into(),
                 Some(&settings),
                 &tx,
-                &Arc::new(AtomicBool::new(false)),
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &Arc::new(AtomicBool::new(false)),
+                )),
             )
             .expect_err("unsupported source has no IDs");
             assert!(error.to_string().contains("no provable mkvmerge track/attachment ID mapping"));

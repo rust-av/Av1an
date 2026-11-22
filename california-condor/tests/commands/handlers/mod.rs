@@ -741,7 +741,7 @@ mod filter_rejection {
 mod quality_admission {
     use std::sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         mpsc,
     };
 
@@ -915,7 +915,7 @@ mod quality_admission {
             (None, Some(49), "range"),
         ] {
             for stage in ["TQ", "QC"] {
-                for entry in ["validate", "initialize", "execute", "execute_cancel"] {
+                for entry in ["validate", "initialize", "execute"] {
                     let mut configuration = fixture(temp.path());
                     if let Some(end) = invalid_end {
                         configuration.condor.scenes[1].end_frame = end;
@@ -965,11 +965,8 @@ mod quality_admission {
                     let (tx, rx) = mpsc::channel();
                     let result = match entry {
                         "validate" => sequence.validate(&mut condor),
-                        "initialize" => sequence.initialize(&mut condor, tx),
-                        "execute" => {
-                            sequence.execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
-                        },
-                        _ => sequence.execute_cancel(&mut condor, tx, Default::default()),
+                        "initialize" => sequence.initialize(&mut condor, tx, &Default::default()),
+                        _ => sequence.execute(&mut condor, tx, Default::default()),
                     };
                     let error = result.expect_err("invalid selection must fail before work");
                     let message = error.to_string();
@@ -1024,7 +1021,7 @@ mod quality_admission {
                 let saves = Arc::new(AtomicUsize::new(0));
                 let mut condor = runtime(&configuration, Arc::clone(&saves));
                 let mut sequence = sequence(stage);
-                for entry in ["initialize", "execute", "execute_cancel"] {
+                for entry in ["initialize", "execute"] {
                     let cancellation = Cancellation::default();
                     if matches!(mode, "graceful" | "forced") {
                         cancellation.request().expect("cancel");
@@ -1034,9 +1031,8 @@ mod quality_admission {
                     }
                     let (tx, rx) = mpsc::channel();
                     let result = match entry {
-                        "initialize" => sequence.initialize_cancel(&mut condor, tx, &cancellation),
-                        "execute" => sequence.execute(&mut condor, tx, cancellation.legacy_flag()),
-                        _ => sequence.execute_cancel(&mut condor, tx, cancellation),
+                        "initialize" => sequence.initialize(&mut condor, tx, &cancellation),
+                        _ => sequence.execute(&mut condor, tx, cancellation),
                     };
                     if matches!(mode, "graceful" | "forced") {
                         assert!(

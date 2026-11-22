@@ -104,11 +104,11 @@ pub(super) fn produced_job(
     job.scenes[0].encoder.set_quantizer(20.0);
     let (tx, _rx) = std::sync::mpsc::channel();
     parallel_encoder::ParallelEncoder::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("actual successful certified chunk before corruption");
     let (tx, _rx) = std::sync::mpsc::channel();
     scene_concatenator::SceneConcatenator::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("actual final output");
     job.sequence_config.quality_check = Some(QualityCheckConfig {
         metric: QualityMetric::VMAF {
@@ -123,7 +123,7 @@ pub(super) fn produced_job(
     });
     let (tx, _rx) = std::sync::mpsc::channel();
     quality_check::QualityCheck::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("actual successful QC before corruption");
     assert!(job.scenes[0].sequence_data.parallel_encoder.provenance.is_some());
     assert_eq!(

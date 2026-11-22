@@ -11,6 +11,7 @@ use condor::{
         scene::Scene,
         sequence::{DefaultSequenceConfig, DefaultSequenceData},
     },
+    utils::cancellation::Cancellation,
 };
 use std::{collections::HashMap, os::unix::fs::PermissionsExt, process::Command};
 
@@ -273,9 +274,14 @@ fn native_probe_parity_child() {
                 output: dir.join(format!("{index:05}.{}", encoder.base().output_extension())),
             })
             .collect::<Vec<_>>();
-        let plan = ZonePlan::try_build(&tasks);
+        let plan = ZonePlan::try_build(&tasks, &Default::default());
         if grouped {
-            if case == "svt" && matches!(plan, Err(ZoneIneligible::NoZoneSupport)) {
+            if case == "svt"
+                && matches!(
+                    plan.as_ref().err().and_then(|error| error.downcast_ref::<ZoneIneligible>()),
+                    Some(ZoneIneligible::NoZoneSupport)
+                )
+            {
                 assert!(
                     std::env::var_os("CONDOR_REQUIRE_SVT_ZONES").is_none(),
                     "required SVT grouped capability unavailable: NoZoneSupport"
@@ -288,8 +294,8 @@ fn native_probe_parity_child() {
             assert!(plan.is_ok(), "native grouped capability: {plan:?}");
         } else {
             assert!(matches!(
-                plan,
-                Err(ZoneIneligible::DifferingEncoder {
+                plan.as_ref().err().and_then(|error| error.downcast_ref::<ZoneIneligible>()),
+                Some(ZoneIneligible::DifferingEncoder {
                     field: DifferingField::AppendColorData,
                     ..
                 })
@@ -309,19 +315,19 @@ fn native_probe_parity_child() {
             Box::new(|_| Ok(())),
         );
         let (tx, _rx) = mpsc::channel();
-        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled = Cancellation::default();
         let mut target = TargetQuality {
             input: None,
             metric_input: None,
         };
         target
-            .execute(&mut condor, tx.clone(), Arc::clone(&cancelled))
+            .execute(&mut condor, tx.clone(), cancelled.clone())
             .expect("real TQ encode, concat, score and selection");
         ParallelEncoder::default()
-            .execute(&mut condor, tx.clone(), Arc::clone(&cancelled))
+            .execute(&mut condor, tx.clone(), cancelled.clone())
             .expect("actual final scene encodes");
         SceneConcatenator::default()
-            .execute(&mut condor, tx.clone(), Arc::clone(&cancelled))
+            .execute(&mut condor, tx.clone(), cancelled.clone())
             .expect("actual final concat");
         QualityCheck { input: None }
             .execute(&mut condor, tx, cancelled)
@@ -456,17 +462,13 @@ fn native_probe_parity_child() {
                     let before = serde_json::to_vec(&resumed.as_data()).expect("before admission");
                     let (tx, rx) = mpsc::channel();
                     let result = match owner {
-                        "TQ" => TargetQuality::default().execute_cancel(
-                            &mut resumed,
-                            tx,
-                            Default::default(),
-                        ),
-                        "PE" => ParallelEncoder::default().execute_cancel(
-                            &mut resumed,
-                            tx,
-                            Default::default(),
-                        ),
-                        _ => SceneConcatenator::default().execute_cancel(
+                        "TQ" => {
+                            TargetQuality::default().execute(&mut resumed, tx, Default::default())
+                        },
+                        "PE" => {
+                            ParallelEncoder::default().execute(&mut resumed, tx, Default::default())
+                        },
+                        _ => SceneConcatenator::default().execute(
                             &mut resumed,
                             tx,
                             Default::default(),
@@ -583,7 +585,7 @@ pub(super) fn sequence_failures(
         &mut Input,
         std::collections::VecDeque<Task>,
         mpsc::Sender<SequenceStatus>,
-        Arc<AtomicBool>,
+        Cancellation,
     ) -> anyhow::Error,
 ) {
     if let Ok(case) = std::env::var("ENCODER_FIXTURE_CASE") {
@@ -742,7 +744,7 @@ fn sequence_failure_child(
         &mut Input,
         std::collections::VecDeque<Task>,
         mpsc::Sender<SequenceStatus>,
-        Arc<AtomicBool>,
+        Cancellation,
     ) -> anyhow::Error,
 ) {
     let Some(root) = std::env::var_os("ENCODER_FIXTURE_ROOT") else {
@@ -766,7 +768,7 @@ fn sequence_failure_child(
     fs::create_dir_all(&scenes_dir).expect("scenes");
     let sentinel = scenes_dir.join("unrelated.stat");
     fs::write(&sentinel, "unrelated stats").expect("sentinel");
-    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancelled = Cancellation::default();
     let (tx, rx) = mpsc::channel();
     let serial = case == "serial";
     let zone = case.starts_with("zone");

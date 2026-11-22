@@ -122,8 +122,10 @@ pub(super) fn execute(root: &Path, case: &str) -> MuxOutcome {
     let mut concatenator = SceneConcatenator::default();
     let (tx, rx) = sync::mpsc::channel();
     concatenator.validate(&mut job).expect("final preflight");
-    concatenator.initialize(&mut job, tx.clone()).expect("owning scratch setup");
-    let result = concatenator.execute_cancel(&mut job, tx, token).map(|_| ());
+    concatenator
+        .initialize(&mut job, tx.clone(), &Default::default())
+        .expect("owning scratch setup");
+    let result = concatenator.execute(&mut job, tx, token).map(|_| ());
     if let Some(controller) = controller {
         controller.join().expect("controller joined");
     }

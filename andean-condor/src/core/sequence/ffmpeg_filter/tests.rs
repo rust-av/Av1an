@@ -152,8 +152,14 @@ mod internal_integration {
     fn direct_drop(case: &str) {
         let before = thread_count();
         let (tx, rx) = crossbeam_channel::bounded(1);
-        let mut stage =
-            FfmpegFilter::spawn(rx, 1, "null", Arc::new(Mutex::new(None))).expect("filter");
+        let mut stage = FfmpegFilter::spawn(
+            rx,
+            1,
+            "null",
+            Arc::new(Mutex::new(None)),
+            &crate::utils::cancellation::Cancellation::default(),
+        )
+        .expect("filter");
         let output = stage.take_receiver().expect("sole receiver");
         assert!(stage.take_receiver().is_err(), "handoff happens only once");
         if case.starts_with("first") {
@@ -225,8 +231,14 @@ mod internal_integration {
             }
             tx.send(Cursor::new(stream)).expect("input");
             drop(tx);
-            let mut stage =
-                FfmpegFilter::spawn(rx, 1, graph, Arc::new(Mutex::new(None))).expect("real FFmpeg");
+            let mut stage = FfmpegFilter::spawn(
+                rx,
+                1,
+                graph,
+                Arc::new(Mutex::new(None)),
+                &crate::utils::cancellation::Cancellation::default(),
+            )
+            .expect("real FFmpeg");
             let pid = stage.child.id();
             let mut bytes = Vec::new();
             for chunk in stage.take_receiver().expect("sole receiver") {
@@ -310,8 +322,14 @@ mod internal_integration {
         bytes.extend_from_slice(&[48; 96]);
         tx.send(Cursor::new(bytes)).expect("input");
         drop(tx);
-        let mut stage =
-            FfmpegFilter::spawn(rx, 1, "null", Arc::new(Mutex::new(None))).expect("filter");
+        let mut stage = FfmpegFilter::spawn(
+            rx,
+            1,
+            "null",
+            Arc::new(Mutex::new(None)),
+            &crate::utils::cancellation::Cancellation::default(),
+        )
+        .expect("filter");
         for _ in stage.take_receiver().expect("receiver") {}
         // The real relays complete first. Inject only otherwise hard-to-trigger
         // pipe/join faults, not FFmpeg behavior or native acceptance results.
@@ -404,10 +422,18 @@ mod internal_integration {
             encoder,
             output: scenes_dir.join("00007.264"),
         }];
-        let plan = ZonePlan::try_build(&tasks).expect("native x264 zoning capability");
-        let error =
-            ZoneEncoder::encode_tasks(&mut input, tasks.into(), plan, progress_tx, cancelled)
-                .expect_err("zone filter/encoder failure");
+        let plan =
+            ZonePlan::try_build(&tasks, &crate::utils::cancellation::Cancellation::default())
+                .expect("native x264 zoning capability");
+        let error = ZoneEncoder::encode_tasks(
+            &mut input,
+            tasks.into(),
+            plan,
+            progress_tx,
+            cancelled.into(),
+            true,
+        )
+        .expect_err("zone filter/encoder failure");
         let diagnostic = format!("{error:#}");
         match case {
             "zone-filter" => assert!(

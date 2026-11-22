@@ -1,4 +1,5 @@
-use std::sync::{self, Arc, atomic::AtomicBool};
+use crate::utils::cancellation::Cancellation;
+use std::sync;
 
 use anyhow::ensure;
 use thiserror::Error;
@@ -61,10 +62,9 @@ where
         &mut self,
         _condor: &mut Condor<Data, Config>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> anyhow::Result<((), Vec<anyhow::Error>)> {
-        let warnings = vec![];
-
-        Ok(((), warnings))
+        super::check_sequence(cancellation, || Ok(((), Vec::new())))
     }
 
     #[inline]
@@ -72,86 +72,90 @@ where
         &mut self,
         condor: &mut Condor<Data, Config>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        _cancelled: Arc<AtomicBool>,
+        cancellation: Cancellation,
     ) -> anyhow::Result<((), Vec<anyhow::Error>)> {
-        let config = condor.sequence_config.speed_scaler()?;
-        config.validate(&condor.encoder)?;
-        let speed_quantizers = &config.speed_quantizers;
-        if speed_quantizers.is_empty() || condor.scenes.is_empty() {
-            return Ok(((), vec![]));
-        }
+        super::check_sequence(&cancellation, || {
+            let config = condor.sequence_config.speed_scaler()?;
+            config.validate(&condor.encoder)?;
+            let speed_quantizers = &config.speed_quantizers;
+            if speed_quantizers.is_empty() || condor.scenes.is_empty() {
+                return Ok(((), vec![]));
+            }
 
-        let mut sorted_speed_quantizers = speed_quantizers.clone();
-        sorted_speed_quantizers.sort_by(|(_, q1), (_, q2)| q1.total_cmp(q2));
-        let quantizers: Vec<_> = sorted_speed_quantizers.iter().map(|(_, q)| *q).collect();
-        let speeds: Vec<_> = sorted_speed_quantizers.iter().map(|(s, _)| f64::from(*s)).collect();
-        let min_speed = speeds.iter().copied().reduce(f64::min).expect("validated knots");
-        let max_speed = speeds.iter().copied().reduce(f64::max).expect("validated knots");
-        let last = quantizers.len() - 1;
-        let mut edits = vec![];
-        for (index, scene) in condor.scenes.iter().enumerate() {
-            if let Some(quantizer) = scene.encoder.quantizer() {
-                ensure!(
-                    quantizer.is_finite(),
-                    "scene {index} quantizer must be finite"
-                );
-                config.validate(&scene.encoder)?;
-                let speed = if quantizer <= quantizers[0] {
-                    speeds[0]
-                } else if quantizer >= quantizers[last] {
-                    speeds[last]
-                } else if quantizers.len() == 2 {
-                    linear(
-                        &[quantizers[0], quantizers[1]],
-                        &[speeds[0], speeds[1]],
-                        quantizer,
-                    )
-                    .ok_or_else(|| anyhow::anyhow!("cannot interpolate scene {index} speed"))?
-                } else {
-                    natural_cubic_spline(&quantizers, &speeds, quantizer)
+            let mut sorted_speed_quantizers = speed_quantizers.clone();
+            sorted_speed_quantizers.sort_by(|(_, q1), (_, q2)| q1.total_cmp(q2));
+            let quantizers: Vec<_> = sorted_speed_quantizers.iter().map(|(_, q)| *q).collect();
+            let speeds: Vec<_> =
+                sorted_speed_quantizers.iter().map(|(s, _)| f64::from(*s)).collect();
+            let min_speed = speeds.iter().copied().reduce(f64::min).expect("validated knots");
+            let max_speed = speeds.iter().copied().reduce(f64::max).expect("validated knots");
+            let last = quantizers.len() - 1;
+            let mut edits = vec![];
+            for (index, scene) in condor.scenes.iter().enumerate() {
+                if let Some(quantizer) = scene.encoder.quantizer() {
+                    ensure!(
+                        quantizer.is_finite(),
+                        "scene {index} quantizer must be finite"
+                    );
+                    config.validate(&scene.encoder)?;
+                    let speed = if quantizer <= quantizers[0] {
+                        speeds[0]
+                    } else if quantizer >= quantizers[last] {
+                        speeds[last]
+                    } else if quantizers.len() == 2 {
+                        linear(
+                            &[quantizers[0], quantizers[1]],
+                            &[speeds[0], speeds[1]],
+                            quantizer,
+                        )
                         .ok_or_else(|| anyhow::anyhow!("cannot interpolate scene {index} speed"))?
-                };
-                ensure!(
-                    speed.is_finite(),
-                    "scene {index} interpolated speed must be finite"
-                );
-                let mut encoder = scene.encoder.clone();
-                // Preserve the natural curve, but never overshoot the configured speed range.
-                encoder.set_speed(speed.clamp(min_speed, max_speed).round() as i8);
-                encoder.validate_settings()?;
-                if encoder != scene.encoder {
-                    edits.push((index, encoder));
+                    } else {
+                        natural_cubic_spline(&quantizers, &speeds, quantizer).ok_or_else(|| {
+                            anyhow::anyhow!("cannot interpolate scene {index} speed")
+                        })?
+                    };
+                    ensure!(
+                        speed.is_finite(),
+                        "scene {index} interpolated speed must be finite"
+                    );
+                    let mut encoder = scene.encoder.clone();
+                    // Preserve the natural curve, but never overshoot the configured speed range.
+                    encoder.set_speed(speed.clamp(min_speed, max_speed).round() as i8);
+                    encoder.validate_settings()?;
+                    if encoder != scene.encoder {
+                        edits.push((index, encoder));
+                    }
                 }
             }
-        }
 
-        if edits.is_empty() {
-            return Ok(((), vec![]));
-        }
-        // Stage the encoder and its producer-owned transition together; callbacks
-        // cannot leave a certificate for a transition whose save failed.
-        let mut staged = condor.scenes.clone();
-        for (index, encoder) in edits {
-            let scene = &condor.scenes[index];
-            if condor.sequence_config.target_quality()?.is_some()
-                && !scene.sequence_data.get_target_quality()?.passes.is_empty()
-            {
-                let before = provenance::probe_encoder_base(scene)?.clone();
-                staged[index].sequence_data.get_target_quality_mut()?.speed_transition =
-                    Some(ProbeEncoderTransition {
-                        before,
-                        after: encoder.clone(),
-                    });
+            if edits.is_empty() {
+                return Ok(((), vec![]));
             }
-            staged[index].encoder = encoder;
-        }
-        let previous = std::mem::replace(&mut condor.scenes, staged);
-        if let Err(error) = condor.save() {
-            condor.scenes = previous;
-            return Err(error);
-        }
+            // Stage the encoder and its producer-owned transition together; callbacks
+            // cannot leave a certificate for a transition whose save failed.
+            let mut staged = condor.scenes.clone();
+            for (index, encoder) in edits {
+                let scene = &condor.scenes[index];
+                if condor.sequence_config.target_quality()?.is_some()
+                    && !scene.sequence_data.get_target_quality()?.passes.is_empty()
+                {
+                    let before = provenance::probe_encoder_base(scene)?.clone();
+                    staged[index].sequence_data.get_target_quality_mut()?.speed_transition =
+                        Some(ProbeEncoderTransition {
+                            before,
+                            after: encoder.clone(),
+                        });
+                }
+                staged[index].encoder = encoder;
+            }
+            let previous = std::mem::replace(&mut condor.scenes, staged);
+            if let Err(error) = condor.save() {
+                condor.scenes = previous;
+                return Err(error);
+            }
 
-        Ok(((), vec![]))
+            Ok(((), vec![]))
+        })
     }
 }
 
@@ -301,7 +305,11 @@ mod tests {
 
     fn run(condor: &mut TestCondor) -> anyhow::Result<((), Vec<anyhow::Error>)> {
         let (tx, _rx) = sync::mpsc::channel();
-        SpeedScaler::default().execute(condor, tx, Arc::new(AtomicBool::new(false)))
+        SpeedScaler::default().execute(
+            condor,
+            tx,
+            crate::utils::cancellation::Cancellation::default(),
+        )
     }
 
     fn assert_speeds(points: Vec<(i8, f64)>, queries: &[f64], speeds: &[i8]) {

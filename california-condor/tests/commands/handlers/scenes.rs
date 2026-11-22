@@ -229,19 +229,19 @@ mod tests {
         let mut job = config.instantiate_condor(Box::new(|_| Ok(()))).expect("native job");
         let (tx, _rx) = std::sync::mpsc::channel();
         TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real probes");
         let (tx, _rx) = std::sync::mpsc::channel();
         ParallelEncoder::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real chunks");
         let (tx, _rx) = std::sync::mpsc::channel();
         SceneConcatenator::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real final output");
         let (tx, _rx) = std::sync::mpsc::channel();
         QualityCheck::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real QC");
         config.condor = job.as_data();
         for scene in &mut config.condor.scenes {
@@ -391,7 +391,7 @@ mod tests {
             let before = serde_json::to_value(direct.as_data()).expect("before");
             let (tx, rx) = std::sync::mpsc::channel();
             let error = ParallelEncoder::default()
-                .execute_cancel(&mut direct, tx, Default::default())
+                .execute(&mut direct, tx, Default::default())
                 .expect_err("direct core barrier");
             assert!(format!("{error:#}").contains(&format!("scene {first_affected}")));
             assert_eq!(saves.get(), 0);
@@ -422,7 +422,7 @@ mod tests {
             .expect("absent artifacts");
         let (tx, rx) = std::sync::mpsc::channel();
         let error = ParallelEncoder::default()
-            .execute_cancel(&mut absent, tx, Default::default())
+            .execute(&mut absent, tx, Default::default())
             .expect_err("marker before source/artifact checks");
         assert!(format!("{error:#}").contains("scene 1"));
         assert!(rx.try_iter().next().is_none());
@@ -437,7 +437,7 @@ mod tests {
             edited.instantiate_condor(Box::new(|_| Ok(()))).expect("explicit reset");
         let (tx, _rx) = std::sync::mpsc::channel();
         ParallelEncoder::default()
-            .execute_cancel(&mut recovered, tx, Default::default())
+            .execute(&mut recovered, tx, Default::default())
             .expect("normal producer after explicit reset in empty workdir");
         assert!(
             recovered

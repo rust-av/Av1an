@@ -1,7 +1,8 @@
+use crate::utils::cancellation::Cancellation;
 use std::{
     collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
-    sync::{self, Arc, atomic::AtomicBool},
+    sync::{self, atomic::AtomicBool},
     thread,
 };
 
@@ -108,68 +109,75 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let mut warnings = vec![];
+        super::check_sequence(cancellation, || {
+            let mut warnings = vec![];
 
-        let parallel_encoder_config = condor.sequence_config.parallel_encoder()?;
-        let config = condor.sequence_config.target_quality()?;
+            let parallel_encoder_config = condor.sequence_config.parallel_encoder()?;
+            let config = condor.sequence_config.target_quality()?;
 
-        // Ensure scenes is not empty
-        if condor.scenes.is_empty() {
-            warnings.push(anyhow::Error::new(TargetQualityError::ScenesEmpty));
-            return Ok(((), warnings));
-        }
-        let Some(config) = config else {
-            return Ok(((), warnings));
-        };
-        Self::validate_config(condor)?;
-        let input = if let Some(input) = self.input.as_mut() {
-            input
-        } else if let Some(input_model) = &parallel_encoder_config.input {
-            &mut Input::from_data(input_model)?
-        } else {
-            &mut condor.input
-        };
-        let metric_input = if let Some(input) = self.metric_input.as_mut() {
-            Some(input)
-        } else if let Some(metric_input) = &config.metric_input {
-            Some(&mut Input::from_data(metric_input)?)
-        } else {
-            None
-        };
-        // Initialize input by getting clip_info. For VapourSynth inputs, this
-        // may begin a lengthy caching process, hence the separation
-        // between validate and initialize.
-        progress_tx.send(SequenceStatus::Whole(Status::Processing {
-            id: DETAILS.name.to_owned(),
-            completion: SequenceCompletion::Custom {
-                name: DETAILS.name.to_owned(),
-                completed: 0.0,
-                total: if metric_input.is_some() { 2.0 } else { 1.0 },
-            },
-        }))?;
-        input.clip_info()?;
-        if let Some(metric_input) = metric_input {
+            // Ensure scenes is not empty
+            if condor.scenes.is_empty() {
+                warnings.push(anyhow::Error::new(TargetQualityError::ScenesEmpty));
+                return Ok(((), warnings));
+            }
+            let Some(config) = config else {
+                return Ok(((), warnings));
+            };
+            Self::validate_config(condor)?;
+            let input = if let Some(input) = self.input.as_mut() {
+                input
+            } else if let Some(input_model) = &parallel_encoder_config.input {
+                &mut Input::ensure_indexed(input_model, |_| {}, cancellation)?
+            } else {
+                &mut condor.input
+            };
+            let metric_input = if let Some(input) = self.metric_input.as_mut() {
+                Some(input)
+            } else if let Some(metric_input) = &config.metric_input {
+                Some(&mut Input::ensure_indexed(
+                    metric_input,
+                    |_| {},
+                    cancellation,
+                )?)
+            } else {
+                None
+            };
+            // Initialize input by getting clip_info. For VapourSynth inputs, this
+            // may begin a lengthy caching process, hence the separation
+            // between validate and initialize.
             progress_tx.send(SequenceStatus::Whole(Status::Processing {
                 id: DETAILS.name.to_owned(),
                 completion: SequenceCompletion::Custom {
                     name: DETAILS.name.to_owned(),
-                    completed: 1.0,
-                    total: 2.0,
+                    completed: 0.0,
+                    total: if metric_input.is_some() { 2.0 } else { 1.0 },
                 },
             }))?;
-            metric_input.clip_info()?;
-        }
-        progress_tx.send(SequenceStatus::Whole(Status::Completed {
-            id: DETAILS.name.to_owned(),
-        }))?;
+            input.clip_info()?;
+            if let Some(metric_input) = metric_input {
+                progress_tx.send(SequenceStatus::Whole(Status::Processing {
+                    id: DETAILS.name.to_owned(),
+                    completion: SequenceCompletion::Custom {
+                        name: DETAILS.name.to_owned(),
+                        completed: 1.0,
+                        total: 2.0,
+                    },
+                }))?;
+                metric_input.clip_info()?;
+            }
+            progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                id: DETAILS.name.to_owned(),
+            }))?;
 
-        let sequence_directory = &parallel_encoder_config.scenes_directory.join(DETAILS.name);
-        if !sequence_directory.exists() {
-            std::fs::create_dir_all(sequence_directory)?;
-        }
+            let sequence_directory = &parallel_encoder_config.scenes_directory.join(DETAILS.name);
+            if !sequence_directory.exists() {
+                std::fs::create_dir_all(sequence_directory)?;
+            }
 
-        Ok(((), warnings))
+            Ok(((), warnings))
+        })
     }
 
     #[inline]
@@ -177,24 +185,9 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<((), Vec<anyhow::Error>)> {
-        self.execute_cancel(condor, progress_tx, cancelled.into())
-    }
-
-    #[inline]
-    fn execute_cancel(
-        &mut self,
-        condor: &mut Condor<DataHandler, ConfigHandler>,
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
         cancelled: crate::utils::cancellation::Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        self.execute_with_probe(
-            condor,
-            &progress_tx,
-            &cancelled,
-            Self::probe_pass_with_options,
-        )
+        self.execute_with_probe(condor, &progress_tx, &cancelled, Self::probe_pass)
     }
 }
 
@@ -279,9 +272,9 @@ impl TargetQuality {
         let input = if let Some(input) = self.input.as_mut() {
             input
         } else if let Some(input_model) = &config.input {
-            &mut Input::from_data(input_model)?
+            &mut Input::ensure_indexed(input_model, |_| {}, cancelled)?
         } else if let Some(input_model) = &parallel_encoder_config.input {
-            &mut Input::from_data(input_model)?
+            &mut Input::ensure_indexed(input_model, |_| {}, cancelled)?
         } else {
             &mut condor.input
         };
@@ -1066,97 +1059,6 @@ impl TargetQuality {
         }
     }
 
-    #[inline]
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub fn probe_pass(
-        pass: u8,
-        target_quality_directory: &Path,
-        config: &TargetQualityConfig,
-        input: &mut Input,
-        metric_input: Option<&mut Input>,
-        workers: u8,
-        concat_method: &ConcatMethod,
-        tasks: &[Task],
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: &Arc<AtomicBool>,
-    ) -> Result<(Vec<Task>, Vec<anyhow::Error>)> {
-        Self::probe_pass_cancel(
-            pass,
-            target_quality_directory,
-            config,
-            input,
-            metric_input,
-            workers,
-            concat_method,
-            tasks,
-            progress_tx,
-            &crate::utils::cancellation::Cancellation::from(Arc::clone(cancelled)),
-        )
-    }
-
-    #[inline]
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub fn probe_pass_cancel(
-        pass: u8,
-        target_quality_directory: &Path,
-        config: &TargetQualityConfig,
-        input: &mut Input,
-        metric_input: Option<&mut Input>,
-        workers: u8,
-        concat_method: &ConcatMethod,
-        tasks: &[Task],
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancellation: &crate::utils::cancellation::Cancellation,
-    ) -> Result<(Vec<Task>, Vec<anyhow::Error>)> {
-        Self::probe_pass_with_validation(
-            pass,
-            target_quality_directory,
-            config,
-            input,
-            metric_input,
-            workers,
-            concat_method,
-            tasks,
-            progress_tx,
-            cancellation,
-            true,
-        )
-    }
-
-    /// Probe pass with the owning job's count-only policy; old standalone APIs are strict.
-    #[inline]
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub fn probe_pass_with_validation(
-        pass: u8,
-        target_quality_directory: &Path,
-        config: &TargetQualityConfig,
-        input: &mut Input,
-        metric_input: Option<&mut Input>,
-        workers: u8,
-        concat_method: &ConcatMethod,
-        tasks: &[Task],
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancellation: &crate::utils::cancellation::Cancellation,
-        validate_frame_count: bool,
-    ) -> Result<(Vec<Task>, Vec<anyhow::Error>)> {
-        Self::probe_pass_with_options(
-            pass,
-            target_quality_directory,
-            config,
-            input,
-            metric_input,
-            workers,
-            concat_method,
-            tasks,
-            progress_tx,
-            cancellation,
-            super::parallel_encoder::ParallelEncoderOptions {
-                validate_frame_count,
-                ..Default::default()
-            },
-        )
-    }
-
     /// Explicit per-scene policy; whole-zone batches still make one attempt.
     /// Complete validated pass records return unchanged without native work.
     /// Incomplete passes require all earlier records and outputs directly under
@@ -1164,7 +1066,7 @@ impl TargetQuality {
     /// before the whole batch is encoded and admitted. No per-file reuse occurs.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[inline]
-    pub fn probe_pass_with_options(
+    pub fn probe_pass(
         pass: u8,
         target_quality_directory: &Path,
         config: &TargetQualityConfig,
@@ -1368,7 +1270,7 @@ impl TargetQuality {
         {
             None
         } else {
-            match ZonePlan::try_build_cancel(&encode_tasks, cancellation) {
+            match ZonePlan::try_build(&encode_tasks, cancellation) {
                 Ok(plan) => Some(plan),
                 Err(reason) => {
                     if cancellation.is_forced() {
@@ -1386,7 +1288,7 @@ impl TargetQuality {
             }
         };
         let results = match zone_plan {
-            Some(plan) => ZoneEncoder::encode_tasks_with_validation(
+            Some(plan) => ZoneEncoder::encode_tasks(
                 input,
                 encode_tasks.iter().cloned().collect::<VecDeque<_>>(),
                 plan,
@@ -1394,7 +1296,7 @@ impl TargetQuality {
                 cancellation.clone(),
                 options.validate_frame_count,
             ),
-            None => ParallelEncoder::encode_tasks_with_options(
+            None => ParallelEncoder::encode_tasks(
                 input,
                 workers,
                 encode_tasks.iter().cloned().collect::<VecDeque<_>>(),
@@ -1421,7 +1323,7 @@ impl TargetQuality {
         let scene_paths = tasks.iter().map(|task| task.output.clone()).collect::<Vec<_>>();
         match concat_method {
             ConcatMethod::MKVMerge(_) => {
-                SceneConcatenator::mkvmerge_cancel(
+                SceneConcatenator::mkvmerge(
                     &pass_directory,
                     &output,
                     &scene_paths,
@@ -1433,7 +1335,7 @@ impl TargetQuality {
                 )?;
             },
             ConcatMethod::FFmpeg(_) => {
-                SceneConcatenator::ffmpeg_cancel(
+                SceneConcatenator::ffmpeg(
                     &pass_directory,
                     &output,
                     &scene_paths,
@@ -1446,7 +1348,7 @@ impl TargetQuality {
                 )?;
             },
             ConcatMethod::Ivf => {
-                SceneConcatenator::ivf_cancel(&output, &scene_paths, &progress_tx, cancellation)?;
+                SceneConcatenator::ivf(&output, &scene_paths, &progress_tx, cancellation)?;
             },
         }
 

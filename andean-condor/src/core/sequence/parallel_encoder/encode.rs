@@ -51,8 +51,7 @@ pub(super) fn spawn_filter(
                 .and_then(|cells| cells.get(&task.original_index))
                 .cloned()
                 .unwrap_or_else(|| Arc::new(Mutex::new(None)));
-            let mut stage =
-                FfmpegFilter::spawn_cancel(frames_rx, window, graph, failure, cancellation)?;
+            let mut stage = FfmpegFilter::spawn(frames_rx, window, graph, failure, cancellation)?;
             Ok((stage.take_receiver()?, Some(stage)))
         },
         None => Ok((frames_rx, None)),
@@ -329,60 +328,11 @@ fn report_result(
 }
 
 impl ParallelEncoder {
-    #[inline]
-    pub fn encode_tasks(
-        input: &mut Input,
-        workers: u8,
-        tasks: VecDeque<Task>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_cancel(input, workers, tasks, progress_tx, cancelled.into())
-    }
-
-    /// Force-capable dispatcher, defaulting to three total attempts per scene.
-    /// All active worker owners join before return.
-    #[inline]
-    pub fn encode_tasks_cancel(
-        input: &mut Input,
-        workers: u8,
-        tasks: VecDeque<Task>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Cancellation,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_with_validation(input, workers, tasks, progress_tx, cancelled, true)
-    }
-
-    /// Explicit count-only policy for intentional frame-changing filters.
-    /// Successful encoder status and nonempty regular output remain mandatory.
-    /// Retains the default of three total attempts per scene.
-    #[inline]
-    pub fn encode_tasks_with_validation(
-        input: &mut Input,
-        workers: u8,
-        tasks: VecDeque<Task>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Cancellation,
-        validate_frame_count: bool,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_with_options(
-            input,
-            workers,
-            tasks,
-            progress_tx,
-            cancelled,
-            ParallelEncoderOptions {
-                validate_frame_count,
-                ..Default::default()
-            },
-        )
-    }
-
     /// Explicit attempt/count policy. Non-replayable scenes with more than one
     /// attempt capture one anonymous Y4M disk spool before the first encode.
     #[allow(clippy::too_many_arguments)]
     #[inline]
-    pub fn encode_tasks_with_options(
+    pub fn encode_tasks(
         input: &mut Input,
         workers: u8,
         tasks: VecDeque<Task>,

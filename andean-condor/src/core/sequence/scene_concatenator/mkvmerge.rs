@@ -20,37 +20,11 @@ pub(super) fn fix_path<P: AsRef<Path>>(p: P) -> String {
 }
 
 impl SceneConcatenator {
-    /// Scratch writer: the caller must exclusively own `output`; this can overwrite it.
-    /// Use the final Sequence boundary for saved overwrite/source protection and publication.
-    #[allow(clippy::too_many_arguments)]
-    #[inline]
-    pub fn mkvmerge(
-        scenes_directory: &Path,
-        output: &Path,
-        scene_paths: &[PathBuf],
-        input: Option<&Path>,
-        duration: Ratio<i64>,
-        config: Option<&MkvmergeConfig>,
-        progress_tx: &sync::mpsc::Sender<SequenceStatus>,
-        cancelled: &Arc<AtomicBool>,
-    ) -> Result<()> {
-        Self::mkvmerge_cancel(
-            scenes_directory,
-            output,
-            scene_paths,
-            input,
-            duration,
-            config,
-            progress_tx,
-            &Cancellation::from(Arc::clone(cancelled)),
-        )
-    }
-
     /// Each intermediate group and final mux is a separate graceful admission.
     /// Caller must exclusively own the scratch output (it may be truncated on error).
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    pub fn mkvmerge_cancel(
+    pub fn mkvmerge(
         scenes_directory: &Path,
         output: &Path,
         scene_paths: &[PathBuf],

@@ -129,7 +129,7 @@ pub(super) fn check_duplicate_resume(phase: u8, reduce_history: HistoryReducer) 
     for (pass, q) in [(1, 26.0), (2, 30.0)] {
         task.encoder.set_quantizer(q);
         task.output = directory.join(pass.to_string()).join("00000.mkv");
-        let (completed, warnings) = TargetQuality::probe_pass_with_options(
+        let (completed, warnings) = TargetQuality::probe_pass(
             pass,
             &directory,
             &config,
@@ -200,9 +200,8 @@ pub(super) fn check_duplicate_resume(phase: u8, reduce_history: HistoryReducer) 
     );
     current_target_fixture(&mut condor);
     let mut sequence = TargetQuality::default();
-    let (_, warnings) = sequence
-        .execute_cancel(&mut condor, tx, cancellation)
-        .expect("actual orchestration");
+    let (_, warnings) =
+        sequence.execute(&mut condor, tx, cancellation).expect("actual orchestration");
     assert!(warnings.is_empty(), "{warnings:?}");
     let scene = &condor.scenes[0];
     let measured = &scene.sequence_data.target_quality.passes;
@@ -263,9 +262,7 @@ pub(super) fn check_duplicate_resume(phase: u8, reduce_history: HistoryReducer) 
     condor.sequence_config.target_quality.as_mut().expect("TQ").maximum_probes = 1;
     condor.scenes[0].sequence_data.target_quality.passes.clear();
     let (tx, _rx) = sync::mpsc::channel();
-    sequence
-        .execute_cancel(&mut condor, tx, Default::default())
-        .expect("one real probe");
+    sequence.execute(&mut condor, tx, Default::default()).expect("one real probe");
     let scene = &condor.scenes[0];
     assert_eq!(scene.sequence_data.target_quality.passes.len(), 1);
     assert_eq!(scene.sequence_data.target_quality.passes[0].quantizer, 28.0);
@@ -313,7 +310,7 @@ pub(super) fn check_duplicate_resume(phase: u8, reduce_history: HistoryReducer) 
         panic!("real comparison never completed");
     });
     let error = sequence
-        .execute_cancel(&mut condor, tx, cancellation)
+        .execute(&mut condor, tx, cancellation)
         .expect_err("force still propagates");
     progress.join().expect("progress handoff");
     assert_eq!(error.downcast_ref::<Cancelled>(), Some(&Cancelled::Forced));

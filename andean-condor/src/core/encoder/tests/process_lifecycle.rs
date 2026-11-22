@@ -365,7 +365,7 @@ mod internal_integration {
                 }),
             );
             let (tx, _rx) = mpsc::channel();
-            let result = ParallelEncoder::default().execute_cancel(&mut condor, tx, cancellation);
+            let result = ParallelEncoder::default().execute(&mut condor, tx, cancellation);
             assert_eq!(
                 result
                     .expect_err("force at idle dispatch return is not success")
@@ -395,7 +395,7 @@ mod internal_integration {
                     let scenes = vec![root.join("scene.264")];
                     fs::write(&scenes[0], b"owned scene fixture").expect("nonempty mux input");
                     if case.starts_with("commit-ffmpeg") {
-                        SceneConcatenator::ffmpeg_cancel(
+                        SceneConcatenator::ffmpeg(
                             &root,
                             &output,
                             &scenes,
@@ -407,7 +407,7 @@ mod internal_integration {
                             &cancellation,
                         )
                     } else {
-                        SceneConcatenator::mkvmerge_cancel(
+                        SceneConcatenator::mkvmerge(
                             &root,
                             &output,
                             &scenes,
@@ -427,7 +427,7 @@ mod internal_integration {
                     bytes.extend_from_slice(&0_u64.to_le_bytes());
                     bytes.push(0x12);
                     fs::write(&source, bytes).expect("finite IVF");
-                    SceneConcatenator::ivf_cancel(&output, &[source], &progress, &cancellation)
+                    SceneConcatenator::ivf(&output, &[source], &progress, &cancellation)
                 } else if case.starts_with("commit-dg") {
                     fs::write(root.join("source"), "fixture source").expect("source");
                     crate::vapoursynth::plugins::dgdecodenv::DGSource::index_video(

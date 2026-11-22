@@ -5,39 +5,11 @@ mod ffmpeg_tracks;
 use super::*;
 
 impl SceneConcatenator {
-    /// Scratch writer: the caller must exclusively own `output`; this can overwrite it.
-    /// Use the final Sequence boundary for saved overwrite/source protection and publication.
-    #[allow(clippy::too_many_arguments)]
-    #[inline]
-    pub fn ffmpeg(
-        scenes_directory: &Path,
-        output: &Path,
-        scene_paths: &[PathBuf],
-        input: Option<&Path>,
-        total_frames: usize,
-        framerate: Ratio<i64>,
-        config: Option<&FfmpegConfig>,
-        progress_tx: &sync::mpsc::Sender<SequenceStatus>,
-        cancelled: &Arc<AtomicBool>,
-    ) -> Result<()> {
-        Self::ffmpeg_cancel(
-            scenes_directory,
-            output,
-            scene_paths,
-            input,
-            total_frames,
-            framerate,
-            config,
-            progress_tx,
-            &Cancellation::from(Arc::clone(cancelled)),
-        )
-    }
-
     /// Runs one admitted concat unit; force kills its owned tree even while silent.
     /// Caller must exclusively own the scratch output (it may be truncated on error).
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    pub fn ffmpeg_cancel(
+    pub fn ffmpeg(
         scenes_directory: &Path,
         output: &Path,
         scene_paths: &[PathBuf],

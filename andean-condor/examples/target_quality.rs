@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool, mpsc},
+    sync::mpsc,
     thread,
 };
 
@@ -49,6 +49,7 @@ use andean_condor::{
             },
         },
     },
+    utils::cancellation::Cancellation,
     vapoursynth::{plugins::resize::Scaler, vapoursynth_filters::VapourSynthFilter},
 };
 use anyhow::Result;
@@ -232,7 +233,7 @@ fn main() -> Result<()> {
             print_progress(&event);
         }
     });
-    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancelled = Cancellation::default();
 
     // Scene Detector: populate `condor.scenes` with AVSceneChange.
     let mut scene_detector = SceneDetector {
@@ -312,7 +313,7 @@ fn run_sequence(
     sequence: &mut impl Sequence<ExampleSequenceData, ExampleSequenceConfig>,
     index: usize,
     progress_tx: &mpsc::Sender<SequenceProgressEvent>,
-    cancelled: &Arc<AtomicBool>,
+    cancelled: &Cancellation,
 ) -> Result<()> {
     let details = sequence.details();
 
@@ -334,8 +335,9 @@ fn run_sequence(
             let _ = event_tx.send(event);
         }
     });
-    let (_, initialization_warnings) = sequence.initialize(condor, init_tx)?;
+    let initialized = sequence.initialize(condor, init_tx, cancelled);
     let _ = init_handle.join();
+    let (_, initialization_warnings) = initialized?;
     for warning in initialization_warnings {
         eprintln!("warning: {warning}");
     }
@@ -353,8 +355,9 @@ fn run_sequence(
             let _ = event_tx.send(event);
         }
     });
-    let (_, execution_warnings) = sequence.execute(condor, execute_tx, Arc::clone(cancelled))?;
+    let executed = sequence.execute(condor, execute_tx, cancelled.clone());
     let _ = execute_handle.join();
+    let (_, execution_warnings) = executed?;
     for warning in execution_warnings {
         eprintln!("warning: {warning}");
     }

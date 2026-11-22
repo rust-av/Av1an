@@ -208,8 +208,14 @@ fn assert_failed_publication_preserves_output() {
     let (tx, rx) = sync::mpsc::channel();
     let mut concat = SceneConcatenator::default();
     concat.validate(&mut job).expect("final preflight");
-    concat.initialize(&mut job, tx.clone()).expect("initialize");
-    let result = concat.execute_cancel(&mut job, tx, token);
+    concat
+        .initialize(
+            &mut job,
+            tx.clone(),
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        )
+        .expect("initialize");
+    let result = concat.execute(&mut job, tx, token);
     controller.join().expect("joined controller");
     // Reap only the fixture descendant, identified while its leader still owned it.
     let pids = std::fs::read_to_string(root.join("pids")).expect("owned identities");

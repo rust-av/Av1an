@@ -8,4 +8,4 @@ use andean_condor::{
 };
 use anyhow::Result;
 use av_decoders::v_frame::chroma::ChromaSubsampling;
-use std::{collections::HashMap, io::Cursor, sync::atomic::AtomicBool};
+use std::{collections::HashMap, io::Cursor};

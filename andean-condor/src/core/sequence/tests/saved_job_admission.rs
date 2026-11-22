@@ -72,7 +72,7 @@ mod internal_integration {
             let (tx, _rx) = std::sync::mpsc::channel();
             assert!(
                 target_quality::TargetQuality::default()
-                    .execute_cancel(&mut job, tx, Default::default())
+                    .execute(&mut job, tx, Default::default())
                     .is_err()
             );
             assert_eq!(
@@ -87,7 +87,7 @@ mod internal_integration {
             for _ in 0..2 {
                 let (tx, _rx) = std::sync::mpsc::channel();
                 target_quality::TargetQuality::default()
-                    .execute_cancel(&mut job, tx, Default::default())
+                    .execute(&mut job, tx, Default::default())
                     .expect("owning matching admission without a probe");
                 observed.push(provenance::take_identity_counts());
             }

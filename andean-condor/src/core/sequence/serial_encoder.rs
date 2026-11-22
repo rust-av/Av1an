@@ -1,8 +1,9 @@
+use crate::utils::cancellation::Cancellation;
 use std::{
     io::Cursor,
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
-    sync::{self, Arc, Mutex, atomic::AtomicBool},
+    sync::{self, Arc, Mutex},
     thread,
     time::Instant,
 };
@@ -95,40 +96,33 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let mut warnings = vec![];
+        super::check_sequence(cancellation, || {
+            let mut warnings = vec![];
 
-        // Ensure scenes is not empty
-        if condor.scenes.is_empty() {
-            warnings.push(anyhow::Error::new(SerialEncoderError::NoScenes));
-        }
-        // let encoder = self.encoder.as_ref().map_or(&condor.encoder, |e| e);
-        if let Some(input) = &mut self.input {
-            // Initialize input by getting clip_info. For VapourSynth inputs,
-            // this may begin a lengthy caching process, hence the
-            // separation between validate and initialize.
-            input.clip_info()?;
-        }
+            // Ensure scenes is not empty
+            if condor.scenes.is_empty() {
+                warnings.push(anyhow::Error::new(SerialEncoderError::NoScenes));
+            }
+            // let encoder = self.encoder.as_ref().map_or(&condor.encoder, |e| e);
+            if let Some(input) = &mut self.input {
+                // Initialize input by getting clip_info. For VapourSynth inputs,
+                // this may begin a lengthy caching process, hence the
+                // separation between validate and initialize.
+                input.clip_info()?;
+            }
 
-        if !self.scenes_directory.exists() {
-            std::fs::create_dir_all(&self.scenes_directory)?;
-        }
+            if !self.scenes_directory.exists() {
+                std::fs::create_dir_all(&self.scenes_directory)?;
+            }
 
-        Ok(((), warnings))
+            Ok(((), warnings))
+        })
     }
 
     #[inline]
     fn execute(
-        &mut self,
-        condor: &mut Condor<DataHandler, ConfigHandler>,
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<((), Vec<anyhow::Error>)> {
-        self.execute_cancel(condor, progress_tx, cancelled.into())
-    }
-
-    #[inline]
-    fn execute_cancel(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,

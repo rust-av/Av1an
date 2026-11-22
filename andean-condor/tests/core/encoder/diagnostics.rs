@@ -3,13 +3,7 @@ use andean_condor::core::{
     encoder::{EncodeProgress, EncoderResult, StringOrBytes},
     input::Input,
 };
-use std::{
-    collections::HashMap,
-    fs,
-    io::Cursor,
-    path::PathBuf,
-    sync::{Arc, mpsc},
-};
+use std::{collections::HashMap, fs, io::Cursor, path::PathBuf, sync::mpsc};
 
 fn bytes(value: &StringOrBytes) -> &[u8] {
     match value {
@@ -565,11 +559,8 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                 Box::new(|_| Ok(())),
             );
             let (tx, _rx) = mpsc::channel();
-            let result = SerialEncoder::new(&scenes).execute_cancel(
-                &mut condor,
-                tx,
-                Cancellation::default(),
-            );
+            let result =
+                SerialEncoder::new(&scenes).execute(&mut condor, tx, Cancellation::default());
             eprintln!("serial result={result:?}");
             result.expect("owned serial FFmpeg output");
             decoded_frames(&scenes.join("00000.mkv"));
@@ -585,7 +576,7 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                 })
                 .collect::<VecDeque<_>>();
             let (tx, _rx) = mpsc::channel();
-            let result = ParallelEncoder::encode_tasks_with_options(
+            let result = ParallelEncoder::encode_tasks(
                 &mut input,
                 2,
                 tasks,
@@ -815,7 +806,7 @@ fn serial_case(root: &Path, case: &str, mut encoder: Encoder) {
     let result = serial.execute(
         &mut condor,
         tx,
-        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        andean_condor::utils::cancellation::Cancellation::default(),
     );
     if matches!(case, "serialdecode" | "serialencode") {
         assert!(

@@ -14,7 +14,7 @@ use condor::{
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, atomic::AtomicBool, mpsc},
+    sync::{Arc, Mutex, mpsc},
 };
 
 #[path = "fixtures/runtime_support.rs"]

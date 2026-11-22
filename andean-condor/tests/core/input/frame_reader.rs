@@ -408,14 +408,19 @@ fn zone_tasks_share_one_temporal_graph_and_encode_selected_samples() {
         })
         .collect();
     let outputs: Vec<_> = tasks.iter().map(|task| task.output.clone()).collect();
-    let plan = ZonePlan::try_build(&tasks).expect("real x264 zone support");
+    let plan = ZonePlan::try_build(
+        &tasks,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect("real x264 zone support");
     let (progress, _receiver) = mpsc::channel();
     let results = ZoneEncoder::encode_tasks(
         &mut input,
         tasks.into(),
         plan,
         progress,
-        Arc::new(AtomicBool::new(false)),
+        andean_condor::utils::cancellation::Cancellation::default(),
+        true,
     )
     .expect("actual finite zone feed");
     assert!(results.iter().all(Option::is_some));

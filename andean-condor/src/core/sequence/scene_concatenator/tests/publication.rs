@@ -1,5 +1,6 @@
 //! Exact publication seams remain private; public failure workflows live in tests/core.
 use super::*;
+use std::sync::atomic::AtomicBool;
 
 type StageCheck = Box<dyn FnOnce(&Path)>;
 type PersistCheck = Box<dyn FnOnce(&Path, &Path)>;
@@ -84,7 +85,7 @@ mod internal_integration {
             DURING_PAYLOAD.set(Some(force));
             let (tx, rx) = sync::mpsc::channel();
             let error = SceneConcatenator::default()
-                .execute_cancel(&mut job, tx, Cancellation::default())
+                .execute(&mut job, tx, Cancellation::default())
                 .expect_err("cancelled final Sequence");
             BEFORE_COMMIT.with_borrow_mut(|hook| {
                 hook.take();
@@ -128,7 +129,7 @@ mod internal_integration {
             });
             let (tx, rx) = sync::mpsc::channel();
             let result =
-                SceneConcatenator::default().execute_cancel(&mut job, tx, Cancellation::default());
+                SceneConcatenator::default().execute(&mut job, tx, Cancellation::default());
             assert!(reached.load(std::sync::atomic::Ordering::SeqCst));
             if overwrite {
                 result.expect("explicit consent may replace the late file");
@@ -168,7 +169,7 @@ mod internal_integration {
                 });
             }
             let (tx, rx) = sync::mpsc::channel();
-            let result = SceneConcatenator::default().execute_cancel(&mut job, tx, token.clone());
+            let result = SceneConcatenator::default().execute(&mut job, tx, token.clone());
             if before {
                 assert_eq!(
                     result.expect_err("cancel before lock").downcast_ref::<Cancelled>(),

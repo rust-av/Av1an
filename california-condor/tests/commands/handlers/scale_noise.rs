@@ -389,7 +389,7 @@ mod tests {
                 &mut andean_condor::core::sequence::noise_scaler::NoiseScaler::default(),
                 &mut direct,
                 tx,
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                Default::default(),
             )
             .expect_err("known changed dependencies cannot skip as already scaled");
             assert!(format!("{error:#}").contains("noise scaling dependencies changed"));

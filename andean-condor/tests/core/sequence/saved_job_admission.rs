@@ -60,13 +60,9 @@ fn certified_chunk_or_quality_history_corruption_refuses_without_repair_or_nativ
         });
         let (tx, rx) = std::sync::mpsc::channel();
         let result = if case.starts_with("chunk") {
-            parallel_encoder::ParallelEncoder::default().execute_cancel(
-                &mut job,
-                tx,
-                Default::default(),
-            )
+            parallel_encoder::ParallelEncoder::default().execute(&mut job, tx, Default::default())
         } else {
-            quality_check::QualityCheck::default().execute_cancel(&mut job, tx, Default::default())
+            quality_check::QualityCheck::default().execute(&mut job, tx, Default::default())
         };
         let error = result.expect_err(
             "reachable corruption must refuse rather than repair/remeasure current records",
@@ -172,22 +168,20 @@ fn owning_stages_refuse_uncertified_legacy_results_without_mutation_or_native_wo
         });
         let (tx, rx) = std::sync::mpsc::channel();
         let result = match owner {
-            "TQ" => target_quality::TargetQuality::default().execute_cancel(
+            "TQ" => target_quality::TargetQuality::default().execute(
                 &mut condor,
                 tx,
                 Default::default(),
             ),
-            "QC" => quality_check::QualityCheck::new(None).execute_cancel(
+            "QC" => {
+                quality_check::QualityCheck::new(None).execute(&mut condor, tx, Default::default())
+            },
+            "PE" => parallel_encoder::ParallelEncoder::default().execute(
                 &mut condor,
                 tx,
                 Default::default(),
             ),
-            "PE" => parallel_encoder::ParallelEncoder::default().execute_cancel(
-                &mut condor,
-                tx,
-                Default::default(),
-            ),
-            _ => scene_concatenator::SceneConcatenator::default().execute_cancel(
+            _ => scene_concatenator::SceneConcatenator::default().execute(
                 &mut condor,
                 tx,
                 Default::default(),
@@ -270,7 +264,7 @@ fn parallel_encoder_refuses_stale_tq_selection_until_target_quality_restores_a_m
     let before = serde_json::to_vec(&job.scenes).expect("before");
     let (tx, rx) = std::sync::mpsc::channel();
     let error = parallel_encoder::ParallelEncoder::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect_err("do not encode old selected quantizer");
     assert!(format!("{error:#}").contains("TQ selection"));
     assert_eq!(
@@ -286,7 +280,7 @@ fn parallel_encoder_refuses_stale_tq_selection_until_target_quality_restores_a_m
     });
     let (tx, _rx) = std::sync::mpsc::channel();
     target_quality::TargetQuality::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("reselect under current target without probing/capability lookup");
     assert_eq!(job.scenes[0].encoder.quantizer(), Some(30.0));
     assert_eq!(saves.get(), 1);
@@ -315,7 +309,7 @@ fn concat_reuses_certified_chunks_without_a_second_decoded_frame_count_probe() {
         );
         let (tx, _rx) = std::sync::mpsc::channel();
         scene_concatenator::SceneConcatenator::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("concat may resolve source streams, but must not launch a second full count");
         assert!(!root.join("probe-called").exists());
         assert_eq!(
@@ -424,7 +418,7 @@ fn check_roundtrip_dependencies(phase: u8) {
         .expect("probe scratch");
     let (tx, rx) = std::sync::mpsc::channel();
     target_quality::TargetQuality::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("real TQ");
     assert_eq!(job.scenes[0].sequence_data.target_quality.passes.len(), 1);
     let pass = &job.scenes[0].sequence_data.target_quality.passes[0];
@@ -452,12 +446,12 @@ fn check_roundtrip_dependencies(phase: u8) {
     let _: Vec<_> = rx.try_iter().collect();
     let (tx, _rx) = std::sync::mpsc::channel();
     parallel_encoder::ParallelEncoder::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("real final encode");
     assert!(job.scenes[0].sequence_data.parallel_encoder.provenance.is_some());
     let (tx, _rx) = std::sync::mpsc::channel();
     scene_concatenator::SceneConcatenator::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("real final mux");
     job.sequence_config.quality_check = Some(QualityCheckConfig {
         metric: job.sequence_config.target_quality.as_ref().expect("TQ").metric.clone(),
@@ -465,7 +459,7 @@ fn check_roundtrip_dependencies(phase: u8) {
     });
     let (tx, _rx) = std::sync::mpsc::channel();
     quality_check::QualityCheck::default()
-        .execute_cancel(&mut job, tx, Default::default())
+        .execute(&mut job, tx, Default::default())
         .expect("real QC");
     assert!(job.scenes[0].sequence_data.quality_check.quality.provenance.is_some());
     let bytes = serde_json::to_vec(&job.as_data()).expect("current saved job");
@@ -503,17 +497,15 @@ fn check_roundtrip_dependencies(phase: u8) {
     for owner in ["TQ", "QC", "PE"] {
         let (tx, _rx) = std::sync::mpsc::channel();
         match owner {
-            "TQ" => target_quality::TargetQuality::default().execute_cancel(
+            "TQ" => target_quality::TargetQuality::default().execute(
                 &mut resumed,
                 tx,
                 Default::default(),
             ),
-            "QC" => quality_check::QualityCheck::default().execute_cancel(
-                &mut resumed,
-                tx,
-                Default::default(),
-            ),
-            _ => parallel_encoder::ParallelEncoder::default().execute_cancel(
+            "QC" => {
+                quality_check::QualityCheck::default().execute(&mut resumed, tx, Default::default())
+            },
+            _ => parallel_encoder::ParallelEncoder::default().execute(
                 &mut resumed,
                 tx,
                 Default::default(),
@@ -618,13 +610,13 @@ fn check_roundtrip_dependencies(phase: u8) {
         for owner in ["PE", "concat"] {
             let (tx, rx) = std::sync::mpsc::channel();
             let result = if owner == "PE" {
-                parallel_encoder::ParallelEncoder::default().execute_cancel(
+                parallel_encoder::ParallelEncoder::default().execute(
                     &mut resumed,
                     tx,
                     Default::default(),
                 )
             } else {
-                scene_concatenator::SceneConcatenator::default().execute_cancel(
+                scene_concatenator::SceneConcatenator::default().execute(
                     &mut resumed,
                     tx,
                     Default::default(),
@@ -661,7 +653,7 @@ fn check_roundtrip_dependencies(phase: u8) {
     });
     let (tx, _rx) = std::sync::mpsc::channel();
     target_quality::TargetQuality::default()
-        .execute_cancel(&mut resumed, tx, Default::default())
+        .execute(&mut resumed, tx, Default::default())
         .expect("target hit reuses raw history under new budget");
     assert_eq!(
         policy_saves.get(),
@@ -681,7 +673,7 @@ fn check_roundtrip_dependencies(phase: u8) {
     let (tx, _rx) = std::sync::mpsc::channel();
     assert!(
         target_quality::TargetQuality::default()
-            .execute_cancel(&mut resumed, tx, Default::default())
+            .execute(&mut resumed, tx, Default::default())
             .is_err()
     );
 }
@@ -779,7 +771,7 @@ fn check_model_inputs(test: &str, phase: u8) {
     let (tx, _rx) = std::sync::mpsc::channel();
     assert!(
         target_quality::TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .is_err()
     );
     assert_eq!(
@@ -803,7 +795,7 @@ fn check_model_inputs(test: &str, phase: u8) {
     let (tx, _rx) = std::sync::mpsc::channel();
     assert!(
         target_quality::TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .is_err()
     );
     current_target_fixture(&mut job);
@@ -815,7 +807,7 @@ fn check_model_inputs(test: &str, phase: u8) {
     let (tx, _rx) = std::sync::mpsc::channel();
     assert!(
         target_quality::TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .is_err()
     );
 
@@ -834,7 +826,7 @@ fn check_model_inputs(test: &str, phase: u8) {
     }
     current_target_fixture(&mut job);
     let (tx, _rx) = std::sync::mpsc::channel();
-    target_quality::TargetQuality::default().execute_cancel(&mut job, tx, Default::default()).expect("explicit custom identity excludes environment override; no native measurement required");
+    target_quality::TargetQuality::default().execute(&mut job, tx, Default::default()).expect("explicit custom identity excludes environment override; no native measurement required");
     let modified = custom.metadata().expect("model stat").modified().expect("mtime");
     std::fs::write(&custom, b"BBB").expect("same-size model edit");
     std::fs::File::open(&custom)
@@ -844,7 +836,7 @@ fn check_model_inputs(test: &str, phase: u8) {
     let (tx, _rx) = std::sync::mpsc::channel();
     assert!(
         target_quality::TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .is_err()
     );
 
@@ -894,7 +886,7 @@ fn check_model_inputs(test: &str, phase: u8) {
         let (tx, _rx) = std::sync::mpsc::channel();
         assert!(
             target_quality::TargetQuality::default()
-                .execute_cancel(&mut job, tx, Default::default())
+                .execute(&mut job, tx, Default::default())
                 .is_err(),
             "{edit}"
         );

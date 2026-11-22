@@ -1,3 +1,4 @@
+use crate::utils::cancellation::Cancellation;
 use std::{
     sync::{self, Arc, atomic::AtomicBool},
     thread,
@@ -167,43 +168,46 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let mut warnings = vec![];
+        super::check_sequence(cancellation, || {
+            let mut warnings = vec![];
 
-        let Some(config) = condor.sequence_config.quality_check()? else {
-            return Ok(((), warnings));
-        };
-        if condor.scenes.is_empty() {
-            warnings.push(anyhow::Error::new(QualityCheckError::ScenesEmpty));
-            return Ok(((), warnings));
-        }
-        for scene in &condor.scenes {
-            config.strategy.validate_range(scene.start_frame, scene.end_frame)?;
-        }
-        let input = if let Some(input) = self.input.as_mut() {
-            input
-        } else if let Some(input_model) = &config.input {
-            &mut Input::from_data(input_model)?
-        } else {
-            &mut condor.input
-        };
-        // Initialize input by getting clip_info. For VapourSynth inputs, this
-        // may begin a lengthy caching process, hence the separation
-        // between validate and initialize.
-        progress_tx.send(SequenceStatus::Whole(Status::Processing {
-            id: DETAILS.name.to_owned(),
-            completion: SequenceCompletion::Custom {
-                name: DETAILS.name.to_owned(),
-                completed: 0.0,
-                total: 1.0,
-            },
-        }))?;
-        input.clip_info()?;
-        progress_tx.send(SequenceStatus::Whole(Status::Completed {
-            id: DETAILS.name.to_owned(),
-        }))?;
+            let Some(config) = condor.sequence_config.quality_check()? else {
+                return Ok(((), warnings));
+            };
+            if condor.scenes.is_empty() {
+                warnings.push(anyhow::Error::new(QualityCheckError::ScenesEmpty));
+                return Ok(((), warnings));
+            }
+            for scene in &condor.scenes {
+                config.strategy.validate_range(scene.start_frame, scene.end_frame)?;
+            }
+            let input = if let Some(input) = self.input.as_mut() {
+                input
+            } else if let Some(input_model) = &config.input {
+                &mut Input::ensure_indexed(input_model, |_| {}, cancellation)?
+            } else {
+                &mut condor.input
+            };
+            // Initialize input by getting clip_info. For VapourSynth inputs, this
+            // may begin a lengthy caching process, hence the separation
+            // between validate and initialize.
+            progress_tx.send(SequenceStatus::Whole(Status::Processing {
+                id: DETAILS.name.to_owned(),
+                completion: SequenceCompletion::Custom {
+                    name: DETAILS.name.to_owned(),
+                    completed: 0.0,
+                    total: 1.0,
+                },
+            }))?;
+            input.clip_info()?;
+            progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                id: DETAILS.name.to_owned(),
+            }))?;
 
-        Ok(((), warnings))
+            Ok(((), warnings))
+        })
     }
 
     #[inline]
@@ -211,159 +215,168 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
+        cancellation: Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        crate::utils::cancellation::Cancellation::from(Arc::clone(&cancelled)).check()?;
-        let mut warnings = vec![];
+        super::check_sequence(&cancellation, || {
+            let cancelled = cancellation.legacy_flag();
 
-        let Some(config) = condor.sequence_config.quality_check()? else {
-            return Ok(((), warnings));
-        };
+            let mut warnings = vec![];
 
-        if condor.scenes.is_empty() {
-            warnings.push(anyhow::Error::new(QualityCheckError::ScenesEmpty));
-            return Ok(((), warnings));
-        }
-        for scene in &condor.scenes {
-            config.strategy.validate_range(scene.start_frame, scene.end_frame)?;
-        }
-        let output_path = condor
-            .sequence_config
-            .scene_concatenator()?
-            .effective_output(&condor.output.path)
-            .to_path_buf();
-        let input_model = self
-            .input
-            .as_ref()
-            .map(Input::as_data)
-            .or_else(|| config.input.clone())
-            .unwrap_or_else(|| condor.input.as_data());
-        let mut admission = provenance::Admission::default();
-        for (index, scene) in condor.scenes.iter().enumerate() {
-            admission.admit_quality(
-                &input_model,
-                &output_path,
-                scene,
-                Some(config),
-                &scene.sequence_data.get_quality_check()?.quality,
-                index,
-            )?;
-        }
-        if !output_path.exists() {
-            warnings.push(anyhow::Error::new(QualityCheckError::OutputMissing {
-                path: output_path,
-            }));
-            return Ok(((), warnings));
-        }
-        let scene_frame_indices = condor
-            .scenes
-            .iter()
-            .enumerate()
-            .map(|(index, scene)| {
-                Ok((
-                    index,
-                    config.strategy.frame_indices(scene.start_frame, scene.end_frame)?,
-                ))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .map(|(index, indices)| -> Result<Option<_>> {
-                if let Ok(data) = condor.scenes[index].sequence_data.get_quality_check()
-                    && data.quality.scores.len() == indices.len()
-                    && !data.quality.is_unmeasured()
-                {
-                    Self::validate_scene_scores(config, index, indices.len(), &data.quality.scores)
-                        .context("recorded Quality Check history")?;
-                    return Ok(None);
-                }
-                Ok(Some((index, indices)))
-            })
-            .filter_map(Result::transpose)
-            .collect::<Result<Vec<_>>>()?;
-        let input = if let Some(input) = self.input.as_mut() {
-            input
-        } else if let Some(input_model) = &config.input {
-            &mut Input::from_data(input_model)?
-        } else {
-            &mut condor.input
-        };
+            let Some(config) = condor.sequence_config.quality_check()? else {
+                return Ok(((), warnings));
+            };
 
-        if scene_frame_indices.is_empty() {
-            progress_tx.send(SequenceStatus::Whole(Status::Completed {
-                id: DETAILS.name.to_owned(),
-            }))?;
-            return Ok(((), warnings));
-        }
-
-        // VMAF scores decoded frames through libvmaf rather than a VapourSynth
-        // filter graph, so it takes a separate path. Every other metric runs as
-        // a plugin over the nodes built by `measure`, unless a native
-        // engine takes it first.
-        let before = admission.measurement_inputs(&input_model, None, Some(&config.metric))?;
-        let output_before = provenance::file_identity(&output_path)?;
-        let planned = metrics::engine(&config.metric, Self::input_is_vapoursynth(input));
-        let (measurements, actual) = if matches!(config.metric, QualityMetric::VMAF { .. }) {
-            (
-                Self::measure_vmaf(
-                    input,
+            if condor.scenes.is_empty() {
+                warnings.push(anyhow::Error::new(QualityCheckError::ScenesEmpty));
+                return Ok(((), warnings));
+            }
+            for scene in &condor.scenes {
+                config.strategy.validate_range(scene.start_frame, scene.end_frame)?;
+            }
+            let output_path = condor
+                .sequence_config
+                .scene_concatenator()?
+                .effective_output(&condor.output.path)
+                .to_path_buf();
+            let input_model = self
+                .input
+                .as_ref()
+                .map(Input::as_data)
+                .or_else(|| config.input.clone())
+                .unwrap_or_else(|| condor.input.as_data());
+            let mut admission = provenance::Admission::default();
+            for (index, scene) in condor.scenes.iter().enumerate() {
+                admission.admit_quality(
+                    &input_model,
                     &output_path,
-                    config,
-                    &scene_frame_indices,
-                    &progress_tx,
-                    &cancelled,
-                )?,
-                MetricBackend::current(Engine::Vmaf),
-            )
-        } else if let Some(scores) = Self::measure_native(
-            input,
-            &output_path,
-            config,
-            &scene_frame_indices,
-            &progress_tx,
-            &cancelled,
-        )? {
-            (
-                scores,
-                MetricBackend::current(planned.expect("successful native scorer")),
-            )
-        } else {
-            Self::measure(
+                    scene,
+                    Some(config),
+                    &scene.sequence_data.get_quality_check()?.quality,
+                    index,
+                )?;
+            }
+            if !output_path.exists() {
+                warnings.push(anyhow::Error::new(QualityCheckError::OutputMissing {
+                    path: output_path,
+                }));
+                return Ok(((), warnings));
+            }
+            let scene_frame_indices = condor
+                .scenes
+                .iter()
+                .enumerate()
+                .map(|(index, scene)| {
+                    Ok((
+                        index,
+                        config.strategy.frame_indices(scene.start_frame, scene.end_frame)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .map(|(index, indices)| -> Result<Option<_>> {
+                    if let Ok(data) = condor.scenes[index].sequence_data.get_quality_check()
+                        && data.quality.scores.len() == indices.len()
+                        && !data.quality.is_unmeasured()
+                    {
+                        Self::validate_scene_scores(
+                            config,
+                            index,
+                            indices.len(),
+                            &data.quality.scores,
+                        )
+                        .context("recorded Quality Check history")?;
+                        return Ok(None);
+                    }
+                    Ok(Some((index, indices)))
+                })
+                .filter_map(Result::transpose)
+                .collect::<Result<Vec<_>>>()?;
+            let input = if let Some(input) = self.input.as_mut() {
+                input
+            } else if let Some(input_model) = &config.input {
+                &mut Input::ensure_indexed(input_model, |_| {}, &cancellation)?
+            } else {
+                &mut condor.input
+            };
+
+            if scene_frame_indices.is_empty() {
+                progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                    id: DETAILS.name.to_owned(),
+                }))?;
+                return Ok(((), warnings));
+            }
+
+            // VMAF scores decoded frames through libvmaf rather than a VapourSynth
+            // filter graph, so it takes a separate path. Every other metric runs as
+            // a plugin over the nodes built by `measure`, unless a native
+            // engine takes it first.
+            let before = admission.measurement_inputs(&input_model, None, Some(&config.metric))?;
+            let output_before = provenance::file_identity(&output_path)?;
+            let planned = metrics::engine(&config.metric, Self::input_is_vapoursynth(input));
+            let (measurements, actual) = if matches!(config.metric, QualityMetric::VMAF { .. }) {
+                (
+                    Self::measure_vmaf(
+                        input,
+                        &output_path,
+                        config,
+                        &scene_frame_indices,
+                        &progress_tx,
+                        &cancelled,
+                    )?,
+                    MetricBackend::current(Engine::Vmaf),
+                )
+            } else if let Some(scores) = Self::measure_native(
                 input,
                 &output_path,
                 config,
                 &scene_frame_indices,
                 &progress_tx,
                 &cancelled,
-            )?
-        };
+            )? {
+                (
+                    scores,
+                    MetricBackend::current(planned.expect("successful native scorer")),
+                )
+            } else {
+                Self::measure(
+                    input,
+                    &output_path,
+                    config,
+                    &scene_frame_indices,
+                    &progress_tx,
+                    &cancelled,
+                )?
+            };
 
-        let mut publication = provenance::Admission::default();
-        ensure!(
-            before == publication.measurement_inputs(&input_model, None, Some(&config.metric))?
-                && output_before == provenance::file_identity(&output_path)?,
-            "Quality Check inputs changed during measurement; recompute or use a new job"
-        );
-        let mut staged = condor.scenes.clone();
-        Self::attach_measurements(&mut staged, config, &scene_frame_indices, measurements)?;
-        for (index, _) in &scene_frame_indices {
-            let backend = actual.clone();
-            let context = publication.quality_context(
-                &input_model,
-                &output_path,
-                &staged[*index],
-                config,
-                &backend,
-            )?;
-            let quality = &mut staged[*index].sequence_data.get_quality_check_mut()?.quality;
-            quality.backend = Some(backend);
-            quality.provenance = Some(ResultProvenance::new(context));
-        }
-        let mut data = condor.as_data();
-        data.scenes = staged.clone();
-        (condor.save_callback)(data).context("Saving measured Quality Check results")?;
-        condor.scenes = staged;
+            let mut publication = provenance::Admission::default();
+            ensure!(
+                before
+                    == publication.measurement_inputs(&input_model, None, Some(&config.metric))?
+                    && output_before == provenance::file_identity(&output_path)?,
+                "Quality Check inputs changed during measurement; recompute or use a new job"
+            );
+            let mut staged = condor.scenes.clone();
+            Self::attach_measurements(&mut staged, config, &scene_frame_indices, measurements)?;
+            for (index, _) in &scene_frame_indices {
+                let backend = actual.clone();
+                let context = publication.quality_context(
+                    &input_model,
+                    &output_path,
+                    &staged[*index],
+                    config,
+                    &backend,
+                )?;
+                let quality = &mut staged[*index].sequence_data.get_quality_check_mut()?.quality;
+                quality.backend = Some(backend);
+                quality.provenance = Some(ResultProvenance::new(context));
+            }
+            let mut data = condor.as_data();
+            data.scenes = staged.clone();
+            (condor.save_callback)(data).context("Saving measured Quality Check results")?;
+            condor.scenes = staged;
 
-        Ok(((), warnings))
+            Ok(((), warnings))
+        })
     }
 }
 

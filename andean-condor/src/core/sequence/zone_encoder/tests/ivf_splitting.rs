@@ -56,7 +56,14 @@ mod internal_integration {
         assert_eq!(original_pixels.len(), 64 * 64 * 3 / 2 * 9);
         assert!(original_pixels.as_chunks::<6144>().0.windows(2).all(|p| p[0] != p[1]));
         let tasks = tasks(dir.path(), &[2, 3, 4]);
-        let split = split_ivf(&whole, &tasks, "ivf", true).expect("split native whole IVF");
+        let split = split_ivf(
+            &whole,
+            &tasks,
+            "ivf",
+            &crate::utils::cancellation::Cancellation::default(),
+            true,
+        )
+        .expect("split native whole IVF");
         let paths = tasks.iter().map(|t| t.output.clone()).collect::<Vec<_>>();
         let mut payloads = Vec::new();
         for (index, (path, expected)) in
@@ -80,8 +87,14 @@ mod internal_integration {
         let split_tasks = tasks(dir.path(), &[2]);
         for timestamps in [vec![9, 8], vec![9, 9]] {
             fixture(&a, &timestamps);
-            let error = split_ivf(&a, &split_tasks, "ivf", false)
-                .expect_err("decreasing/duplicate split timestamp");
+            let error = split_ivf(
+                &a,
+                &split_tasks,
+                "ivf",
+                &crate::utils::cancellation::Cancellation::default(),
+                false,
+            )
+            .expect_err("decreasing/duplicate split timestamp");
             assert!(format!("{error:#}").contains("timestamp"), "{error:#}");
             assert!(!split_tasks[0].output.exists());
             assert!(!split_tasks[0].output.with_extension("temp.ivf").exists());
@@ -91,13 +104,29 @@ mod internal_integration {
             let mut bytes = fs::read(&a).expect("read zero rate/scale fixture");
             bytes[offset..offset + 4].fill(0);
             fs::write(&a, bytes).expect("write zero rate/scale fixture");
-            assert!(split_ivf(&a, &split_tasks, "ivf", false).is_err());
+            assert!(
+                split_ivf(
+                    &a,
+                    &split_tasks,
+                    "ivf",
+                    &crate::utils::cancellation::Cancellation::default(),
+                    false
+                )
+                .is_err()
+            );
         }
         let boundary_dir = dir.path().join("boundary");
         fs::create_dir_all(&boundary_dir).expect("split boundary directory");
         let boundary_tasks = tasks(&boundary_dir, &[2, 1]);
         fixture(&a, &[u64::MAX - 5, u64::MAX - 3, u64::MAX]);
-        split_ivf(&a, &boundary_tasks, "ivf", false).expect("split near u64 max");
+        split_ivf(
+            &a,
+            &boundary_tasks,
+            "ivf",
+            &crate::utils::cancellation::Cancellation::default(),
+            false,
+        )
+        .expect("split near u64 max");
         assert_eq!(
             records(&fs::read(&boundary_tasks[0].output).expect("read first boundary part"))
                 .iter()

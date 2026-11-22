@@ -53,7 +53,7 @@ fn mux(
     config: Option<&MkvmergeConfig>,
 ) -> Result<()> {
     let (tx, _rx) = sync::mpsc::channel();
-    SceneConcatenator::mkvmerge_cancel(
+    SceneConcatenator::mkvmerge(
         root,
         &root.join("out.mkv"),
         chunks,
@@ -637,7 +637,7 @@ fn assert_source_preflight(root: &Path, case: &str) {
     });
     let (tx, _rx) = sync::mpsc::channel();
     let started = std::time::Instant::now();
-    let result = SceneConcatenator::mkvmerge_cancel(
+    let result = SceneConcatenator::mkvmerge(
         &root,
         &output,
         &scenes,

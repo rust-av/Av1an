@@ -424,7 +424,7 @@ fn run(
                     );
                     let mut condor = configuration
                         .instantiate_condor_cancel(Box::new(|_| Ok(())), &cancellation.token)?;
-                    Zoner::run(&mut condor)?;
+                    Zoner::run(&mut condor, cancellation.token.clone())?;
                     info!("Zoner dry-run complete: no configuration changes were saved");
                 } else {
                     run_zoner_cancel(&configuration, &save_file, cancellation.clone())?;
@@ -786,7 +786,7 @@ fn run_condor_reported(
     }
 
     // Removing all definitions is still a zoning transition, not a skip.
-    Zoner::run(&mut condor)?;
+    Zoner::run(&mut condor, cancellation_token.token.clone())?;
     cancellation_token.token.check()?;
     // A zoning publication may have withdrawn previously admitted results.
     // Refuse before noise/probe producers, not only at the final PE stage.
@@ -892,7 +892,7 @@ pub fn run_zoner_cancel(
 ) -> Result<()> {
     let cancellation = cancellation.into();
     let mut condor = instantiate_editable_condor(configuration, save_file, &cancellation.token)?;
-    cancellation.finish(Zoner::run(&mut condor))
+    cancellation.finish(Zoner::run(&mut condor, cancellation.token.clone()))
 }
 
 #[tracing::instrument(skip_all)]

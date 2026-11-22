@@ -1,5 +1,3 @@
-use std::sync::{Arc, atomic::AtomicBool};
-
 use crate::utils::cancellation::Cancellation;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -33,45 +31,30 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
     ) -> Result<((), Vec<anyhow::Error>)>;
+    /// Prepare a sequence. Check the job token before opening inputs or creating outputs.
     fn initialize(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)>;
+
+    /// Run a sequence using the job token. Stop admitting work on graceful
+    /// cancellation; on force, join workers and reap owned children before returning.
     fn execute(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<((), Vec<anyhow::Error>)>;
-
-    /// Explicit shared cancellation. Legacy implementations are graceful-only;
-    /// child-owning implementations override this entry point.
-    #[inline]
-    fn execute_cancel(
-        &mut self,
-        condor: &mut Condor<DataHandler, ConfigHandler>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
         cancellation: Cancellation,
-    ) -> Result<((), Vec<anyhow::Error>)> {
-        cancellation.check()?;
-        let result = self.execute(condor, progress_tx, cancellation.legacy_flag());
-        cancellation.check_forced()?;
-        result
-    }
+    ) -> Result<((), Vec<anyhow::Error>)>;
+}
 
-    #[inline]
-    fn initialize_cancel(
-        &mut self,
-        condor: &mut Condor<DataHandler, ConfigHandler>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancellation: &Cancellation,
-    ) -> Result<((), Vec<anyhow::Error>)> {
-        cancellation.check()?;
-        let result = self.initialize(condor, progress_tx);
-        cancellation.check_forced()?;
-        result
-    }
+/// Guard a cooperative stage without replacing its result on a graceful request.
+fn check_sequence<T>(cancellation: &Cancellation, run: impl FnOnce() -> Result<T>) -> Result<T> {
+    cancellation.check()?;
+    let result = run();
+    cancellation.check_forced()?;
+    result
 }
 
 #[allow(type_alias_bounds)]

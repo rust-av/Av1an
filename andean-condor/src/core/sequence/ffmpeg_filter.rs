@@ -49,32 +49,12 @@ pub struct FfmpegFilter {
 }
 
 impl FfmpegFilter {
-    /// Spawns `ffmpeg` applying `graph` to the Y4M stream arriving on
-    /// `input`, forwarding the filtered stream through the returned handle's
-    /// receiver.
-    ///
-    /// `failure` is shared with the caller so producers can report FFmpeg
-    /// errors that would otherwise surface as opaque channel disconnects. It
-    /// is filled by [`FfmpegFilter::check`] once FFmpeg exits.
+    /// Filters the Y4M stream with FFmpeg, bridging the producer and consumer.
+    /// `failure` is shared with the producer so it can report FFmpeg diagnostics
+    /// instead of an opaque disconnect. The stage shares the scene's forced
+    /// teardown; local consumer stop remains independent.
     #[inline]
     pub fn spawn(
-        input: Receiver<Cursor<Vec<u8>>>,
-        output_bound: usize,
-        graph: &str,
-        failure: Arc<Mutex<Option<String>>>,
-    ) -> Result<Self> {
-        Self::spawn_cancel(
-            input,
-            output_bound,
-            graph,
-            failure,
-            &Cancellation::default(),
-        )
-    }
-
-    /// Shares the owning scene's forced teardown; local consumer stop remains independent.
-    #[inline]
-    pub fn spawn_cancel(
         input: Receiver<Cursor<Vec<u8>>>,
         output_bound: usize,
         graph: &str,

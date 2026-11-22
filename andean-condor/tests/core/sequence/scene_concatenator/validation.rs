@@ -125,7 +125,7 @@ fn failed_final_concat_preserves_old_output() {
     let (tx, rx) = sync::mpsc::channel();
     assert!(
         SceneConcatenator::default()
-            .execute_cancel(&mut job, tx, Cancellation::default())
+            .execute(&mut job, tx, Cancellation::default())
             .is_err()
     );
     assert_eq!(

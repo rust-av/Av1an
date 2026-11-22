@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::atomic::AtomicBool;
 
 #[path = "../../../../../tests/core/sequence/scene_concatenator/fixtures/scene_list.rs"]
 mod fixture;
@@ -23,7 +24,11 @@ mod internal_integration {
             let rx = Arc::new(Mutex::new(rx));
             let mut concat = SceneConcatenator::default();
             concat
-                .initialize(&mut fixture.job, tx.clone())
+                .initialize(
+                    &mut fixture.job,
+                    tx.clone(),
+                    &crate::utils::cancellation::Cancellation::default(),
+                )
                 .expect("complete initialization");
             crate::core::sequence::tests::support::current_encoding_fixture(&mut fixture.job);
             let saved =
@@ -54,7 +59,7 @@ mod internal_integration {
                 observed.store(true, std::sync::atomic::Ordering::SeqCst);
             });
             concat
-                .execute_cancel(&mut fixture.job, tx, Cancellation::default())
+                .execute(&mut fixture.job, tx, Cancellation::default())
                 .expect("current saved-job-admission fixture admitted");
             assert_eq!(
                 fixture::decoded(&final_path),

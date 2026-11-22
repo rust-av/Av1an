@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::{Arc, atomic::AtomicBool, mpsc},
-    thread,
-};
+use std::{collections::HashMap, path::PathBuf, sync::mpsc, thread};
 
 use andean_condor::{
     core::{
@@ -29,6 +24,7 @@ use andean_condor::{
             },
         },
     },
+    utils::cancellation::Cancellation,
     vapoursynth::{
         plugins::{resize::Scaler, standard::select_every::SelectEvery},
         vapoursynth_filters::VapourSynthFilter,
@@ -175,8 +171,8 @@ fn main() -> Result<()> {
         }
     });
 
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let warnings = andean_condor.process_all(progress_tx, cancelled)?;
+    let cancellation = Cancellation::default();
+    let warnings = andean_condor.process_all(progress_tx, cancellation)?;
 
     progress_thread.join().expect("progress thread should join");
 
