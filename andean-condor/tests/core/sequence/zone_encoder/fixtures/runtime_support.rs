@@ -205,6 +205,7 @@ fn native_probe_parity_child() {
                 24,
                 36,
                 tx,
+                &Default::default(),
             )
             .expect("same x265 settings must work independently");
         assert!(result.status.success());

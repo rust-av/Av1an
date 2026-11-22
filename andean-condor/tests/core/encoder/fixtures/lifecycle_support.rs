@@ -146,7 +146,7 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
         }
     } else if case == "dg" {
         fs::write(root.join("source"), "finite fixture source").expect("source");
-        DGSource::index_video_cancel(
+        DGSource::index_video(
             &root.join("source"),
             Some(&root.join("out.dgi")),
             Some(&root.join("fake")),
@@ -203,7 +203,7 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
         });
         let (progress, _rx) = mpsc::channel();
         let result = encoder(root, case == "capture" || case == "replay-full")
-            .encode_with_stream_cancel(
+            .encode_with_stream(
                 rx,
                 &root.join("out.264"),
                 progress,

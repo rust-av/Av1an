@@ -5,7 +5,7 @@
 //! [`ffms2`] and [`vapoursynth`] submodules, while reading frames back — as
 //! y4m or as the raw planes of a [`FrameFeed`] — lives here.
 
-use std::{collections::HashMap, io::Cursor, path::PathBuf, sync::atomic::AtomicBool};
+use std::{collections::HashMap, io::Cursor, path::PathBuf};
 
 // `::vapoursynth` is the crate, not this module's `vapoursynth` submodule.
 use crate::utils::cancellation::Cancellation;
@@ -172,62 +172,12 @@ impl Input {
         vapoursynth::from_vapoursynth_scripted(data)
     }
 
-    /// Opens the input described by `data`, reporting indexing progress first.
-    ///
-    /// A native FFMS2 input is pre-indexed here through av-decoders, so
-    /// progress can be reported while the `.ffindex` cache is built. A
-    /// VapourSynth input reports a single indeterminate
-    /// [`OpenProgress::Opening`]: its source plugin indexes internally, out of
-    /// reach of this process. DGDecNV is the one exception, since it shells out
-    /// to `dgindexnv` and reports back on its stdout.
-    ///
-    /// Pass `cancelled` to abort an in-flight index early.
+    /// Opens the input, reporting FFMS2 or DGDecNV indexing progress when
+    /// available, then [`OpenProgress::Opening`]. Use the same job token for
+    /// opening and later stages. Graceful cancellation lets an admitted index
+    /// finish; force can stop the indexer but cannot preempt a hung native plugin.
     #[inline]
     pub fn ensure_indexed(
-        data: &InputModel,
-        mut progress: impl FnMut(OpenProgress),
-        cancelled: Option<&AtomicBool>,
-    ) -> Result<Self> {
-        match data {
-            InputModel::Video {
-                path,
-                import_method,
-                ..
-            } => {
-                // Validated here too: indexing must fail on a missing file
-                // with the same error `from_video` would have given.
-                Input::validate(data)?;
-                let ImportMethod::FFMS2 { cache_path, .. } = import_method;
-                // If no `.ffindex` exists yet this is the index `from_video`
-                // would otherwise build itself; if one does it returns at once
-                // and `from_video` reads it straight from the cache.
-                ffms2::index_video_with_progress(
-                    path,
-                    cache_path.as_deref(),
-                    Some(&mut |current, total| {
-                        progress(OpenProgress::Indexing { current, total });
-                    }),
-                    cancelled,
-                )?;
-                progress(OpenProgress::Opening);
-                ffms2::from_video(data)
-            },
-            InputModel::VapourSynth { .. } => {
-                vapoursynth::index_source(data, &mut progress, cancelled)?;
-                progress(OpenProgress::Opening);
-                vapoursynth::from_vapoursynth(data, None)
-            },
-            InputModel::VapourSynthScript { .. } => {
-                progress(OpenProgress::Opening);
-                vapoursynth::from_vapoursynth(data, None)
-            },
-        }
-    }
-
-    /// Force-capable input opening. Shares one job token with later sequence APIs.
-    /// Native plugin calls cooperate at callbacks; arbitrary hung FFI is not preemptible.
-    #[inline]
-    pub fn ensure_indexed_cancel(
         data: &InputModel,
         mut progress: impl FnMut(OpenProgress),
         cancellation: &Cancellation,
@@ -242,7 +192,7 @@ impl Input {
                 ..
             } => {
                 let ImportMethod::FFMS2 { cache_path, .. } = import_method;
-                ffms2::index_video_cancel(
+                ffms2::index_video(
                     path,
                     cache_path.as_deref(),
                     Some(&mut |current, total| progress(OpenProgress::Indexing { current, total })),
@@ -250,7 +200,7 @@ impl Input {
                 )?;
             },
             InputModel::VapourSynth { .. } => {
-                vapoursynth::index_source_cancel(data, &mut progress, cancellation)?;
+                vapoursynth::index_source(data, &mut progress, cancellation)?;
             },
             InputModel::VapourSynthScript { .. } => {},
         }
@@ -374,49 +324,17 @@ impl Input {
         self.frame_reader()?.y4m_frame(index)
     }
 
-    /// Sends `frame_indices` as y4m frames through `frame_sender`, in order.
-    /// Each frame is sent before the next is decoded, so a bounded
-    /// `frame_sender` bounds resident memory. Native input packs FFMS2's own
-    /// planes, without building an av-decoders `Frame` per frame.
+    /// Sends Y4M frames in order, using the backend's default request window.
+    /// Drops the supplied sender on success or failure. Force stops new
+    /// requests and blocked sends; outstanding native callbacks must finish.
     #[inline]
     pub fn y4m_frames(
-        &mut self,
-        frame_sender: crossbeam_channel::Sender<Cursor<Vec<u8>>>,
-        frame_indices: &[usize],
-    ) -> Result<()> {
-        match self {
-            Input::Video { decoder, .. } => {
-                let result = ffms2::y4m_frames(decoder, frame_indices, |frame| {
-                    frame_sender.send(Cursor::new(frame))?;
-                    Ok(())
-                });
-                drop(frame_sender);
-                result?;
-            },
-            Input::VapourSynth { decoder, .. } | Input::VapourSynthScript { decoder, .. } => {
-                let window = frame_feed::request_window();
-                vapoursynth::y4m_frames(
-                    &vapoursynth::output_node(decoder)?,
-                    &frame_sender,
-                    frame_indices,
-                    window,
-                )?;
-                drop(frame_sender);
-            },
-        }
-        Ok(())
-    }
-
-    /// Active feed: force stops requests/sends; finite native callbacks already
-    /// outstanding must finish because Rust cannot preempt a foreign decoder.
-    #[inline]
-    pub fn y4m_frames_cancel(
         &mut self,
         sender: crossbeam_channel::Sender<Cursor<Vec<u8>>>,
         indices: &[usize],
         cancellation: &Cancellation,
     ) -> Result<()> {
-        let result = self.frame_reader()?.y4m_frames_cancel(
+        let result = self.frame_reader()?.y4m_frames(
             &sender,
             indices,
             frame_feed::request_window(),
@@ -533,8 +451,10 @@ enum FrameReaderKind<'a> {
 }
 
 impl FrameReader<'_> {
+    /// Sends Y4M frames in order without consuming the sender. VapourSynth
+    /// keeps at most `window.max(1)` frames in flight. Force stops requests and sends.
     #[inline]
-    pub fn y4m_frames_cancel(
+    pub fn y4m_frames(
         &mut self,
         sender: &crossbeam_channel::Sender<Cursor<Vec<u8>>>,
         indices: &[usize],
@@ -542,13 +462,7 @@ impl FrameReader<'_> {
         cancellation: &Cancellation,
     ) -> Result<()> {
         if let FrameReaderKind::VapourSynth(node) = &self.kind {
-            return vapoursynth::y4m_frames_cancel(
-                node,
-                sender,
-                indices,
-                window.max(1),
-                cancellation,
-            );
+            return vapoursynth::y4m_frames(node, sender, indices, window.max(1), cancellation);
         }
         for &index in indices {
             cancellation.check_forced()?;
@@ -574,30 +488,6 @@ impl FrameReader<'_> {
             },
         }
         Ok(stream)
-    }
-
-    /// Sends `frame_indices` as Y4M frames through `frame_sender`, in order.
-    /// VapourSynth sources keep at most `window` frames in flight, so with a
-    /// bounded `frame_sender` resident frames stay bounded by `window`.
-    #[inline]
-    pub fn y4m_frames(
-        &mut self,
-        frame_sender: &crossbeam_channel::Sender<Cursor<Vec<u8>>>,
-        frame_indices: &[usize],
-        window: usize,
-    ) -> Result<()> {
-        match &mut self.kind {
-            FrameReaderKind::VapourSynth(node) => {
-                vapoursynth::y4m_frames(node, frame_sender, frame_indices, window.max(1))
-            },
-            FrameReaderKind::Native(input) => input.y4m_frames(frame_sender.clone(), frame_indices),
-            FrameReaderKind::NativeBorrowed(decoder) => {
-                ffms2::y4m_frames(decoder, frame_indices, |frame| {
-                    frame_sender.send(Cursor::new(frame))?;
-                    Ok(())
-                })
-            },
-        }
     }
 }
 

@@ -237,9 +237,16 @@ fn avm_application_noise_fails_before_executable_lookup_or_output_changes() {
                 progress_tx,
                 &super::clip_info(),
                 None,
+                &andean_condor::utils::cancellation::Cancellation::default(),
             )
         } else {
-            encoder.encode_with_stream(frames_rx, &output, progress_tx, &super::clip_info())
+            encoder.encode_with_stream(
+                frames_rx,
+                &output,
+                progress_tx,
+                &super::clip_info(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
         };
         let error = result.expect_err("unsupported settings must win over missing executable");
         assert_eq!(
@@ -302,7 +309,12 @@ fn supported_backends_keep_generated_filmgrn1_tables_and_native_flags() {
             ))
         );
         let argv = encoder
-            .parameters_with_output((1, 1), &temp.path().join("out.ivf"), &super::clip_info())
+            .parameters_with_output(
+                (1, 1),
+                &temp.path().join("out.ivf"),
+                &super::clip_info(),
+                None,
+            )
             .expect("supported argv");
         if delimiter == "=" {
             assert!(argv.contains(&format!("--{flag}={}", path.display())));

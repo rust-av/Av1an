@@ -161,7 +161,7 @@ impl ParallelEncoder {
                                                                         "produce",
                                                                         task.original_index,
                                                                     )?;
-                                                                    reader.y4m_frames_cancel(
+                                                                    reader.y4m_frames(
                                                                         &tx,
                                                                         &task.frame_indices,
                                                                         window,

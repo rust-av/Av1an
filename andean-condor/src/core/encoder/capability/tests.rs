@@ -148,10 +148,10 @@ mod internal_integration {
 
     fn probe(kind: &str, executable: &Path, cancellation: &Cancellation) -> anyhow::Result<bool> {
         if kind == "svt-container" {
-            encoder_container_cancel(EncoderBase::SVTAV1, executable, cancellation)
+            encoder_container(EncoderBase::SVTAV1, executable, cancellation)
                 .map(|result| result == Some(Container::Ivf))
         } else {
-            check_capability_cancel(
+            check_capability(
                 match kind {
                     "x265" => EncoderBase::X265,
                     "svt-zone" => EncoderBase::SVTAV1,

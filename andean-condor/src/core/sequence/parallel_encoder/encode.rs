@@ -133,7 +133,7 @@ pub(super) fn consume_frames(
             let result = task
                 .encoder
                 // encode_attempts retains the exclusive TempDir through this call.
-                .encode_owned_with_stream_cancel(frames, temp, tx, clip_info, cancellation)
+                .encode_owned_with_stream(frames, temp, tx, clip_info, cancellation)
                 .or_else(|error| {
                     if error.is::<crate::utils::cancellation::Cancelled>() {
                         Err(error)
@@ -578,7 +578,7 @@ impl ParallelEncoder {
                                       stop, STREAM_WINDOW);
                                  spool.as_mut().map_or_else(
                                      || consume(direct.take().expect("one direct attempt")),
-                                     |file| crate::core::encoder::spool::replay_cancel(file, &task.output, cancelled, consume),
+                                     |file| crate::core::encoder::spool::replay(file, &task.output, cancelled, consume),
                                  )
                              })?;
                             // EOF alone is not success: a failed producer can leave
@@ -633,7 +633,7 @@ impl ParallelEncoder {
                     super::tests::dispatch::internal_integration::before_admission(&stop, task);
                     // Reserve a real worker before creating/decoding its input.
                     // The worker owns this permit through completion, never reacquires it.
-                    let Some(permit) = stop.workers.acquire_owned_cancel(&cancelled) else {
+                    let Some(permit) = stop.workers.acquire_owned(&cancelled) else {
                         break;
                     };
                     if stop.stopped(&cancelled) {
@@ -674,7 +674,7 @@ impl ParallelEncoder {
                     super::tests::shutdown::internal_integration::fault("decode", task.original_index)?;
                     #[cfg(all(test, target_os = "linux"))]
                     super::tests::dispatch::internal_integration::before_frames(&stop);
-                    let produced = input.y4m_frames_cancel(frames_tx.clone(), &task.frame_indices, &cancelled);
+                    let produced = input.y4m_frames(frames_tx.clone(), &task.frame_indices, &cancelled);
                     #[cfg(all(test, target_os = "linux"))]
                     super::tests::dispatch::internal_integration::producer_returned(&produced);
                     if let Err(err) = produced {

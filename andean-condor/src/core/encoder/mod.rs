@@ -239,76 +239,47 @@ impl Encoder {
         })
     }
 
-    /// Checks if the encoder binary supports a specific capability,
-    /// using the global capability cache to avoid repeated expensive probes.
+    /// Checks a capability against the resolved executable, caching probe results.
+    /// Use the job token to interrupt a probe that starts an encoder.
     #[inline]
-    pub fn supports_capability(&self, capability: EncoderCapability) -> bool {
-        let Ok(executable_path) = self.resolve_executable() else {
-            return false;
-        };
-
-        capability::check_capability(self.base(), &executable_path, capability)
-    }
-
-    #[inline]
-    pub fn supports_capability_cancel(
+    pub fn supports_capability(
         &self,
         capability: EncoderCapability,
         cancellation: &Cancellation,
     ) -> Result<bool> {
         cancellation.check_forced()?;
         let executable = self.resolve_executable()?;
-        capability::check_capability_cancel(self.base(), &executable, capability, cancellation)
+        capability::check_capability(self.base(), &executable, capability, cancellation)
     }
 
-    /// The container this encoder binary writes, or `None` when it cannot be
-    /// split per scene (Matroska/WebM).
-    ///
-    /// A probe result is cached, so this is cheap after the first call.
+    /// The encoder's bitstream container, or `None` if it cannot be split per scene.
+    /// A missing executable or forced cancellation is an error, not `None`.
     #[inline]
-    pub fn container(&self) -> Option<Container> {
-        let executable_path = self.resolve_executable().ok()?;
-
-        capability::encoder_container(self.base(), &executable_path)
-    }
-
-    #[inline]
-    pub fn container_cancel(&self, cancellation: &Cancellation) -> Result<Option<Container>> {
+    pub fn container(&self, cancellation: &Cancellation) -> Result<Option<Container>> {
         cancellation.check_forced()?;
         let executable = self.resolve_executable()?;
-        capability::encoder_container_cancel(self.base(), &executable, cancellation)
+        capability::encoder_container(self.base(), &executable, cancellation)
     }
 
+    /// Builds argv without creating files. `None` derives the statistics base
+    /// from `output` without its extension. Caller-provided native statistics
+    /// options take precedence over either base.
     #[inline]
-    /// Builds argv without creating files. The output-derived statistics base is
-    /// caller-owned and shared across calls; use `parameters_with_stats` for isolation.
     pub fn parameters_with_output(
         &self,
         pass: (u8, u8),
         output: &Path,
         clip_info: &ClipInfo,
+        stats_base: Option<&Path>,
     ) -> Result<Vec<String>> {
         self.validate_settings()?;
         self.validate_pass_settings(pass)?;
-        let base = absolute_file_path(output)?.with_extension("");
-        self.parameters_with_stats(pass, output, clip_info, &base)
-    }
-
-    /// Builds argv using an explicit shared statistics base; does not own or create it.
-    /// User-provided native statistics options override this generated base unchanged.
-    #[inline]
-    pub fn parameters_with_stats(
-        &self,
-        pass: (u8, u8),
-        output: &Path,
-        clip_info: &ClipInfo,
-        stats_base: &Path,
-    ) -> Result<Vec<String>> {
-        self.validate_settings()?;
-        self.validate_pass_settings(pass)?;
-        absolute_file_path(output)?;
+        let absolute_output = absolute_file_path(output)?;
         let output_path = output.to_str().context("Encoder output must be UTF-8")?;
-        let stats_base = absolute_file_path(stats_base)?;
+        let stats_base = stats_base.map_or_else(
+            || Ok(absolute_output.with_extension("")),
+            absolute_file_path,
+        )?;
         let pass_parameters = self.base().pass_parameters(
             pass,
             stats_base.to_str().context("Statistics base must be UTF-8")?,
@@ -634,35 +605,15 @@ impl Encoder {
         })
     }
 
-    /// Automatic multi-pass attempts own isolated statistics. `Specific` reuses
-    /// caller-owned output-derived files; use a shared context for isolated manual passes.
-    /// Raw output paths do not grant overwrite consent. Explicit native options
-    /// retain their meaning; use the final-output sequence for protected publication.
-    /// Stops after the first failed pass, once its workers have joined.
-    /// A nonzero exit without worker errors returns an `EncoderResult` error.
-    #[inline]
-    pub fn encode_with_input(
-        &self,
-        input: &mut Input,
-        output: &Path,
-        start_frame: usize,
-        end_frame: usize,
-        progress_tx: mpsc::Sender<EncodeProgress>,
-    ) -> Result<EncoderResult> {
-        self.encode_with_input_cancel(
-            input,
-            output,
-            start_frame,
-            end_frame,
-            progress_tx,
-            &Cancellation::default(),
-        )
-    }
-
-    /// Force-capable attempt. Graceful finishes every pass of an admitted scene.
+    /// Encodes the requested frame range. Graceful cancellation finishes every
+    /// pass of an admitted scene; forced cancellation stops and joins workers.
+    /// Automatic multipass attempts own their statistics. `Specific` reuses
+    /// caller-owned, output-derived files. The output path does not grant overwrite consent.
+    /// A nonzero exit stops the attempt and returns an `EncoderResult` error
+    /// unless a worker failure supplies more context.
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    pub fn encode_with_input_cancel(
+    pub fn encode_with_input(
         &self,
         input: &mut Input,
         output: &Path,
@@ -681,7 +632,7 @@ impl Encoder {
             None
         };
         let result: Result<EncoderResult> = match self.passes() {
-            EncoderPasses::All(1) => Ok(self.encode_pass_with_input_cancel(
+            EncoderPasses::All(1) => Ok(self.encode_pass_with_input(
                 input,
                 output,
                 start_frame,
@@ -691,7 +642,7 @@ impl Encoder {
                 None,
                 cancellation,
             )?),
-            EncoderPasses::Specific(current, total) => Ok(self.encode_pass_with_input_cancel(
+            EncoderPasses::Specific(current, total) => Ok(self.encode_pass_with_input(
                 input,
                 output,
                 start_frame,
@@ -705,14 +656,19 @@ impl Encoder {
                 let clip_info = input.clip_info()?;
                 let mut result = EncoderResult {
                     encoder: self.base(),
-                    parameters: self.parameters_with_output((1, total), output, &clip_info)?,
+                    parameters: self.parameters_with_output(
+                        (1, total),
+                        output,
+                        &clip_info,
+                        None,
+                    )?,
                     status: std::process::ExitStatus::default(),
                     stdout: StringOrBytes::from(Vec::new()),
                     stderr: StringOrBytes::from(Vec::new()),
                 };
                 for pass in 1..=total {
                     let progress_tx = progress_tx.clone();
-                    result = self.encode_pass_with_input_cancel(
+                    result = self.encode_pass_with_input(
                         input,
                         output,
                         start_frame,
@@ -730,42 +686,12 @@ impl Encoder {
         complete_output(result?, &mut output_guard)
     }
 
-    /// Encodes one pass. Reuse the same `PassStatistics` for all passes of an attempt.
-    /// `None` uses caller-owned output-derived files (no automatic cleanup/isolation).
-    /// After all pass workers join, a nonzero exit without worker errors returns
-    /// an `EncoderResult` error.
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    #[allow(
-        clippy::unnecessary_debug_formatting,
-        reason = "Escape control characters and invalid OS path bytes in diagnostics"
-    )]
-    pub fn encode_pass_with_input(
-        &self,
-        input: &mut Input,
-        output: &Path,
-        start_frame: usize,
-        end_frame: usize,
-        pass: (u8, u8),
-        progress_tx: mpsc::Sender<EncodeProgress>,
-        stats: Option<&PassStatistics>,
-    ) -> Result<EncoderResult> {
-        self.encode_pass_with_input_cancel(
-            input,
-            output,
-            start_frame,
-            end_frame,
-            pass,
-            progress_tx,
-            stats,
-            &Cancellation::default(),
-        )
-    }
-
-    /// Force-capable direct pass; manual multipass callers share one token and statistics.
+    /// Encodes a single pass. Admit the scene once and share that token and
+    /// `stats` across its passes. `None` uses caller-owned, output-derived
+    /// statistics. A nonzero exit is reported after workers join.
     #[inline]
     #[allow(clippy::too_many_arguments, clippy::unnecessary_debug_formatting)]
-    pub fn encode_pass_with_input_cancel(
+    pub fn encode_pass_with_input(
         &self,
         input: &mut Input,
         output: &Path,
@@ -781,17 +707,14 @@ impl Encoder {
         let executable = self.resolve_executable()?;
         cancellation.check_admission()?;
         let mut output_guard = crate::core::process::InterruptedOutput::new(output, cancellation);
-        let stats_base = stats.map_or_else(
-            || absolute_file_path(output).map(|p| p.with_extension("")),
-            |s| Ok(s.base().to_path_buf()),
-        )?;
         // TODO:
         // - Report mapped errors
         // - Report CPU, memory, disk usage - Performance testing required
 
         let base_encoder = self.base();
         let clip_info = input.clip_info()?;
-        let parameters = self.parameters_with_stats(pass, output, &clip_info, &stats_base)?;
+        let parameters =
+            self.parameters_with_output(pass, output, &clip_info, stats.map(PassStatistics::base))?;
         let y4m_header = input.y4m_header(Some(end_frame - start_frame))?;
         let mut reader = input.frame_reader()?;
 
@@ -914,36 +837,13 @@ impl Encoder {
         complete_output(encoder_result, &mut output_guard)
     }
 
+    /// Encodes a Y4M stream. Automatic multipass attempts spool the entire
+    /// uncompressed stream in the output directory before encoding. `Specific`
+    /// reuses output-derived statistics; explicit native overrides remain caller-owned.
+    /// The output path does not grant overwrite consent. A failed pass stops the
+    /// attempt after workers join. Graceful cancellation lets an admitted attempt finish.
     #[inline]
-    /// Runs all requested passes with one isolated, owned statistics context.
-    /// Statistics ownership does not grant output overwrite consent. Explicit raw
-    /// options retain native behavior, not the final-output sequence's guarantees.
-    /// `Specific` is caller-managed: it reuses output-derived statistics without cleanup.
-    /// For isolated manual attempts, call `encode_pass_with_stream` with a shared context.
-    /// Stops after the first failed pass, once its workers have joined.
-    /// A nonzero exit without worker errors returns an `EncoderResult` error.
-    /// Automatic multipass streams first capture one uncompressed Y4M spool under
-    /// the output parent, then replay bounded chunks. Allow disk space for the full
-    /// stream per active attempt; capture completes before encoding starts.
     pub fn encode_with_stream(
-        &self,
-        frames_rx: crossbeam_channel::Receiver<Cursor<Vec<u8>>>,
-        output: &Path,
-        progress_tx: mpsc::Sender<EncodeProgress>,
-        clip_info: &ClipInfo,
-    ) -> Result<EncoderResult> {
-        self.encode_with_stream_cancel(
-            frames_rx,
-            output,
-            progress_tx,
-            clip_info,
-            &Cancellation::default(),
-        )
-    }
-
-    /// Force-capable streaming attempt; an already graceful token admits no new scene.
-    #[inline]
-    pub fn encode_with_stream_cancel(
         &self,
         frames_rx: crossbeam_channel::Receiver<Cursor<Vec<u8>>>,
         output: &Path,
@@ -965,7 +865,7 @@ impl Encoder {
     /// retained through all workers/validation. Never pass a caller/final path.
     /// Ownership is supplied by the parallel/serial owner, not inferred from paths
     /// or statistics. This is unrelated to final-output overwrite consent.
-    pub(crate) fn encode_owned_with_stream_cancel(
+    pub(crate) fn encode_owned_with_stream(
         &self,
         frames_rx: crossbeam_channel::Receiver<Cursor<Vec<u8>>>,
         output: &Path,
@@ -1037,7 +937,7 @@ impl Encoder {
                     stats.base().parent().context("Statistics need a parent")?,
                     output,
                 )?;
-                spool::encode_cancel(
+                spool::encode(
                     file,
                     frames_rx,
                     output,
@@ -1066,41 +966,14 @@ impl Encoder {
         complete_output(result?, &mut output_guard)
     }
 
-    #[inline]
-    /// Encodes a manual pass; keep `stats` across calls through the final pass.
-    /// `None` retains caller-owned output-derived statistics. Explicit native path
-    /// overrides are never cleaned. For VVenC `All(1)` plus native `--pass N`, provide
-    /// `--rcstatsfile` yourself: the frontend `(1, 1)` tuple generates no stats option.
-    /// After all pass workers join, a nonzero exit without worker errors returns
-    /// an `EncoderResult` error.
-    #[allow(
-        clippy::unnecessary_debug_formatting,
-        reason = "Escape control characters and invalid OS path bytes in diagnostics"
-    )]
-    pub fn encode_pass_with_stream(
-        &self,
-        pass: (u8, u8),
-        frames_rx: crossbeam_channel::Receiver<Cursor<Vec<u8>>>,
-        output: &Path,
-        progress_tx: mpsc::Sender<EncodeProgress>,
-        clip_info: &ClipInfo,
-        stats: Option<&PassStatistics>,
-    ) -> Result<EncoderResult> {
-        self.encode_pass_with_stream_cancel(
-            pass,
-            frames_rx,
-            output,
-            progress_tx,
-            clip_info,
-            stats,
-            &Cancellation::default(),
-        )
-    }
-
-    /// Force-capable direct streaming pass. All pipe/wait workers join before return.
+    /// Encodes a single Y4M pass. Admit the scene once and share that token and
+    /// `stats` across its passes. `None` uses caller-owned, output-derived
+    /// statistics. For VVenC `All(1)` with native `--pass N`, specify `--rcstatsfile`
+    /// yourself; the frontend `(1, 1)` tuple doesn't generate it.
+    /// All pipe and wait workers join before return, including on forced cancellation.
     #[inline]
     #[allow(clippy::too_many_arguments, clippy::unnecessary_debug_formatting)]
-    pub fn encode_pass_with_stream_cancel(
+    pub fn encode_pass_with_stream(
         &self,
         pass: (u8, u8),
         frames_rx: crossbeam_channel::Receiver<Cursor<Vec<u8>>>,
@@ -1139,11 +1012,8 @@ impl Encoder {
         let executable = self.resolve_executable()?;
         cancellation.check_admission()?;
         let mut output_guard = crate::core::process::InterruptedOutput::new(output, cancellation);
-        let stats_base = stats.map_or_else(
-            || absolute_file_path(output).map(|p| p.with_extension("")),
-            |s| Ok(s.base().to_path_buf()),
-        )?;
-        let mut parameters = self.parameters_with_stats(pass, output, clip_info, &stats_base)?;
+        let mut parameters =
+            self.parameters_with_output(pass, output, clip_info, stats.map(PassStatistics::base))?;
         if owned_output && matches!(self, Encoder::FFmpeg { .. }) {
             let emits = |flag| {
                 self.parameters()

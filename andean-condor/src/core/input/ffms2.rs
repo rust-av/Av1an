@@ -1,10 +1,6 @@
 //! Native FFMS2 input: construction, format filtering, and y4m serialisation.
 
-use std::{
-    io::Write,
-    path::Path,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::{io::Write, path::Path};
 
 use anyhow::Result;
 use av_decoders::{Decoder, Ffms2Decoder};
@@ -215,35 +211,7 @@ const fn map_color_range(color_range: av_decoders::ColorRange) -> Option<ColorRa
     }
 }
 
-/// Ensures an FFMS2 index exists for `path`.
-/// Returns `true` when an index was built (false if a valid one was already
-/// cached).
-///
-/// `cache_path` selects where the index lives, defaulting to
-/// `{path}.ffindex`. Progress is FFMS2's own whole-percentage report, mapped.
-pub fn index_video_with_progress(
-    path: &Path,
-    cache_path: Option<&Path>,
-    mut progress: Option<IndexProgress<'_>>,
-    cancelled: Option<&AtomicBool>,
-) -> Result<bool> {
-    // FFMS2 reports whole percentages
-    let mut progress_fn = |percentage: u8| {
-        if let Some(progress) = progress.as_mut() {
-            (**progress)(u64::from(percentage), 100);
-        }
-    };
-    let cancelled_fn = || cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed));
-
-    Ok(Ffms2Decoder::build_index(
-        path,
-        cache_path,
-        Some(&mut progress_fn),
-        Some(&cancelled_fn),
-    )?)
-}
-
-pub fn index_video_cancel(
+pub fn index_video(
     path: &Path,
     cache_path: Option<&Path>,
     mut progress: Option<IndexProgress<'_>>,
@@ -273,21 +241,6 @@ pub fn index_video_cancel(
 /// Writes a single decoded frame to `stream` as a complete y4m frame.
 pub fn y4m_frame(decoder: &mut Decoder, index: usize, stream: &mut Vec<u8>) -> Result<()> {
     pack_frame(decoder, index, stream)
-}
-
-/// Streams `frame_indices` as y4m frames through `emit`, in order. Each frame
-/// is emitted before the next is decoded, so `emit` bounds resident frames.
-pub fn y4m_frames(
-    decoder: &mut Decoder,
-    frame_indices: &[usize],
-    mut emit: impl FnMut(Vec<u8>) -> Result<()>,
-) -> Result<()> {
-    for &index in frame_indices {
-        let mut buffer = Vec::new();
-        pack_frame(decoder, index, &mut buffer)?;
-        emit(buffer)?;
-    }
-    Ok(())
 }
 
 /// Packs `index` into `out` as a complete y4m frame — header plus plane data —

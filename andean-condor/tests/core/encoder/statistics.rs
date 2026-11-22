@@ -98,7 +98,7 @@ fn invalid_statistics_output_paths_return_errors_without_panicking() {
         assert!(PassStatistics::new(path).is_err());
         assert!(
             encoder(EncoderBase::AOM)
-                .parameters_with_output((1, 2), path, &super::clip_info())
+                .parameters_with_output((1, 2), path, &super::clip_info(), None)
                 .is_err()
         );
     }
@@ -316,6 +316,7 @@ fi
                                     &output,
                                     progress,
                                     &super::super::clip_info(),
+                                    &andean_condor::utils::cancellation::Cancellation::default(),
                                 )
                                 .expect("two passes")
                         }));
@@ -372,6 +373,7 @@ fi
                         progress.clone(),
                         &super::super::clip_info(),
                         Some(&stats),
+                        &andean_condor::utils::cancellation::Cancellation::default(),
                     )
                     .expect("manual pass");
                 assert!(result.status.success(), "{result}");
@@ -412,6 +414,7 @@ fi
                         (pass, 2),
                         progress.clone(),
                         Some(&stats),
+                        &andean_condor::utils::cancellation::Cancellation::default(),
                     )
                     .expect("manual input pass");
                 assert!(result.status.success());
@@ -439,6 +442,7 @@ fi
                         &output,
                         progress.clone(),
                         &super::super::clip_info(),
+                        &andean_condor::utils::cancellation::Cancellation::default(),
                     )
                     .expect("Specific wrapper");
                 assert!(result.status.success(), "{result}");
@@ -452,7 +456,13 @@ fi
                 CLIParameter::new_string("--", " ", caller_stats.to_str().expect("utf8")),
             );
             let result = overridden
-                .encode_with_stream(frames(), &output, progress, &super::super::clip_info())
+                .encode_with_stream(
+                    frames(),
+                    &output,
+                    progress,
+                    &super::super::clip_info(),
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
                 .expect("caller path override");
             assert!(result.status.success());
             assert_eq!(
@@ -477,6 +487,7 @@ fi
                     &output,
                     progress.clone(),
                     &super::super::clip_info(),
+                    &andean_condor::utils::cancellation::Cancellation::default(),
                 )
                 .expect_err("failed pass status propagates");
             let result = error.downcast_ref::<EncoderResult>().expect("failed pass diagnostics");
@@ -490,7 +501,13 @@ fi
             let before = listing(output.parent().expect("parent"));
             assert!(
                 encoder
-                    .encode_with_stream(frames(), &output, progress, &super::super::clip_info())
+                    .encode_with_stream(
+                        frames(),
+                        &output,
+                        progress,
+                        &super::super::clip_info(),
+                        &andean_condor::utils::cancellation::Cancellation::default()
+                    )
                     .is_err()
             );
             assert_eq!(
@@ -517,7 +534,13 @@ fi
             let before = listing(output.parent().expect("parent"));
             let (progress, _rx) = mpsc::channel();
             let result = avm
-                .encode_with_stream(frames(), &output, progress, &super::super::clip_info())
+                .encode_with_stream(
+                    frames(),
+                    &output,
+                    progress,
+                    &super::super::clip_info(),
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
                 .expect("AVM single-pass frontend");
             assert!(result.status.success());
             assert!(!result.parameters.iter().any(|arg| arg.starts_with("--fpf")));

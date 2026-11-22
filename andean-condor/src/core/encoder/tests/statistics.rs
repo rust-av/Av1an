@@ -57,6 +57,7 @@ fn encoder_statistics_argv_preserves_job_paths_and_native_suffixes() {
                         (pass, 2),
                         &output,
                         &crate::core::encoder::tests::clip_info(),
+                        None,
                     )
                     .expect("valid argv");
                 assert_eq!(
@@ -79,11 +80,11 @@ fn encoder_statistics_argv_preserves_job_paths_and_native_suffixes() {
                     format!("{}{suffix}", explicit.display())
                 );
                 let argv = encoder
-                    .parameters_with_stats(
+                    .parameters_with_output(
                         (pass, 2),
                         &output,
                         &crate::core::encoder::tests::clip_info(),
-                        &explicit,
+                        Some(&explicit),
                     )
                     .expect("explicit stats argv");
                 assert_eq!(value(&argv, key), format!("{}{suffix}", explicit.display()));
@@ -110,11 +111,11 @@ fn native_statistics_path_options_override_generated_defaults() {
             CLIParameter::new_string("--", " ", "caller relative 映像.stats"),
         );
         let argv = encoder
-            .parameters_with_stats(
+            .parameters_with_output(
                 (1, 2),
                 &output,
                 &crate::core::encoder::tests::clip_info(),
-                Path::new("generated base"),
+                Some(Path::new("generated base")),
             )
             .expect("argv");
         assert_eq!(
@@ -133,7 +134,12 @@ fn native_statistics_path_options_override_generated_defaults() {
             .parameters_mut()
             .insert("pass".into(), CLIParameter::new_number("--", " ", pass));
         let argv = encoder
-            .parameters_with_output((1, 1), &output, &crate::core::encoder::tests::clip_info())
+            .parameters_with_output(
+                (1, 1),
+                &output,
+                &crate::core::encoder::tests::clip_info(),
+                None,
+            )
             .expect("native manual tuple");
         assert_eq!(value(&argv, "--rcstatsfile"), "manual VVenC.json");
         assert_eq!(value(&argv, "--pass"), pass.to_string());

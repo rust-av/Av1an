@@ -2147,7 +2147,12 @@ mod parameters {
         let argv = loaded
             .condor
             .encoder
-            .parameters_with_stats((1, 1), &output, &clip_info(), &temp.path().join("stats"))
+            .parameters_with_output(
+                (1, 1),
+                &output,
+                &clip_info(),
+                Some(&temp.path().join("stats")),
+            )
             .expect("persisted emitted argv");
         assert!(argv.iter().any(|arg| arg == "--no-sao"), "{argv:?}");
         assert!(
@@ -2167,7 +2172,12 @@ mod parameters {
             config
                 .condor
                 .encoder
-                .parameters_with_stats((1, 1), &output, &clip_info(), &temp.path().join("stats"))
+                .parameters_with_output(
+                    (1, 1),
+                    &output,
+                    &clip_info(),
+                    Some(&temp.path().join("stats"))
+                )
                 .expect("default argv")
                 .len()
                 + 3

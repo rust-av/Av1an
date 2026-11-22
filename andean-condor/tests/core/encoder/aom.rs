@@ -63,7 +63,9 @@ fn installed_aom_scene_default_has_only_initial_decoded_keyframe() {
                 CLIParameter::new_number("--", "=", 4.0),
             );
         }
-        let argv = encoder.parameters_with_output((1, 1), &output, &clip).expect("production argv");
+        let argv = encoder
+            .parameters_with_output((1, 1), &output, &clip, None)
+            .expect("production argv");
         eprintln!("AOM keyframes {name} production argv: {argv:?}");
         run_bounded(
             Command::new(&aom).args(&argv).stdin(fs::File::open(&input).expect("input")),
@@ -154,7 +156,7 @@ fn aom_one_pass_pipe_output_decodes_three_av1_frames() {
         &[("cpu-used", 6.0), ("threads", 1.0)],
     ));
     let argv = encoder
-        .parameters_with_output((1, 1), &output, &super::clip_info())
+        .parameters_with_output((1, 1), &output, &super::clip_info(), None)
         .expect("production argv");
     eprintln!("AOM one-pass argv: {argv:?}");
     // A real OS pipe cannot rewind. EOF follows this finite producer; the reused

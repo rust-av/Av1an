@@ -64,7 +64,13 @@ fn dg_index_reuse_accepts_either_valid_numeric_footer_order() {
     ] {
         let bytes = format!("DGIndexNV\n{footer}");
         fs::write(&cache, &bytes).expect("structural fixture");
-        let result = DGSource::index_video(&source, Some(&cache), Some(&executable), None, None);
+        let result = DGSource::index_video(
+            &source,
+            Some(&cache),
+            Some(&executable),
+            None,
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        );
         assert_eq!(result.is_ok(), valid, "footer {footer:?}: {result:?}");
         if valid {
             assert_eq!(result.expect("reuse without spawning"), cache);
@@ -82,8 +88,14 @@ fn media_cache_alias_guidance_never_suggests_removing_original() {
     let directory = tempfile::tempdir().expect("alias fixture");
     let source = directory.path().join("source.mkv");
     fs::write(&source, b"original media").expect("source");
-    let error = DGSource::index_video(&source, Some(&source), None, None, None)
-        .expect_err("media is not an index");
+    let error = DGSource::index_video(
+        &source,
+        Some(&source),
+        None,
+        None,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect_err("media is not an index");
     assert_eq!(
         fs::read(source).expect("preserved source"),
         b"original media"
@@ -104,8 +116,14 @@ fn direct_project_guidance_selects_valid_input_not_ignored_cache_override() {
     let alternate = directory.path().join("alternate.dgi");
     fs::write(&project, b"invalid original project").expect("project");
     fs::write(&alternate, SAMPLE).expect("valid alternate");
-    let error = DGSource::index_video(&project, Some(&alternate), None, None, None)
-        .expect_err("direct project must be validated, not replaced by cache alias");
+    let error = DGSource::index_video(
+        &project,
+        Some(&alternate),
+        None,
+        None,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect_err("direct project must be validated, not replaced by cache alias");
     assert_eq!(
         fs::read(project).expect("preserved project"),
         b"invalid original project"

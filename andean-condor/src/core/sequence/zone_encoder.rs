@@ -162,10 +162,15 @@ impl ZonePlan {
     pub fn try_build(tasks: &[Task]) -> Result<ZonePlan, ZoneIneligible> {
         let plan = Self::settings(tasks)?;
         let first = &tasks[0];
-        if !first.encoder.supports_capability(EncoderCapability::Zoning) {
+        let cancellation = Cancellation::default();
+        if !first
+            .encoder
+            .supports_capability(EncoderCapability::Zoning, &cancellation)
+            .unwrap_or(false)
+        {
             return Err(ZoneIneligible::NoZoneSupport);
         }
-        if first.encoder.container().is_none() {
+        if first.encoder.container(&cancellation).ok().flatten().is_none() {
             return Err(ZoneIneligible::UnsplittableContainer);
         }
         Ok(plan)
@@ -180,13 +185,10 @@ impl ZonePlan {
         let plan = Self::settings(tasks)?;
         cancellation.check_admission()?;
         let first = &tasks[0];
-        if !first
-            .encoder
-            .supports_capability_cancel(EncoderCapability::Zoning, cancellation)?
-        {
+        if !first.encoder.supports_capability(EncoderCapability::Zoning, cancellation)? {
             return Err(ZoneIneligible::NoZoneSupport.into());
         }
-        if first.encoder.container_cancel(cancellation)?.is_none() {
+        if first.encoder.container(cancellation)?.is_none() {
             return Err(ZoneIneligible::UnsplittableContainer.into());
         }
         Ok(plan)
@@ -565,7 +567,7 @@ impl ZoneEncoder {
             let whole_output = whole_output.clone();
             let cancelled = cancelled.clone();
             move || {
-                let encoded = encoder.encode_with_stream_cancel(
+                let encoded = encoder.encode_with_stream(
                     encoder_rx,
                     &whole_output,
                     encode_progress_tx,
@@ -642,7 +644,7 @@ impl ZoneEncoder {
         }
         let ended = SystemTime::now();
 
-        let split = match encoder.container_cancel(&cancelled)? {
+        let split = match encoder.container(&cancelled)? {
             Some(Container::Ivf) => split_ivf_cancel(
                 &whole_output,
                 tasks.make_contiguous(),

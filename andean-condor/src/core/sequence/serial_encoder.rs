@@ -33,7 +33,7 @@ pub static DETAILS: SequenceDetails = SequenceDetails {
 };
 
 /// Publishes complete scenes, not cross-call manual-pass statistics. Use
-/// [`Encoder::encode_pass_with_stream_cancel`] with an explicit
+/// [`Encoder::encode_pass_with_stream`] with an explicit
 /// [`PassStatistics`](crate::core::encoder::PassStatistics) for caller-managed passes.
 pub struct SerialEncoder {
     pub input: Option<Input>,
@@ -70,7 +70,7 @@ where
             if let EncoderPasses::Specific(current, total) = scene.encoder.passes() {
                 ensure!(
                     current == total,
-                    "Serial scene {} cannot run non-final Specific pass {current} of {total}; use All({total}) for complete scenes, or Encoder::encode_pass_with_stream_cancel with one explicit PassStatistics retained across direct passes",
+                    "Serial scene {} cannot run non-final Specific pass {current} of {total}; use All({total}) for complete scenes, or Encoder::encode_pass_with_stream with one explicit PassStatistics retained across direct passes",
                     Self::scene_id(index)
                 );
             }
@@ -248,7 +248,7 @@ where
                     thread::Builder::new().name("serial-encoder".into()).spawn(move || {
                         #[cfg(all(test, target_os = "linux"))]
                         tests::internal_integration::worker("encoder");
-                        scene_encoder.encode_owned_with_stream_cancel(
+                        scene_encoder.encode_owned_with_stream(
                             frames_rx,
                             &private_output,
                             scene_progress_tx,
@@ -275,7 +275,7 @@ where
                     tests::internal_integration::worker("feed");
                     frames_tx.send(Cursor::new(Vec::from(y4m_header.as_bytes())))?;
                     let frame_indices = (scene.start_frame..scene.end_frame).collect::<Vec<_>>();
-                    input.y4m_frames_cancel(frames_tx, &frame_indices, &active)
+                    input.y4m_frames(frames_tx, &frame_indices, &active)
                 });
                 let encoded = join_worker(encoder_thread, "Joining serial scene encoder");
                 let relayed =

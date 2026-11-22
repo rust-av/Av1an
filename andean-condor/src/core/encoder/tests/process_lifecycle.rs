@@ -430,7 +430,7 @@ mod internal_integration {
                     SceneConcatenator::ivf_cancel(&output, &[source], &progress, &cancellation)
                 } else if case.starts_with("commit-dg") {
                     fs::write(root.join("source"), "fixture source").expect("source");
-                    crate::vapoursynth::plugins::dgdecodenv::DGSource::index_video_cancel(
+                    crate::vapoursynth::plugins::dgdecodenv::DGSource::index_video(
                         &root.join("source"),
                         Some(&output),
                         Some(&root.join("fake")),
@@ -448,14 +448,14 @@ mod internal_integration {
                         },
                         filters: vec![],
                     };
-                    Input::ensure_indexed_cancel(&data, |_| {}, &cancellation).map(|_| ())
+                    Input::ensure_indexed(&data, |_| {}, &cancellation).map(|_| ())
                 } else {
                     let encoder = encoder(&root, case.starts_with("commit-all2"));
                     let (progress, _rx) = mpsc::channel::<EncodeProgress>();
                     if case.starts_with("commit-input-") || case.starts_with("commit-pass-input-") {
                         let mut input = input(&root, false);
                         if case.starts_with("commit-pass-input") {
-                            encoder.encode_pass_with_input_cancel(
+                            encoder.encode_pass_with_input(
                                 &mut input,
                                 &output,
                                 0,
@@ -466,7 +466,7 @@ mod internal_integration {
                                 &cancellation,
                             )
                         } else {
-                            encoder.encode_with_input_cancel(
+                            encoder.encode_with_input(
                                 &mut input,
                                 &output,
                                 0,
@@ -480,7 +480,7 @@ mod internal_integration {
                         tx.send(Cursor::new(vec![0; 64])).expect("finite stream");
                         drop(tx);
                         if case.starts_with("commit-pass-stream") {
-                            encoder.encode_pass_with_stream_cancel(
+                            encoder.encode_pass_with_stream(
                                 (1, 1),
                                 rx,
                                 &output,
@@ -490,7 +490,7 @@ mod internal_integration {
                                 &cancellation,
                             )
                         } else {
-                            encoder.encode_with_stream_cancel(
+                            encoder.encode_with_stream(
                                 rx,
                                 &output,
                                 progress,

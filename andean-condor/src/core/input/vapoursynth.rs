@@ -4,7 +4,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::Write as _,
-    sync::{Arc, Condvar, Mutex, atomic::AtomicBool},
+    sync::{Arc, Condvar, Mutex},
 };
 
 use anyhow::{Context, Result, bail};
@@ -207,7 +207,7 @@ fn source_path(
             cache_path,
             dgindexnv_executable.as_deref(),
             None,
-            None,
+            &crate::utils::cancellation::Cancellation::default(),
         ),
         _ => Ok(std::path::absolute(path)?),
     }
@@ -282,51 +282,7 @@ fn has_script_only_filter(data: &InputModel) -> bool {
     }
 }
 
-/// Pre-indexes `data`'s source ahead of opening it, reporting progress.
-///
-/// Only DGDecNV indexes out of process: it spawns `dgindexnv`, whose stdout
-/// carries something countable. Every other import method indexes lazily
-/// inside its own source plugin, where no callback of ours can reach it, so
-/// nothing is reported here and the caller stays indeterminate.
 pub fn index_source(
-    data: &InputModel,
-    mut progress: impl FnMut(OpenProgress),
-    cancelled: Option<&AtomicBool>,
-) -> Result<()> {
-    let InputModel::VapourSynth {
-        path,
-        import_method,
-        cache_path,
-        ..
-    } = data
-    else {
-        return Ok(());
-    };
-    let VapourSynthImportMethod::DGDecNV {
-        dgindexnv_executable,
-    } = import_method
-    else {
-        return Ok(());
-    };
-    // Before spawning: a missing source must fail with the error
-    // `from_vapoursynth` would give, not after a pointless `dgindexnv` run.
-    Input::validate(data)?;
-
-    // `index_video` reports the start itself, so an existing `.dgi` never
-    // claims to be indexing.
-    DGSource::index_video(
-        path,
-        cache_path.as_deref(),
-        dgindexnv_executable.as_deref(),
-        Some(&mut |current, total| {
-            progress(OpenProgress::Indexing { current, total });
-        }),
-        cancelled,
-    )?;
-    Ok(())
-}
-
-pub fn index_source_cancel(
     data: &InputModel,
     mut progress: impl FnMut(OpenProgress),
     cancellation: &crate::utils::cancellation::Cancellation,
@@ -342,7 +298,7 @@ pub fn index_source_cancel(
     } = data
     {
         Input::validate(data)?;
-        DGSource::index_video_cancel(
+        DGSource::index_video(
             path,
             cache_path.as_deref(),
             dgindexnv_executable.as_deref(),
@@ -666,24 +622,7 @@ pub fn y4m_frame(node: &Node<'_>, index: usize, stream: &mut Vec<u8>) -> Result<
     Ok(())
 }
 
-/// Streams `frame_indices` from `node` as Y4M frames, in order, while keeping
-/// at most `window` frames requested but not yet sent.
 pub fn y4m_frames(
-    node: &Node<'_>,
-    frame_sender: &crossbeam_channel::Sender<std::io::Cursor<Vec<u8>>>,
-    frame_indices: &[usize],
-    window: usize,
-) -> Result<()> {
-    y4m_frames_cancel(
-        node,
-        frame_sender,
-        frame_indices,
-        window,
-        &crate::utils::cancellation::Cancellation::default(),
-    )
-}
-
-pub fn y4m_frames_cancel(
     node: &Node<'_>,
     frame_sender: &crossbeam_channel::Sender<std::io::Cursor<Vec<u8>>>,
     frame_indices: &[usize],

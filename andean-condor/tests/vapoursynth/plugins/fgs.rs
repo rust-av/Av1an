@@ -158,6 +158,7 @@ fn invalid_grain_shape_fails_before_executable_lookup_or_native_output() {
                 &temp.path().join("no-scratch/out.ivf"),
                 progress,
                 &clip_info,
+                &andean_condor::utils::cancellation::Cancellation::default(),
             )
             .expect_err("public native attempt must reject before spawn/scratch/output");
         assert!(error.to_string().contains("coefficients"), "{error:#}");

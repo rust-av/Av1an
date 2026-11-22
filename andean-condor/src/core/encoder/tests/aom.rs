@@ -23,12 +23,13 @@ fn aom_default_keyframe_flag_respects_false_removal_and_excluded_defaults() {
                     pass,
                     Path::new("out.ivf"),
                     &crate::core::encoder::tests::clip_info(),
+                    None,
                 ),
-                encoder.parameters_with_stats(
+                encoder.parameters_with_output(
                     pass,
                     Path::new("out.ivf"),
                     &crate::core::encoder::tests::clip_info(),
-                    Path::new("stats"),
+                    Some(Path::new("stats")),
                 ),
             ] {
                 let argv = argv.expect("production argv");
@@ -79,7 +80,12 @@ fn aom_pass_argv_uses_native_statistics_and_final_output_only() {
             "{pass:?}"
         );
         let argv = encoder
-            .parameters_with_output(pass, output, &crate::core::encoder::tests::clip_info())
+            .parameters_with_output(
+                pass,
+                output,
+                &crate::core::encoder::tests::clip_info(),
+                None,
+            )
             .expect("argv");
         assert_eq!(argv[0], "-");
         let mut actual = argv[1..].to_vec();

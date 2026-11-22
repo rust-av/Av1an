@@ -97,7 +97,7 @@ fn assert_index_publication_case() {
             filters: vec![],
         };
         let mut starts = 0;
-        index_source_cancel(
+        index_source(
             &data,
             |progress| {
                 if matches!(

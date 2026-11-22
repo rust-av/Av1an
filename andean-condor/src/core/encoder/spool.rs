@@ -24,25 +24,7 @@ pub(crate) fn create(parent: &Path, output: &Path) -> Result<File> {
     })
 }
 
-#[cfg(test)]
 pub(super) fn encode<T>(
-    file: impl Read + Write + Seek + Send,
-    frames: Receiver<Cursor<Vec<u8>>>,
-    output: &Path,
-    total: u8,
-    encode: impl FnMut(u8, Receiver<Cursor<Vec<u8>>>) -> Result<T>,
-) -> Result<T> {
-    encode_cancel(
-        file,
-        frames,
-        output,
-        total,
-        &Cancellation::default(),
-        encode,
-    )
-}
-
-pub(super) fn encode_cancel<T>(
     mut file: impl Read + Write + Seek + Send,
     frames: Receiver<Cursor<Vec<u8>>>,
     output: &Path,
@@ -51,9 +33,9 @@ pub(super) fn encode_cancel<T>(
     mut encode: impl FnMut(u8, Receiver<Cursor<Vec<u8>>>) -> Result<T>,
 ) -> Result<T> {
     capture(&mut file, frames, output, cancellation)?;
-    let mut result = replay_cancel(&mut file, output, cancellation, |rx| encode(1, rx))?;
+    let mut result = replay(&mut file, output, cancellation, |rx| encode(1, rx))?;
     for pass in 2..=total {
-        result = replay_cancel(&mut file, output, cancellation, |rx| encode(pass, rx))?;
+        result = replay(&mut file, output, cancellation, |rx| encode(pass, rx))?;
     }
     Ok(result)
 }
@@ -93,16 +75,7 @@ pub(crate) fn capture(
     Ok(())
 }
 
-#[cfg(test)]
-pub(super) fn replay<T>(
-    file: &mut (impl Read + Seek + Send),
-    output: &Path,
-    encode: impl FnOnce(Receiver<Cursor<Vec<u8>>>) -> Result<T>,
-) -> Result<T> {
-    replay_cancel(file, output, &Cancellation::default(), encode)
-}
-
-pub(crate) fn replay_cancel<T>(
+pub(crate) fn replay<T>(
     file: &mut (impl Read + Seek + Send),
     output: &Path,
     cancellation: &Cancellation,

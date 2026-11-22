@@ -63,16 +63,9 @@ impl Semaphore {
         self.condvar.notify_one();
     }
 
-    /// Acquire an owned pool permit. Unlike raw counting notifications, it is
-    /// returned on Drop, including errors and unwinding. `None` means closed.
-    #[inline]
-    pub fn acquire_owned(self: &Arc<Self>) -> Option<Permit> {
-        self.acquire_owned_cancel(&super::cancellation::Cancellation::default())
-    }
-
     /// Admission waits observe graceful shutdown even while every worker is busy.
     #[inline]
-    pub fn acquire_owned_cancel(
+    pub fn acquire_owned(
         self: &Arc<Self>,
         cancellation: &super::cancellation::Cancellation,
     ) -> Option<Permit> {
@@ -142,19 +135,26 @@ mod tests {
     fn owned_permits_return_on_error_and_unwind_without_inflation() {
         let pool = Arc::new(Semaphore::new(1));
         let failed = || -> Result<(), ()> {
-            let _permit = pool.acquire_owned().expect("open pool");
+            let _permit = pool
+                .acquire_owned(&crate::utils::cancellation::Cancellation::default())
+                .expect("open pool");
             Err(())
         };
         assert!(failed().is_err());
         let panic = std::panic::catch_unwind(|| {
-            let _permit = pool.acquire_owned().expect("error returned its permit");
+            let _permit = pool
+                .acquire_owned(&crate::utils::cancellation::Cancellation::default())
+                .expect("error returned its permit");
             panic!("permit owner panic");
         });
         assert!(panic.is_err());
         assert_eq!(pool.try_acquire(), Some(1));
         assert_eq!(pool.try_acquire(), None);
         pool.release();
-        drop(pool.acquire_owned().expect("success"));
+        drop(
+            pool.acquire_owned(&crate::utils::cancellation::Cancellation::default())
+                .expect("success"),
+        );
         assert_eq!(pool.try_acquire(), Some(1));
         assert_eq!(pool.try_acquire(), None);
     }
@@ -163,10 +163,14 @@ mod tests {
     fn semaphore_close_wakes_all_owned_permit_waiters() {
         let pool = Arc::new(Semaphore::new(0));
         std::thread::scope(|s| {
-            let handles: Vec<_> =
-                std::iter::repeat_with(|| s.spawn(|| pool.acquire_owned().is_none()))
-                    .take(8)
-                    .collect();
+            let handles: Vec<_> = std::iter::repeat_with(|| {
+                s.spawn(|| {
+                    pool.acquire_owned(&crate::utils::cancellation::Cancellation::default())
+                        .is_none()
+                })
+            })
+            .take(8)
+            .collect();
             let state = pool.state.lock().expect("state");
             let state = pool
                 .waiting
@@ -178,7 +182,10 @@ mod tests {
                 assert!(handle.join().expect("waiter"));
             }
         });
-        assert!(pool.acquire_owned().is_none());
+        assert!(
+            pool.acquire_owned(&crate::utils::cancellation::Cancellation::default())
+                .is_none()
+        );
     }
 
     #[test]

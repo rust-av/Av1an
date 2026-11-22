@@ -680,10 +680,8 @@ impl TargetQuality {
         let step = match encoder {
             Encoder::X264 { .. } | Encoder::X265 { .. } => 0.25,
             Encoder::SVTAV1 { .. }
-                if encoder.supports_capability_cancel(
-                    EncoderCapability::SvtAv1QuarterStepCrf,
-                    cancelled,
-                )? =>
+                if encoder
+                    .supports_capability(EncoderCapability::SvtAv1QuarterStepCrf, cancelled)? =>
             {
                 0.25
             },

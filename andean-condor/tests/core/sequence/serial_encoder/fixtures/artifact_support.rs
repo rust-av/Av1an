@@ -259,7 +259,7 @@ fn serial_artifact_child() {
             for expected in [
                 "Serial scene 00000",
                 "pass 1 of 2",
-                "Encoder::encode_pass_with_stream_cancel",
+                "Encoder::encode_pass_with_stream",
                 "PassStatistics",
             ] {
                 assert!(text.contains(expected), "{text}");

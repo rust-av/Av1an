@@ -38,7 +38,12 @@ fn svt_av1_pass_argv_uses_native_stats_and_final_output_only() {
             "{pass:?}"
         );
         let argv = encoder
-            .parameters_with_output(pass, output, &crate::core::encoder::tests::clip_info())
+            .parameters_with_output(
+                pass,
+                output,
+                &crate::core::encoder::tests::clip_info(),
+                None,
+            )
             .expect("argv");
         assert!(!argv.iter().any(|arg| matches!(arg.as_str(), "-stats" | "--quiet")));
         assert_eq!(argv.len() % 2, 0, "separate key/value pairs: {argv:?}");

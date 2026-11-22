@@ -213,7 +213,7 @@ pub fn open_input_cancel(
     info!("Opening input...");
     // FFMS2 reports every whole percent, so only the tens are worth a line.
     let mut last_decile = 0;
-    let mut input = Input::ensure_indexed_cancel(
+    let mut input = Input::ensure_indexed(
         data,
         |progress| {
             let OpenProgress::Indexing { current, total } = progress else {

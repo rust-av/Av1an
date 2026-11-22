@@ -132,17 +132,47 @@ fn assert_preflight_before_spawn_or_receive() {
         };
         let mut input = Input::from_data(&model).expect("blank input");
         if route == "input" {
-            encoder.encode_with_input(&mut input, &output, 0, 1, tx)
+            encoder.encode_with_input(
+                &mut input,
+                &output,
+                0,
+                1,
+                tx,
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
         } else {
-            encoder.encode_pass_with_input(&mut input, &output, 0, 1, pass, tx, None)
+            encoder.encode_pass_with_input(
+                &mut input,
+                &output,
+                0,
+                1,
+                pass,
+                tx,
+                None,
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
         }
     } else {
         let (_sender, receiver) = crossbeam_channel::unbounded();
         // Keep the sender alive: a misplaced receive must trip the outer watchdog.
         let result = if route == "stream" || route == "vvenc-stream" {
-            encoder.encode_with_stream(receiver, &output, tx, &super::clip_info())
+            encoder.encode_with_stream(
+                receiver,
+                &output,
+                tx,
+                &super::clip_info(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
         } else {
-            encoder.encode_pass_with_stream(pass, receiver, &output, tx, &super::clip_info(), None)
+            encoder.encode_pass_with_stream(
+                pass,
+                receiver,
+                &output,
+                tx,
+                &super::clip_info(),
+                None,
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
         };
         drop(_sender);
         result
@@ -155,7 +185,7 @@ fn assert_preflight_before_spawn_or_receive() {
             "{error:#}"
         );
         let error = encoder
-            .parameters_with_output((1, 2), &output, &super::clip_info())
+            .parameters_with_output((1, 2), &output, &super::clip_info(), None)
             .expect_err("first-pass argv must reject the whole-job conflict");
         assert!(
             matches!(
