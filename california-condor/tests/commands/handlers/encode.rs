@@ -1191,11 +1191,11 @@ mod tests {
     #[test]
     fn native_effective_inputs_decode_literal_filtered_shapes() {
         use andean_condor::models::input::ImportMethod;
+        use andean_condor::utils::cancellation::Cancellation;
         use california_condor::{
             commands::DecoderMethod, commands::handlers::encode::configure_parallel_encoder,
             tui::open_input,
         };
-        use std::sync::{Arc, atomic::AtomicBool};
         let temp = tempfile::tempdir().expect("fixture");
         for (name, size) in [("root.mkv", "32x16"), ("override.mkv", "48x24")] {
             let generated = std::process::Command::new("ffmpeg")
@@ -1291,39 +1291,24 @@ mod tests {
                     .as_ref()
                     .expect("override")
             };
-            let cancelled = Arc::new(AtomicBool::new(false));
-            let (mut decoded, info) = open_input(
-                effective,
-                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
-                    &cancelled,
-                )),
-            )
-            .expect("actual FFMS2 filtered decode");
+            let cancellation = Cancellation::default();
+            let (mut decoded, info) =
+                open_input(effective, &cancellation).expect("actual FFMS2 filtered decode");
             assert_eq!(info.resolution, (16, 8), "{case}");
             assert_eq!(
                 decoded.y4m_frame(0).expect("real first frame").into_inner().len(),
                 6 + 16 * 8 * 3 / 2,
                 "{case}: FRAME header plus 8-bit 420 planes"
             );
-            let (mut reference, info) = open_input(
-                &original.condor.input,
-                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
-                    &cancelled,
-                )),
-            )
-            .expect("unmodified root decode");
+            let (mut reference, info) =
+                open_input(&original.condor.input, &cancellation).expect("unmodified root decode");
             assert_eq!(info.resolution, (32, 16));
             assert_eq!(
                 reference.y4m_frame(0).expect("reference frame").into_inner().len(),
                 6 + 32 * 16 * 3 / 2
             );
-            let (mut source, info) = open_input(
-                &override_input,
-                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
-                    &cancelled,
-                )),
-            )
-            .expect("unmodified override source decode");
+            let (mut source, info) = open_input(&override_input, &cancellation)
+                .expect("unmodified override source decode");
             assert_eq!(info.resolution, (48, 24));
             assert_eq!(
                 source.y4m_frame(0).expect("source frame").into_inner().len(),

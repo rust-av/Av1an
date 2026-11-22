@@ -144,7 +144,7 @@ impl Input {
         match data {
             InputModel::Video { .. } => ffms2::from_video(data),
             InputModel::VapourSynth { .. } | InputModel::VapourSynthScript { .. } => {
-                vapoursynth::from_vapoursynth(data, None)
+                Self::from_vapoursynth(data, None)
             },
         }
     }
@@ -162,14 +162,14 @@ impl Input {
         data: &InputModel,
         modify_node: Option<av_decoders::ModifyNode>,
     ) -> Result<Self> {
-        vapoursynth::from_vapoursynth(data, modify_node)
+        vapoursynth::from_vapoursynth(data, modify_node, &Cancellation::default())
     }
 
     /// Opens a VapourSynth input through a generated script that bakes the
     /// input's filters in, for filters `invoke_plugin_function` cannot reach.
     #[inline]
     pub fn from_vapoursynth_scripted(data: &InputModel) -> Result<Self> {
-        vapoursynth::from_vapoursynth_scripted(data)
+        vapoursynth::from_vapoursynth_scripted(data, &Cancellation::default())
     }
 
     /// Opens the input, reporting FFMS2 or DGDecNV indexing progress when
@@ -206,7 +206,13 @@ impl Input {
         }
         cancellation.check_forced()?;
         progress(OpenProgress::Opening);
-        let input = Self::from_data(data)?;
+        cancellation.check_forced()?;
+        let input = match data {
+            InputModel::Video { .. } => ffms2::from_video(data)?,
+            InputModel::VapourSynth { .. } | InputModel::VapourSynthScript { .. } => {
+                vapoursynth::from_vapoursynth(data, None, cancellation)?
+            },
+        };
         cancellation.check_forced()?;
         Ok(input)
     }

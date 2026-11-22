@@ -63,7 +63,8 @@ impl Semaphore {
         self.condvar.notify_one();
     }
 
-    /// Admission waits observe graceful shutdown even while every worker is busy.
+    /// Waits for a permit, returning `None` if closed or cancelled. Dropping
+    /// the permit releases it, including during unwinding.
     #[inline]
     pub fn acquire_owned(
         self: &Arc<Self>,

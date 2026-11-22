@@ -27,6 +27,148 @@ use fixture::fixture;
 #[cfg(unix)]
 use fixture::produced_job;
 
+#[test]
+fn job_dispatch_checks_cancellation_between_custom_stage_calls() {
+    use condor::{
+        core::{AndeanCondor, DefaultAndeanCondor, sequence::SequenceDetails},
+        utils::cancellation::{Cancellation, Cancelled},
+    };
+    use std::sync::mpsc;
+
+    type Job = Condor<DefaultSequenceData, DefaultSequenceConfig>;
+    type Outcome = anyhow::Result<((), Vec<anyhow::Error>)>;
+    struct Stage {
+        controls: Cancellation,
+        stop_during_initialize: bool,
+        executed: Rc<Cell<bool>>,
+    }
+
+    impl Sequence<DefaultSequenceData, DefaultSequenceConfig> for Stage {
+        fn details(&self) -> SequenceDetails {
+            SequenceDetails {
+                name: "custom stage",
+                description: "",
+                version: "",
+            }
+        }
+
+        fn validate(&mut self, _: &mut Job) -> Outcome {
+            Ok(((), vec![]))
+        }
+
+        fn initialize(
+            &mut self,
+            _: &mut Job,
+            _: mpsc::Sender<SequenceStatus>,
+            _: &Cancellation,
+        ) -> Outcome {
+            if self.stop_during_initialize {
+                self.controls.request()?;
+            }
+            Ok(((), vec![]))
+        }
+
+        fn execute(
+            &mut self,
+            _: &mut Job,
+            _: mpsc::Sender<SequenceStatus>,
+            _: Cancellation,
+        ) -> Outcome {
+            self.executed.set(true);
+            if !self.stop_during_initialize {
+                self.controls.request()?;
+                self.controls.request()?;
+            }
+            Ok(((), vec![]))
+        }
+    }
+
+    let temp = tempfile::tempdir().expect("job fixture");
+    for (stop_during_initialize, expected) in
+        [(false, Cancelled::Forced), (true, Cancelled::Graceful)]
+    {
+        let cancellation = Cancellation::default();
+        let executed = Rc::new(Cell::new(false));
+        let mut pipeline = DefaultAndeanCondor {
+            condor: fixture(temp.path()),
+            sequences: vec![Box::new(Stage {
+                controls: cancellation.clone(),
+                stop_during_initialize,
+                executed: Rc::clone(&executed),
+            })],
+        };
+        let (tx, _rx) = mpsc::channel();
+
+        let error = pipeline.process_all(tx, cancellation).expect_err("job was stopped");
+        assert_eq!(error.downcast_ref::<Cancelled>(), Some(&expected));
+        assert_eq!(executed.get(), !stop_during_initialize);
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn force_reaches_parallel_encoder_override_indexer() {
+    use condor::{
+        models::input::VapourSynthImportMethod,
+        utils::cancellation::{Cancellation, Cancelled},
+    };
+    use std::{
+        fs,
+        os::unix::{fs::PermissionsExt, net::UnixDatagram},
+        time::Duration,
+    };
+
+    let temp = tempfile::tempdir().expect("job fixture");
+    let mut job = fixture(temp.path());
+    let index = temp.path().join("override.dgi");
+    let executable = temp.path().join("indexer");
+    let controller_path = temp.path().join("controller");
+    let indexer_path = temp.path().join("indexer-socket");
+    let controller = UnixDatagram::bind(&controller_path).expect("controller");
+    controller
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("bounded fixture");
+    fs::write(
+        &executable,
+        format!(
+            "#!/usr/bin/env python3\nimport socket\ns = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)\ns.settimeout(5)\ns.bind({indexer_path:?})\ns.sendto(b'R', {controller_path:?})\ns.recv(1)\nraise SystemExit(23)\n",
+        ),
+    )
+    .expect("indexer fixture");
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).expect("executable");
+    job.sequence_config.parallel_encoder.input = Some(InputModel::VapourSynth {
+        path: temp.path().join("source.mkv"),
+        import_method: VapourSynthImportMethod::DGDecNV {
+            dgindexnv_executable: Some(executable),
+        },
+        cache_path: Some(index.clone()),
+        filters: vec![],
+    });
+
+    let cancellation = Cancellation::default();
+    let controls = cancellation.clone();
+    let signaler = std::thread::spawn(move || {
+        let mut ready = [0];
+        assert_eq!(controller.recv(&mut ready).expect("indexer ready"), 1);
+        assert_eq!(ready, *b"R");
+        controls.request().expect("graceful");
+        controls.request().expect("force");
+        // Release an indexer using the wrong token so a regression fails without hanging.
+        let _ = controller.send_to(b"X", indexer_path);
+    });
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let result = parallel_encoder::ParallelEncoder::default().execute(&mut job, tx, cancellation);
+
+    signaler.join().expect("force requested after indexer start");
+    let error = result.expect_err("no encode after a forced index");
+    assert_eq!(
+        error.downcast_ref::<Cancelled>(),
+        Some(&Cancelled::Forced),
+        "{error:#}"
+    );
+    assert!(!index.exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn certified_chunk_or_quality_history_corruption_refuses_without_repair_or_native_work() {

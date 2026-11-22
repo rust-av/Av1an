@@ -211,6 +211,7 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
         // Processors could have their own Inputs, Outputs, Encoders, and Scenes
         // that should be validated
         let (_, validation_warnings) = processor.validate(&mut self.condor)?;
+        cancelled.check()?;
         // Processors could have their own Inputs that should be initialized
         let (progress_tx, progress_rx) = std::sync::mpsc::channel();
         let event_tx = progress_event_tx.clone();
@@ -233,6 +234,7 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
         );
         let (_, initialization_warnings) = initialized?;
         relayed?;
+        cancelled.check()?;
         // Finally, process the Processor (But who processes the process
         // processor?)
         let (progress_tx, progress_rx) = std::sync::mpsc::channel();
@@ -248,10 +250,11 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
             }
             Ok(())
         });
-        let executed = processor.execute(&mut self.condor, progress_tx, cancelled);
+        let executed = processor.execute(&mut self.condor, progress_tx, cancelled.clone());
         let relayed =
             encoder::pipes::join_worker(process_progress_thread, "Joining sequence progress relay");
         let (_, process_warnings) = executed?;
+        cancelled.check_forced()?;
         relayed?;
 
         Ok((

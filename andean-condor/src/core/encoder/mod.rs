@@ -841,7 +841,8 @@ impl Encoder {
     /// uncompressed stream in the output directory before encoding. `Specific`
     /// reuses output-derived statistics; explicit native overrides remain caller-owned.
     /// The output path does not grant overwrite consent. A failed pass stops the
-    /// attempt after workers join. Graceful cancellation lets an admitted attempt finish.
+    /// attempt after workers join. Graceful cancellation rejects new attempts
+    /// on the root token but lets admitted attempts finish.
     #[inline]
     pub fn encode_with_stream(
         &self,

@@ -22,6 +22,7 @@ use crate::{
     models::input::{
         ImportMethod, Input as InputModel, VapourSynthImportMethod, VapourSynthScriptSource,
     },
+    utils::cancellation::Cancellation,
     vapoursynth::{
         get_api, get_clip_info, get_core,
         plugins::{
@@ -198,6 +199,7 @@ fn source_path(
     path: &std::path::Path,
     import_method: &VapourSynthImportMethod,
     cache_path: Option<&std::path::Path>,
+    cancellation: &Cancellation,
 ) -> Result<std::path::PathBuf> {
     match import_method {
         VapourSynthImportMethod::DGDecNV {
@@ -207,7 +209,7 @@ fn source_path(
             cache_path,
             dgindexnv_executable.as_deref(),
             None,
-            &crate::utils::cancellation::Cancellation::default(),
+            cancellation,
         ),
         _ => Ok(std::path::absolute(path)?),
     }
@@ -218,8 +220,9 @@ fn source_script(
     path: &std::path::Path,
     import_method: &VapourSynthImportMethod,
     cache_path: Option<&std::path::Path>,
+    cancellation: &Cancellation,
 ) -> Result<(Option<Imports>, Vec<Line>)> {
-    let source = source_path(path, import_method, cache_path)?;
+    let source = source_path(path, import_method, cache_path, cancellation)?;
     let cache = cache_path.map(std::path::absolute).transpose()?;
     match import_method {
         VapourSynthImportMethod::FFMS2 { index } => Source {
@@ -310,7 +313,11 @@ pub fn index_source(
 }
 
 /// Opens a VapourSynth input, chaining its filters onto the source node.
-pub fn from_vapoursynth(data: &InputModel, modify_node: Option<ModifyNode>) -> Result<Input> {
+pub fn from_vapoursynth(
+    data: &InputModel,
+    modify_node: Option<ModifyNode>,
+    cancellation: &Cancellation,
+) -> Result<Input> {
     Input::validate(data)?;
 
     // `VapoursynthDecoder::new()` panics without the library, and the core API
@@ -332,7 +339,7 @@ pub fn from_vapoursynth(data: &InputModel, modify_node: Option<ModifyNode>) -> R
                  because the script is rebuilt from the source"
             );
         }
-        return from_vapoursynth_scripted(data);
+        return from_vapoursynth_scripted(data, cancellation);
     }
 
     // The input's own filters run after any caller-supplied modifier.
@@ -349,7 +356,7 @@ pub fn from_vapoursynth(data: &InputModel, modify_node: Option<ModifyNode>) -> R
             cache_path,
             ..
         } => {
-            let source = source_path(path, import_method, cache_path.as_deref())?;
+            let source = source_path(path, import_method, cache_path.as_deref(), cancellation)?;
             let call = SourceCall::new(import_method);
 
             // Keep the source in the script: each new reader or metadata query
@@ -434,7 +441,7 @@ fn add_source_and_filters<'a>(
 
 /// Builds a script that imports the source and bakes `data`'s filters into it,
 /// for filters needing script-only plugins (such as `Rescale`).
-pub fn from_vapoursynth_scripted(data: &InputModel) -> Result<Input> {
+pub fn from_vapoursynth_scripted(data: &InputModel, cancellation: &Cancellation) -> Result<Input> {
     const SCRIPT_OUTPUT_INDEX: u8 = 0;
 
     match data {
@@ -447,7 +454,7 @@ pub fn from_vapoursynth_scripted(data: &InputModel) -> Result<Input> {
         } => {
             let mut script = VapourSynthScript::default();
             let (source_imports, source_lines) =
-                source_script(path, import_method, cache_path.as_deref())?;
+                source_script(path, import_method, cache_path.as_deref(), cancellation)?;
             add_source_and_filters(&mut script, source_imports, source_lines, filters.iter())?;
             script.outputs.insert(SCRIPT_OUTPUT_INDEX, SCRIPT_NODE_NAME.to_owned());
 
@@ -464,6 +471,7 @@ pub fn from_vapoursynth_scripted(data: &InputModel) -> Result<Input> {
                     stream_concurrently: streams_concurrently(import_method),
                 },
                 None,
+                cancellation,
             )
         },
         // A user script's output node has no name this code can reference, so a
@@ -475,7 +483,7 @@ pub fn from_vapoursynth_scripted(data: &InputModel) -> Result<Input> {
                      put it in the script instead"
                 );
             }
-            from_vapoursynth(data, None)
+            from_vapoursynth(data, None, cancellation)
         },
         InputModel::Video { .. } => bail!("scripted VapourSynth input expected"),
     }
@@ -498,10 +506,12 @@ pub fn as_vapoursynth_script(input: &mut Input) -> Result<Option<Input>> {
     };
 
     let ImportMethod::FFMS2 { index, cache_path } = import_method;
+    let cancellation = Cancellation::default();
     let (source_imports, source_lines) = source_script(
         path,
         &VapourSynthImportMethod::FFMS2 { index: *index },
         cache_path.as_deref(),
+        &cancellation,
     )?;
     let translated = filters
         .iter()
@@ -523,7 +533,7 @@ pub fn as_vapoursynth_script(input: &mut Input) -> Result<Option<Input>> {
         stream_concurrently: true,
     };
 
-    Ok(Some(from_vapoursynth(&script_input, None)?))
+    Ok(Some(from_vapoursynth(&script_input, None, &cancellation)?))
 }
 
 /// Describes a VapourSynth input's clip.
@@ -558,7 +568,9 @@ pub fn frame_sources<'core>(
     let call = SourceCall::new(import_method);
     let vs = decoder.get_vapoursynth_impl().expect("Decoder is VapourSynth");
     let core = get_core(&vs.env)?;
-    let source = source_path(path, import_method, cache_path)?.display().to_string();
+    let source = source_path(path, import_method, cache_path, &Cancellation::default())?
+        .display()
+        .to_string();
     let cache = cache_path
         .map(std::path::absolute)
         .transpose()?

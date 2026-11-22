@@ -393,6 +393,20 @@ impl TargetQuality {
 
             debug!("Starting Pass {}", pass);
 
+            let before = admission.measurement_inputs(
+                &input_model,
+                metric_model.as_ref(),
+                Some(&config.metric),
+            )?;
+            let mut configured_metric_input = if self.metric_input.is_none() {
+                config
+                    .metric_input
+                    .as_ref()
+                    .map(|input| Input::ensure_indexed(input, |_| {}, &cancelled.active()))
+                    .transpose()?
+            } else {
+                None
+            };
             let progress_tx_clone = progress_tx.clone();
             let (pass_progress_tx, pass_progress_rx) = sync::mpsc::channel();
             let relay = thread::spawn(move || -> Result<()> {
@@ -469,16 +483,6 @@ impl TargetQuality {
                 Ok(())
             });
 
-            let before = admission.measurement_inputs(
-                &input_model,
-                metric_model.as_ref(),
-                Some(&config.metric),
-            )?;
-            let mut configured_metric_input = if self.metric_input.is_none() {
-                config.metric_input.as_ref().map(Input::from_data).transpose()?
-            } else {
-                None
-            };
             let probed = probe(
                 pass,
                 target_quality_directory,

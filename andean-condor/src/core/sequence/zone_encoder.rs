@@ -416,7 +416,8 @@ fn apply_zone_options(
 pub struct ZoneEncoder;
 
 impl ZoneEncoder {
-    /// Explicit count-only policy for probe stages; status/nonempty remain mandatory.
+    /// Encodes a planned zone batch in one attempt. The count check is optional;
+    /// a successful exit and nonempty output are always required.
     #[inline]
     #[allow(clippy::needless_pass_by_value)]
     pub fn encode_tasks(

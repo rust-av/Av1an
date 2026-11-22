@@ -176,23 +176,29 @@ unchanged.
   Unlike the old FFMS2 indexing flag, graceful cancellation lets admitted
   indexing finish; use a forced request to interrupt it.
 - Implement `Sequence::initialize` with `&Cancellation` and `Sequence::execute`
-  with `Cancellation`. Implement `AndeanCondor::{process_one, process_all}` with
-  `Cancellation` by value. There are no separate legacy trait methods.
+  with `Cancellation`. Check the token before admitting work, and return
+  `Cancelled::Forced` after forced cleanup rather than reporting success.
+  Implement `AndeanCondor::{process_one, process_all}` with `Cancellation` by value.
 - Pass `ParallelEncoderOptions` to `ParallelEncoder::encode_tasks`,
   `Benchmarker::benchmark_workers`, and `TargetQuality::probe_pass`. The default
   is three total attempts with frame-count validation. Zone encoding takes the
-  validation flag directly and still runs only once.
+  validation flag directly and still runs only once. `ZonePlan::try_build`
+  returns `anyhow::Result`; downcast to `ZoneIneligible` to inspect an
+  eligibility failure separately from a probe error or cancellation.
 - `Encoder::{supports_capability, container}` now return `Result`: a missing
   executable or forced interruption is distinct from an unsupported capability
   or container. `parameters_with_output` takes `None` for the old output-derived
   stats base or `Some(path)` for an explicit base.
 - Pass cancellation to California Condor's `entry_point`, `run_*` functions,
   and configuration/initialization helpers. Only the executable entry point
-  installs OS signal handlers. Use `Configuration::save` for atomic config saves.
+  installs OS signal handlers. Pass `Cancellation` to `Zoner::run` and
+  `&Interrupt` to `TuiApp::handle_ctrl_c`, which returns `Result<()>`.
+  Use `Configuration::save` for atomic config saves.
 - Call `metrics::vmaf::score_probed_frames` with submission and final-score
   callbacks (use `|_| {}` if you do not need submission progress). Use
   `metrics::vship::score_probed_frames` for Vship. Use `Admission` methods for
-  provenance and `EncoderBase` for extension and progress parsing queries.
+  provenance, `EncoderBase` for extension and progress parsing queries, and
+  `PhotonNoise::hash_name` for the grain table hash.
 - Use `Default` for `VmafConfig` and `VshipConfig`, and select a VMAF model
   file with `.with_model(VmafModel::Path(path))`. Pass both colors to
   `FmetricsScorer::new` and the reset flag to `VshipScorer::submit_pair_raw`.

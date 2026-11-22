@@ -1376,6 +1376,56 @@ mod tests {
 
     #[serial]
     #[test]
+    fn zoner_run_respects_the_job_token_at_admission_and_return() {
+        use andean_condor::utils::cancellation::{Cancellation, Cancelled};
+        use california_condor::{
+            test_helpers::default_config,
+            zoner::{Zoner, ZonerConfig, parse_zone},
+        };
+        use std::{cell::Cell, rc::Rc};
+
+        let video = get_test_video();
+        let temp = tempfile::tempdir().expect("temp");
+        let mut config = default_config(&video, &temp.path().join("out.mkv"), temp.path());
+        config.condor.scenes = video.mock_scenes(&config.condor.encoder);
+        config.condor.sequence_config.zoner = Some(ZonerConfig {
+            zones: vec![parse_zone("0 121 --maximum-frames 96").expect("zone")],
+        });
+        let cancellation = Cancellation::default();
+        let saves = Rc::new(Cell::new(0));
+        let mut job = config
+            .instantiate_condor(
+                Box::new({
+                    let controls = cancellation.clone();
+                    let saves = Rc::clone(&saves);
+                    move |_| {
+                        saves.set(saves.get() + 1);
+                        controls.request()?;
+                        controls.request()
+                    }
+                }),
+                &cancellation,
+            )
+            .expect("open fixture");
+
+        let stopped = Cancellation::default();
+        stopped.request().expect("graceful before admission");
+        let error = Zoner::run(&mut job, stopped).expect_err("do not apply a zone after shutdown");
+        assert_eq!(
+            error.downcast_ref::<Cancelled>(),
+            Some(&Cancelled::Graceful)
+        );
+        assert_eq!(saves.get(), 0);
+        assert!(job.scenes[0].sequence_data.zoner.lifecycle.is_none());
+
+        let error =
+            Zoner::run(&mut job, cancellation).expect_err("force during save is not success");
+        assert_eq!(error.downcast_ref::<Cancelled>(), Some(&Cancelled::Forced));
+        assert_eq!(saves.get(), 1);
+    }
+
+    #[serial]
+    #[test]
     fn zoner_removing_length_cap_restores_original_partitions_encoder_and_subscenes() {
         check_direct_zoner_publication(3);
     }

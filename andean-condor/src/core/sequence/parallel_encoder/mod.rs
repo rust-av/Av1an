@@ -34,6 +34,7 @@ pub(super) use lifecycle::TempOutput;
 pub use task::{ParallelEncoderResult, Task};
 
 /// Per-scene dispatch policy. A try includes every pass and output validation.
+/// Defaults to three total tries with frame-count validation enabled.
 #[derive(Clone, Copy, Debug)]
 pub struct ParallelEncoderOptions {
     pub max_tries: u32,
@@ -360,7 +361,11 @@ where
         }
         let mut configured_input =
             if self.input.is_none() && !tasks.is_empty() && !cancelled.is_cancelled() {
-                config.input.as_ref().map(Input::from_data).transpose()?
+                config
+                    .input
+                    .as_ref()
+                    .map(|input| Input::ensure_indexed(input, |_| {}, &cancelled.active()))
+                    .transpose()?
             } else {
                 None
             };

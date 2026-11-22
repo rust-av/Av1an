@@ -31,7 +31,8 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
     ) -> Result<((), Vec<anyhow::Error>)>;
-    /// Prepare a sequence. Check the job token before opening inputs or creating outputs.
+    /// Prepare a sequence. Check the job token before opening inputs or creating
+    /// outputs, and report forced cancellation even if preparation succeeded.
     fn initialize(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
@@ -40,7 +41,8 @@ where
     ) -> Result<((), Vec<anyhow::Error>)>;
 
     /// Run a sequence using the job token. Stop admitting work on graceful
-    /// cancellation; on force, join workers and reap owned children before returning.
+    /// cancellation. On force, join workers, reap owned children, and return
+    /// [`Cancelled::Forced`](crate::utils::cancellation::Cancelled::Forced).
     fn execute(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,

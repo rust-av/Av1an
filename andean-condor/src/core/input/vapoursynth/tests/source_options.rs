@@ -38,8 +38,13 @@ fn routes(method: fn(Option<u8>) -> VapourSynthImportMethod, additional_readers:
             };
             // Guard the actual source planner before a dropped BestSource cache
             // option could create a default index outside the owned fixture.
-            let (_, lines) = source_script(&fixture.source, &method(track), Some(&cache))
-                .expect("source options");
+            let (_, lines) = source_script(
+                &fixture.source,
+                &method(track),
+                Some(&cache),
+                &Cancellation::default(),
+            )
+            .expect("source options");
             let options = recorded(lines);
             let key = if matches!(method(track), VapourSynthImportMethod::BestSource { .. }) {
                 "cachepath"
@@ -114,14 +119,15 @@ fn check_existing_dg_source_planning() {
         (&media, None, &default),
         (&explicit, None, &explicit),
     ] {
-        let source =
-            source_path(path, &method, cache).expect("reuse existing .dgi; no indexer installed");
+        let source = source_path(path, &method, cache, &Cancellation::default())
+            .expect("reuse existing .dgi; no indexer installed");
         assert_eq!(&source, expected);
         let call = SourceCall::new(&method);
         let (script, variables) = call.script(&source, cache).expect("direct source script");
         let expected = serde_json::json!([{"source": expected.display().to_string()}]);
         assert_eq!(recorded_script(&script, &variables), expected);
-        let (_, lines) = source_script(path, &method, cache).expect("generated source route");
+        let (_, lines) = source_script(path, &method, cache, &Cancellation::default())
+            .expect("generated source route");
         assert_eq!(recorded(lines), expected);
         assert!(
             call.cache_argument.is_none(),

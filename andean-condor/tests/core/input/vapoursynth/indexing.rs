@@ -8,6 +8,49 @@ const SAMPLE: &[u8] = include_bytes!("../../../../src/vapoursynth/plugins/dginde
 #[path = "fixtures/indexing_support.rs"]
 mod fixture;
 
+#[test]
+fn force_at_dg_open_does_not_retry_indexing_with_a_fresh_token() {
+    use andean_condor::{
+        core::input::{Input, OpenProgress},
+        models::input::{Input as InputModel, VapourSynthImportMethod},
+    };
+
+    let temp = tempfile::tempdir().expect("DG fixture");
+    let source = temp.path().join("source.mkv");
+    let cache = source.with_extension("dgi");
+    fs::write(&source, b"original media").expect("source");
+    fs::write(&cache, SAMPLE).expect("complete index");
+    let input = InputModel::VapourSynth {
+        path: source,
+        import_method: VapourSynthImportMethod::DGDecNV {
+            dgindexnv_executable: Some(temp.path().join("must-not-run")),
+        },
+        cache_path: Some(cache.clone()),
+        filters: vec![],
+    };
+    let cancellation = Cancellation::default();
+
+    let result = Input::ensure_indexed(
+        &input,
+        |progress| {
+            if matches!(progress, OpenProgress::Opening) {
+                fs::remove_file(&cache).expect("simulate removal after successful index lookup");
+                cancellation.request().expect("graceful");
+                cancellation.request().expect("force");
+            }
+        },
+        &cancellation,
+    );
+
+    let error = result.err().expect("forced before opening");
+    assert_eq!(
+        error.downcast_ref::<Cancelled>(),
+        Some(&Cancelled::Forced),
+        "{error:#}"
+    );
+    assert!(!cache.exists());
+}
+
 macro_rules! index_cases {
     ($name:ident, [$($case:literal),+ $(,)?]) => {
         #[test]

@@ -328,7 +328,8 @@ fn report_result(
 }
 
 impl ParallelEncoder {
-    /// Explicit attempt/count policy. Non-replayable scenes with more than one
+    /// Encodes scenes with the given attempt and validation policy, joining
+    /// all workers before returning. Non-replayable scenes with more than one
     /// attempt capture one anonymous Y4M disk spool before the first encode.
     #[allow(clippy::too_many_arguments)]
     #[inline]
