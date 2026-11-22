@@ -212,7 +212,8 @@ mod tests {
             let mut pass = scene.sequence_data.target_quality.passes[0].clone();
             pass.backend = Some(backend.clone());
             pass.provenance = Some(ResultProvenance::new(
-                provenance::target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
+                provenance::Admission::default()
+                    .target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
                     .expect("current probe context"),
             ));
             scene.sequence_data.target_quality.passes[0] = pass;

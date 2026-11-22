@@ -215,7 +215,7 @@ fn check_child(accepted: bool) {
         if accepted && backend != BackendPreference::CpuOnly {
             break;
         }
-        let result = VmafScorer::new(VmafConfig::new().with_backend(backend), format);
+        let result = VmafScorer::new(VmafConfig::default().with_backend(backend), format);
         if accepted {
             let mut scorer = result.expect("verified archive runtime accepted");
             let bytes = [128u8; 64];

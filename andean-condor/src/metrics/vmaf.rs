@@ -62,7 +62,7 @@ pub fn scorer_config(metric: &QualityMetric) -> Result<ScorerConfig> {
         |path| VmafModel::Path(path.clone()),
     );
 
-    Ok(ScorerConfig::new()
+    Ok(ScorerConfig::default()
         .with_model(model)
         .with_threads(vmaf_thread_count(*threads))
         // Try CUDA when libvmaf was built with it, and fall back to CPU
@@ -135,57 +135,26 @@ fn stock_model(features: &[VmafFeature]) -> VmafModel {
 ///
 /// # Progress
 ///
-/// `on_score` is called with `(position in the selection, score)` for each
-/// scored frame after successful finalization, in selection order. For progress
-/// during decoding/submission, use [`score_probed_frames_with_progress`].
-///
-/// # Errors
-///
-/// Returns an error when the two clips disagree on resolution or bit depth,
-/// when libvmaf is unavailable, when seeking or decoding fails, or when a
-/// selected frame lies past the end of the encoded output.
-#[inline]
-pub fn score_probed_frames(
-    reference: &mut av_decoders::Decoder,
-    distorted: &mut av_decoders::Decoder,
-    config: &QualityMetric,
-    selected: &[usize],
-    indexing: OutputIndexing,
-    cancelled: Option<&AtomicBool>,
-    on_score: impl FnMut(usize, f64),
-) -> Result<Vec<f64>> {
-    score_probed_frames_with_progress(
-        reference,
-        distorted,
-        config,
-        selected,
-        indexing,
-        cancelled,
-        |_| {},
-        on_score,
-    )
-}
-
-/// Score selected frames, reporting submission independently of final scores.
-///
 /// `on_submitted(position)` runs only after successful acceptance of a pair,
-/// before finalization. `on_score(position, score)` runs only after successful
+/// before finalization. `on_score(position, score)` runs after successful
 /// finalization and collection of every score. Positions index `selected`, not
 /// source frames. Empty selections invoke neither native code nor callbacks.
 ///
 /// # Errors
 ///
-/// Reports configuration, decode, cancellation and native errors as in
-/// [`score_probed_frames`]. Failed/rejected pairs have no submission callback;
+/// Returns an error when the two clips disagree on resolution or bit depth,
+/// when libvmaf is unavailable, when seeking or decoding fails, or when a
+/// selected frame lies past the end of the encoded output. Failed or rejected
+/// pairs have no submission callback;
 /// finalization/query failures have no score callbacks or partial result vector.
 /// Incomplete/non-finite native results are measurement errors; all values are
 /// validated before the first score callback.
 #[inline]
 #[expect(
     clippy::too_many_arguments,
-    reason = "preserve the score-only API while separating submitted progress"
+    reason = "submission progress and final scores have separate callbacks"
 )]
-pub fn score_probed_frames_with_progress(
+pub fn score_probed_frames(
     reference: &mut av_decoders::Decoder,
     distorted: &mut av_decoders::Decoder,
     config: &QualityMetric,

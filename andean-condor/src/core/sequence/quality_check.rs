@@ -543,7 +543,7 @@ impl QualityCheck {
         // Each score is reported as the metric produces it, mapped back to its
         // global frame number so the UI's per-frame report lines up with the
         // clip.
-        let scores = metrics::score_vmaf_frames_with_progress(
+        let scores = metrics::vmaf::score_probed_frames(
             reference,
             distorted.decoder(),
             &config.metric,

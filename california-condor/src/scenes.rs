@@ -625,7 +625,7 @@ fn inspect_changes(
                 let path = directory.join(format!(
                     "{}.{}",
                     ParallelEncoder::scene_id(index),
-                    scene.encoder.output_extension()
+                    scene.encoder.base().output_extension()
                 ));
                 let present = match path.symlink_metadata() {
                     Ok(_) => true,
@@ -640,7 +640,8 @@ fn inspect_changes(
                 }
                 if present
                     && before.is_some_and(|old| {
-                        old.encoder.output_extension() == scene.encoder.output_extension()
+                        old.encoder.base().output_extension()
+                            == scene.encoder.base().output_extension()
                     })
                     && !old_claims.contains(&index)
                 {

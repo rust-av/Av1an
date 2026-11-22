@@ -235,7 +235,7 @@ impl Configuration {
             let path = pe.scenes_directory.join(format!(
                 "{}.{}",
                 andean_condor::core::sequence::parallel_encoder::ParallelEncoder::scene_id(index),
-                scene.encoder.output_extension()
+                scene.encoder.base().output_extension()
             ));
             let data = &scene.sequence_data.parallel_encoder;
             if data.bytes.is_some()
@@ -368,14 +368,6 @@ impl Configuration {
         Ok(configuration)
     }
 
-    /// Atomically save via an owned unique sibling; no fsync durability guarantee.
-    /// Callers must retain a [`JobLock`] acquired before loading the snapshot.
-    #[inline]
-    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        Self::save_data(self, path)?;
-        Ok(())
-    }
-
     /// Checks global and per-scene encoders before CLI edits are saved or workers start.
     pub(crate) fn validate_encoder_settings(&self) -> Result<()> {
         self.condor.sequence_config.parallel_encoder.validate()?;
@@ -399,19 +391,20 @@ impl Configuration {
         Ok(())
     }
 
-    /// See [`Self::save`]; this does not acquire or reacquire a job lock.
+    /// Atomically save via an owned unique sibling; no fsync durability guarantee.
+    /// Callers must retain a [`JobLock`] acquired before loading the snapshot.
     #[inline]
-    pub fn save_data(data: &Configuration, path: &Path) -> Result<(), ConfigError> {
-        data.validate_target_quality().map_err(|error| {
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        self.validate_target_quality().map_err(|error| {
             ConfigError::Save(std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
         })?;
-        data.condor.sequence_config.parallel_encoder.validate().map_err(|error| {
+        self.condor.sequence_config.parallel_encoder.validate().map_err(|error| {
             ConfigError::Save(std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
         })?;
         let mut buffer = vec![];
         let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
         let mut serializer = serde_json::Serializer::with_formatter(&mut buffer, formatter);
-        data.serialize(&mut serializer).map_err(ConfigError::Serialize)?;
+        self.serialize(&mut serializer).map_err(ConfigError::Serialize)?;
         let path = normalize_config_path(path).map_err(ConfigError::Save)?;
         let staged = stage_config(&buffer, &path).map_err(ConfigError::Save)?;
         publish_config(staged, &path).map_err(ConfigError::Save)?;

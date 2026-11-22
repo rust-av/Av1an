@@ -23,7 +23,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Requires libvmaf at runtime; see the crate README for install instructions.
-//! let config = VmafConfig::new().with_threads(4);
+//! let config = VmafConfig::default().with_threads(4);
 //!
 //! let reference = Decoder::from_file("reference.mkv")?;
 //! let distorted = Decoder::from_file("distorted.mkv")?;
@@ -67,7 +67,7 @@ pub use scorer::{FrameScore, PlaneSet, PlaneSource, VideoFormat, VmafScorer};
 #[inline]
 #[must_use]
 pub fn libvmaf_version() -> Option<&'static str> {
-    VmafScorer::libvmaf_version()
+    ffi::VmafApi::load().ok().map(|api| api.version)
 }
 
 /// Whether VMAF scoring is available on this system.
@@ -76,7 +76,7 @@ pub fn libvmaf_version() -> Option<&'static str> {
 #[inline]
 #[must_use]
 pub fn is_available() -> bool {
-    VmafScorer::is_available()
+    ffi::VmafApi::load().is_ok()
 }
 
 /// Whether the loaded libvmaf exposes a usable CUDA interface.

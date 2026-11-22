@@ -8,7 +8,7 @@ fn cvvdp_temporal_disable_and_discontinuity_reset_flags_are_independent() {
             let f = FmetricsConfig::new(FmetricsMetric::Cvvdp)
                 .with_reset_on_discontinuity(gap)
                 .with_disable_temporal(disabled);
-            let v = VshipConfig::new()
+            let v = VshipConfig::default()
                 .with_reset_on_discontinuity(gap)
                 .with_disable_temporal(disabled);
             assert_eq!(f.reset_on_discontinuity, gap);
@@ -26,5 +26,5 @@ fn cvvdp_temporal_disable_and_discontinuity_reset_flags_are_independent() {
         }
     }
     assert!(!FmetricsConfig::new(FmetricsMetric::Cvvdp).disable_temporal);
-    assert!(!VshipConfig::new().cvvdp().disable_temporal);
+    assert!(!VshipConfig::default().cvvdp().disable_temporal);
 }

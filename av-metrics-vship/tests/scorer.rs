@@ -41,10 +41,10 @@ fn repeated_default_device_queries_return_the_same_option() {
 
 #[test]
 fn availability_is_total_and_never_panics() {
-    match VshipScorer::is_available() {
-        true => assert!(VshipScorer::libvship_version().is_some()),
-        false => assert_eq!(VshipScorer::libvship_version(), None),
+    match av_metrics_vship::is_available() {
+        true => assert!(av_metrics_vship::libvship_version().is_some()),
+        false => assert_eq!(av_metrics_vship::libvship_version(), None),
     }
-    let _ = VshipScorer::device_name();
+    let _ = av_metrics_vship::device_name();
     let _ = VshipScorer::device_info();
 }

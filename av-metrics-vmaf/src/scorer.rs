@@ -719,22 +719,6 @@ impl VmafScorer {
         self.format
     }
 
-    /// Whether libvmaf is available on this system.
-    ///
-    /// Cheap to call: the library is resolved once and cached.
-    #[inline]
-    #[must_use]
-    pub fn is_available() -> bool {
-        ffi::VmafApi::load().is_ok()
-    }
-
-    /// The runtime libvmaf version string, if available.
-    #[inline]
-    #[must_use]
-    pub fn libvmaf_version() -> Option<&'static str> {
-        ffi::VmafApi::load().ok().map(|api| api.version)
-    }
-
     /// Score every matching frame pair from the two decoders.
     ///
     /// Returns one [`FrameScore`] per frame. Scores and callbacks are delivered

@@ -220,7 +220,7 @@ mod tests {
                         fmetrics::scorer_config(&metric(disabled), rate).unwrap(),
                     ] {
                         clear();
-                        let result = FmetricsScorer::new(config, color);
+                        let result = FmetricsScorer::new(config, color, color);
                         let invalid = matches!(
                             result,
                             Err(av_metrics_fmetrics::FmetricsError::InvalidConfiguration { .. })
@@ -232,7 +232,7 @@ mod tests {
                         }
                     }
                     for config in [
-                        VshipConfig::new()
+                        VshipConfig::default()
                             .with_metric(VshipMetric::Cvvdp)
                             .with_fps(rate)
                             .with_disable_temporal(disabled),
@@ -271,7 +271,7 @@ mod tests {
                     if let Some(rate) = rate {
                         config = config.with_frame_rate(rate);
                     }
-                    let mut scorer = FmetricsScorer::new(config, color).unwrap();
+                    let mut scorer = FmetricsScorer::new(config, color, color).unwrap();
                     let planes = av_metrics_fmetrics::PlaneSet::from_frame(&frame).unwrap();
                     scorer.submit_pair_temporal(&planes, &planes).unwrap();
                     drop(scorer);
@@ -281,7 +281,7 @@ mod tests {
                         calls()
                     );
                     clear();
-                    let mut config = VshipConfig::new()
+                    let mut config = VshipConfig::default()
                         .with_metric(VshipMetric::Cvvdp)
                         .with_disable_temporal(disabled);
                     if let Some(rate) = rate {
@@ -356,6 +356,7 @@ mod tests {
                         FmetricsScorer::new(
                             FmetricsConfig::new(metric).with_threads(1).with_frame_rate(rate),
                             color,
+                            color,
                         )
                         .unwrap(),
                     );
@@ -366,7 +367,7 @@ mod tests {
                     clear();
                     drop(
                         VshipScorer::new(
-                            VshipConfig::new()
+                            VshipConfig::default()
                                 .with_metric(metric)
                                 .with_handler_threads(1)
                                 .with_fps(rate),
@@ -430,7 +431,7 @@ mod tests {
                         .with_reset_on_discontinuity(gap)
                         .with_disable_temporal(disabled);
                     let run = |indices: &[usize]| {
-                        let mut scorer = FmetricsScorer::new(config.clone(), color).unwrap();
+                        let mut scorer = FmetricsScorer::new(config.clone(), color, color).unwrap();
                         indices
                             .iter()
                             .map(|&i| {
@@ -465,7 +466,7 @@ mod tests {
                     );
                 } else {
                     clear();
-                    let config = VshipConfig::new()
+                    let config = VshipConfig::default()
                         .with_metric(VshipMetric::Cvvdp)
                         .with_gpu_id(0)
                         .with_fps(24.0)
@@ -500,20 +501,12 @@ mod tests {
                                 }
                                 assert!(
                                     scorer
-                                        .submit_pair_raw_with_reset(
-                                            raw(&frames[i]),
-                                            raw(&malformed),
-                                            true
-                                        )
+                                        .submit_pair_raw(raw(&frames[i]), raw(&malformed), true)
                                         .is_err()
                                 );
                                 assert!(
                                     scorer
-                                        .submit_pair_raw_with_reset(
-                                            raw(&malformed),
-                                            raw(&frames[i]),
-                                            true
-                                        )
+                                        .submit_pair_raw(raw(&malformed), raw(&frames[i]), true)
                                         .is_err()
                                 );
                                 assert_eq!(scorer.submitted().unwrap(), submitted);

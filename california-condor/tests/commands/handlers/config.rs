@@ -1576,7 +1576,7 @@ mod output {
                         andean_condor::core::sequence::parallel_encoder::ParallelEncoder::scene_id(
                             0
                         ),
-                        config.condor.scenes[0].encoder.output_extension()
+                        config.condor.scenes[0].encoder.base().output_extension()
                     ));
                         config.condor.output.path = chunk;
                     },

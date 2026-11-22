@@ -149,10 +149,10 @@ fn owning_stages_refuse_uncertified_legacy_results_without_mutation_or_native_wo
                 condor.sequence_config.quality_check.as_mut().expect("QC").metric = metric;
             }
         }
-        let chunk = temp
-            .path()
-            .join("scenes")
-            .join(format!("00000.{}", condor.encoder.output_extension()));
+        let chunk = temp.path().join("scenes").join(format!(
+            "00000.{}",
+            condor.encoder.base().output_extension()
+        ));
         // An unrelated but correctly decodable three-frame chunk is not provenance.
         std::fs::copy(temp.path().join("source.mkv"), &chunk).expect("unrelated chunk");
         if owner == "PE" || owner == "concat" {

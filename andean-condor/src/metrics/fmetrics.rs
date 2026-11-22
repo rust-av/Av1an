@@ -220,9 +220,8 @@ pub(super) fn score_probed_frames_from(
     let distorted_color =
         ColorInfo::from_details(&distorted_details).context("distorted color metadata")?;
 
-    let mut scorer =
-        FmetricsScorer::new_with_colors(fmetrics_config, reference_color, distorted_color)
-            .map_err(describe_error)?;
+    let mut scorer = FmetricsScorer::new(fmetrics_config, reference_color, distorted_color)
+        .map_err(describe_error)?;
     let setup = opened.elapsed();
 
     let total = selected.len();

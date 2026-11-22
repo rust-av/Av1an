@@ -92,7 +92,7 @@ fn require_cuda_feature_validation_precedes_injected_loader_failure() {
     }
     let loads = std::cell::Cell::new(0);
     let error = VmafScorer::new_with_loader(
-        VmafConfig::new().with_backend(BackendPreference::RequireCuda),
+        VmafConfig::default().with_backend(BackendPreference::RequireCuda),
         VideoFormat {
             width: 8,
             height: 8,
@@ -564,12 +564,12 @@ fn check_attempt() {
         };
     let model_path = std::path::PathBuf::from(std::env::var_os("VMAF_LIB_DIR").expect("fixture"))
         .join("vmaf_v0.6.1.json");
-    let mut config = VmafConfig::new()
+    let mut config = VmafConfig::default()
         .with_threads(2)
         .with_backend(preference)
         .with_feature(VmafFeature::Psnr);
     if stage != 14 {
-        config = config.with_model_path(model_path);
+        config = config.with_model(crate::config::VmafModel::Path(model_path));
     }
     let format = VideoFormat {
         width: 8,
@@ -783,13 +783,13 @@ fn check_partial_setup_attempt() {
     });
     let model = std::path::PathBuf::from(std::env::var_os("VMAF_LIB_DIR").expect("fixture"))
         .join("vmaf_v0.6.1.json");
-    let mut config = VmafConfig::new().with_threads(2).with_backend(if auto {
+    let mut config = VmafConfig::default().with_threads(2).with_backend(if auto {
         BackendPreference::Auto
     } else {
         BackendPreference::CpuOnly
     });
     if !matches!(stage, 14 | 16) {
-        config = config.with_model_path(&model);
+        config = config.with_model(crate::config::VmafModel::Path(model.clone()));
     }
     let helper = matches!(stage, 17 | 18).then(|| {
         std::thread::spawn(move || {

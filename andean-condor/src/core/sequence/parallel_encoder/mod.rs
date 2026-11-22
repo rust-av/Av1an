@@ -248,7 +248,7 @@ where
             let output = config.scenes_directory.join(format!(
                 "{}.{}",
                 Self::scene_id(index),
-                scene.encoder.output_extension()
+                scene.encoder.base().output_extension()
             ));
             let data = scene.sequence_data.get_parallel_encoder()?;
             if data.bytes.is_some()
@@ -291,7 +291,7 @@ where
             let output = scenes_directory.join(format!(
                 "{}.{}",
                 Self::scene_id(original_index),
-                scene.encoder.output_extension()
+                scene.encoder.base().output_extension()
             ));
             let data = scene.sequence_data.get_parallel_encoder_mut()?;
             let recorded =
@@ -445,14 +445,20 @@ where
             save_callback,
         } = condor;
         let input_data = condor_input.as_data();
-        let before = provenance::measurement_inputs(&input_model, None, None)?;
+        let before =
+            provenance::Admission::default().measurement_inputs(&input_model, None, None)?;
         let input = self.input.as_mut().or(configured_input.as_mut()).unwrap_or(condor_input);
 
         let (results_tx, results_rx) = crossbeam_channel::unbounded();
         let finished_scenes = Arc::new(crate::utils::semaphore::Semaphore::new(0));
         let mut on_results = |results: Vec<ParallelEncoderResult>| -> Result<()> {
             ensure!(
-                before == provenance::measurement_inputs(&input_model, None, None)?,
+                before
+                    == provenance::Admission::default().measurement_inputs(
+                        &input_model,
+                        None,
+                        None
+                    )?,
                 "Encoding input changed during processing; recompute or use a new job"
             );
             let mut staged = scenes.clone();
@@ -466,7 +472,7 @@ where
                     let path = config.scenes_directory.join(format!(
                         "{}.{}",
                         Self::scene_id(encoder_result.scene),
-                        scene.encoder.output_extension()
+                        scene.encoder.base().output_extension()
                     ));
                     let context = publication.encode_context(
                         &input_model,

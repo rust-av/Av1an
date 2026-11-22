@@ -1341,7 +1341,8 @@ mod scene_encoders {
             let mut pass = scene.sequence_data.target_quality.passes[0].clone();
             pass.backend = Some(MetricBackend::current(andean_condor::metrics::Engine::Vmaf));
             pass.provenance = Some(ResultProvenance::new(
-                provenance::target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
+                provenance::Admission::default()
+                    .target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
                     .expect("explicit current probe fixture"),
             ));
             scene.sequence_data.target_quality.passes[0] = pass;
@@ -1353,16 +1354,17 @@ mod scene_encoders {
             let chunk = pe.scenes_directory.join("00000.264");
             fs::write(&chunk, [0_u8; 123])
                 .expect("synthetic current chunk, not native integrity acceptance");
-            let context = provenance::encode_context(
-                pe.input.as_ref().unwrap_or(&config.condor.input),
-                input,
-                tq.metric_input.as_ref(),
-                scene,
-                Some(tq),
-                &chunk,
-                0,
-            )
-            .expect("explicit current encode fixture");
+            let context = provenance::Admission::default()
+                .encode_context(
+                    pe.input.as_ref().unwrap_or(&config.condor.input),
+                    input,
+                    tq.metric_input.as_ref(),
+                    scene,
+                    Some(tq),
+                    &chunk,
+                    0,
+                )
+                .expect("explicit current encode fixture");
             scene.sequence_data.parallel_encoder.provenance = Some(ResultProvenance::new(context));
             scene.sequence_data.parallel_encoder.started_on = Some(100);
             scene.sequence_data.parallel_encoder.completed_on = Some(200);

@@ -511,35 +511,15 @@ pub struct FrameScore {
 impl FrameScore {
     /// The value to pool or report for this pair.
     ///
-    /// For Butteraugli this is [`Self::butteraugli_value`] rather than a fixed
-    /// field, because which norm is the headline depends on the configuration
-    /// and not on the metric: `q_norm` sets the exponent libvship
-    /// minimises, while the VapourSynth plugin reports `norm_inf` unless a
-    /// norm was requested explicitly.
+    /// For Butteraugli, select the configured Q-norm with `use_q_norm` or
+    /// the infinity norm otherwise (the VapourSynth plugin's default).
     #[inline]
     #[must_use]
-    pub const fn value(&self, metric: VshipMetric) -> Option<f64> {
+    pub const fn value(&self, metric: VshipMetric, use_q_norm: bool) -> Option<f64> {
         match metric {
-            VshipMetric::Butteraugli => self.butteraugli_value(true),
+            VshipMetric::Butteraugli if use_q_norm => self.norm_q,
+            VshipMetric::Butteraugli => self.norm_inf,
             VshipMetric::Ssimulacra2 | VshipMetric::Cvvdp => self.score,
-        }
-    }
-
-    /// The value to pool or report for Butteraugli.
-    ///
-    /// With `q_norm` set, libvship's Q-norm is the quantity the metric
-    /// minimises and is what should be pooled. Without it, the reported
-    /// value is the infinity norm: that is what the VapourSynth plugin
-    /// exposes as `BUTTERAUGLI_INFNorm` when no norm is requested, and it
-    /// is what `av-metrics-vship`'s caller is expected to pool, so that
-    /// both paths agree.
-    #[inline]
-    #[must_use]
-    pub const fn butteraugli_value(&self, use_q_norm: bool) -> Option<f64> {
-        if use_q_norm {
-            self.norm_q
-        } else {
-            self.norm_inf
         }
     }
 
@@ -1081,39 +1061,6 @@ impl VshipScorer {
         1
     }
 
-    /// Whether libvship is available on this system.
-    ///
-    /// This needs more than a successful `dlopen`: `Vship_GetVersion` must
-    /// answer and `Vship_GPUFullCheck` must pass on a device. Any of those
-    /// failing reports unavailability rather than panicking.
-    ///
-    /// The resolved default device's successful capability check is shared with
-    /// version requests and default constructors. Failed checks may retry;
-    /// runtime initialization or scoring errors do not invalidate that success.
-    #[inline]
-    #[must_use]
-    pub fn is_available() -> bool {
-        default_gpu_id().is_some_and(|gpu_id| availability(gpu_id).is_ok())
-    }
-
-    /// The runtime libvship version string, if available.
-    ///
-    /// Borrows process-lifetime storage and shares the default capability cache
-    /// with [`Self::is_available`].
-    #[inline]
-    #[must_use]
-    pub fn libvship_version() -> Option<&'static str> {
-        default_gpu_id().and_then(|gpu_id| availability(gpu_id).ok())
-    }
-
-    /// The name of the device libvship would use, if it is available.
-    #[inline]
-    #[must_use]
-    pub fn device_name() -> Option<String> {
-        let api = VshipApi::load().ok()?;
-        api.device_info(default_gpu_id()?).ok().map(|info| info.name())
-    }
-
     /// What libvship reports about the device it would use.
     ///
     /// # Errors
@@ -1211,7 +1158,8 @@ impl VshipScorer {
     /// CVVDP is assumed cumulative (the native default): return the final
     /// score regardless of `method`. For `disable_temporal=true`, extract
     /// [`FrameScore::value`] for each frame and call [`PoolMethod::apply`].
-    /// Other metrics retain their configured per-frame pooling.
+    /// Other metrics use per-frame pooling. For Butteraugli, `use_q_norm`
+    /// selects the configured Q-norm instead of the infinity norm.
     ///
     /// # Errors
     ///
@@ -1223,40 +1171,17 @@ impl VshipScorer {
         scores: &[FrameScore],
         metric: VshipMetric,
         method: PoolMethod,
+        use_q_norm: bool,
     ) -> Result<f64, VshipError> {
         if metric == VshipMetric::Cvvdp {
-            return scores.last().and_then(|score| score.value(metric)).ok_or_else(|| {
-                VshipError::InvalidConfiguration {
+            return scores.last().and_then(|score| score.value(metric, use_q_norm)).ok_or_else(
+                || VshipError::InvalidConfiguration {
                     reason: "final cumulative CVVDP score is missing".to_owned(),
-                }
-            });
+                },
+            );
         }
-        let values: Vec<f64> = scores.iter().filter_map(|score| score.value(metric)).collect();
-
-        method.apply(&values)
-    }
-
-    /// Pool Butteraugli using an explicitly chosen norm.
-    ///
-    /// [`Self::pool`] always takes the Q-norm for Butteraugli, which is right
-    /// when `q_norm` is configured. A caller that leaves the norm unset
-    /// needs [`FrameScore::norm_inf`] instead, to match what the
-    /// VapourSynth plugin reports, and this is the entry point that selects
-    /// it.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VshipError::InvalidConfiguration`] if no score produced a
-    /// value for `method`.
-    #[inline]
-    pub fn pool_butteraugli(
-        scores: &[FrameScore],
-        use_q_norm: bool,
-        method: PoolMethod,
-    ) -> Result<f64, VshipError> {
-        let values: Vec<f64> =
-            scores.iter().filter_map(|score| score.butteraugli_value(use_q_norm)).collect();
-
+        let values: Vec<_> =
+            scores.iter().filter_map(|score| score.value(metric, use_q_norm)).collect();
         method.apply(&values)
     }
 
@@ -1316,7 +1241,7 @@ impl VshipScorer {
             PlaneSource::from_plane(d_v)?,
         ];
 
-        self.submit_planes(reference_planes, distorted_planes, false)
+        self.submit_pair_raw(reference_planes, distorted_planes, false)
     }
 
     /// Submit one frame pair from raw plane sources.
@@ -1325,31 +1250,15 @@ impl VshipScorer {
     /// VapourSynth `Frame` is the case that matters: its planes are already
     /// strided buffers, so pointing at them directly avoids the per-plane copy
     /// that `av_decoders` performs to produce a `v_frame::Frame`.
+    /// Set `reset_temporal` at an external frame-index gap. Both inputs
+    /// are validated before any native history is reset.
     ///
     /// # Errors
     ///
     /// Returns [`VshipError::InputMismatch`] for configured geometry/storage
-    /// mismatches and [`VshipError::CallFailed`] if libvship rejects the pair.
+    /// mismatches and [`VshipError::CallFailed`] if libvship rejects the reset or pair.
     #[inline]
     pub fn submit_pair_raw(
-        &mut self,
-        reference: PlaneSet<'_>,
-        distorted: PlaneSet<'_>,
-    ) -> Result<FrameScore, VshipError> {
-        self.submit_pair_raw_with_reset(reference, distorted, false)
-    }
-
-    /// Submit borrowed planes, optionally clearing history for an external index gap.
-    ///
-    /// Like [`Self::reset_temporal`] followed by [`Self::submit_pair_raw`], but
-    /// validates BOTH sides before resetting any native history. The caller still
-    /// decides when its external frame selection has a discontinuity.
-    ///
-    /// # Errors
-    /// Returns the validation/compute errors of [`Self::submit_pair_raw`] or a
-    /// reset error, without resetting history for an invalid pair.
-    #[inline]
-    pub fn submit_pair_raw_with_reset(
         &mut self,
         reference: PlaneSet<'_>,
         distorted: PlaneSet<'_>,
@@ -1448,7 +1357,7 @@ impl VshipScorer {
 /// Returns [`VshipError::LibraryNotFound`] when the library cannot be loaded,
 /// and [`VshipError::CallFailed`] when `Vship_GPUFullCheck` fails.
 #[inline]
-fn availability(gpu_id: u32) -> Result<&'static str, VshipError> {
+pub(crate) fn availability(gpu_id: u32) -> Result<&'static str, VshipError> {
     static CACHED_VERSION: OnceLock<String> = OnceLock::new();
 
     let api = VshipApi::load()?;
@@ -1495,7 +1404,7 @@ mod tests {
         });
         for method in [PoolMethod::Mean, PoolMethod::Min, PoolMethod::Max] {
             assert_eq!(
-                VshipScorer::pool(&scores, VshipMetric::Cvvdp, method).unwrap(),
+                VshipScorer::pool(&scores, VshipMetric::Cvvdp, method, true).unwrap(),
                 4.0
             );
         }
@@ -1514,18 +1423,18 @@ mod tests {
         {
             // The explicit independent-frame route uses the same real FrameScores.
             let values: Vec<_> =
-                scores.iter().map(|s| s.value(VshipMetric::Cvvdp).unwrap()).collect();
+                scores.iter().map(|s| s.value(VshipMetric::Cvvdp, true).unwrap()).collect();
             assert_eq!(method.apply(&values).unwrap(), independent);
             assert_eq!(
-                VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, method).unwrap(),
+                VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, method, true).unwrap(),
                 independent
             );
             assert_eq!(
-                VshipScorer::pool(&scores, VshipMetric::Butteraugli, method).unwrap(),
+                VshipScorer::pool(&scores, VshipMetric::Butteraugli, method, true).unwrap(),
                 independent * 2.0
             );
             assert_eq!(
-                VshipScorer::pool_butteraugli(&scores, false, method).unwrap(),
+                VshipScorer::pool(&scores, VshipMetric::Butteraugli, method, false).unwrap(),
                 independent * 3.0
             );
         }
@@ -1544,7 +1453,7 @@ mod tests {
             ],
         ] {
             assert!(matches!(
-                VshipScorer::pool(&scores, VshipMetric::Cvvdp, PoolMethod::Mean),
+                VshipScorer::pool(&scores, VshipMetric::Cvvdp, PoolMethod::Mean, true),
                 Err(VshipError::InvalidConfiguration { .. })
             ));
         }
@@ -1658,7 +1567,7 @@ mod tests {
             let format =
                 VideoFormat::from_details(&details(width, height, 8, ChromaSubsampling::Yuv420));
             assert!(matches!(
-                VshipScorer::new(VshipConfig::new(), format, format, None),
+                VshipScorer::new(VshipConfig::default(), format, format, None),
                 Err(VshipError::MalformedFrame { .. })
             ));
         }
@@ -1929,9 +1838,9 @@ mod tests {
             norm_inf: Some(3.0),
         };
 
-        assert_eq!(score.value(VshipMetric::Ssimulacra2), Some(0.9));
-        assert_eq!(score.value(VshipMetric::Cvvdp), Some(0.9));
-        assert_eq!(score.value(VshipMetric::Butteraugli), Some(1.5));
+        assert_eq!(score.value(VshipMetric::Ssimulacra2, true), Some(0.9));
+        assert_eq!(score.value(VshipMetric::Cvvdp, true), Some(0.9));
+        assert_eq!(score.value(VshipMetric::Butteraugli, true), Some(1.5));
         assert_eq!(score.primary(), Some(0.9));
         assert_eq!(FrameScore::default().primary(), None);
     }
@@ -1951,17 +1860,19 @@ mod tests {
             },
         ];
 
-        let mean = VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean).unwrap();
+        let mean =
+            VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean, true).unwrap();
         // Compared with a tolerance, since summing binary fractions rarely
         // lands exactly on 0.8.
         assert!((mean - 0.8).abs() < 1e-12, "mean was {mean}, expected 0.8");
 
-        let mean = VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean).unwrap();
+        let mean =
+            VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean, true).unwrap();
         assert!((mean - 2.0).abs() < 1e-12, "mean was {mean}, expected 2.0");
     }
 
     #[test]
     fn cvvdp_pooling_rejects_empty_scores() {
-        assert!(VshipScorer::pool(&[], VshipMetric::Cvvdp, PoolMethod::Mean).is_err());
+        assert!(VshipScorer::pool(&[], VshipMetric::Cvvdp, PoolMethod::Mean, true).is_err());
     }
 }

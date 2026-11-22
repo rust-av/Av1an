@@ -512,7 +512,7 @@ impl ZoneEncoder {
         let zone_directory =
             tempfile::tempdir_in(&directory).context("Creating owned zone files")?;
         let zone_files = apply_zone_options(&mut encoder, &plan, zone_directory.path())?;
-        let extension = encoder.output_extension();
+        let extension = encoder.base().output_extension();
         let whole_output = directory.join(format!("zone-pass.temp.{extension}"));
         let mut partial = crate::core::process::InterruptedOutput::new(&whole_output, &cancelled);
         let discard = {

@@ -205,7 +205,7 @@ d = core.std.Splice([picture(n,s) for n,s in enumerate([1,30,7])]).std.SetFrameP
         let input = decoder("r.set_output()").expect("fresh GPU fixture");
         let format = av_metrics_vship::VideoFormat::from_details(input.get_video_details());
         let scorer = av_metrics_vship::VshipScorer::new(
-            av_metrics_vship::VshipConfig::new()
+            av_metrics_vship::VshipConfig::default()
                 .with_metric(av_metrics_vship::VshipMetric::Cvvdp)
                 .with_gpu_id(0)
                 .with_fps(24.0),

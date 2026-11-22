@@ -10,8 +10,6 @@ fn aom_frame_count_rejects_signed_nondecimal_and_overflow_values() {
 
 #[test]
 fn vvenc_stats_frame_key_is_parsed_with_optional_totals_and_percentages() {
-    use crate::core::encoder::Encoder;
-
     // Stats.h at a455d51e335c97b40eeea7bb90e3ad52b84c6e83 emits both forms.
     for (line, expected) in [
         (
@@ -38,7 +36,7 @@ fn vvenc_stats_frame_key_is_parsed_with_optional_totals_and_percentages() {
     ] {
         assert_eq!(parse_vvc_frames(line), Some(expected), "parser: {line:?}");
         assert_eq!(
-            Encoder::parse_encoded_frames_base(&EncoderBase::VVenC, line),
+            EncoderBase::VVenC.parse_encoded_frames(line),
             Some(expected),
             "dispatcher: {line:?}"
         );
@@ -47,8 +45,6 @@ fn vvenc_stats_frame_key_is_parsed_with_optional_totals_and_percentages() {
 
 #[test]
 fn vvenc_rejects_malformed_counts_and_non_stats_noise() {
-    use crate::core::encoder::Encoder;
-
     for line in [
         "",
         "60",
@@ -76,7 +72,7 @@ fn vvenc_rejects_malformed_counts_and_non_stats_noise() {
     ] {
         assert_eq!(parse_vvc_frames(line), None, "parser: {line:?}");
         assert_eq!(
-            Encoder::parse_encoded_frames_base(&EncoderBase::VVenC, line),
+            EncoderBase::VVenC.parse_encoded_frames(line),
             None,
             "dispatcher: {line:?}"
         );

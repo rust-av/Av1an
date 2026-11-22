@@ -95,7 +95,7 @@ pub fn scorer_config(metric: &QualityMetric, frame_rate: f32) -> Result<VshipCon
         QualityMetric::SSIMULACRA2 {
             threads, gpu_id, ..
         } => Ok(with_gpu_id(
-            VshipConfig::new()
+            VshipConfig::default()
                 .with_metric(VshipMetric::Ssimulacra2)
                 .with_handler_threads(handler_threads(*threads)),
             *gpu_id,
@@ -108,7 +108,7 @@ pub fn scorer_config(metric: &QualityMetric, frame_rate: f32) -> Result<VshipCon
             ..
         } => {
             let mut config = with_gpu_id(
-                VshipConfig::new()
+                VshipConfig::default()
                     .with_metric(VshipMetric::Butteraugli)
                     .with_handler_threads(handler_threads(*threads)),
                 *gpu_id,
@@ -132,7 +132,7 @@ pub fn scorer_config(metric: &QualityMetric, frame_rate: f32) -> Result<VshipCon
             ..
         } => {
             let mut config = with_gpu_id(
-                VshipConfig::new()
+                VshipConfig::default()
                     .with_metric(VshipMetric::Cvvdp)
                     .with_handler_threads(av_metrics_vship::DEFAULT_HANDLER_THREADS)
                     .with_fps(frame_rate),
@@ -347,12 +347,12 @@ pub(super) fn score_probed_frames_from(
                 && previous.is_some_and(|previous| previous.checked_add(1) != Some(source_index));
 
             let frame_score = scorer
-                .submit_pair_raw_with_reset(reference_planes, distorted_planes, reset_temporal)
+                .submit_pair_raw(reference_planes, distorted_planes, reset_temporal)
                 .map_err(describe_error)?;
 
             let value = match metric {
                 VshipMetric::Butteraugli => frame_score
-                    .butteraugli_value(butteraugli_uses_q_norm)
+                    .value(metric, butteraugli_uses_q_norm)
                     .ok_or({
                         crate::models::sequence::target_quality::types::MeasurementError::Missing {
                             position,
@@ -360,7 +360,7 @@ pub(super) fn score_probed_frames_from(
                     })
                     .context("vship butteraugli result")?,
                 _ => frame_score
-                    .value(metric)
+                    .value(metric, true)
                     .ok_or({
                         crate::models::sequence::target_quality::types::MeasurementError::Missing {
                             position,

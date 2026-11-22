@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use av_metrics_vmaf::{
     Backend, BackendPreference, PlaneSource, PoolMethod, VideoFormat, VmafConfig, VmafError,
-    VmafScorer, is_available, libvmaf_version,
+    VmafModel, VmafScorer, is_available, libvmaf_version,
 };
 use common::{Distortion, SyntheticPair, reference_mean};
 use v_frame::chroma::ChromaSubsampling;
@@ -42,8 +42,8 @@ macro_rules! require_libvmaf {
 /// platform search paths.
 fn model_config() -> VmafConfig {
     std::env::var("VMAF_TEST_MODEL").map_or_else(
-        |_| VmafConfig::new(),
-        |path| VmafConfig::new().with_model_path(path),
+        |_| VmafConfig::default(),
+        |path| VmafConfig::default().with_model(VmafModel::Path(path.into())),
     )
 }
 
@@ -299,9 +299,9 @@ fn native_cpu_model_parse_error_preserves_path_and_allows_later_scoring() {
     };
     for _ in 0..8 {
         let result = VmafScorer::new(
-            VmafConfig::new()
+            VmafConfig::default()
                 .with_backend(BackendPreference::CpuOnly)
-                .with_model_path(&path),
+                .with_model(VmafModel::Path(path.clone())),
             format,
         );
         assert!(
@@ -798,7 +798,7 @@ fn a_missing_model_file_is_reported_before_scoring_starts() {
     };
 
     let result = VmafScorer::new(
-        VmafConfig::new().with_model_path("/nonexistent/model.json"),
+        VmafConfig::default().with_model(VmafModel::Path("/nonexistent/model.json".into())),
         format,
     );
 
@@ -916,8 +916,11 @@ fn scoring_works_with_an_explicit_model_file() {
         chroma_sampling: details.chroma_sampling,
     };
 
-    let mut scorer = VmafScorer::new(VmafConfig::new().with_model_path(&model), format)
-        .expect("scorer should initialise with an explicit model file");
+    let mut scorer = VmafScorer::new(
+        VmafConfig::default().with_model(VmafModel::Path(PathBuf::from(&model))),
+        format,
+    )
+    .expect("scorer should initialise with an explicit model file");
 
     let scores = scorer
         .score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {})
@@ -992,7 +995,10 @@ fn configured_model_directory_reports_load_failures_and_checks_finite_scores_for
             |name| name.to_string_lossy().into_owned(),
         );
 
-        let result = VmafScorer::new(VmafConfig::new().with_model_path(model), format);
+        let result = VmafScorer::new(
+            VmafConfig::default().with_model(VmafModel::Path(model.clone())),
+            format,
+        );
 
         match result {
             Ok(mut scorer) => {
@@ -1075,8 +1081,11 @@ fn native_fixture_scores_match_recorded_vmaf_cli_and_ffmpeg_values() {
         chroma_sampling: details.chroma_sampling,
     };
 
-    let mut scorer = VmafScorer::new(VmafConfig::new().with_model_path(&model), format)
-        .expect("scorer should initialise");
+    let mut scorer = VmafScorer::new(
+        VmafConfig::default().with_model(VmafModel::Path(PathBuf::from(&model))),
+        format,
+    )
+    .expect("scorer should initialise");
 
     let scores = scorer
         .score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {})
@@ -1131,7 +1140,7 @@ fn the_frame_path_agrees_with_the_streaming_path() {
         return;
     };
 
-    let config = VmafConfig::new().with_model_path(&model);
+    let config = VmafConfig::default().with_model(VmafModel::Path(PathBuf::from(&model)));
     let wanted: Vec<usize> = (0..12).collect();
 
     let open = || {
@@ -1242,10 +1251,10 @@ fn a_stock_model_resolves_from_a_directory() {
         chroma_sampling: details.chroma_sampling,
     };
 
-    // No `with_model_path`, so the stock name is used and must be found on
+    // No explicit model path, so the stock name is used and must be found on
     // disk.
     let mut scorer =
-        VmafScorer::new(VmafConfig::new(), format).expect("the model should resolve from disk");
+        VmafScorer::new(VmafConfig::default(), format).expect("the model should resolve from disk");
 
     let scores = scorer
         .score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {})

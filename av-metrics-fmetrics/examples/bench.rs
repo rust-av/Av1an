@@ -64,7 +64,7 @@ fn end_to_end(reference_path: &str, distorted_path: &str, threads: u32) -> Resul
     let details = *reference.get_video_details();
     let color = ColorInfo::from_details(&details)?;
     let distorted_color = ColorInfo::from_details(distorted.get_video_details())?;
-    let scorer = FmetricsScorer::new_with_colors(
+    let scorer = FmetricsScorer::new(
         FmetricsConfig::new(FmetricsMetric::Ssimulacra2).with_threads(threads),
         color,
         distorted_color,
@@ -225,7 +225,7 @@ fn library_only(
         return Err("no frames decoded".into());
     }
 
-    let scorer = Arc::new(FmetricsScorer::new_with_colors(
+    let scorer = Arc::new(FmetricsScorer::new(
         FmetricsConfig::new(FmetricsMetric::Ssimulacra2).with_threads(threads as u32),
         color,
         distorted_color,

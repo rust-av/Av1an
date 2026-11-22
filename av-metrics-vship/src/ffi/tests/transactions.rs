@@ -223,7 +223,7 @@ fn format() -> VideoFormat {
 
 fn new(metric: VshipMetric) -> Result<VshipScorer, VshipError> {
     VshipScorer::new(
-        VshipConfig::new().with_metric(metric).with_gpu_id(0),
+        VshipConfig::default().with_metric(metric).with_gpu_id(0),
         format(),
         format(),
         None,
@@ -437,7 +437,7 @@ fn lifecycle(
                 assert!(crate::is_available());
                 let metric = VshipMetric::all()[i % 3];
                 let mut scorer = VshipScorer::new(
-                    VshipConfig::new().with_metric(metric),
+                    VshipConfig::default().with_metric(metric),
                     format(),
                     format(),
                     None,
@@ -447,7 +447,7 @@ fn lifecycle(
                     .build::<u8>()
                     .expect("frame");
                 assert_eq!(
-                    scorer.submit_pair(&frame, &frame).expect("score").value(metric),
+                    scorer.submit_pair(&frame, &frame).expect("score").value(metric, true),
                     Some(42.0)
                 );
                 scorer.reset_temporal().expect("history");
@@ -537,7 +537,10 @@ fn lock_order(count: impl Fn(u32) -> u32, set: impl Fn(u32, i32)) {
     let default = std::thread::spawn(move || {
         tx.send(()).expect("default start");
         assert!(crate::is_available());
-        drop(VshipScorer::new(VshipConfig::new(), format(), format(), None).expect("default init"));
+        drop(
+            VshipScorer::new(VshipConfig::default(), format(), format(), None)
+                .expect("default init"),
+        );
     });
     rx.recv().expect("default scheduled");
     for _ in 0..20_000 {

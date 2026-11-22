@@ -219,11 +219,11 @@ fn capability_child(scenario: &str) {
             "failed first probe is unavailable"
         );
         assert!(
-            VshipScorer::libvship_version().is_none(),
+            av_metrics_vship::libvship_version().is_none(),
             "failed default probe hides version"
         );
         assert!(
-            matches!(new(VshipConfig::new()), Err(VshipError::CallFailed {
+            matches!(new(VshipConfig::default()), Err(VshipError::CallFailed {
             function: "Vship_GPUFullCheck", status: 777, message
         }) if message == "libvship error 777"),
             "default retry retains native function/status/message"
@@ -236,7 +236,7 @@ fn capability_child(scenario: &str) {
         set(2, 0);
     }
     if scenario == "constructor-first" {
-        let scorer = new(VshipConfig::new()).expect("first default constructor");
+        let scorer = new(VshipConfig::default()).expect("first default constructor");
         assert_eq!(
             scorer.gpu_id(),
             1,
@@ -252,23 +252,12 @@ fn capability_child(scenario: &str) {
     let versions = if scenario == "concurrent" {
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
         let mut threads = Vec::new();
-        for i in 0..12 {
+        for _ in 0..12 {
             let barrier = std::sync::Arc::clone(&barrier);
             threads.push(std::thread::spawn(move || {
                 barrier.wait();
-                if i % 2 == 0 {
-                    assert!(
-                        av_metrics_vship::is_available(),
-                        "concurrent free availability"
-                    );
-                    VshipScorer::libvship_version().expect("concurrent version")
-                } else {
-                    assert!(
-                        VshipScorer::is_available(),
-                        "concurrent associated availability"
-                    );
-                    av_metrics_vship::libvship_version().expect("concurrent version")
-                }
+                assert!(av_metrics_vship::is_available(), "concurrent availability");
+                av_metrics_vship::libvship_version().expect("concurrent version")
             }));
         }
         threads
@@ -277,14 +266,9 @@ fn capability_child(scenario: &str) {
             .collect::<Vec<_>>()
     } else {
         (0..4)
-            .map(|i| {
-                if i % 2 == 0 {
-                    assert!(av_metrics_vship::is_available(), "free availability");
-                    VshipScorer::libvship_version().expect("version")
-                } else {
-                    assert!(VshipScorer::is_available(), "associated availability");
-                    av_metrics_vship::libvship_version().expect("version")
-                }
+            .map(|_| {
+                assert!(av_metrics_vship::is_available(), "default availability");
+                av_metrics_vship::libvship_version().expect("version")
             })
             .collect::<Vec<_>>()
     };
@@ -340,7 +324,7 @@ fn capability_child(scenario: &str) {
         versions[0].as_ptr()
     );
     if scenario == "all-integrated" {
-        let scorer = new(VshipConfig::new()).expect("last integrated default constructor");
+        let scorer = new(VshipConfig::default()).expect("last integrated default constructor");
         assert_eq!(scorer.gpu_id(), 2, "last integrated device is the default");
         drop(scorer);
         assert_eq!(
@@ -356,7 +340,7 @@ fn capability_child(scenario: &str) {
     }
 
     for metric in VshipMetric::all() {
-        let config = VshipConfig::new().with_metric(metric);
+        let config = VshipConfig::default().with_metric(metric);
         let probes = count(0);
         let scorer = new(config.clone()).expect("cached default constructor");
         assert_eq!(
@@ -386,7 +370,7 @@ fn capability_child(scenario: &str) {
             );
         }
     }
-    drop(new(VshipConfig::new().with_gpu_id(1)).expect("explicit default also validates"));
+    drop(new(VshipConfig::default().with_gpu_id(1)).expect("explicit default also validates"));
     assert_eq!(
         (gpu_count(0, 0), gpu_count(0, 1), gpu_count(0, 2)),
         (3, 2, 3),
@@ -406,7 +390,7 @@ fn capability_child(scenario: &str) {
         return;
     }
     assert!(
-        matches!(new(VshipConfig::new().with_gpu_id(3)), Err(VshipError::CallFailed {
+        matches!(new(VshipConfig::default().with_gpu_id(3)), Err(VshipError::CallFailed {
         function: "Vship_GPUFullCheck", status: 8, message
     }) if message == "known vship status"),
         "invalid explicit device retains native function/status/message"
@@ -421,7 +405,7 @@ fn capability_child(scenario: &str) {
     }
     set(2, 777);
     assert!(
-        matches!(new(VshipConfig::new().with_gpu_id(0)), Err(VshipError::CallFailed {
+        matches!(new(VshipConfig::default().with_gpu_id(0)), Err(VshipError::CallFailed {
         function: "Vship_GPUFullCheck", status: 777, message
     }) if message == "libvship error 777"),
         "explicit probe failure retains native function/status/message"
@@ -432,26 +416,26 @@ fn capability_child(scenario: &str) {
         "explicit failure cannot poison default success"
     );
     set(2, 0);
-    drop(new(VshipConfig::new().with_gpu_id(0)).expect("explicit recovery"));
+    drop(new(VshipConfig::default().with_gpu_id(0)).expect("explicit recovery"));
     if scenario == "explicit-failure" {
         return;
     }
     let probes = count(0);
     set(1, 777);
     assert!(
-        matches!(new(VshipConfig::new()), Err(VshipError::MetricUnavailable { reason, .. })
+        matches!(new(VshipConfig::default()), Err(VshipError::MetricUnavailable { reason, .. })
         if reason.contains("777") && reason.contains("Vship_InitHandler")),
         "cached admission does not hide init failure"
     );
     assert!(
-        VshipScorer::is_available(),
+        av_metrics_vship::is_available(),
         "init failure cannot poison default success"
     );
     set(1, 0);
     let frame = FrameBuilder::new(32, 32, ChromaSubsampling::Yuv420, 8)
         .build::<u8>()
         .expect("frame");
-    let mut scorer = new(VshipConfig::new()).expect("init recovery");
+    let mut scorer = new(VshipConfig::default()).expect("init recovery");
     if scenario == "init-failure" {
         drop(scorer);
         assert_eq!(count(0), probes, "init recovery keeps cached admission");
@@ -480,7 +464,7 @@ fn capability_child(scenario: &str) {
         "compute recovers on the owned handler"
     );
     drop(scorer);
-    drop(new(VshipConfig::new()).expect("later default constructor"));
+    drop(new(VshipConfig::default()).expect("later default constructor"));
     assert_eq!(
         count(0),
         probes,
@@ -661,13 +645,9 @@ fn version_child(scenario: &str) {
     // SAFETY: only defined counter indices 0..3 are used while mapped.
     let count = |i| unsafe { counter(i) };
     let mut versions = Vec::new();
-    for request in 1..=4 {
-        let version = if request % 2 == 0 {
-            VshipScorer::libvship_version()
-        } else {
-            av_metrics_vship::libvship_version()
-        }
-        .expect("fixture version requests must not skip");
+    for _ in 0..4 {
+        let version =
+            av_metrics_vship::libvship_version().expect("fixture version requests must not skip");
         assert_eq!(version, "5.1.2", "pinned fixture version");
         versions.push(version);
         assert_eq!(count(0), 1, "default requests share successful admission");
@@ -699,16 +679,8 @@ fn version_child(scenario: &str) {
         "default version retains successful admission"
     );
     assert!(
-        VshipScorer::libvship_version().is_some(),
-        "associated version shares successful admission"
-    );
-    assert!(
         av_metrics_vship::is_available(),
         "default availability shares successful admission"
-    );
-    assert!(
-        VshipScorer::is_available(),
-        "associated availability shares successful admission"
     );
     let format = VideoFormat {
         width: 32,
@@ -724,7 +696,7 @@ fn version_child(scenario: &str) {
     assert!(
         matches!(
             VshipScorer::new(
-                VshipConfig::new()
+                VshipConfig::default()
                     .with_gpu_id(av_metrics_vship::default_gpu_id().expect("default")),
                 format,
                 format,
@@ -762,7 +734,8 @@ fn version_child(scenario: &str) {
     );
     drop(
         VshipScorer::new(
-            VshipConfig::new().with_gpu_id(av_metrics_vship::default_gpu_id().expect("default")),
+            VshipConfig::default()
+                .with_gpu_id(av_metrics_vship::default_gpu_id().expect("default")),
             format,
             format,
             None,
@@ -997,7 +970,7 @@ fn handler_child(preflight_only: bool) {
             VshipMetric::Cvvdp => 6,
         };
         set(0, tag);
-        let mut config = VshipConfig::new()
+        let mut config = VshipConfig::default()
             .with_metric(metric)
             .with_disable_temporal(matches!(scenario.as_str(), "history" | "score"));
         if requested != "default" {
@@ -1072,7 +1045,7 @@ fn handler_child(preflight_only: bool) {
         for (a, b) in [(&frame, &bad), (&bad, &frame)] {
             assert!(
                 matches!(
-                    scorer.submit_pair_raw_with_reset(raw(a), raw(b), true),
+                    scorer.submit_pair_raw(raw(a), raw(b), true),
                     Err(VshipError::InputMismatch { .. })
                 ),
                 "reject either invalid side before reset"
@@ -1113,9 +1086,7 @@ fn handler_child(preflight_only: bool) {
         }
         let mut callbacks = Vec::new();
         let result = if scenario == "gap" {
-            scorer
-                .submit_pair_raw_with_reset(raw(&frame), raw(&frame), true)
-                .map(|s| vec![s])
+            scorer.submit_pair_raw(raw(&frame), raw(&frame), true).map(|s| vec![s])
         } else {
             scorer.score_decoders::<u8>(&mut clip.decoder(), &mut clip.decoder(), |i, s| {
                 callbacks.push((i, *s))
@@ -1129,9 +1100,8 @@ fn handler_child(preflight_only: bool) {
                 vec![(0, score)],
                 "one callback for a successful frame"
             );
-            let third = scorer
-                .submit_pair_raw_with_reset(raw(&frame), raw(&frame), true)
-                .expect("raw reset score");
+            let third =
+                scorer.submit_pair_raw(raw(&frame), raw(&frame), true).expect("raw reset score");
             assert_eq!(third, score, "raw submission retains metric output");
             assert_eq!(
                 scorer.submitted().expect("submitted"),
@@ -1420,7 +1390,7 @@ fn child(tag_contract: &str) {
         }
         checked_metrics += 1;
         let result = VshipScorer::new(
-            VshipConfig::new().with_metric(metric).with_handler_threads(1),
+            VshipConfig::default().with_metric(metric).with_handler_threads(1),
             format,
             format,
             None,
@@ -1488,7 +1458,7 @@ fn child(tag_contract: &str) {
             );
         } else {
             assert_eq!(
-                result.expect("score").value(metric),
+                result.expect("score").value(metric, true),
                 Some(42.0),
                 "known metric output marker"
             );
@@ -1663,7 +1633,7 @@ fn reset_child() {
         chroma_location: None,
     };
     let mut scorer = VshipScorer::new(
-        VshipConfig::new().with_metric(metric).with_handler_threads(handlers),
+        VshipConfig::default().with_metric(metric).with_handler_threads(handlers),
         format,
         format,
         None,

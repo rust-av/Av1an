@@ -166,7 +166,7 @@ fn check_finalization(scenario: &str) {
     // SAFETY: all calls use defined indices while fixture is loaded.
     let count = |index| unsafe { counter(index) };
     let mut scorer = VmafScorer::new(
-        VmafConfig::new().with_backend(BackendPreference::CpuOnly).with_threads(2),
+        VmafConfig::default().with_backend(BackendPreference::CpuOnly).with_threads(2),
         VideoFormat {
             width: 8,
             height: 8,
@@ -558,7 +558,9 @@ fn check_scenario(scenario: &str) {
         chroma_sampling: ChromaSubsampling::Yuv420,
     };
     let result = VmafScorer::new(
-        VmafConfig::new().with_backend(BackendPreference::CpuOnly).with_threads(threads),
+        VmafConfig::default()
+            .with_backend(BackendPreference::CpuOnly)
+            .with_threads(threads),
         format,
     );
     let expected_fetch;

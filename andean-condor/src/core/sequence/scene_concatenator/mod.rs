@@ -285,7 +285,7 @@ impl SceneConcatenator {
                 scenes_directory.join(format!(
                     "{}.{}",
                     ParallelEncoder::scene_id(index),
-                    scene.encoder.output_extension()
+                    scene.encoder.base().output_extension()
                 ))
             })
             .collect()

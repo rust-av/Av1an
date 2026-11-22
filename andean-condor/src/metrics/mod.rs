@@ -39,9 +39,6 @@ pub mod vship;
 
 pub use availability::{MetricDeviceInfo, MetricLibraryInfo, libraries};
 pub use probe::{OutputIndexing, PlaneSet, PlaneSource, output_index};
-pub use vmaf::score_probed_frames as score_vmaf_frames;
-pub use vmaf::score_probed_frames_with_progress as score_vmaf_frames_with_progress;
-pub use vship::score_probed_frames as score_vship_frames;
 
 use crate::models::sequence::target_quality::types::QualityMetric;
 

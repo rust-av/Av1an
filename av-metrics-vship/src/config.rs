@@ -241,13 +241,6 @@ impl Default for VshipConfig {
 }
 
 impl VshipConfig {
-    /// A configuration using the default metric, device and legacy thread request.
-    #[inline]
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Select the metric.
     #[inline]
     #[must_use]
@@ -702,7 +695,7 @@ mod tests {
 
     #[test]
     fn cvvdp_default_frame_rate_is_usable() {
-        let config = VshipConfig::new().with_metric(VshipMetric::Cvvdp);
+        let config = VshipConfig::default().with_metric(VshipMetric::Cvvdp);
         assert_eq!(config.cvvdp().fps, 60.0);
         assert!(config.validate().is_ok());
     }
@@ -722,7 +715,7 @@ mod tests {
             f32::MAX,
         ] {
             for disabled in [false, true] {
-                let config = VshipConfig::new()
+                let config = VshipConfig::default()
                     .with_metric(VshipMetric::Cvvdp)
                     .with_fps(rate)
                     .with_disable_temporal(disabled);
@@ -748,7 +741,7 @@ mod tests {
     fn cvvdp_accepts_positive_fps_through_one_hundred_thousand() {
         for rate in [f32::MIN_POSITIVE, 24.0, 23.976_025, 60.0, 100_000.0] {
             assert!(
-                VshipConfig::new()
+                VshipConfig::default()
                     .with_metric(VshipMetric::Cvvdp)
                     .with_fps(rate)
                     .validate()
@@ -771,7 +764,7 @@ mod tests {
             f32::MAX,
         ] {
             for disabled in [false, true] {
-                let config = VshipConfig::new()
+                let config = VshipConfig::default()
                     .with_metric(VshipMetric::Cvvdp)
                     .with_fps(rate)
                     .with_disable_temporal(disabled);
@@ -984,7 +977,7 @@ mod tests {
 
     #[test]
     fn handler_count_is_independent_of_legacy_request() {
-        let config = VshipConfig::new().with_handler_threads(8);
+        let config = VshipConfig::default().with_handler_threads(8);
 
         assert_eq!(config.handler_threads(), 8);
         assert_eq!(config.handler_count(), 1);
@@ -997,7 +990,7 @@ mod tests {
 
     #[test]
     fn zero_threads_is_clamped_to_one() {
-        let config = VshipConfig::new().with_handler_threads(0);
+        let config = VshipConfig::default().with_handler_threads(0);
 
         assert_eq!(config.handler_threads(), 1);
         assert_eq!(config.handler_count(), 1);
@@ -1005,7 +998,7 @@ mod tests {
 
     #[test]
     fn default_config_selects_ssimulacra2_and_documented_butteraugli_cvvdp_options() {
-        let config = VshipConfig::new();
+        let config = VshipConfig::default();
 
         assert_eq!(config.metric(), VshipMetric::Ssimulacra2);
         assert_eq!(config.handler_threads(), DEFAULT_HANDLER_THREADS);
@@ -1020,7 +1013,7 @@ mod tests {
 
     #[test]
     fn config_builders_retain_metric_device_threads_norm_intensity_and_temporal_options() {
-        let config = VshipConfig::new()
+        let config = VshipConfig::default()
             .with_metric(VshipMetric::Butteraugli)
             .with_gpu_id(2)
             .with_handler_threads(6)
@@ -1045,7 +1038,7 @@ mod tests {
     fn temporal_and_gap_policy_are_independent() {
         for disabled in [false, true] {
             for gap in [false, true] {
-                let config = VshipConfig::new()
+                let config = VshipConfig::default()
                     .with_disable_temporal(disabled)
                     .with_reset_on_discontinuity(gap);
                 assert_eq!(config.cvvdp().disable_temporal, disabled);
@@ -1059,12 +1052,12 @@ mod tests {
         // Each builder takes `self` by value, so a fresh config is used per
         // case rather than cloning one.
         assert!(
-            VshipConfig::new()
+            VshipConfig::default()
                 .with_display_model("standard\0_fhd")
                 .is_err_and(|error| matches!(error, VshipError::InvalidConfiguration { .. }))
         );
         assert!(
-            VshipConfig::new()
+            VshipConfig::default()
                 .with_display_model_json("C:\\models\\my\0model.json")
                 .is_err_and(|error| matches!(error, VshipError::InvalidConfiguration { .. }))
         );
@@ -1072,19 +1065,19 @@ mod tests {
 
     #[test]
     fn display_model_builder_preserves_valid_name() {
-        let config = VshipConfig::new().with_display_model("uhd_4k").unwrap();
+        let config = VshipConfig::default().with_display_model("uhd_4k").unwrap();
         assert_eq!(config.cvvdp().display_model, "uhd_4k");
     }
 
     #[test]
     fn butteraugli_validation_rejects_zero_qnorm() {
-        let bad_qnorm = VshipConfig::new().with_metric(VshipMetric::Butteraugli).with_q_norm(0);
+        let bad_qnorm = VshipConfig::default().with_metric(VshipMetric::Butteraugli).with_q_norm(0);
         assert!(bad_qnorm.validate().is_err());
     }
 
     #[test]
     fn butteraugli_validation_rejects_negative_intensity() {
-        let bad_intensity = VshipConfig::new()
+        let bad_intensity = VshipConfig::default()
             .with_metric(VshipMetric::Butteraugli)
             .with_intensity_multiplier(-1.0);
         assert!(bad_intensity.validate().is_err());
@@ -1092,14 +1085,14 @@ mod tests {
 
     #[test]
     fn cvvdp_validation_rejects_nan_fps() {
-        let bad_fps = VshipConfig::new().with_metric(VshipMetric::Cvvdp).with_fps(f32::NAN);
+        let bad_fps = VshipConfig::default().with_metric(VshipMetric::Cvvdp).with_fps(f32::NAN);
         assert!(bad_fps.validate().is_err());
     }
 
     #[test]
     fn cvvdp_validation_rejects_empty_display_model() {
         // An empty display model is only rejected when CVVDP is the metric.
-        let empty = VshipConfig::new()
+        let empty = VshipConfig::default()
             .with_metric(VshipMetric::Cvvdp)
             .with_display_model("")
             .expect("an empty name is a valid C string");

@@ -175,7 +175,7 @@ where
                 output: benchmarker_directory.join(format!(
                     "{}.{}",
                     index,
-                    condor.encoder.output_extension()
+                    condor.encoder.base().output_extension()
                 )),
             })
             .collect();
@@ -344,7 +344,7 @@ impl Benchmarker {
                 task.output = attempt.path().join(format!(
                     "{}.{}",
                     task.index,
-                    task.encoder.output_extension()
+                    task.encoder.base().output_extension()
                 ));
                 task
             })

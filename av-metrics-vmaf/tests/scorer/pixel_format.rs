@@ -162,7 +162,7 @@ fn assert_pool_format_ownership() {
         .expect("integer");
     let failed = std::env::var("VMAF_SETUP_FIXTURE_STAGE").expect("stage") == "9";
     let result = VmafScorer::new(
-        VmafConfig::new().with_backend(BackendPreference::CpuOnly).with_threads(2),
+        VmafConfig::default().with_backend(BackendPreference::CpuOnly).with_threads(2),
         format,
     );
     let error = if fetch <= 2 {

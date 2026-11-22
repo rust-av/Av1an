@@ -1552,10 +1552,13 @@ impl Encoder {
             }),
         }
     }
+}
 
+impl EncoderBase {
+    /// Extract the number of encoded frames from one line of encoder output.
     #[inline]
-    pub fn parse_encoded_frames_base(encoder: &EncoderBase, line: &str) -> Option<u64> {
-        match encoder {
+    pub fn parse_encoded_frames(&self, line: &str) -> Option<u64> {
+        match self {
             EncoderBase::AOM | EncoderBase::VPX | EncoderBase::AVM => {
                 cfg_if! {
                     if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
@@ -1575,12 +1578,9 @@ impl Encoder {
             EncoderBase::FFmpeg => parse_ffmpeg_frames(line),
         }
     }
+}
 
-    #[inline]
-    pub fn parse_encoded_frames(&self, line: &str) -> Option<u64> {
-        Self::parse_encoded_frames_base(&self.base(), line)
-    }
-
+impl Encoder {
     #[inline]
     pub fn version_text(&self) -> Option<String> {
         let executable = self.resolve_executable().ok()?;

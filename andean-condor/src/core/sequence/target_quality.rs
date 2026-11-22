@@ -360,7 +360,7 @@ impl TargetQuality {
                     let output = pass_directory.join(format!(
                         "{}.{}",
                         ParallelEncoder::scene_id(index),
-                        encoder.output_extension()
+                        encoder.base().output_extension()
                     ));
                     Ok(Some(Task {
                         original_index: index,
@@ -1497,7 +1497,7 @@ impl TargetQuality {
             // selection. VMAF submission drives the same progress relay as the
             // other engines' score callbacks; final scores must not count twice.
             let scored = if is_vmaf {
-                metrics::score_vmaf_frames_with_progress(
+                metrics::vmaf::score_probed_frames(
                     reference,
                     distorted.decoder(),
                     &config.metric,

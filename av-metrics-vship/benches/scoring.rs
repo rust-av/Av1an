@@ -55,7 +55,7 @@ fn score_once(pair: &SyntheticPair, config: VshipConfig) -> Option<f64> {
     let (mut scorer, mut reference, mut distorted) = scorer_for(pair, config)?;
     let scores = scorer.score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {}).ok()?;
 
-    VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean).ok()
+    VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean, true).ok()
 }
 
 /// Throughput across the resolutions and bit depths that matter in practice.
@@ -85,7 +85,7 @@ fn throughput(criterion: &mut Criterion) {
 
         group.throughput(Throughput::Elements(BENCH_FRAMES as u64));
         group.bench_function(label, |bencher| {
-            bencher.iter(|| black_box(score_once(&pair, VshipConfig::new())));
+            bencher.iter(|| black_box(score_once(&pair, VshipConfig::default())));
         });
     }
 
@@ -110,7 +110,7 @@ fn per_metric(criterion: &mut Criterion) {
 
     for metric in VshipMetric::all() {
         // All metrics use one synchronous handler.
-        let config = VshipConfig::new().with_metric(metric).with_handler_threads(1);
+        let config = VshipConfig::default().with_metric(metric).with_handler_threads(1);
         let label = metric.as_str().to_lowercase();
 
         let mut group = criterion.benchmark_group(format!("vship/metric-{label}"));
@@ -131,7 +131,7 @@ fn per_metric(criterion: &mut Criterion) {
                     return black_box(0.0);
                 };
 
-                black_box(VshipScorer::pool(&scores, metric, PoolMethod::Mean).unwrap_or(0.0))
+                black_box(VshipScorer::pool(&scores, metric, PoolMethod::Mean, true).unwrap_or(0.0))
             });
         });
         group.finish();

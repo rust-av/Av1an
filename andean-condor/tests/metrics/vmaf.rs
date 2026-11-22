@@ -4,7 +4,7 @@
 use andean_condor::{
     metrics::{
         probe::{self, OutputIndexing},
-        vmaf::score_probed_frames_with_progress,
+        vmaf::score_probed_frames,
     },
     models::sequence::target_quality::types::QualityMetric,
 };
@@ -259,7 +259,7 @@ fn driver_child(scenario: &str) {
     };
     let mut submitted = Vec::new();
     let mut reported = Vec::new();
-    let scores = score_probed_frames_with_progress(
+    let scores = score_probed_frames(
         &mut reference,
         &mut distorted,
         &metric(),

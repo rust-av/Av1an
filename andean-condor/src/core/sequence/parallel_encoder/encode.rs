@@ -256,7 +256,9 @@ pub(super) fn encode_attempts<'a>(
         let directory = tempfile::Builder::new()
             .prefix(".av1an-attempt-")
             .tempdir_in(task.output.parent().unwrap_or_else(|| std::path::Path::new(".")))?;
-        let path = directory.path().join(format!("scene.{}", task.encoder.output_extension()));
+        let path = directory
+            .path()
+            .join(format!("scene.{}", task.encoder.base().output_extension()));
         let attempt_progress = AttemptProgress::new(
             progress,
             task.original_index,

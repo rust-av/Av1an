@@ -269,7 +269,7 @@ fn native_probe_parity_child() {
                 frame_indices: (scene.start_frame..scene.end_frame).collect(),
                 sub_scenes: None,
                 encoder: scene.encoder.clone(),
-                output: dir.join(format!("{index:05}.{}", encoder.output_extension())),
+                output: dir.join(format!("{index:05}.{}", encoder.base().output_extension())),
             })
             .collect::<Vec<_>>();
         let plan = ZonePlan::try_build(&tasks);

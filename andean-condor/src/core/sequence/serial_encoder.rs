@@ -214,7 +214,7 @@ where
                 let scene_encoder = scene.encoder.clone();
                 let progress_tx_clone = progress_tx.clone();
                 let scene_id = SerialEncoder::scene_id(index);
-                let extension = scene_encoder.output_extension();
+                let extension = scene_encoder.base().output_extension();
                 let output = self.scenes_directory.join(format!("{}.{}", scene_id, extension));
                 artifact::protect_existing(&output)?;
                 let attempt = tempfile::Builder::new()

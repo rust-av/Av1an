@@ -93,7 +93,7 @@ pub(super) fn execute(root: &Path, case: &str) -> MuxOutcome {
     let chunk = root.join(format!(
         "{}.{}",
         ParallelEncoder::scene_id(0),
-        job.scenes[0].encoder.output_extension()
+        job.scenes[0].encoder.base().output_extension()
     ));
     std::fs::write(chunk, reference).expect("real encoded scene");
     job.sequence_config.parallel_encoder.scenes_directory = root.into();

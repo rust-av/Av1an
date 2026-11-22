@@ -74,8 +74,8 @@ mod internal_integration {
                 let mut reference = open();
                 let mut distorted = open();
                 let config = std::env::var("VMAF_TEST_MODEL").map_or_else(
-                    |_| ScorerConfig::new(),
-                    |path| ScorerConfig::new().with_model_path(path),
+                    |_| ScorerConfig::default(),
+                    |path| ScorerConfig::default().with_model(VmafModel::Path(path.into())),
                 );
                 let mut scorer = VmafScorer::new(
                     config.with_backend(BackendPreference::CpuOnly),
