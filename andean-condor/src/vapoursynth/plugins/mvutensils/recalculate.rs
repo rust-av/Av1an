@@ -46,10 +46,6 @@ pub struct Recalculate {
     pub pnew: Option<u32>,
     /// Scan rows alternately for better predictor reuse.
     pub meander: Option<bool>,
-    /// Treat the clip as field-based.
-    pub fields: Option<bool>,
-    /// Top field first.
-    pub tff: Option<bool>,
     /// Use SATD instead of SAD.
     pub satd: Option<bool>,
     /// Prefix for frame properties.
@@ -79,8 +75,6 @@ impl PluginFunction for Recalculate {
         ("chroma", &ValueType::Int),
         ("pnew", &ValueType::Int),
         ("meander", &ValueType::Int),
-        ("fields", &ValueType::Int),
-        ("tff", &ValueType::Int),
         ("satd", &ValueType::Int),
         ("prefix", &ValueType::Data),
     ];
@@ -126,8 +120,6 @@ impl Recalculate {
                 ("chroma", self.chroma.map(|b| if b { 1 } else { 0 })),
                 ("pnew", self.pnew),
                 ("meander", self.meander.map(|b| if b { 1 } else { 0 })),
-                ("fields", self.fields.map(|b| if b { 1 } else { 0 })),
-                ("tff", self.tff.map(|b| if b { 1 } else { 0 })),
                 ("satd", self.satd.map(|b| if b { 1 } else { 0 })),
             ],
         )?;
@@ -202,12 +194,6 @@ impl VapourSynthPluginScript for Recalculate {
             }
             if let Some(meander) = self.meander {
                 write!(&mut line, ", meander = {}", meander as i64)?;
-            }
-            if let Some(fields) = self.fields {
-                write!(&mut line, ", fields = {}", fields as i64)?;
-            }
-            if let Some(tff) = self.tff {
-                write!(&mut line, ", tff = {}", tff as i64)?;
             }
             if let Some(satd) = self.satd {
                 write!(&mut line, ", satd = {}", satd as i64)?;
