@@ -42,7 +42,7 @@ let format = VideoFormat {
     chroma_sampling: details.chroma_sampling,
 };
 
-let mut scorer = VmafScorer::new(VmafConfig::new().with_threads(4), format)?;
+let mut scorer = VmafScorer::new(VmafConfig::default().with_threads(4), format)?;
 println!("scoring on the {} backend", scorer.backend());
 
 let scores = scorer.score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {})?;
@@ -64,7 +64,7 @@ copying. Flush errors retain their native function/status; final score query err
 retain `vmaf_score_at_index`, the submitted index and raw status. Native C logging
 is disabled (`VMAF_LOG_LEVEL_NONE`); failures still propagate through Rust errors.
 
-Av1an's `score_vmaf_frames_with_progress` reports accepted submissions separately
+Av1an's `metrics::vmaf::score_probed_frames` reports accepted submissions separately
 from real final score callbacks. Quality Check and Target Quality use submission
 progress during decoding, without inventing scores or counting final scores twice.
 
@@ -392,7 +392,7 @@ exception, since setting it is an explicit choice.
 
 So for a release that ships `av1an.exe`, `libvmaf.dll` and `model/`, no
 configuration is needed. Otherwise point `VMAF_MODEL_PATH` at the directory holding
-`vmaf_v0.6.1.json`, or pass the file explicitly with `VmafConfig::with_model_path`.
+`vmaf_v0.6.1.json`, or pass the file with `.with_model(VmafModel::Path(path))`.
 An explicit per-run file path takes precedence over `VMAF_MODEL_PATH`.
 
 The stock model is a single ~19 KB JSON file from the [libvmaf repository][models].
@@ -467,7 +467,8 @@ let scores = scorer.score_frames(&every_third)?;
 
 See [Models](#models) for stock-model discovery: a nonempty `VMAF_MODEL_PATH` is
 exclusive, while an unset/empty value allows built-in loading followed by
-system-before-adjacent fallback. `with_model_path` is independent of that override.
+system-before-adjacent fallback. An explicit `VmafModel::Path` is independent of
+that override.
 
 Arch's `vmaf` package installs **all nine** models to `/usr/share/model`, which is
 what the Docker image relies on, so Linux needs no download at all.

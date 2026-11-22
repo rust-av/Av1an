@@ -116,29 +116,41 @@ The Av1an library, Andean Condor, consists of the following components: `Input`,
 
 ##### Library cancellation
 
-Keep one `andean_condor::utils::cancellation::Cancellation` and pass it through
-`Input::ensure_indexed_cancel`, `AndeanCondor::process_all_cancel` (or
-`process_one_cancel`), and `Sequence::execute_cancel`. Clone the token for the
-application's cancellation controls; do not create a token per pass.
+The ordinary library methods accept cancellation directly. For a standalone
+input open without cancellation controls:
 
 ```rust
+use andean_condor::core::input::Input;
+use andean_condor::utils::cancellation::Cancellation;
+
+let input = Input::ensure_indexed(&input_model, |_| {}, &Cancellation::default())?;
+```
+
+For a job, keep one token from `Input::ensure_indexed` through
+`AndeanCondor::process_all` (or `process_one`). Clone it for each stage and
+share a clone with the application's stop controls:
+
+```rust
+use andean_condor::core::{AndeanCondor, input::Input};
 use andean_condor::utils::cancellation::Cancellation;
 
 let cancellation = Cancellation::default();
-let controls = cancellation.clone();
-controls.request()?; // Graceful: finish admitted scenes, including both passes.
-controls.request()?; // Forced: stop feeds, kill owned trees, join workers, reap.
+let controls = cancellation.clone(); // Move this clone into the stop handler.
+
+let input = Input::ensure_indexed(&input_model, |_| {}, &cancellation)?;
+// Build the pipeline with this input, then run its stages with the same token.
+let warnings = pipeline.process_all(progress_tx, cancellation)?;
 ```
 
-Direct encoder, filter, zone/probe, indexing, and concat APIs also have `_cancel`
-entry points. Fresh jobs do not admit work after cancellation. Errors retain a typed
-`Cancelled::Forced` cause through anyhow context. Existing `Arc<AtomicBool>`
-entry points remain available but cannot request force. Custom `Sequence`
-implementations must override `execute_cancel` to support forced child teardown;
-the default bridge exposes only the legacy flag. For manual scene pipelines,
-call `root.admit()?` once and pass that view through all passes/filter setup;
-keep the root for admitting the next scene. Custom `AndeanCondor`
-implementations must supply the new `process_one_cancel`/`process_all_cancel` methods.
+Call `controls.request()?` for each stop request. The first request stops
+admitting new work but lets admitted scenes finish all passes. A second request
+stops feeds, kills owned child processes, and wakes workers so they can be joined.
+Errors retain a typed `Cancelled::Forced` cause.
+
+For manual passes, call `cancellation.admit()?` once per scene and pass that
+view to filter setup and every `encode_pass_with_stream` or
+`encode_pass_with_input` call. Reuse the same pass statistics where needed.
+Keep the original token to admit the next scene.
 
 Native decoder/plugin calls already in progress must finish; arbitrary hung
 foreign calls cannot be interrupted safely. Unix children use private process
@@ -152,6 +164,39 @@ Unix hosts must not externally reap managed children or enable `SIGCHLD=SIG_IGN`
 before spawn; detected lost ownership is reported without signaling stale IDs.
 This check cannot protect against concurrent external waiters. Use piped or null
 stdin for managed children: inherited terminal input may stop a background group.
+
+##### Rust API migration
+
+This is a breaking change for library callers. CLI syntax and saved jobs are
+unchanged.
+
+- Drop the `_cancel` suffix from calls and keep the token argument. Calls that
+  previously took no token now need one. Convert a legacy `Arc<AtomicBool>` to
+  `Cancellation` once per job; the flag itself can only request graceful stop.
+  Unlike the old FFMS2 indexing flag, graceful cancellation lets admitted
+  indexing finish; use a forced request to interrupt it.
+- Implement `Sequence::initialize` with `&Cancellation` and `Sequence::execute`
+  with `Cancellation`. Implement `AndeanCondor::{process_one, process_all}` with
+  `Cancellation` by value. There are no separate legacy trait methods.
+- Pass `ParallelEncoderOptions` to `ParallelEncoder::encode_tasks`,
+  `Benchmarker::benchmark_workers`, and `TargetQuality::probe_pass`. The default
+  is three total attempts with frame-count validation. Zone encoding takes the
+  validation flag directly and still runs only once.
+- `Encoder::{supports_capability, container}` now return `Result`: a missing
+  executable or forced interruption is distinct from an unsupported capability
+  or container. `parameters_with_output` takes `None` for the old output-derived
+  stats base or `Some(path)` for an explicit base.
+- Pass cancellation to California Condor's `entry_point`, `run_*` functions,
+  and configuration/initialization helpers. Only the executable entry point
+  installs OS signal handlers. Use `Configuration::save` for atomic config saves.
+- Call `metrics::vmaf::score_probed_frames` with submission and final-score
+  callbacks (use `|_| {}` if you do not need submission progress). Use
+  `metrics::vship::score_probed_frames` for Vship. Use `Admission` methods for
+  provenance and `EncoderBase` for extension and progress parsing queries.
+- Use `Default` for `VmafConfig` and `VshipConfig`, and select a VMAF model
+  file with `.with_model(VmafModel::Path(path))`. Pass both colors to
+  `FmetricsScorer::new` and the reset flag to `VshipScorer::submit_pair_raw`.
+  Find version and availability probes at the metric crate root.
 
 ## Developing
 

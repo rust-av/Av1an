@@ -571,7 +571,7 @@ pub fn warn_missing_executable(path: &Path) {
 /// supplied path does not exist yet.
 ///
 /// The caller has already rejected an override that sets no flag
-/// ([`ensure_override_requested`](super::config::ensure_override_requested)),
+/// ([`ensure_override_requested`](self::config::ensure_override_requested)),
 /// so this always builds one.
 pub fn apply_input_override(
     configuration: &Configuration,

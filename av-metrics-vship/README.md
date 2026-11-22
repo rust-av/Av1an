@@ -47,10 +47,10 @@ let mut distorted = Decoder::from_file("distorted.mkv")?;
 let reference_format = VideoFormat::from_details(reference.get_video_details());
 let distorted_format = VideoFormat::from_details(distorted.get_video_details());
 let mut scorer =
-    VshipScorer::new(VshipConfig::new(), reference_format, distorted_format, None)?;
+    VshipScorer::new(VshipConfig::default(), reference_format, distorted_format, None)?;
 
 let scores = scorer.score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {})?;
-let pooled = VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean)?;
+let pooled = VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean, true)?;
 println!("SSIMULACRA2: {pooled:.4}");
 # Ok(())
 # }
@@ -59,6 +59,9 @@ println!("SSIMULACRA2: {pooled:.4}");
 `VshipScorer::new` takes the reference and the encode format separately, plus an optional `(width, height)` target that becomes libvship's `target_width` and `target_height`. The two sides need not share a format, but they must end up the same size: libvship does not resize implicitly, so a 1080p reference against a 720p encode needs the target set (see [Differing input sizes](#differing-input-sizes-need-an-explicit-target)).
 
 The callback passed to `score_decoders` fires once per pair, which is useful for reporting progress while a long encode is being scored. Every returned [`FrameScore`] is complete at that point, so no flush follows the loop.
+
+The last argument to `pool` selects the configured Q-norm (`true`) or infinity
+norm (`false`) for Butteraugli. It does not affect SSIMULACRA2 or CVVDP.
 
 A scorer is neither `Send` nor `Sync`: construct, use and drop it on the same thread. Each scorer owns one opaque native handler and submits synchronously through `&mut self`.
 
@@ -98,8 +101,8 @@ Every plane on both sides must match its configured storage width before
 submission counters, handler resets or compute change: 8-bit uses one byte,
 9/10/12/14/16-bit uses two. A typed `Frame<u8>` cannot supply configured 10-bit
 data. Chroma rounds up: 1919×1079 4:2:0 requires 960×540, not 959×539.
-Callers tracking external frame gaps can use `submit_pair_raw_with_reset` to
-request the same history reset only after both sides pass preflight; Av1an uses
+Callers tracking external frame gaps can pass `true` to `submit_pair_raw` to
+request a history reset only after both sides pass preflight; Av1an uses
 this to preserve its existing discontinuity policy without resetting invalid pairs.
 
 The prefix contract is pinned to Vship
@@ -217,7 +220,7 @@ not combine those scene results into a clip-wide CVVDP score.
 Source indices belong to the selection owner, not the scorer's submission count.
 Andean classifies actual selected-index gaps with checked arithmetic; disabled
 mode needs no extra gap reset. Direct raw callers can request a history-only
-reset using `submit_pair_raw_with_reset`, which preflights both inputs first.
+reset by passing `true` to `submit_pair_raw`, which preflights both inputs first.
 Native CVVDP values are returned unchanged; perceptual pooling is separate work.
 
 The 60 fps default and inclusive upper bound follow the

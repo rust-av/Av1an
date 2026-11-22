@@ -31,7 +31,7 @@ pub struct Bilateral {
     /// Defaults to `[3.0, 3.0, 3.0]`
     pub sigma_s: Option<Vec<f64>>,
     /// sigma of Gaussian function to calculate range weight.
-    /// The scale of this parameter is the same as pixel value ranging in [0,1].
+    /// The scale of this parameter is the same as pixel values in `[0, 1]`.
     /// Smaller sigmaR preserves edges better, may also leads to weaker
     /// smoothing. Use an array to specify sigmaR for each plane, otherwise
     /// the same sigmaR is used for all the planes.
@@ -52,7 +52,7 @@ pub struct Bilateral {
     /// Number of PBFICs used in algorithm=1.
     /// Default: 4 when sigmaR>=0.08. It will increase as sigmaR decreases, up
     /// to 32. For chroma plane default value will be odd to better preserve
-    /// neutral value of chromiance. Available range is [2,256].
+    /// neutral value of chrominance. Available range is `[2, 256]`.
     /// Use an array to specify PBFICnum for each plane.
     pub pbficnum: Option<Vec<u32>>,
 }
