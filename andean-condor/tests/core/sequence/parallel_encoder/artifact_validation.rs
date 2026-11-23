@@ -42,7 +42,7 @@ artifact_contract!(
     ]
 );
 artifact_contract!(
-    resumed_chunks_are_validated_without_reencoding_or_rewriting_repairable_history,
+    saved_chunk_repair_reuses_the_worker_attempt_budget,
     saved_artifacts::artifact_cases,
     [
         "resume-valid",
@@ -50,8 +50,22 @@ artifact_contract!(
         "resume-zero",
         "resume-corrupt",
         "resume-wrong",
-        "resume-bare",
+        "resume-exhaust",
+        "resume-one",
+        "resume-repair-save-error",
         "resume-save-error"
+    ]
+);
+artifact_contract!(
+    repair_leaves_unclaimed_unsafe_or_aliased_destinations_untouched,
+    saved_artifacts::artifact_cases,
+    [
+        "resume-bare",
+        "resume-symlink",
+        "resume-directory",
+        "resume-alias",
+        "resume-moved",
+        "resume-late"
     ]
 );
 artifact_contract!(
@@ -97,10 +111,25 @@ artifact_contract!(
 artifact_contract!(
     failed_resume_validation_preserves_history_and_can_be_retried,
     resume_policy::policy_cases,
-    ["resume-policy", "resume-probe"]
+    ["resume-probe", "resume-probe-noisy"]
+);
+artifact_contract!(
+    resume_reencodes_a_legacy_chunk_with_a_wrong_decoded_frame_count,
+    resume_policy::policy_cases,
+    ["resume-policy"]
 );
 artifact_contract!(
     graceful_resume_validation_does_not_admit_future_candidates,
     resume_policy::policy_cases,
     ["resume-graceful"]
+);
+artifact_contract!(
+    resume_skips_decode_only_after_strict_verification_is_saved,
+    resume_policy::policy_cases,
+    ["resume-cache", "resume-cache-legacy", "resume-cache-optout"]
+);
+artifact_contract!(
+    resume_persists_good_verification_when_a_later_probe_fails,
+    resume_policy::policy_cases,
+    ["resume-checkpoint-failure", "resume-reappeared"]
 );

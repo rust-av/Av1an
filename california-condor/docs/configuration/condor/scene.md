@@ -19,7 +19,7 @@ Array of scene objects. `[]` on `init`.
 | `scene_detection` | Object | Yes | `{ "scenecut_scores": { "<frame>": {...} } or null, "transnetv2_scores": { "<frame>": <f32> } or null, "created_on": <SystemTime> }` |
 | `noise_detection` | Object or null | Yes | `{ "noise": <f64>, "luminance": <f64>, "created_on": <SystemTime> }` |
 | `noise_scaling` | Object or null | Yes | `{ "scaler": <f64> }` |
-| `parallel_encoder` | Object | Yes | `{ "started_on": <u128 ms epoch> or null, "completed_on": <u128 ms epoch> or null, "bytes": <u64> or null }` |
+| `parallel_encoder` | Object | Yes | Encoding timestamps (`started_on`, `completed_on`, milliseconds since Unix epoch), chunk `bytes`, provenance, and an optional `verification` level. `frame_count` confirms decoded frame count; `nonempty` confirms a nonempty regular file only. |
 | `target_quality` | Object | Yes | `{ "passes": [ { "quantizer": <f64>, "scores": [<f64>], "bitrate": <f64>, "started_on": <u128 ms epoch>, "completed_on": <u128 ms epoch> } ] }` |
 | `quality_check` | Object | Yes | `{ "quality": { "quantizer": <f64>, "scores": [<f64>], "bitrate": <f64>, "started_on": <u128 ms epoch>, "completed_on": <u128 ms epoch> } }` |
 | `zoner` | Object | No | `{ "zoned": <bool> }`. Absent in configurations written before zoning became idempotent; defaults to `false`. Set to `true` when the Zoner has applied the zones to the list; `av1an scenes reset zoner` clears it |

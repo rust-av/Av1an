@@ -407,8 +407,8 @@ pub(in crate::core::sequence::parallel_encoder) mod internal_integration {
             .collect();
         let (tx, rx) = std::sync::mpsc::channel();
         let mut callbacks = vec![0; count];
-        let mut on_results = |batch: Vec<ParallelEncoderResult>| -> Result<()> {
-            for r in batch {
+        let mut on_results = |batch: Vec<task::PublishedResult>| -> Result<()> {
+            for r in batch.into_iter().map(|published| published.result) {
                 assert!(r.result.status.success());
                 callbacks[(r.scene - 7) / 3] += 1;
             }

@@ -1,5 +1,8 @@
 //! Saved-result admission. Serialization and integrity checks never certify old work.
-use std::path::Path;
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
@@ -187,6 +190,30 @@ pub fn file_identity(path: &Path) -> Result<Value> {
     Ok(
         json!({"path": canonical, "length": metadata.len(), "modified_seconds": modified.as_secs(), "modified_nanos": modified.subsec_nanos()}),
     )
+}
+
+pub(crate) fn artifact_identity(path: &Path) -> Result<Value> {
+    ensure!(
+        path.symlink_metadata()?.is_file(),
+        "Encoded artifact {} is not a regular file",
+        path.display()
+    );
+    file_identity(path)
+}
+
+pub(crate) fn artifact_destination(path: &Path) -> Result<PathBuf> {
+    let parent = path.parent().context("Missing chunk directory")?;
+    let name = path.file_name().context("Missing chunk filename")?;
+    Ok(crate::core::output::resolve_path(parent)?.join(name))
+}
+
+/// Whether this scene can be reused or must be encoded. Only the owning encoder
+/// can turn a missing or changed artifact into a replacement task.
+pub enum EncodeArtifact {
+    Pending,
+    Current(Value),
+    Missing,
+    Changed(Value),
 }
 
 #[inline]
@@ -462,6 +489,21 @@ impl Admission {
         output: &Path,
         index: usize,
     ) -> Result<Value> {
+        let mut context =
+            self.encode_producer_context(input, probe_input, metric_input, scene, tq, index)?;
+        context["artifact"] = file_identity(output)?;
+        Ok(context)
+    }
+
+    fn encode_producer_context<Data: TargetQualityDataHandler>(
+        &mut self,
+        input: &Input,
+        probe_input: &Input,
+        metric_input: Option<&Input>,
+        scene: &Scene<Data>,
+        tq: Option<&TargetQualityConfig>,
+        index: usize,
+    ) -> Result<Value> {
         self.admit_target(probe_input, metric_input, scene, tq, index)?;
         admit_selection(scene, tq, index)?;
         let passes = &scene.sequence_data.get_target_quality()?.passes;
@@ -472,7 +514,7 @@ impl Admission {
         };
         Ok(
             json!({"input": input_identity(input)?, "range": [scene.start_frame, scene.end_frame], "sub_scenes": scene.sub_scenes,
-        "encoder": scene.encoder, "tq_dependency": dependency, "artifact": file_identity(output)?}),
+         "encoder": scene.encoder, "tq_dependency": dependency}),
         )
     }
 }
@@ -590,6 +632,94 @@ pub fn admit_selection<Data: TargetQualityDataHandler>(
 }
 
 impl Admission {
+    /// Qualify a saved chunk for recovery without relaxing strict consumer admission.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn admit_encode_for_recovery<
+        Data: SequenceDataHandler + TargetQualityDataHandler + ParallelEncoderDataHandler,
+    >(
+        &mut self,
+        input: &Input,
+        probe_input: &Input,
+        metric_input: Option<&Input>,
+        scene: &Scene<Data>,
+        tq: Option<&TargetQualityConfig>,
+        output: &Path,
+        index: usize,
+    ) -> Result<EncodeArtifact> {
+        let data = scene.sequence_data.get_parallel_encoder()?;
+        data.admit_scene(index)?;
+        let metadata = match output.symlink_metadata() {
+            Ok(metadata) => Some(metadata),
+            Err(error) if error.kind() == ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("Inspecting scene {index} chunk {}", output.display())
+                });
+            },
+        };
+        if metadata.is_none()
+            && data.bytes.is_none()
+            && data.started_on.is_none()
+            && data.completed_on.is_none()
+            && data.provenance.is_none()
+            && data.verification.is_none()
+        {
+            return Ok(EncodeArtifact::Pending);
+        }
+        let saved = data.provenance.as_ref();
+        require_revision(saved, index, "encoding")?;
+        ensure!(
+            data.bytes.is_some_and(|bytes| bytes > 0)
+                && data.started_on.zip(data.completed_on).is_some_and(|(start, end)| start <= end),
+            refusal(
+                index,
+                "encoding",
+                "artifact has no usable saved completed encoding record"
+            )
+        );
+        let artifact = saved
+            .and_then(|saved| saved.context.get("artifact"))
+            .filter(|identity| {
+                identity.as_object().is_some_and(|fields| fields.len() == 4)
+                    && identity.get("length").and_then(Value::as_u64).is_some_and(|size| size > 0)
+                    && identity.get("modified_seconds").and_then(Value::as_u64).is_some()
+                    && identity
+                        .get("modified_nanos")
+                        .and_then(Value::as_u64)
+                        .is_some_and(|ns| ns < 1_000_000_000)
+            })
+            .ok_or_else(|| refusal(index, "encoding", "missing or invalid chunk fingerprint"))?;
+        let destination = artifact_destination(output)?;
+        ensure!(
+            artifact.get("path") == Some(&serde_json::to_value(&destination)?),
+            refusal(index, "encoding", "chunk destination changed")
+        );
+        let mut expected = self
+            .encode_producer_context(input, probe_input, metric_input, scene, tq, index)
+            .map_err(|e| refusal(index, "encoding", &format!("{e:#}")))?;
+        expected["artifact"] = artifact.clone();
+        require_context(saved, &expected, index, "encoding")?;
+        let Some(metadata) = metadata else {
+            return Ok(EncodeArtifact::Missing);
+        };
+        ensure!(
+            metadata.is_file(),
+            refusal(index, "encoding", "chunk destination is not a regular file")
+        );
+        let current = artifact_identity(output)?;
+        ensure!(
+            current["path"] == artifact["path"],
+            "Scene {index} chunk path changed while inspecting {}",
+            output.display()
+        );
+        if &current == artifact {
+            Ok(EncodeArtifact::Current(current))
+        } else {
+            Ok(EncodeArtifact::Changed(current))
+        }
+    }
+
     #[inline]
     #[expect(
         clippy::too_many_arguments,

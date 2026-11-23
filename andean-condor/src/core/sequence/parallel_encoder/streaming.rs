@@ -6,11 +6,11 @@ use anyhow::Result;
 
 use super::{
     ParallelEncoder, ParallelEncoderOptions,
-    encode::{SceneOutcome, consume_frames, encode_attempts, finalize_scene},
+    encode::{SceneOutcome, consume_frames, encode_attempts, finalize_scene, report_result},
     error::ParallelEncoderError,
     lifecycle::{Stop, retain_error},
     progress::Progress,
-    task::{ParallelEncoderResult, ResultStream, Task},
+    task::{ParallelEncoderResult, PublishedResult, ResultStream, Task},
 };
 use crate::core::{encoder::EncoderResult, input::Input};
 
@@ -50,7 +50,7 @@ impl ParallelEncoder {
         window: usize,
         tasks: VecDeque<Task>,
         cancelled: &Cancellation,
-        stream: &mut ResultStream<'_, impl FnMut(Vec<ParallelEncoderResult>) -> Result<()>>,
+        stream: &mut ResultStream<'_, impl FnMut(Vec<PublishedResult>) -> Result<()>>,
         options: ParallelEncoderOptions,
         progress: &Progress,
     ) -> Result<Vec<Option<ParallelEncoderResult>>> {
@@ -197,11 +197,12 @@ impl ParallelEncoder {
                                             })?;
                                             let ended = std::time::SystemTime::now();
                                             let result = cancelled.publish(|| {
-                                                finalize_scene(
+                                                 let identity = finalize_scene(
                                                     SceneOutcome {
                                                         temp_output: attempt.path.clone(),
                                                         bytes,
-                                                        usable: true,
+                                                         usable: true,
+                                                         identity: attempt.identity,
                                                     },
                                                     &task.output,
                                                     &mut attempt.progress,
@@ -215,9 +216,7 @@ impl ParallelEncoder {
                                                     bitrate,
                                                     result: attempt.result.clone(),
                                                 };
-                                                results_tx.send(result.clone())?;
-                                                finished.release();
-                                                Ok(result)
+                                                 report_result(&results_tx, &finished, result, identity)
                                             })?;
                                             Ok(result)
                                         },

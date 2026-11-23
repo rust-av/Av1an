@@ -12,7 +12,13 @@ pub(super) mod saved_artifacts {
         },
         utils::cancellation::Cancellation,
     };
-    use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command, sync::Mutex};
+    use std::{
+        fs,
+        os::unix::fs::{PermissionsExt, symlink},
+        path::Path,
+        process::Command,
+        sync::Mutex,
+    };
 
     const ENCODER: &str = r#"#!/bin/sh
 set -eu
@@ -26,6 +32,15 @@ while [ "$#" -gt 0 ]; do
 done
 printf started >> "$root/starts"
 cat > /dev/null
+case "$ENCODER_FIXTURE_CASE" in
+    *resume-exhaust|*resume-one) printf corrupt > "$out"; exit 0 ;;
+    *resume-late)
+        printf late-file > "$root/scenes/00000.264"
+        cp "$root/fixture" "$out"; exit 0 ;;
+    *resume-missing|*resume-zero|*resume-corrupt|*resume-wrong)
+        if [ "$(wc -c < "$root/starts")" -lt 21 ]; then printf corrupt > "$out"; exit 0; fi
+        cp "$root/fixture" "$out"; exit 0 ;;
+esac
 case "$ENCODER_FIXTURE_CASE" in
     *wrong*|*duplicate*) printf '3/3 frames\r3/3 frames\r3/3 frames\r' >&2 ;;
     *sparse*) printf '1/3 frames\r' >&2 ;;
@@ -216,11 +231,14 @@ esac
         let data = DefaultSequenceData::default();
         let mut config = DefaultSequenceConfig::default();
         config.parallel_encoder.workers = Some(1);
+        if kind == "one" {
+            config.parallel_encoder.max_tries = 1;
+        }
         config.parallel_encoder.scenes_directory = scenes.clone();
         config.parallel_encoder.validate_frame_count = !optout;
         let saved = Arc::new(Mutex::new(Vec::new()));
         let snapshots = Arc::clone(&saved);
-        let fail_save = case == "resume-save-error";
+        let fail_save = matches!(kind, "save-error" | "repair-save-error") && resume;
         let mut condor = Condor::new(
             input,
             Output {
@@ -269,13 +287,37 @@ esac
             fs::remove_file(root.join("starts")).expect("clear only seed invocation marker");
             condor.scenes[0].sequence_data.parallel_encoder.bytes = Some(999999);
             match kind {
-                "missing" => fs::remove_file(&output).expect("remove certified chunk"),
+                "save-error" => {
+                    condor.scenes[0].sequence_data.parallel_encoder.verification = None;
+                },
+                "missing" | "exhaust" | "one" | "late" => {
+                    fs::remove_file(&output).expect("remove certified chunk");
+                },
+                "moved" => {
+                    condor.sequence_config.parallel_encoder.scenes_directory =
+                        root.join("elsewhere");
+                },
                 "zero" => fs::write(&output, []).expect("truncate certified chunk"),
-                "corrupt" => fs::write(&output, b"corrupt").expect("corrupt certified chunk"),
+                "corrupt" | "repair-save-error" => {
+                    fs::write(&output, b"corrupt").expect("corrupt certified chunk");
+                },
+                "symlink" | "directory" | "alias" => {
+                    fs::remove_file(&output).expect("remove certified chunk");
+                    let source = condor.input.as_data();
+                    let source_path = source.path().expect("on-disk source");
+                    match kind {
+                        "symlink" => symlink(source_path, &output).expect("symlink fixture"),
+                        "directory" => fs::create_dir_all(&output).expect("directory fixture"),
+                        _ => fs::hard_link(source_path, &output).expect("hard link fixture"),
+                    }
+                },
                 "wrong" => {
-                    fs::remove_file(root.join("fixture")).expect("replace fixture");
+                    fs::rename(root.join("fixture"), root.join("good"))
+                        .expect("keep valid fixture");
                     fixture(&root, codec, container, 2);
                     fs::copy(root.join("fixture"), &output).expect("replace with wrong count");
+                    fs::rename(root.join("good"), root.join("fixture"))
+                        .expect("restore valid fixture");
                 },
                 _ => (),
             }
@@ -330,7 +372,144 @@ esac
             "all relays joined"
         );
         let data = &condor.scenes[0].sequence_data.parallel_encoder;
-        if matches!(
+        if resume
+            && matches!(
+                kind,
+                "missing" | "zero" | "corrupt" | "wrong" | "exhaust" | "one"
+            )
+        {
+            if matches!(kind, "exhaust" | "one") {
+                let error = result.expect_err("every new attempt produced corrupt output");
+                let budget = if kind == "one" { 1 } else { 3 };
+                assert!(
+                    format!("{error:#}").contains(&format!("Scene 0 attempt {budget}/{budget}"))
+                );
+                assert_eq!(
+                    fs::read_to_string(root.join("starts")).expect("encoder starts"),
+                    "started".repeat(budget)
+                );
+                assert!(!output.exists());
+                assert!(data.completed_on.is_none() && data.provenance.is_none());
+                assert!(
+                    saved
+                        .lock()
+                        .expect("saved records")
+                        .last()
+                        .expect("repair checkpoint")
+                        .completed_on
+                        .is_none()
+                );
+                fs::remove_file(root.join("starts")).expect("reset attempt counter");
+                // SAFETY: this child owns the environment and all workers have joined.
+                unsafe {
+                    std::env::set_var("ENCODER_FIXTURE_CASE", "artifact-validation-seed-valid");
+                };
+                let (tx, _rx) = std::sync::mpsc::channel();
+                ParallelEncoder::default()
+                    .execute_cancel(&mut condor, tx, Cancellation::default())
+                    .expect("explicit restart gets a fresh budget");
+                assert_eq!(
+                    fs::read_to_string(root.join("starts")).expect("encoder starts"),
+                    "started"
+                );
+            } else {
+                result.expect("recover a damaged saved chunk on the third attempt");
+                assert_eq!(
+                    fs::read_to_string(root.join("starts")).expect("encoder starts"),
+                    "started".repeat(3)
+                );
+                assert_eq!(
+                    fs::read(&output).expect("replacement output"),
+                    fs::read(root.join("fixture")).expect("valid chunk")
+                );
+                assert!(
+                    saved
+                        .lock()
+                        .expect("saved records")
+                        .last()
+                        .expect("replacement checkpoint")
+                        .completed_on
+                        .is_some()
+                );
+                assert!(!statuses.iter().any(|status| matches!(status, SequenceStatus::Whole(Status::Processing { completion: SequenceCompletion::Custom { name, .. }, .. }) if name == "resumed-size")));
+                if let Some(original) = original {
+                    assert!(
+                        fs::read_dir(&scenes).expect("scenes directory").any(|entry| {
+                            let path = entry.expect("directory entry").path();
+                            fs::read(path.join("00000.264")).is_ok_and(|saved| saved == original)
+                        }),
+                        "the unusable chunk is preserved in a unique directory"
+                    );
+                }
+            }
+        } else if kind == "late" {
+            let error = format!(
+                "{:#}",
+                result.expect_err("late caller-owned file blocks publication")
+            );
+            assert!(
+                error.contains("Refusing to overwrite existing chunk"),
+                "{error}"
+            );
+            assert_eq!(
+                fs::read_to_string(root.join("starts")).expect("encoder starts"),
+                "started"
+            );
+            assert_eq!(
+                fs::read(&output).expect("preserved late file"),
+                b"late-file"
+            );
+            assert!(
+                saved
+                    .lock()
+                    .expect("saved records")
+                    .iter()
+                    .all(|data| data.completed_on.is_none())
+            );
+        } else if kind == "moved" {
+            let error = format!(
+                "{:#}",
+                result.expect_err("changed chunk directory is not recoverable")
+            );
+            assert!(error.contains("chunk destination changed"), "{error}");
+            assert!(!root.join("starts").exists());
+            assert!(saved.lock().expect("saved records").is_empty());
+            assert_eq!(fs::read(&output).ok(), original);
+        } else if kind == "repair-save-error" {
+            let error = format!(
+                "{:#}",
+                result.expect_err("checkpoint failure stops recovery")
+            );
+            assert!(
+                error.contains("Saving pending chunk repairs")
+                    && error.contains("artifact validation save failed")
+            );
+            assert!(!root.join("starts").exists());
+            assert!(!output.exists());
+            assert!(
+                fs::read_dir(&scenes).expect("scenes directory").any(|entry| {
+                    fs::read(entry.expect("directory entry").path().join("00000.264"))
+                        .is_ok_and(|bytes| bytes == b"corrupt")
+                })
+            );
+        } else if resume && matches!(kind, "symlink" | "directory" | "alias") {
+            let error = format!(
+                "{:#}",
+                result.expect_err("unsafe destination must not be repaired")
+            );
+            assert!(!root.join("starts").exists());
+            assert!(saved.lock().expect("saved records").is_empty());
+            match kind {
+                "symlink" => {
+                    assert!(output.symlink_metadata().expect("preserved symlink").is_symlink());
+                },
+                "directory" => assert!(output.is_dir()),
+                _ => {
+                    assert!(error.contains("aliases protected source"), "{error}");
+                    assert_eq!(fs::read(&output).ok(), original);
+                },
+            }
+        } else if matches!(
             kind,
             "valid"
                 | "av1"
@@ -431,24 +610,16 @@ esac
             } else {
                 assert!(text.to_lowercase().contains("scene 0"), "{text}");
             }
-            let withheld_history =
-                resume && matches!(kind, "corrupt" | "wrong" | "missing" | "zero");
-            if withheld_history {
-                assert_eq!(
-                    (data.bytes, data.started_on, data.completed_on),
-                    (
-                        prior_data.bytes,
-                        prior_data.started_on,
-                        prior_data.completed_on
-                    ),
-                    "withhold current eligibility without destroying repairable historical records"
-                );
-            } else if kind == "save-error" {
+            if kind == "save-error" {
                 assert_eq!(
                     data.bytes,
                     Some(output.metadata().expect("validated output").len())
                 );
                 assert_eq!(data.provenance, prior_data.provenance);
+                assert!(
+                    data.verification.is_none(),
+                    "rejected save cannot authorize resume"
+                );
                 assert!(text.contains("artifact validation save failed"), "{text}");
             } else {
                 assert!(
@@ -483,23 +654,15 @@ esac
                 }
                 if resume && kind != "bare" {
                     let saved = saved.lock().expect("saved");
-                    if withheld_history {
-                        assert!(
-                            saved.is_empty(),
-                            "no irreversible withdrawal for probe/count failure"
-                        );
-                    } else {
-                        assert!(
-                            !saved.is_empty(),
-                            "validated stale byte correction reaches the failing save"
-                        );
-                        assert!(
-                            saved
-                                .iter()
-                                .all(|d| d.bytes == data.bytes
-                                    && d.completed_on == data.completed_on)
-                        );
-                    }
+                    assert!(
+                        !saved.is_empty(),
+                        "validated stale byte correction reaches the failing save"
+                    );
+                    assert!(
+                        saved
+                            .iter()
+                            .all(|d| d.bytes == data.bytes && d.completed_on == data.completed_on)
+                    );
                 }
             } else {
                 assert!(!output.exists(), "no final artifact");
@@ -515,8 +678,11 @@ esac
         );
         assert_eq!(
             fs::read_dir(&scenes).expect("cleanup").count(),
-            1 + usize::from(output.exists()),
-            "no owned temps, stats or probe sidecars"
+            1 + usize::from(output.exists())
+                + usize::from(
+                    resume && matches!(kind, "zero" | "corrupt" | "wrong" | "repair-save-error")
+                ),
+            "only the caller sentinel, final chunk and intentional backup may remain"
         );
         fs::write(root.join("verified"), "artifact and metadata checked").expect("verified");
     }
@@ -694,7 +860,22 @@ exit "$status"
                 job.join("bin/ffprobe"),
                 r#"#!/bin/sh
 printf probe >> "$ENCODER_FIXTURE_ROOT/probes"
-if [ -f "$ENCODER_FIXTURE_ROOT/probe-bad" ]; then printf '{"streams":[{"nb_read_frames":"N/A"}]}'; exit 0; fi
+if [ -f "$ENCODER_FIXTURE_ROOT/probe-bad" ]; then
+    if [ "$ENCODER_FIXTURE_CASE" = resume-policy-resume-probe-noisy ]; then
+        printf '{"streams":[{"nb_read_frames":"2"}]}'
+        printf 'decoder reported an error' >&2
+    else
+        printf '{"streams":[{"nb_read_frames":"N/A"}]}'
+    fi
+    exit 0
+fi
+for last do :; done
+case "$last" in
+    */00000.264) if [ "$ENCODER_FIXTURE_CASE" = resume-policy-resume-reappeared ]; then
+        printf late-file > "$ENCODER_FIXTURE_ROOT/scenes/00001.264"
+    fi ;;
+    */00001.264) if [ -f "$ENCODER_FIXTURE_ROOT/peer-probe-bad" ]; then printf '{"streams":[]}'; exit 0; fi ;;
+esac
 if [ "$ENCODER_FIXTURE_CASE" = resume-policy-resume-graceful ]; then
     printf ready > "$ENCODER_FIXTURE_ROOT/probe-active"
     for attempt in 1 2 3 4 5; do
@@ -843,7 +1024,42 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
         );
         let token = Cancellation::default();
         let (tx, rx) = std::sync::mpsc::channel();
-        if case.starts_with("preflight-") {
+        if case.starts_with("resume-cache") {
+            ParallelEncoder::default()
+                .execute_cancel(&mut condor, tx, token.clone())
+                .expect("publish a chunk");
+            let path = root.join("saved-job.json");
+            let mut json: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).expect("saved job")).expect("job JSON");
+            if case == "resume-cache-legacy" {
+                json["scenes"][0]["sequence_data"]["parallel_encoder"]
+                    .as_object_mut()
+                    .expect("parallel encoder record")
+                    .remove("verification");
+            }
+            condor.scenes = serde_json::from_value(json["scenes"].take()).expect("saved scenes");
+            condor.sequence_config.parallel_encoder.validate_frame_count = true;
+            let _ = fs::remove_file(root.join("probes"));
+            fs::remove_file(root.join("starts")).expect("reset attempt counter");
+            let (tx, _rx) = std::sync::mpsc::channel();
+            ParallelEncoder::default()
+                .execute_cancel(&mut condor, tx, token.clone())
+                .expect("resume the saved chunk");
+            assert_eq!(
+                fs::read_to_string(root.join("probes")).unwrap_or_default(),
+                if case == "resume-cache" { "" } else { "probe" }
+            );
+            let mut json: serde_json::Value =
+                serde_json::from_slice(&fs::read(path).expect("saved job")).expect("job JSON");
+            condor.scenes = serde_json::from_value(json["scenes"].take()).expect("saved scenes");
+            let _ = fs::remove_file(root.join("probes"));
+            let (tx, _rx) = std::sync::mpsc::channel();
+            ParallelEncoder::default()
+                .execute_cancel(&mut condor, tx, token)
+                .expect("resume the newly checkpointed chunk");
+            assert!(!root.join("probes").exists());
+            assert!(!root.join("starts").exists());
+        } else if case.starts_with("preflight-") {
             let result = match case {
                 "preflight-worker" => Benchmarker::default().validate(&mut condor).map(|_| ()),
                 "preflight-tq" => TargetQuality::default().validate(&mut condor).map(|_| ()),
@@ -1068,12 +1284,15 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             let saved_job = serde_json::to_vec(&condor.as_data()).expect("saved historical job");
             fs::write(root.join("saved-job.json"), &saved_job)
                 .expect("persist history before validation");
-            if case == "resume-graceful" {
+            if matches!(
+                case,
+                "resume-graceful" | "resume-checkpoint-failure" | "resume-reappeared"
+            ) {
                 let other = condor.scenes[0].clone();
                 condor.scenes.push(other);
                 fs::copy(&final_path, scenes_dir.join("00001.264")).expect("second candidate");
                 current_encoding_fixture(&mut condor);
-                let resume_histories = condor
+                let mut resume_histories = condor
                     .scenes
                     .iter()
                     .map(|scene| {
@@ -1089,10 +1308,11 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                     serde_json::to_vec(&condor.as_data()).expect("three-scene history"),
                 )
                 .expect("persist all resume candidates");
-                std::thread::scope(|scope| {
-                    let control_root = &root;
-                    let control_token = token.clone();
-                    let cancel = scope.spawn(move || {
+                if case == "resume-graceful" {
+                    std::thread::scope(|scope| {
+                        let control_root = &root;
+                        let control_token = token.clone();
+                        let cancel = scope.spawn(move || {
                     let first = rx.recv().expect("validation progress before probe");
                     assert!(matches!(&first, SequenceStatus::Whole(Status::Processing { completion: SequenceCompletion::Custom { name, completed: 0.0, total: 3.0 }, .. }) if name == "validating"), "explicit candidate progress: {first:?}");
                     while !control_root.join("probe-active").exists() { std::thread::yield_now(); }
@@ -1100,44 +1320,94 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                     fs::write(control_root.join("release-probe"), "finish active probe").expect("release");
                     rx.iter().collect::<Vec<_>>()
                 });
+                        ParallelEncoder::default()
+                            .execute_cancel(&mut condor, tx, token.clone())
+                            .expect("graceful stops after finite active candidate");
+                        let events = cancel.join().expect("progress observer");
+                        assert_eq!(
+                            events.iter().filter(|s| size(s)).count(),
+                            1,
+                            "only first validated candidate eligible"
+                        );
+                    });
+                    assert_eq!(
+                        fs::read_to_string(root.join("probes")).expect("probe count"),
+                        "probe",
+                        "no future candidate admitted"
+                    );
+                } else if case == "resume-reappeared" {
+                    let late = scenes_dir.join("00001.264");
+                    fs::remove_file(&late).expect("missing at admission");
+                    let error = ParallelEncoder::default()
+                        .execute_cancel(&mut condor, tx, token)
+                        .expect_err("a file appeared after missing-at-admission");
+                    assert!(format!("{error:#}").contains("chunk appeared before repair"));
+                    assert_eq!(fs::read(late).expect("preserved late file"), b"late-file");
+                } else {
+                    fs::write(root.join("peer-probe-bad"), []).expect("trigger probe fault");
+                    let error = ParallelEncoder::default()
+                        .execute_cancel(&mut condor, tx, token)
+                        .expect_err("a later verifier error stops the stage");
+                    assert!(format!("{error:#}").contains("Scene 1 cannot verify"));
+                    assert_eq!(
+                        fs::read_to_string(root.join("probes")).expect("probe calls"),
+                        "probeprobe"
+                    );
+                }
+                assert!(!root.join("starts").exists(), "no new encode");
+                let mut persisted: serde_json::Value = serde_json::from_slice(
+                    &fs::read(root.join("saved-job.json")).expect("saved job"),
+                )
+                .expect("job JSON");
+                resume_histories[0]["verification"] = "frame_count".into();
+                for (index, expected) in resume_histories.iter().enumerate() {
+                    assert_eq!(
+                        &persisted["scenes"][index]["sequence_data"]["parallel_encoder"],
+                        expected,
+                    );
+                }
+                if case == "resume-checkpoint-failure" {
+                    condor.scenes = serde_json::from_value(persisted["scenes"].take())
+                        .expect("checkpointed scenes");
+                    fs::remove_file(root.join("probes")).expect("reset probe counter");
+                    let (tx, _rx) = std::sync::mpsc::channel();
                     ParallelEncoder::default()
-                        .execute_cancel(&mut condor, tx, token.clone())
-                        .expect("graceful stops after finite active candidate");
-                    let events = cancel.join().expect("progress observer");
+                        .execute_cancel(&mut condor, tx, Cancellation::default())
+                        .expect_err("the same second probe still fails");
                     assert_eq!(
-                        events.iter().filter(|s| size(s)).count(),
-                        1,
-                        "only first validated candidate eligible"
+                        fs::read_to_string(root.join("probes")).expect("probe calls"),
+                        "probe"
                     );
-                });
+                }
+            } else if case == "resume-policy" {
+                let original = fs::read(&final_path).expect("wrong-count chunk");
+                ParallelEncoder::default()
+                    .execute_cancel(&mut condor, tx, token)
+                    .expect("re-encode a verified frame-count mismatch");
                 assert_eq!(
-                    fs::read_to_string(root.join("probes")).expect("probe count"),
-                    "probe",
-                    "no future candidate admitted"
+                    fs::read_to_string(root.join("starts"))
+                        .expect("encoder starts")
+                        .lines()
+                        .count(),
+                    1
                 );
-                assert!(
-                    !root.join("starts").exists(),
-                    "no new encode after Graceful"
-                );
-                for (scene, expected) in condor.scenes[..2].iter().zip(&resume_histories) {
-                    assert_eq!(
-                        serde_json::to_value(&scene.sequence_data.parallel_encoder)
-                            .expect("history"),
-                        *expected
-                    );
-                }
+                assert_ne!(fs::read(&final_path).expect("replacement chunk"), original);
+                assert!(rx.iter().any(|s| size(&s)));
             } else {
-                if case == "resume-probe" {
-                    fs::write(root.join("probe-bad"), "transient").expect("probe fault");
-                }
+                fs::write(root.join("probe-bad"), "transient").expect("probe fault");
                 let error = ParallelEncoder::default()
                     .execute_cancel(&mut condor, tx, token.clone())
                     .expect_err("first check fails closed");
-                assert!(format!("{error:#}").contains(if case == "resume-policy" {
-                    "decoded frame count"
+                let diagnostic = format!("{error:#}");
+                assert!(diagnostic.contains(if case == "resume-probe-noisy" {
+                    "decoder reported an error"
                 } else {
                     "missing/invalid"
                 }));
+                assert!(
+                    diagnostic.contains("move it out of the scenes directory"),
+                    "{diagnostic}"
+                );
                 assert!(!rx.iter().any(|s| size(&s)), "withhold current eligibility");
                 assert_eq!(
                     serde_json::to_value(&condor.scenes[0].sequence_data.parallel_encoder)
@@ -1154,16 +1424,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                     saved_job,
                     "recoverable rejection preserves the actual saved job"
                 );
-                if case == "resume-policy" {
-                    condor.sequence_config.parallel_encoder.validate_frame_count = false;
-                    fs::write(
-                        root.join("saved-job.json"),
-                        serde_json::to_vec(&condor.as_data()).expect("repaired config"),
-                    )
-                    .expect("save explicit policy repair");
-                } else {
-                    fs::remove_file(root.join("probe-bad")).expect("restore healthy probe");
-                }
+                fs::remove_file(root.join("probe-bad")).expect("restore healthy probe");
                 let (tx, rx) = std::sync::mpsc::channel();
                 ParallelEncoder::default()
                     .execute_cancel(&mut condor, tx, token)
@@ -1172,7 +1433,11 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                 assert_eq!(
                     serde_json::to_value(&condor.scenes[0].sequence_data.parallel_encoder)
                         .expect("history"),
-                    history
+                    {
+                        let mut history = history;
+                        history["verification"] = "frame_count".into();
+                        history
+                    }
                 );
                 assert!(
                     !root.join("starts").exists(),

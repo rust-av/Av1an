@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::utils::cancellation::Cancellation;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossbeam_channel::Receiver;
 use tracing::debug;
 
@@ -19,7 +19,7 @@ use super::{
     error::ParallelEncoderError,
     lifecycle::{Stop, retain_error},
     progress::{AttemptProgress, Progress, drain_finished_results, relay_progress},
-    task::{ParallelEncoderResult, ResultStream, Task},
+    task::{ParallelEncoderResult, PublishedResult, ResultStream, Task},
 };
 use crate::{
     core::{
@@ -64,6 +64,7 @@ pub(super) struct SceneOutcome {
     pub(super) temp_output: std::path::PathBuf,
     pub(super) bytes: u64,
     pub(super) usable: bool,
+    pub(super) identity: serde_json::Value,
 }
 
 /// Renames a usable encode to its final path, or discards it and flags the
@@ -74,22 +75,34 @@ pub(super) fn finalize_scene(
     output: &std::path::Path,
     progress: &mut AttemptProgress<'_>,
     encoder_errored: &AtomicBool,
-) -> Result<()> {
+) -> Result<serde_json::Value> {
     if outcome.usable {
         #[cfg(all(test, target_os = "linux"))]
         super::tests::shutdown::internal_integration::fault("size", progress.scene())?;
         super::artifact::protect_existing(output)?;
-        fs::rename(outcome.temp_output, output)?;
+        let mut identity = outcome.identity;
+        identity["path"] = serde_json::to_value(
+            crate::models::sequence::provenance::artifact_destination(output)?,
+        )?;
+        crate::core::output::persist_output(
+            tempfile::TempPath::try_from_path(outcome.temp_output)?,
+            output,
+            false,
+        )
+        .map_err(|error| error.error)
+        .with_context(|| format!("Publishing encoded artifact {}", output.display()))?;
         #[cfg(all(test, target_os = "linux"))]
         super::tests::artifact_validation::resume_policy::internal_integration::after_rename(
             output,
         );
+        super::artifact::ensure_unchanged(output, &identity)?;
         progress.commit(outcome.bytes);
+        Ok(identity)
     } else {
         let _ = fs::remove_file(&outcome.temp_output);
         encoder_errored.store(true, Ordering::Relaxed);
+        Ok(serde_json::Value::Null)
     }
-    Ok(())
 }
 
 /// The consumer owns filter cleanup and joins the progress relay even when
@@ -211,6 +224,7 @@ pub(super) struct EncodedAttempt<'a> {
     pub(super) path: std::path::PathBuf,
     pub(super) result: EncoderResult,
     pub(super) bytes: u64,
+    pub(super) identity: serde_json::Value,
     pub(super) progress: AttemptProgress<'a>,
 }
 
@@ -265,22 +279,31 @@ pub(super) fn encode_attempts<'a>(
         );
         let encoded = encode(&path, &attempt_progress).and_then(|result| {
             stop.cancellation.check_forced()?;
-            let bytes = super::artifact::validate(
-                &path,
-                task.frame_indices.len(),
-                options.validate_frame_count,
-                &stop.cancellation,
-            )
-            .map_err(|error| error.context(RetryableAttempt))?;
-            Ok((result, bytes))
+            let checked = || {
+                let identity = super::artifact::identity(&path)?;
+                let bytes = super::artifact::validate(
+                    &path,
+                    task.frame_indices.len(),
+                    options.validate_frame_count,
+                    &stop.cancellation,
+                )?;
+                super::artifact::ensure_unchanged(&path, &identity)?;
+                Ok::<_, anyhow::Error>((result, bytes, identity))
+            };
+            checked().map_err(|error| {
+                error
+                    .context(format!("Validating encoded artifact {}", path.display()))
+                    .context(RetryableAttempt)
+            })
         });
         match encoded {
-            Ok((result, bytes)) => {
+            Ok((result, bytes, identity)) => {
                 return Ok(EncodedAttempt {
                     _directory: directory,
                     path,
                     result,
                     bytes,
+                    identity,
                     progress: attempt_progress,
                 });
             },
@@ -316,12 +339,16 @@ pub(super) fn encode_attempts<'a>(
 }
 
 /// Sends a scene's result to the persistence channel and returns it.
-fn report_result(
-    results_tx: &crossbeam_channel::Sender<ParallelEncoderResult>,
+pub(super) fn report_result(
+    results_tx: &crossbeam_channel::Sender<PublishedResult>,
     finished_scenes: &Semaphore,
     result: ParallelEncoderResult,
+    identity: serde_json::Value,
 ) -> Result<ParallelEncoderResult> {
-    results_tx.send(result.clone())?;
+    results_tx.send(PublishedResult {
+        result: result.clone(),
+        identity,
+    })?;
     finished_scenes.release();
     Ok(result)
 }
@@ -392,7 +419,7 @@ impl ParallelEncoder {
             anyhow::bail!(ParallelEncoderError::NoWorkers);
         }
         let (results_tx, results_rx) = crossbeam_channel::unbounded();
-        let mut on_results = |_results: Vec<ParallelEncoderResult>| -> Result<()> { Ok(()) };
+        let mut on_results = |_results: Vec<PublishedResult>| -> Result<()> { Ok(()) };
         let mut stream = ResultStream {
             results_tx,
             results_rx: &results_rx,
@@ -423,7 +450,7 @@ impl ParallelEncoder {
         tasks: VecDeque<Task>,
         progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
         cancelled: Cancellation,
-        stream: &mut ResultStream<'_, impl FnMut(Vec<ParallelEncoderResult>) -> Result<()>>,
+        stream: &mut ResultStream<'_, impl FnMut(Vec<PublishedResult>) -> Result<()>>,
         options: ParallelEncoderOptions,
     ) -> Result<Vec<Option<ParallelEncoderResult>>> {
         Self::encode_tasks_with_baseline(
@@ -449,7 +476,7 @@ impl ParallelEncoder {
         tasks: VecDeque<Task>,
         progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
         cancelled: Cancellation,
-        stream: &mut ResultStream<'_, impl FnMut(Vec<ParallelEncoderResult>) -> Result<()>>,
+        stream: &mut ResultStream<'_, impl FnMut(Vec<PublishedResult>) -> Result<()>>,
         options: ParallelEncoderOptions,
         initial_frames: usize,
     ) -> Result<Vec<Option<ParallelEncoderResult>>> {
@@ -592,11 +619,11 @@ impl ParallelEncoder {
                              let bitrate = super::checked_bitrate(bytes, task.frame_indices.len(), framerate)
                                  .map_err(|error| error.context(format!("Scene {} bitrate", task.original_index)))?;
                              let result = cancelled.publish(|| {
-                              finalize_scene(SceneOutcome { temp_output: attempt.path.clone(), bytes, usable: true },
-                                  &task.output, &mut attempt.progress, &stop.stopped)?;
+                               let identity = finalize_scene(SceneOutcome { temp_output: attempt.path.clone(), bytes, usable: true, identity: attempt.identity },
+                                   &task.output, &mut attempt.progress, &stop.stopped)?;
                              let result = report_result(&results_tx, &finished, ParallelEncoderResult {
                                   scene: task.original_index, started, ended, bytes, bitrate, result: attempt.result.clone(),
-                             })?;
+                              }, identity)?;
                              Ok(result)
                              })?;
                             guard.success();
@@ -804,6 +831,10 @@ mod tests {
                     temp_output: temp_output.clone(),
                     bytes: 42,
                     usable: true,
+                    identity: crate::core::sequence::parallel_encoder::artifact::identity(
+                        &temp_output,
+                    )
+                    .expect("identity of test chunk"),
                 },
                 &output,
                 &mut attempt,
@@ -858,6 +889,7 @@ mod tests {
                     temp_output: temp_output.clone(),
                     bytes: 42,
                     usable: false,
+                    identity: serde_json::Value::Null,
                 },
                 &output,
                 &mut attempt,

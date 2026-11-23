@@ -359,7 +359,7 @@ pub fn start_handler_cancel(
     if !config_already_existed {
         debug!("Saving new Configuration to {}", config_path.display());
     }
-    configuration.admit_results()?;
+    configuration.admit_results_for_encoding()?;
     configuration.save(&config_path)?;
     if encoder.is_some()
         || passes.is_some()
