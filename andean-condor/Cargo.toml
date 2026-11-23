@@ -39,7 +39,7 @@ nom = "8.0.0"
 once_cell = { workspace = true }
 # Pinned: later rcs drop the x86_64-apple-darwin prebuilt and enforce strict
 # execution-provider dist matching.
-ort = "=2.0.0-rc.12"
+ort = { version = "=2.0.0-rc.12", optional = true }
 pastey = "0.2.0"
 path_abs = { workspace = true }
 schemars = "1.2.2"
@@ -61,24 +61,28 @@ which = "8.0.0"
 # ships (DirectML on Windows, CoreML on macOS); the rest are opt-in because
 # they select a much larger prebuilt runtime at build time.
 [target.'cfg(windows)'.dependencies]
-ort = { version = "=2.0.0-rc.12", features = ["directml"] }
+ort = { version = "=2.0.0-rc.12", features = ["directml"], optional = true }
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.191"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-ort = { version = "=2.0.0-rc.12", features = ["coreml"] }
+ort = { version = "=2.0.0-rc.12", features = ["coreml"], optional = true }
 
 [features]
-default = []
+default = ["transnetv2"]
+# The TransNetV2 scene detector, which needs ONNX Runtime. ort only has
+# prebuilt runtimes for some targets (none for x86_64-pc-windows-gnu), so
+# builds for other targets can leave this out.
+transnetv2 = ["dep:ort"]
 # Hardware acceleration for the TransNetV2 scene detector. Providers register
 # fail-silently, so any provider the installed ONNX Runtime lacks falls back
 # to CPU.
-cuda = ["ort/cuda"]
-webgpu = ["ort/webgpu"]
-rocm = ["ort/rocm"]
-openvino = ["ort/openvino"]
+cuda = ["transnetv2", "ort/cuda"]
+webgpu = ["transnetv2", "ort/webgpu"]
+rocm = ["transnetv2", "ort/rocm"]
+openvino = ["transnetv2", "ort/openvino"]
 
 [lints.clippy]
 # Performance

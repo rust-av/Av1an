@@ -35,6 +35,7 @@ pub static DETAILS: SequenceDetails = SequenceDetails {
     version: "0.0.1-A",
 };
 
+#[cfg(feature = "transnetv2")]
 mod transnetv2;
 
 pub struct SceneDetector {
@@ -61,6 +62,10 @@ where
             Input::validate(&input.as_data())?;
         }
         self.method.validate_lengths()?;
+        #[cfg(not(feature = "transnetv2"))]
+        if matches!(self.method, SceneDetectionMethod::TransNetV2 { .. }) {
+            bail!(SceneDetectorError::TransNetV2Unavailable);
+        }
 
         Ok(((), vec![]))
     }
@@ -252,6 +257,7 @@ where
                     return Ok(((), warnings));
                 }
             },
+            #[cfg(feature = "transnetv2")]
             SceneDetectionMethod::TransNetV2 {
                 minimum_length,
                 maximum_length,
@@ -294,6 +300,10 @@ where
                 if cancelled.load(Ordering::Relaxed) {
                     return Ok(((), warnings));
                 }
+            },
+            #[cfg(not(feature = "transnetv2"))]
+            SceneDetectionMethod::TransNetV2 { .. } => {
+                bail!(SceneDetectorError::TransNetV2Unavailable);
             },
             SceneDetectionMethod::None { maximum_length, .. } => {
                 debug!(
@@ -392,6 +402,9 @@ pub enum SceneDetectorError {
     InputFrameMismatch(usize, usize),
     #[error("Scene detection failed: {0}")]
     SceneDetectionFailed(String),
+    #[cfg(not(feature = "transnetv2"))]
+    #[error("TransNetV2 is not available: Av1an was built without the `transnetv2` feature")]
+    TransNetV2Unavailable,
 }
 
 /// Per-frame scenecut scores for the absolute frame range `[start, end)`.
@@ -415,6 +428,7 @@ fn scenecut_scores(
 
 /// Per-frame TransNetV2 probabilities for the absolute frame range
 /// `[start, end)`. `predictions` is indexed relative to `last_frame`.
+#[cfg(feature = "transnetv2")]
 fn transnetv2_scores(
     predictions: &[f32],
     last_frame: usize,
@@ -633,6 +647,7 @@ mod tests {
                     method: ScenecutMethod::Standard,
                     save_scores: false,
                 },
+                #[cfg(feature = "transnetv2")]
                 SceneDetectionMethod::TransNetV2 {
                     minimum_length,
                     maximum_length,
@@ -775,6 +790,7 @@ mod tests {
 
     /// Regression: TransNetV2 predictions are indexed from the resumed frame,
     /// so stored keys must be offset by `last_frame`.
+    #[cfg(feature = "transnetv2")]
     #[test]
     fn resumed_run_keys_transnetv2_scores_by_absolute_frame() {
         let predictions = vec![0.1f32, 0.2, 0.3, 0.4];
