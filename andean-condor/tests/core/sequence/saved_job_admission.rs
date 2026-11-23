@@ -29,7 +29,7 @@ use fixture::produced_job;
 
 #[cfg(unix)]
 #[test]
-fn certified_chunk_or_quality_history_corruption_refuses_without_repair_or_native_work() {
+fn saved_chunk_and_quality_consumers_refuse_corruption_without_native_work() {
     for case in ["chunk-missing", "chunk-truncated", "qc-short", "qc-long", "qc-missing-output"] {
         let temp = tempfile::tempdir().expect("fixture");
         let mut job = produced_job(temp.path());
@@ -60,7 +60,7 @@ fn certified_chunk_or_quality_history_corruption_refuses_without_repair_or_nativ
         });
         let (tx, rx) = std::sync::mpsc::channel();
         let result = if case.starts_with("chunk") {
-            parallel_encoder::ParallelEncoder::default().execute_cancel(
+            scene_concatenator::SceneConcatenator::default().execute_cancel(
                 &mut job,
                 tx,
                 Default::default(),
@@ -68,9 +68,7 @@ fn certified_chunk_or_quality_history_corruption_refuses_without_repair_or_nativ
         } else {
             quality_check::QualityCheck::default().execute_cancel(&mut job, tx, Default::default())
         };
-        let error = result.expect_err(
-            "reachable corruption must refuse rather than repair/remeasure current records",
-        );
+        let error = result.expect_err("consumers must not repair or remeasure their inputs");
         let text = format!("{error:#}");
         assert!(
             text.contains("scene 0") && text.contains("new job"),

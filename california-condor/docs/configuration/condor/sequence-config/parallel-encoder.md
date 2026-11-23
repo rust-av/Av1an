@@ -8,7 +8,7 @@
 | `max_tries` | Integer (u32, ≥1) | No | `3` | Total attempts per scene including the initial attempt. CLI `--max-tries`. |
 | `scenes_directory` | String (path) | Yes | `<temp>/scenes` | Directory for per-scene encodes |
 | `input` | Input object or null | Yes | `null` | Override input. Same shape as [condor.input](../input.md) |
-| `validate_frame_count` | Boolean | No | `true` | Decode-count completed chunks with `ffprobe` before publishing or resuming. Set `false` only for filters intentionally changing the frame count. |
+| `validate_frame_count` | Boolean | No | `true` | Require a decoded frame-count check before accepting a chunk. Set `false` only for filters intentionally changing the frame count. |
 
 Encode-time `--filters` edits this `input` when set, otherwise `condor.input`.
 Rebuilding an override inherits filters from the previous effective input unless
@@ -25,18 +25,24 @@ Setting `validate_frame_count` to `false` disables decode-count verification onl
 successful encoder exit and a nonempty regular output file are still required.
 With this opt-out, corrupt but nonempty output cannot be decode-verified.
 
-Resume requires a saved completed encoding record and a currently valid chunk.
-Bare files are not adopted. Ineligible files are preserved. Missing, empty or
-nonregular chunks lose their unusable completion metadata; count/probe/read
-failures retain historical records but withhold current eligibility. Repair the
-probe or intentional count policy and retry the same job; the historical record
-alone never authorizes resume. Otherwise recompute in a new job, or move the
-chunk aside and clear its saved completion record. Count validation does not
-establish that a chunk matches changed source media or encoder settings.
+Resume skips decoding already verified chunks when the saved job context, chunk
+path, size, and modification time still match. Older completion records with
+matching provenance are checked once to record verification. Successful
+checks are saved even if another scene fails. The cache cannot detect corruption
+that doesn't change file metadata. Switching `validate_frame_count` back to
+`true` requires a decode check for chunks that passed only the nonempty check.
 
-Strict resume fully decodes each completed chunk again, sequentially, before new
-encoding; large jobs can spend substantial time validating. The UI reports
-validation progress separately from encoded frames. Graceful cancellation lets
+If a chunk from this job is missing, empty, changed, or fails a confirmed decode
+check, the encoder queues its scene again. If the file exists, Av1an moves it
+into a `.av1an-rejected-*` directory under the scenes directory and logs its
+location. These copies still use disk space; you can inspect or delete them
+after recovery. Bare files, symbolic links, directories, and changed job
+settings are not repaired automatically. If a probe error is ambiguous, Av1an
+keeps the file in place. Check whether `ffprobe` supports the codec. If you
+confirm the chunk is damaged, move it out of the scenes directory and rerun
+the encode. You don't need to edit the saved completion record.
+
+Validation progress is separate from encoded frames. Graceful cancellation lets
 the active check finish, then stops before another check or new encode; Force
 terminates the active probe.
 
@@ -53,6 +59,8 @@ Each attempt starts all passes with fresh owned output/statistics and filter sta
 only validated successful output is published and saved. Explicit native statistics
 path overrides remain caller-owned and cannot be cleaned automatically.
 
+An explicit restart gives each affected scene a fresh budget: by default one
+attempt plus up to two retries. Checking an existing chunk uses no attempt.
 Only native encoder/filter failures and failed new-output validation retry. Invalid
 settings, source/spool errors, publication/save failures and worker panics stop the
 scene. Cancellation prevents replacement attempts; Graceful lets active passes

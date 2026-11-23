@@ -2,7 +2,7 @@ use std::sync::{Mutex, mpsc::Sender};
 
 use anyhow::Result;
 
-use super::task::{ParallelEncoderResult, ResultStream};
+use super::task::{PublishedResult, ResultStream};
 use crate::{
     core::{
         encoder::EncodeProgress,
@@ -187,7 +187,7 @@ impl Drop for AttemptProgress<'_> {
 /// `on_results`.
 pub(super) fn drain_finished_results<F>(stream: &mut ResultStream<'_, F>) -> Result<()>
 where
-    F: FnMut(Vec<ParallelEncoderResult>) -> Result<()>,
+    F: FnMut(Vec<PublishedResult>) -> Result<()>,
 {
     let mut results = Vec::new();
     while stream.finished_scenes.try_acquire().is_some() {

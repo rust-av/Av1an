@@ -21,7 +21,7 @@ where
     pub max_tries: u32,
     pub scenes_directory: PathBuf,
     pub input: Option<InputModel>,
-    /// Decode-count each completed chunk with ffprobe before publishing/resuming.
+    /// Require decoded frame-count verification for completed chunks.
     /// Disable only for intentional frame-changing filters; status and size remain mandatory.
     #[serde(default = "validate_frame_count_default")]
     pub validate_frame_count: bool,
@@ -76,6 +76,12 @@ where
 {
     fn parallel_encoder(&self) -> Result<&ParallelEncoderConfig>;
     fn parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderConfig>;
+
+    /// Additional declared inputs and destinations that chunk recovery must not move.
+    #[inline]
+    fn recovery_protected_paths(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -86,11 +92,21 @@ pub struct ParallelEncoderData {
     pub invalidated: bool,
     #[serde(default)]
     pub provenance: Option<super::provenance::ResultProvenance>,
+    /// Verification of the file fingerprint in `provenance`, not of a replacement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<ChunkVerification>,
     /// Must be milliseconds since UNIX Epoch
     pub started_on: Option<u128>,
     /// Must be milliseconds since UNIX Epoch
     pub completed_on: Option<u128>,
     pub bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChunkVerification {
+    Nonempty,
+    FrameCount,
 }
 
 impl ParallelEncoderData {

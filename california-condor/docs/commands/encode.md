@@ -106,6 +106,11 @@ retries. Defaults to `3` for new jobs and missing saved fields. Omitting the fla
 preserves a saved custom value. Available on root/start, `init`, and `encode`.
 Nonstreaming retries use extra disk space; see [retry and buffering policy](../configuration/condor/sequence-config/parallel-encoder.md).
 
+Rerun `av1an encode` with the same job file to resume. Av1an skips repeat decode
+checks for unchanged verified chunks and re-encodes missing or damaged chunks from the
+same job. Each affected scene starts with a fresh attempt budget (`3` by default).
+Standalone `concatenate` does not repair chunks; run `encode` first.
+
 ```bash
 av1an encode --max-tries 2
 av1an encode info max-tries

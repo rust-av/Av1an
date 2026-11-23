@@ -210,6 +210,15 @@ impl Configuration {
     /// Execution admission only; raw load/save remain usable for inspection and explicit reset.
     /// Never stamps results and never rewrites or removes a file on refusal.
     pub fn admit_results(&self) -> Result<()> {
+        self.admit_results_with_recovery(false)
+    }
+
+    /// Only use before running the encoder, which owns repair and persistence.
+    pub(crate) fn admit_results_for_encoding(&self) -> Result<()> {
+        self.admit_results_with_recovery(true)
+    }
+
+    fn admit_results_with_recovery(&self, recover_chunks: bool) -> Result<()> {
         use andean_condor::models::sequence::provenance;
         let model = &self.condor;
         let pe = &model.sequence_config.parallel_encoder;
@@ -238,7 +247,10 @@ impl Configuration {
                 scene.encoder.output_extension()
             ));
             let data = &scene.sequence_data.parallel_encoder;
-            if data.bytes.is_some()
+            if recover_chunks {
+                admission
+                    .admit_encode_for_recovery(input, probe, metric, scene, tq, &path, index)?;
+            } else if data.bytes.is_some()
                 || data.started_on.is_some()
                 || data.completed_on.is_some()
                 || path.symlink_metadata().is_ok()
@@ -691,6 +703,14 @@ impl ParallelEncoderConfigHandler for CliSequenceConfig {
 
     fn parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderConfig> {
         Ok(&mut self.parallel_encoder)
+    }
+
+    #[inline]
+    fn recovery_protected_paths(&self) -> Vec<PathBuf> {
+        let mut paths = self.protected_sources();
+        paths.extend(self.scene_concatenator.mux_sources());
+        paths.extend(self.scene_concatenator.output.iter().cloned());
+        paths
     }
 }
 

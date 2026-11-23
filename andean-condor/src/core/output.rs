@@ -142,7 +142,7 @@ pub(crate) fn persist_output(
 
 // Resolve each existing component before interpreting `..`: lexical cleanup first
 // would mistake `symlink/../file` for a different destination. Only NotFound is absence.
-fn resolve_path(path: &Path) -> Result<PathBuf> {
+pub(crate) fn resolve_path(path: &Path) -> Result<PathBuf> {
     let absolute = std::env::current_dir()?.join(path);
     let mut resolved = PathBuf::new();
     for component in absolute.components() {

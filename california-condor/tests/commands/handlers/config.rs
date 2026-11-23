@@ -13,6 +13,206 @@ mod provenance {
 
     #[cfg(unix)]
     #[test]
+    fn cli_resume_checkpoints_good_chunks_and_retries_only_damaged_chunks() {
+        use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+
+        use andean_condor::models::{
+            encoder::{Encoder, EncoderBase},
+            input::ImportMethod,
+        };
+        use california_condor::configuration::Configuration;
+
+        let temp = tempfile::tempdir().expect("job directory");
+        let root = temp.path();
+        let source = root.join("source.mkv");
+        assert!(
+            Command::new("ffmpeg")
+                .args([
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=s=64x64:r=24",
+                    "-frames:v",
+                    "9",
+                    "-c:v",
+                    "ffv1"
+                ])
+                .arg(&source)
+                .status()
+                .expect("generate fixture with ffmpeg")
+                .success()
+        );
+        let video = TestVideo {
+            path: source.clone(),
+            width: 64,
+            height: 64,
+            frames: 9,
+            fps_rational: (24, 1),
+            format: andean_condor::ffmpeg::FFPixelFormat::YUV420P,
+            scenes: vec![(0, 3), (3, 6), (6, 9)],
+        };
+        let final_output = root.join("out.mkv");
+        let mut config = default_config(&video, &final_output, &root.join("work"));
+        config.condor.input = Input::Video {
+            path: source,
+            import_method: ImportMethod::FFMS2 {
+                index: None,
+                cache_path: None,
+            },
+            filters: vec![],
+        };
+        config.condor.encoder = Encoder::default_from_base(&EncoderBase::X264, false);
+        config.condor.encoder.set_quantizer(20.0);
+        config.condor.scenes = video.mock_scenes(&config.condor.encoder);
+        config.condor.sequence_config.parallel_encoder.workers = Some(1);
+        for (index, scene) in config.condor.scenes.iter_mut().enumerate() {
+            let encoder = root.join(format!("codec-{index}"));
+            fs::write(
+                &encoder,
+                r#"#!/bin/sh
+scene=${0##*-}
+for arg do
+    if [ "$arg" = -o ]; then
+        printf '%s\n' "$scene" >> calls
+        if [ "$scene" = 2 ] && [ -f fail ]; then cat >/dev/null; exit 42; fi
+        break
+    fi
+done
+exec x264 "$@"
+"#,
+            )
+            .expect("write encoder fixture");
+            fs::set_permissions(&encoder, fs::Permissions::from_mode(0o755))
+                .expect("executable encoder");
+            scene.encoder.set_executable(Some(encoder));
+        }
+        let system_path = std::env::var_os("PATH").expect("PATH for native tooling");
+        let probe = std::env::split_paths(&system_path)
+            .map(|path| path.join("ffprobe"))
+            .find(|path| path.is_file())
+            .expect("installed ffprobe");
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).expect("probe wrapper directory");
+        let probe_wrapper = bin.join("ffprobe");
+        fs::write(
+            &probe_wrapper,
+            r#"#!/bin/sh
+for last do :; done
+printf '%s\n' "$last" >> probes
+exec "$REAL_FFPROBE" "$@"
+"#,
+        )
+        .expect("write probe wrapper");
+        fs::set_permissions(probe_wrapper, fs::Permissions::from_mode(0o755))
+            .expect("executable probe");
+        let path =
+            std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&system_path)))
+                .expect("test PATH with probe wrapper");
+        let run = |args: &[&str]| {
+            condor_cmd(&temp)
+                .env("PATH", &path)
+                .env("REAL_FFPROBE", &probe)
+                .args(["--config-file", "job.json"])
+                .args(args)
+                .output()
+                .expect("run av1an")
+        };
+        let config_path = root.join("job.json");
+        config.save(&config_path).expect("save initial job");
+        let first = run(&["encode"]);
+        assert!(
+            first.status.success(),
+            "{}",
+            String::from_utf8_lossy(&first.stderr)
+        );
+        let scenes = &config.condor.sequence_config.parallel_encoder.scenes_directory;
+        let good = scenes.join("00000.264");
+        let good_bytes = fs::read(&good).expect("healthy chunk");
+        let good_modified =
+            good.metadata().and_then(|m| m.modified()).expect("healthy chunk timestamp");
+        fs::remove_file(scenes.join("00001.264")).expect("make scene 1 missing");
+        fs::write(scenes.join("00002.264"), b"truncated").expect("damage scene 2");
+        assert!(!run(&["concatenate"]).status.success());
+        fs::write(root.join("fail"), []).expect("trigger encoder fault");
+        fs::write(root.join("calls"), []).expect("reset encoder invocation log");
+        fs::write(root.join("probes"), []).expect("reset probe invocation log");
+        let failed = run(&["encode"]);
+        assert!(!failed.status.success());
+        assert_eq!(
+            fs::read_to_string(root.join("calls")).expect("encoder invocations"),
+            "1\n2\n2\n2\n",
+            "{}",
+            String::from_utf8_lossy(&failed.stderr)
+        );
+        let saved = Configuration::load(&config_path)
+            .expect("parse checkpoint")
+            .expect("persisted job file");
+        assert!(saved.condor.scenes[1].sequence_data.parallel_encoder.completed_on.is_some());
+        assert!(saved.condor.scenes[2].sequence_data.parallel_encoder.completed_on.is_none());
+        assert!(!final_output.exists());
+
+        fs::remove_file(root.join("fail")).expect("restore working encoder");
+        fs::write(root.join("calls"), []).expect("reset encoder invocation log");
+        let repaired = run(&["encode"]);
+        assert!(
+            repaired.status.success(),
+            "{}",
+            String::from_utf8_lossy(&repaired.stderr)
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("calls")).expect("encoder invocations"),
+            "2\n"
+        );
+
+        // Check the full-run preflight with a saved completion whose file went missing.
+        fs::remove_file(scenes.join("00002.264")).expect("make scene 2 missing");
+        fs::write(root.join("calls"), []).expect("reset encoder invocation log");
+        let full_run = run(&["--skip-scd"]);
+        assert!(
+            full_run.status.success(),
+            "{}",
+            String::from_utf8_lossy(&full_run.stderr)
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("calls")).expect("encoder invocations"),
+            "2\n"
+        );
+        let probes = fs::read_to_string(root.join("probes")).expect("probe invocations");
+        assert!(
+            !probes.contains("00000.264") && !probes.contains("00001.264"),
+            "{probes}"
+        );
+        assert_eq!(
+            fs::read(&good).expect("healthy chunk preserved"),
+            good_bytes
+        );
+        assert_eq!(
+            good.metadata().and_then(|m| m.modified()).expect("healthy chunk timestamp"),
+            good_modified
+        );
+        let count = Command::new(&probe)
+            .args([
+                "-v",
+                "error",
+                "-count_frames",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=nb_read_frames",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&final_output)
+            .output()
+            .expect("count frames on the final output");
+        assert!(count.status.success());
+        assert_eq!(String::from_utf8_lossy(&count.stdout).trim(), "9");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn inherited_probe_options_survive_speed_scaling_final_encode_and_cli_resume() {
         tq_speed_scaler_pipeline(false);
     }

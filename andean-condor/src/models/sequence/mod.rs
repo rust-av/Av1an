@@ -153,6 +153,14 @@ impl ParallelEncoderConfigHandler for DefaultSequenceConfig {
     fn parallel_encoder_mut(&mut self) -> Result<&mut ParallelEncoderConfig> {
         Ok(&mut self.parallel_encoder)
     }
+
+    #[inline]
+    fn recovery_protected_paths(&self) -> Vec<std::path::PathBuf> {
+        let mut paths = self.protected_sources();
+        paths.extend(self.scene_concatenator.mux_sources());
+        paths.extend(self.scene_concatenator.output.iter().cloned());
+        paths
+    }
 }
 
 impl SceneConcatenatorConfigHandler for DefaultSequenceConfig {
