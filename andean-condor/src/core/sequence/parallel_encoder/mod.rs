@@ -1,12 +1,12 @@
 use crate::utils::cancellation::Cancellation;
 use std::sync::Arc;
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use av1_grain::write_grain_table;
 use tracing::{debug, error};
 
 use crate::models::sequence::{
-    provenance::{self, ResultProvenance},
+    provenance::{self, EncodeArtifact, ResultProvenance},
     target_quality::{TargetQualityConfigHandler, TargetQualityDataHandler},
 };
 use crate::{
@@ -17,7 +17,9 @@ use crate::{
     },
     models::sequence::{
         SequenceConfigHandler, SequenceDataHandler,
-        parallel_encoder::{ParallelEncoderConfigHandler, ParallelEncoderDataHandler},
+        parallel_encoder::{
+            ChunkVerification, ParallelEncoderConfigHandler, ParallelEncoderDataHandler,
+        },
     },
 };
 
@@ -63,6 +65,23 @@ pub static DETAILS: SequenceDetails = SequenceDetails {
 
 pub struct ParallelEncoder {
     pub input: Option<Input>,
+}
+
+fn checkpoint_verification<Data: ParallelEncoderDataHandler, Config: SequenceConfigHandler>(
+    condor: &mut Condor<Data, Config>,
+    dirty: &mut Vec<(usize, Option<ChunkVerification>)>,
+) -> Result<()> {
+    if dirty.is_empty() {
+        return Ok(());
+    }
+    let result =
+        (condor.save_callback)(condor.as_data()).context("Saving artifact eligibility metadata");
+    for (index, previous) in dirty.drain(..) {
+        if result.is_err() {
+            condor.scenes[index].sequence_data.get_parallel_encoder_mut()?.verification = previous;
+        }
+    }
+    result
 }
 
 /// Bits per second for the selected frames, not the encoder's elapsed wall time.
@@ -225,6 +244,11 @@ where
 
         let mut warnings = vec![];
         let config = condor.sequence_config.parallel_encoder()?.clone();
+        let required_verification = if config.validate_frame_count {
+            ChunkVerification::FrameCount
+        } else {
+            ChunkVerification::Nonempty
+        };
         let tq = condor.sequence_config.target_quality()?.clone();
         let root_model = condor.input.as_data();
         let input_model = self
@@ -237,127 +261,155 @@ where
         let metric_model = tq.as_ref().and_then(|c| c.metric_input.as_ref());
         // Admit the entire batch before metadata withdrawal, saves, or resumed events.
         let mut admission = provenance::Admission::default();
-        for (index, scene) in condor.scenes.iter().enumerate() {
-            admission.admit_target(&probe_model, metric_model, scene, tq.as_ref(), index)?;
-            provenance::admit_selection(scene, tq.as_ref(), index)?;
-            let output = config.scenes_directory.join(format!(
-                "{}.{}",
-                Self::scene_id(index),
-                scene.encoder.base().output_extension()
-            ));
-            let data = scene.sequence_data.get_parallel_encoder()?;
-            if data.bytes.is_some()
-                || data.started_on.is_some()
-                || data.completed_on.is_some()
-                || output.symlink_metadata().is_ok()
-            {
-                admission
-                    .admit_encode(
+        let candidates = condor
+            .scenes
+            .iter()
+            .enumerate()
+            .map(|(index, scene)| {
+                cancelled.check_forced()?;
+                admission.admit_target(&probe_model, metric_model, scene, tq.as_ref(), index)?;
+                provenance::admit_selection(scene, tq.as_ref(), index)?;
+                let path = config.scenes_directory.join(format!(
+                    "{}.{}",
+                    Self::scene_id(index),
+                    scene.encoder.base().output_extension()
+                ));
+                let state = admission
+                    .admit_encode_for_recovery(
                         &input_model,
                         &probe_model,
                         metric_model,
                         scene,
                         tq.as_ref(),
-                        &output,
+                        &path,
                         index,
                     )
-                    .map_err(|e| e.context(format!("saved artifact {}", output.display())))?;
-            }
-        }
+                    .with_context(|| format!("saved artifact {}", path.display()))?;
+                Ok((path, state))
+            })
+            .collect::<Result<Vec<_>>>()?;
         let workers = config.workers.unwrap_or(1);
-        let scenes_directory = &config.scenes_directory;
         if condor.scenes.is_empty() {
             warnings.push(anyhow::Error::new(ParallelEncoderError::ScenesEmpty));
             return Ok(((), warnings));
         }
 
         let mut tasks = std::collections::VecDeque::new();
+        let mut repairs = Vec::new();
         let mut resumed = Vec::new();
         let mut resume_error = None;
-        let mut metadata_changed = false;
+        let mut dirty = Vec::new();
         let scene_count = condor.scenes.len();
-        for (original_index, scene) in condor.scenes.iter_mut().enumerate() {
-            cancelled.check_forced()?;
-            // Finish an active finite probe during Graceful, but admit neither
-            // another candidate nor a new encode after it returns.
-            if cancelled.is_cancelled() {
-                break;
-            }
-            let output = scenes_directory.join(format!(
-                "{}.{}",
-                Self::scene_id(original_index),
-                scene.encoder.base().output_extension()
-            ));
-            let data = scene.sequence_data.get_parallel_encoder_mut()?;
-            let recorded =
-                data.bytes.is_some() || data.started_on.is_some() || data.completed_on.is_some();
-            let present = match output.symlink_metadata() {
-                Ok(_) => true,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-                // Let the validator reject unreadable candidates through the same
-                // metadata-withdrawal/save path as corrupt and missing chunks.
-                Err(_) => true,
-            };
-            if present || recorded {
-                let validation_progress = |completed: usize| {
-                    let _ = progress_tx.send(SequenceStatus::Whole(Status::Processing {
-                        id: DETAILS.name.to_owned(),
-                        completion: SequenceCompletion::Custom {
-                            name: "validating".to_owned(),
-                            completed: completed as f64,
-                            total: scene_count as f64,
-                        },
-                    }));
-                };
-                validation_progress(original_index);
-                let eligible = (|| -> Result<u64> {
-                    ensure!(
-                        data.bytes.is_some_and(|bytes| bytes > 0)
-                            && data
-                                .started_on
-                                .zip(data.completed_on)
-                                .is_some_and(|(start, end)| start <= end),
-                        "artifact has no usable saved completed encoding record"
-                    );
-                    artifact::validate(
-                        &output,
-                        (scene.start_frame..scene.end_frame).len(),
-                        config.validate_frame_count,
-                        &cancelled,
-                    )
-                })();
-                match eligible {
-                    Ok(bytes) => {
-                        metadata_changed |= data.bytes != Some(bytes);
-                        data.bytes = Some(bytes);
-                        resumed.push((original_index, bytes));
-                    },
-                    Err(error) if cancelled.is_forced() => return Err(error),
-                    Err(error) => {
-                        let conclusively_unusable = match output.metadata() {
-                            Ok(metadata) => !metadata.is_file() || metadata.len() == 0,
-                            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-                        };
-                        // Probe/count/read failures withhold eligibility, not the
-                        // historical record needed to retry after policy/tool repair.
-                        if conclusively_unusable {
-                            *data = Default::default();
-                            metadata_changed |= recorded;
-                        }
-                        lifecycle::retain_error(&mut resume_error, error.context(format!("Scene {original_index} cannot resume {}; file preserved. Repair the probe or intentional count policy and retry; otherwise recompute in a new job or move the chunk aside and clear its saved completion record", output.display())));
-                    },
+        let scan = (|| -> Result<()> {
+            for (original_index, (output, candidate)) in candidates.into_iter().enumerate() {
+                cancelled.check_forced()?;
+                // Finish an active finite probe during Graceful, but admit neither
+                // another candidate nor a new encode after it returns.
+                if cancelled.is_cancelled() {
+                    break;
                 }
-                validation_progress(original_index + 1);
-                continue;
+                let scene = &mut condor.scenes[original_index];
+                let data = scene.sequence_data.get_parallel_encoder_mut()?;
+                if let EncodeArtifact::Current(identity) = candidate {
+                    let validation_progress = |completed: usize| {
+                        let _ = progress_tx.send(SequenceStatus::Whole(Status::Processing {
+                            id: DETAILS.name.to_owned(),
+                            completion: SequenceCompletion::Custom {
+                                name: "validating".to_owned(),
+                                completed: completed as f64,
+                                total: scene_count as f64,
+                            },
+                        }));
+                    };
+                    validation_progress(original_index);
+                    let eligible = (|| -> Result<u64> {
+                        artifact::ensure_unchanged(&output, &identity)?;
+                        let count = config.validate_frame_count
+                            && data.verification != Some(ChunkVerification::FrameCount);
+                        let bytes = artifact::validate(
+                            &output,
+                            (scene.start_frame..scene.end_frame).len(),
+                            count,
+                            &cancelled,
+                        )?;
+                        artifact::ensure_unchanged(&output, &identity)?;
+                        Ok(bytes)
+                    })();
+                    match eligible {
+                        Ok(bytes) => {
+                            let verification =
+                                if data.verification == Some(ChunkVerification::FrameCount) {
+                                    ChunkVerification::FrameCount
+                                } else {
+                                    required_verification
+                                };
+                            if data.bytes != Some(bytes) || data.verification != Some(verification)
+                            {
+                                dirty.push((original_index, data.verification));
+                            }
+                            data.verification = Some(verification);
+                            data.bytes = Some(bytes);
+                            resumed.push((original_index, bytes));
+                            validation_progress(original_index + 1);
+                            // ponytail: amortize full-job writes; flush the final partial batch too.
+                            if dirty.len() >= 32 {
+                                checkpoint_verification(condor, &mut dirty)?;
+                            }
+                            continue;
+                        },
+                        Err(error) if cancelled.is_forced() => return Err(error),
+                        Err(error) if error.is::<artifact::InvalidArtifact>() => {
+                            repairs.push((
+                                original_index,
+                                output.clone(),
+                                Some(identity),
+                                format!("{error:#}"),
+                            ));
+                        },
+                        Err(error) => {
+                            lifecycle::retain_error(&mut resume_error, error.context(format!(
+                                "Scene {original_index} cannot verify {}; file preserved. Check the probe and file access. If the chunk itself is damaged, move it out of the scenes directory and rerun the encode; missing chunks are re-encoded automatically",
+                                output.display()
+                            )));
+                            validation_progress(original_index + 1);
+                            continue;
+                        },
+                    }
+                    validation_progress(original_index + 1);
+                } else if let EncodeArtifact::Changed(identity) = candidate {
+                    repairs.push((
+                        original_index,
+                        output.clone(),
+                        Some(identity),
+                        "file size or modification time changed".to_owned(),
+                    ));
+                } else if matches!(candidate, EncodeArtifact::Missing) {
+                    repairs.push((
+                        original_index,
+                        output.clone(),
+                        None,
+                        "saved chunk is missing".to_owned(),
+                    ));
+                }
+                tasks.push_back(Task {
+                    original_index,
+                    index: tasks.len(),
+                    frame_indices: (scene.start_frame..scene.end_frame).collect::<Vec<_>>(),
+                    sub_scenes: scene.sub_scenes.clone(),
+                    encoder: scene.encoder.clone(),
+                    output,
+                });
             }
-            tasks.push_back(Task {
-                original_index,
-                index: tasks.len(),
-                frame_indices: (scene.start_frame..scene.end_frame).collect::<Vec<_>>(),
-                sub_scenes: scene.sub_scenes.clone(),
-                encoder: scene.encoder.clone(),
-                output,
-            });
+            Ok(())
+        })();
+        if let Err(error) = scan {
+            lifecycle::retain_error(&mut resume_error, error);
+        }
+        if let Err(error) = checkpoint_verification(condor, &mut dirty) {
+            lifecycle::retain_error(&mut resume_error, error);
+        }
+        if let Some(error) = resume_error {
+            return Err(error);
         }
         let mut configured_input =
             if self.input.is_none() && !tasks.is_empty() && !cancelled.is_cancelled() {
@@ -383,17 +435,55 @@ where
                 })?;
             }
         }
-        if metadata_changed {
-            let saved = (condor.save_callback)(condor.as_data());
-            if let Err(error) = saved {
+        if !repairs.is_empty() && !cancelled.is_cancelled() {
+            artifact::preflight(config.validate_frame_count)?;
+            let mut protected = condor.sequence_config.recovery_protected_paths();
+            protected.extend(
+                [Some(&root_model), Some(&input_model), Some(&probe_model), metric_model]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(crate::models::input::Input::path)
+                    .map(std::path::Path::to_path_buf),
+            );
+            protected.push(condor.output.path.clone());
+            let mut changed = false;
+            let mut repair_error = (|| -> Result<()> {
+                for (index, path, identity, reason) in repairs {
+                    cancelled.check_forced()?;
+                    if cancelled.is_cancelled() {
+                        break;
+                    }
+                    let data = condor.scenes[index].sequence_data.get_parallel_encoder_mut()?;
+                    cancelled.publish(|| {
+                        cancelled.check()?;
+                        if let Some(identity) = identity {
+                            let backup = artifact::quarantine(&path, &identity, &protected)
+                                .with_context(|| format!("Preserving unusable scene {index} {}", path.display()))?;
+                            tracing::warn!("Scene {index}: {reason}; re-encoding (previous file preserved at {})", backup.display());
+                        } else {
+                            match path.symlink_metadata() {
+                                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                                Err(error) => return Err(error).context("Rechecking missing chunk"),
+                                Ok(_) => bail!("Scene {index} chunk appeared before repair: {}", path.display()),
+                            }
+                            tracing::warn!("Scene {index}: {reason}; re-encoding");
+                        }
+                        *data = Default::default();
+                        changed = true;
+                        Ok(())
+                    })?;
+                }
+                Ok(())
+            })().err();
+            if changed && let Err(error) = (condor.save_callback)(condor.as_data()) {
                 lifecycle::retain_error(
-                    &mut resume_error,
-                    error.context("Saving artifact eligibility metadata"),
+                    &mut repair_error,
+                    error.context("Saving pending chunk repairs"),
                 );
             }
-        }
-        if let Some(error) = resume_error {
-            return Err(error);
+            if let Some(error) = repair_error {
+                return Err(error);
+            }
         }
         let initial_frames = resumed
             .iter()
@@ -450,7 +540,7 @@ where
 
         let (results_tx, results_rx) = crossbeam_channel::unbounded();
         let finished_scenes = Arc::new(crate::utils::semaphore::Semaphore::new(0));
-        let mut on_results = |results: Vec<ParallelEncoderResult>| -> Result<()> {
+        let mut on_results = |results: Vec<task::PublishedResult>| -> Result<()> {
             ensure!(
                 before
                     == provenance::Admission::default().measurement_inputs(
@@ -463,7 +553,11 @@ where
             let mut staged = scenes.clone();
             let mut publication = provenance::Admission::default();
             let mut published = Vec::new();
-            for encoder_result in results {
+            for task::PublishedResult {
+                result: encoder_result,
+                identity,
+            } in results
+            {
                 if let Some(scene) = staged.get_mut(encoder_result.scene)
                     && encoder_result.result.status.success()
                     && encoder_result.bytes != 0
@@ -482,8 +576,14 @@ where
                         &path,
                         encoder_result.scene,
                     )?;
+                    ensure!(
+                        context["artifact"] == identity,
+                        "Scene {} artifact changed before saving its verification",
+                        encoder_result.scene
+                    );
                     let parallel_encode_data = scene.sequence_data.get_parallel_encoder_mut()?;
                     parallel_encode_data.provenance = Some(ResultProvenance::new(context));
+                    parallel_encode_data.verification = Some(required_verification);
                     parallel_encode_data.bytes = Some(encoder_result.bytes);
                     parallel_encode_data.started_on = Some(
                         encoder_result
@@ -515,7 +615,9 @@ where
                 // Retain observations for diagnostics, but a failed publication
                 // callback cannot authorize a later saved-job resume.
                 for index in published {
-                    scenes[index].sequence_data.get_parallel_encoder_mut()?.provenance = None;
+                    let data = scenes[index].sequence_data.get_parallel_encoder_mut()?;
+                    data.provenance = None;
+                    data.verification = None;
                 }
                 return Err(error);
             }

@@ -888,6 +888,7 @@ mod tests {
             let data = ParallelEncoderData {
                 invalidated: false,
                 provenance: None,
+                verification: None,
                 started_on: Some(20_000),
                 completed_on: Some(completed_on),
                 bytes: Some(1000),

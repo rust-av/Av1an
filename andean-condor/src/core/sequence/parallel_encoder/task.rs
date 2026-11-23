@@ -27,12 +27,17 @@ pub struct Task {
 /// only between scene decodes.
 pub(super) struct ResultStream<'a, F>
 where
-    F: FnMut(Vec<ParallelEncoderResult>) -> Result<()>,
+    F: FnMut(Vec<PublishedResult>) -> Result<()>,
 {
-    pub(super) results_tx: crossbeam_channel::Sender<ParallelEncoderResult>,
-    pub(super) results_rx: &'a crossbeam_channel::Receiver<ParallelEncoderResult>,
+    pub(super) results_tx: crossbeam_channel::Sender<PublishedResult>,
+    pub(super) results_rx: &'a crossbeam_channel::Receiver<PublishedResult>,
     pub(super) finished_scenes: Arc<Semaphore>,
     pub(super) on_results: &'a mut F,
+}
+
+pub(super) struct PublishedResult {
+    pub(super) result: ParallelEncoderResult,
+    pub(super) identity: serde_json::Value,
 }
 
 /// One finished scene encode.

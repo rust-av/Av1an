@@ -1,4 +1,4 @@
-//! Read-only decoder-backed eligibility checks, independent of encoder progress.
+//! Encoded artifact verification and preservation, independent of encoder progress.
 use std::{
     io::Read,
     path::Path,
@@ -6,12 +6,47 @@ use std::{
     thread,
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 
+pub(super) use crate::models::sequence::provenance::artifact_identity as identity;
 use crate::{
     core::{encoder::pipes::join_worker, process::OwnedProcess},
     utils::cancellation::Cancellation,
 };
+
+pub(super) fn ensure_unchanged(path: &Path, identity: &serde_json::Value) -> Result<()> {
+    ensure!(
+        &self::identity(path)? == identity,
+        "Encoded artifact changed during verification or publication: {}",
+        path.display()
+    );
+    Ok(())
+}
+
+pub(super) fn quarantine(
+    path: &Path,
+    identity: &serde_json::Value,
+    protected: &[std::path::PathBuf],
+) -> Result<std::path::PathBuf> {
+    crate::core::output::admit_output(path, protected, true, true)?;
+    let directory = tempfile::Builder::new()
+        .prefix(".av1an-rejected-")
+        .tempdir_in(path.parent().context("Missing chunk directory")?)?;
+    let name = path.file_name().context("Missing chunk filename")?;
+    ensure_unchanged(path, identity)?;
+    std::fs::rename(path, directory.path().join(name))?;
+    Ok(directory.keep().join(name))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(super) enum InvalidArtifact {
+    #[error(
+        "decoded frame count {actual} does not match expected {expected}; recompute the chunk, or explicitly disable validate_frame_count only for intentional frame-changing filters"
+    )]
+    FrameCount { actual: usize, expected: usize },
+    #[error("ffprobe reported invalid chunk data: {0}")]
+    InvalidData(String),
+}
 
 /// Check the counter prerequisite without opening input or launching encoders.
 /// Decoder support is still verified against the actual completed artifact.
@@ -23,7 +58,7 @@ pub(crate) fn preflight(count: bool) -> Result<()> {
 }
 
 /// Publication must not replace caller-owned files (including dangling links).
-/// Directories remain ordinary rename errors; a regular file cannot replace one.
+/// Directories fail at no-clobber publication; a regular file cannot replace one.
 pub(crate) fn protect_existing(path: &Path) -> Result<()> {
     match path.symlink_metadata() {
         Ok(metadata) => ensure!(
@@ -50,7 +85,7 @@ pub(crate) fn validate(
 ) -> Result<u64> {
     let checked = || -> Result<u64> {
         token.check_forced()?;
-        let metadata = path.metadata().context("Reading encoded artifact metadata")?;
+        let metadata = path.symlink_metadata().context("Reading encoded artifact metadata")?;
         ensure!(
             metadata.is_file() && metadata.len() > 0,
             "encoded artifact is not a nonempty regular file"
@@ -101,10 +136,11 @@ fn probe(path: &Path, expected: usize, token: &Cancellation) -> Result<()> {
             "-err_detect",
             "explode",
             "-count_frames",
+            "-show_error",
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=nb_read_frames",
+            "stream=nb_read_frames:error=code",
             "-of",
             "json",
             "-i",
@@ -152,13 +188,23 @@ fn probe(path: &Path, expected: usize, token: &Cancellation) -> Result<()> {
     let status = status?;
     let stdout = stdout?;
     let stderr = stderr?;
+    // AVERROR_INVALIDDATA is structured evidence; a generic exit or stderr
+    // alone may mean an unavailable decoder or a broken probe environment.
+    let json = serde_json::from_slice::<serde_json::Value>(&stdout);
+    if json
+        .as_ref()
+        .is_ok_and(|value| value["error"]["code"].as_i64() == Some(-1_094_995_529))
+    {
+        return Err(
+            InvalidArtifact::InvalidData(String::from_utf8_lossy(&stderr).into_owned()).into(),
+        );
+    }
     ensure!(
         status.success() && stderr.is_empty(),
         "ffprobe frame-count/decode validation failed ({status}); verify codec decoder support and recompute the chunk: {}",
         String::from_utf8_lossy(&stderr)
     );
-    let json: serde_json::Value =
-        serde_json::from_slice(&stdout).context("Malformed ffprobe frame-count JSON")?;
+    let json = json.context("Malformed ffprobe frame-count JSON")?;
     let streams = json
         .get("streams")
         .and_then(serde_json::Value::as_array)
@@ -175,9 +221,11 @@ fn probe(path: &Path, expected: usize, token: &Cancellation) -> Result<()> {
             "ffprobe returned a missing/invalid decoded frame count; verify decoder support",
         )?;
     if frames != expected {
-        bail!(
-            "decoded frame count {frames} does not match expected {expected}; recompute the chunk, or explicitly disable validate_frame_count only for intentional frame-changing filters"
-        );
+        return Err(InvalidArtifact::FrameCount {
+            actual: frames,
+            expected,
+        }
+        .into());
     }
     Ok(())
 }

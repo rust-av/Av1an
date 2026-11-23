@@ -710,6 +710,15 @@ fn instantiate_saved_condor(
     instantiate_editable_condor(configuration, save_file, cancellation)
 }
 
+fn instantiate_encoding_condor(
+    configuration: &Configuration,
+    save_file: &Path,
+    cancellation: &Cancellation,
+) -> Result<Condor<configuration::CliSequenceData, configuration::CliSequenceConfig>> {
+    configuration.admit_results_for_encoding()?;
+    instantiate_editable_condor(configuration, save_file, cancellation)
+}
+
 // Explicit scene edits may publish withdrawn results; constructing a runtime
 // input is not permission for any consumer to bypass the persisted barrier.
 fn instantiate_editable_condor(
@@ -763,7 +772,8 @@ fn run_condor_reported(
 ) -> Result<()> {
     let started = std::time::Instant::now();
     let cancellation_token = cancellation;
-    let mut condor = instantiate_saved_condor(configuration, save_file, &cancellation_token.token)?;
+    let mut condor =
+        instantiate_encoding_condor(configuration, save_file, &cancellation_token.token)?;
 
     if !skip_scd {
         run_scene_detector_tui(&mut condor, cancellation_token.clone())?;
@@ -941,7 +951,7 @@ pub fn run_encoder(
     cancellation: impl Into<interrupt::Interrupt>,
 ) -> Result<()> {
     let cancellation = cancellation.into();
-    let mut condor = instantiate_saved_condor(configuration, save_file, &cancellation.token)?;
+    let mut condor = instantiate_encoding_condor(configuration, save_file, &cancellation.token)?;
     cancellation.finish(run_parallel_encoder_tui(&mut condor, cancellation.clone()))
 }
 

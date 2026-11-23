@@ -561,9 +561,9 @@ fi
             results_tx = broken;
         }
         let mut saved = Vec::new();
-        let mut on_results = |batch: Vec<ParallelEncoderResult>| -> Result<()> {
-            assert!(batch.iter().all(|r| r.result.status.success() && r.bytes == 5));
-            saved.extend(batch.iter().map(|r| r.scene));
+        let mut on_results = |batch: Vec<task::PublishedResult>| -> Result<()> {
+            assert!(batch.iter().all(|p| p.result.result.status.success() && p.result.bytes == 5));
+            saved.extend(batch.iter().map(|p| p.result.scene));
             if kind == "save-active" {
                 while !root.join("started-8").exists() {
                     std::thread::yield_now();
@@ -694,9 +694,9 @@ fi
                     assert_eq!(
                         error
                             .downcast_ref::<std::io::Error>()
-                            .expect("real rename failure")
-                            .raw_os_error(),
-                        Some(21)
+                            .expect("real no-clobber publication failure")
+                            .kind(),
+                        std::io::ErrorKind::AlreadyExists
                     );
                     assert!(
                         root.join("complete-7").exists(),
