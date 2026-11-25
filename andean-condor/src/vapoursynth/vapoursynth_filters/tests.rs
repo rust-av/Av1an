@@ -312,6 +312,33 @@ fn motion_prefix_parser_preserves_literal_punctuation_and_whitespace() {
 }
 
 #[test]
+fn degrain_script_omits_removed_mvutensils_arguments() {
+    use crate::vapoursynth::script_builder::script::Line;
+
+    let (_, lines) = "degrain:recalculate=true"
+        .parse::<VapourSynthFilter>()
+        .expect("degrain")
+        .generate_script("clip".to_owned())
+        .expect("generated degrain script");
+    let calls: Vec<_> = lines
+        .into_iter()
+        .filter_map(|line| match line {
+            Line::Expression(_, call) if call.starts_with("core.mvu.") => Some(call),
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        calls.iter().any(|call| call.starts_with("core.mvu.AnalyseMany(")),
+        "{calls:?}"
+    );
+    assert!(
+        calls.iter().all(|call| !call.contains("fields =") && !call.contains("tff =")),
+        "{calls:?}"
+    );
+}
+
+#[test]
 fn deferred_output_format_keeps_unspecified_fields_unset() {
     assert!(matches!(
         "output-format:bit_depth=10".parse::<VapourSynthFilter>().expect("deferred"),

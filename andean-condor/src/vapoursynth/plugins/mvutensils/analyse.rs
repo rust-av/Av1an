@@ -64,10 +64,6 @@ pub struct Analyse {
     /// Try multiple motion-vector candidates per block: 0=off, 1=except finest,
     /// 2=all.
     pub trymany: Option<u32>,
-    /// Treat the clip as field-based.
-    pub fields: Option<bool>,
-    /// Top field first.
-    pub tff: Option<bool>,
     /// Use SATD instead of SAD.
     pub satd: Option<bool>,
     /// Prefix for frame properties.
@@ -106,8 +102,6 @@ impl PluginFunction for Analyse {
         ("badrange", &ValueType::Int),
         ("meander", &ValueType::Int),
         ("trymany", &ValueType::Int),
-        ("fields", &ValueType::Int),
-        ("tff", &ValueType::Int),
         ("satd", &ValueType::Int),
         ("prefix", &ValueType::Data),
     ];
@@ -151,8 +145,6 @@ impl Analyse {
                 ("badrange", self.badrange),
                 ("meander", self.meander.map(|b| if b { 1 } else { 0 })),
                 ("trymany", self.trymany),
-                ("fields", self.fields.map(|b| if b { 1 } else { 0 })),
-                ("tff", self.tff.map(|b| if b { 1 } else { 0 })),
                 ("satd", self.satd.map(|b| if b { 1 } else { 0 })),
             ],
         )?;
@@ -235,12 +227,6 @@ impl VapourSynthPluginScript for Analyse {
             }
             if let Some(trymany) = self.trymany {
                 write!(&mut line, ", trymany = {}", trymany as i64)?;
-            }
-            if let Some(fields) = self.fields {
-                write!(&mut line, ", fields = {}", fields as i64)?;
-            }
-            if let Some(tff) = self.tff {
-                write!(&mut line, ", tff = {}", tff as i64)?;
             }
             if let Some(satd) = self.satd {
                 write!(&mut line, ", satd = {}", satd as i64)?;
