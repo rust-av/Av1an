@@ -5,7 +5,6 @@ use andean_condor::{
         encoder::{EncoderProcessError, EncoderResult, StringOrBytes},
         input::Input,
         output::Output,
-        process::OwnedProcess,
         sequence::{
             Sequence,
             ffmpeg_filter::FfmpegFilter,
@@ -20,7 +19,10 @@ use andean_condor::{
         scene::Scene,
         sequence::{DefaultSequenceConfig, DefaultSequenceData},
     },
-    utils::cancellation::{Cancellation, Cancelled},
+    utils::{
+        cancellation::{Cancellation, Cancelled},
+        process::OwnedProcess,
+    },
     vapoursynth::plugins::dgdecodenv::DGSource,
 };
 use anyhow::Result;

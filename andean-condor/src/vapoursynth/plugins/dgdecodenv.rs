@@ -451,7 +451,7 @@ fn run_index(
     if let Some(progress) = progress.as_mut() {
         (**progress)(0, 0);
     }
-    let mut child = crate::core::process::OwnedProcess::spawn(
+    let mut child = crate::utils::process::OwnedProcess::spawn(
         Command::new(executable)
             .arg("-h")
             .arg("-i")

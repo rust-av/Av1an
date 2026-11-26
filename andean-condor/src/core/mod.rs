@@ -26,7 +26,6 @@ mod tests;
 pub mod encoder;
 pub mod input;
 pub mod output;
-pub mod process;
 pub mod sequence;
 // pub mod scene;
 

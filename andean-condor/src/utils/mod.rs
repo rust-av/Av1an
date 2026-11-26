@@ -1,5 +1,6 @@
 pub mod cancellation;
 pub mod interpolators;
+pub mod process;
 pub mod semaphore;
 
 /// A caught thread panic. Library diagnostics retain the payload; process

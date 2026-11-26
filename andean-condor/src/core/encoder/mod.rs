@@ -15,8 +15,8 @@ use std::{
 };
 
 use crate::{
-    core::process::OwnedProcess,
     utils::cancellation::{Cancellation, Cancelled},
+    utils::process::OwnedProcess,
 };
 use anyhow::{Context, Result, bail};
 use av1_grain::{GrainTableSegment, NoiseGenArgs, TransferFunction, generate_photon_noise_params};
@@ -74,7 +74,7 @@ fn pass_result(
 
 fn complete_output(
     result: EncoderResult,
-    output: &mut crate::core::process::InterruptedOutput,
+    output: &mut crate::utils::process::InterruptedOutput,
 ) -> Result<EncoderResult> {
     match output.complete() {
         Ok(()) => Ok(result),
@@ -625,7 +625,7 @@ impl Encoder {
         self.validate()?;
         cancellation.check_admission()?;
         let cancellation = &cancellation.active();
-        let mut output_guard = crate::core::process::InterruptedOutput::new(output, cancellation);
+        let mut output_guard = crate::utils::process::InterruptedOutput::new(output, cancellation);
         let stats = if matches!(self.passes(), EncoderPasses::All(total) if total > 1) {
             Some(PassStatistics::new(output)?)
         } else {
@@ -706,7 +706,7 @@ impl Encoder {
         self.validate_pass_settings(pass)?;
         let executable = self.resolve_executable()?;
         cancellation.check_admission()?;
-        let mut output_guard = crate::core::process::InterruptedOutput::new(output, cancellation);
+        let mut output_guard = crate::utils::process::InterruptedOutput::new(output, cancellation);
         // TODO:
         // - Report mapped errors
         // - Report CPU, memory, disk usage - Performance testing required
@@ -896,7 +896,7 @@ impl Encoder {
         self.validate()?;
         cancellation.check_admission()?;
         let cancellation = &cancellation.active();
-        let mut output_guard = crate::core::process::InterruptedOutput::new(output, cancellation);
+        let mut output_guard = crate::utils::process::InterruptedOutput::new(output, cancellation);
         let result: Result<EncoderResult> = match self.passes() {
             EncoderPasses::All(1) => {
                 let _ = progress_tx.send(EncodeProgress {
@@ -1012,7 +1012,7 @@ impl Encoder {
         self.validate_pass_settings(pass)?;
         let executable = self.resolve_executable()?;
         cancellation.check_admission()?;
-        let mut output_guard = crate::core::process::InterruptedOutput::new(output, cancellation);
+        let mut output_guard = crate::utils::process::InterruptedOutput::new(output, cancellation);
         let mut parameters =
             self.parameters_with_output(pass, output, clip_info, stats.map(PassStatistics::base))?;
         if owned_output && matches!(self, Encoder::FFmpeg { .. }) {

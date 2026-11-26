@@ -10,8 +10,8 @@ use anyhow::{Context, Result, ensure};
 
 pub(super) use crate::models::sequence::provenance::artifact_identity as identity;
 use crate::{
-    core::{encoder::pipes::join_worker, process::OwnedProcess},
-    utils::cancellation::Cancellation,
+    core::encoder::pipes::join_worker,
+    utils::{cancellation::Cancellation, process::OwnedProcess},
 };
 
 pub(super) fn ensure_unchanged(path: &Path, identity: &serde_json::Value) -> Result<()> {

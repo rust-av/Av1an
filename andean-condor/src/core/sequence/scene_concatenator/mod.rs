@@ -13,9 +13,9 @@ use crate::models::sequence::{
     provenance,
     target_quality::{TargetQualityConfigHandler, TargetQualityDataHandler},
 };
-use crate::{
-    core::process::{InterruptedOutput, OwnedProcess},
-    utils::cancellation::Cancellation,
+use crate::utils::{
+    cancellation::Cancellation,
+    process::{InterruptedOutput, OwnedProcess},
 };
 use anyhow::{Context, Result, bail};
 use av_format::rational::Ratio;

@@ -4,7 +4,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
-use crate::core::process::ProcessState;
+use super::process::ProcessState;
 use anyhow::Result;
 
 /// Monotonic cancellation state, also usable as a typed anyhow cause.

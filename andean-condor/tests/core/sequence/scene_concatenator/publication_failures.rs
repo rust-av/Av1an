@@ -1,7 +1,7 @@
 //! Final-owner policy tests; fake mux output is not native codec evidence.
 use super::*;
 use andean_condor::{
-    core::process::OwnedProcess, models::sequence::scene_concatenator::MkvmergeConfig,
+    models::sequence::scene_concatenator::MkvmergeConfig, utils::process::OwnedProcess,
 };
 use std::fs::File;
 
