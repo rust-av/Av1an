@@ -512,7 +512,11 @@ fn retry_progress_child() {
         let scratch = root.join("must-not-create");
         condor.sequence_config.parallel_encoder.scenes_directory = scratch.clone();
         let error = ParallelEncoder::default()
-            .initialize(&mut condor, tx.clone())
+            .initialize(
+                &mut condor,
+                tx.clone(),
+                &condor::utils::cancellation::Cancellation::default(),
+            )
             .expect_err("zero before initialization IO");
         assert!(error.to_string().contains("max_tries"));
         assert!(!scratch.exists(), "zero must not create scratch");
@@ -609,41 +613,47 @@ fn retry_progress_child() {
                 fs::write(root.join("release"), "continue").expect("release active attempt");
             })
         });
-        let result = if kind.starts_with("direct")
-            || (progress && matches!(kind, "quiet" | "sparse"))
-        {
-            let tasks = vec![Task {
-                original_index: 7,
-                index: 0,
-                frame_indices: vec![1, 2, 3],
-                sub_scenes: None,
-                encoder: condor.encoder.clone(),
-                output: output.clone(),
-            }]
-            .into();
-            let result = if progress && matches!(kind, "quiet" | "sparse") {
-                ParallelEncoder::encode_tasks_with_options(
-                    &mut condor.input,
-                    1,
-                    tasks,
-                    tx,
-                    token.clone(),
-                    ParallelEncoderOptions {
-                        max_tries: 1,
-                        validate_frame_count: true,
-                    },
-                )
+        let result =
+            if kind.starts_with("direct") || (progress && matches!(kind, "quiet" | "sparse")) {
+                let tasks = vec![Task {
+                    original_index: 7,
+                    index: 0,
+                    frame_indices: vec![1, 2, 3],
+                    sub_scenes: None,
+                    encoder: condor.encoder.clone(),
+                    output: output.clone(),
+                }]
+                .into();
+                let result = if progress && matches!(kind, "quiet" | "sparse") {
+                    ParallelEncoder::encode_tasks(
+                        &mut condor.input,
+                        1,
+                        tasks,
+                        tx,
+                        token.clone(),
+                        ParallelEncoderOptions {
+                            max_tries: 1,
+                            validate_frame_count: true,
+                        },
+                    )
+                } else {
+                    ParallelEncoder::encode_tasks(
+                        &mut condor.input,
+                        1,
+                        tasks,
+                        tx,
+                        token.clone(),
+                        condor::core::sequence::parallel_encoder::ParallelEncoderOptions::default(),
+                    )
+                };
+                result.map(|results| {
+                    assert_eq!(results.len(), 1);
+                    assert_eq!(results[0].as_ref().expect("direct result").scene, 7);
+                    ((), vec![])
+                })
             } else {
-                ParallelEncoder::encode_tasks_cancel(&mut condor.input, 1, tasks, tx, token.clone())
+                ParallelEncoder::default().execute(&mut condor, tx, token.clone())
             };
-            result.map(|results| {
-                assert_eq!(results.len(), 1);
-                assert_eq!(results[0].as_ref().expect("direct result").scene, 7);
-                ((), vec![])
-            })
-        } else {
-            ParallelEncoder::default().execute_cancel(&mut condor, tx, token.clone())
-        };
         if let Some(controller) = controller {
             controller.join().expect("controller");
         }

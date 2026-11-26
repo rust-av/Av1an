@@ -47,7 +47,7 @@ fn rav1e_two_pass_output_decodes_three_av1_frames() {
     // the independent input-backed All(2) loop is not part of this regression.
     for pass in [1, 2] {
         let argv = encoder
-            .parameters_with_stats((pass, 2), &output, &super::clip_info(), stats.base())
+            .parameters_with_output((pass, 2), &output, &super::clip_info(), Some(stats.base()))
             .expect("production argv");
         eprintln!("rav1e pass {pass} argv: {argv:?}");
         run_bounded(

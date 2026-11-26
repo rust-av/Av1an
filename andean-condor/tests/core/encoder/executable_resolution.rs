@@ -204,8 +204,16 @@ fn assert_requested_encoder_path() {
                 encoder.version_text().as_deref(),
                 Some("executable resolution")
             );
-            assert!(encoder.supports_capability(EncoderCapability::Zoning));
-            assert_eq!(encoder.container(), Some(Container::AnnexB));
+            let cancellation = andean_condor::utils::cancellation::Cancellation::default();
+            assert!(
+                encoder
+                    .supports_capability(EncoderCapability::Zoning, &cancellation)
+                    .expect("resolve custom capability probe")
+            );
+            assert_eq!(
+                encoder.container(&cancellation).expect("resolve custom container probe"),
+                Some(Container::AnnexB)
+            );
         }
         let (sender, frames) = crossbeam_channel::unbounded();
         sender
@@ -215,7 +223,13 @@ fn assert_requested_encoder_path() {
             .expect("frame");
         drop(sender);
         encoder
-            .encode_with_stream(frames, &root.join("out.264"), progress, &super::clip_info())
+            .encode_with_stream(
+                frames,
+                &root.join("out.264"),
+                progress,
+                &super::clip_info(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
             .expect("custom spawn");
         if case != "default" {
             assert_eq!(
@@ -229,8 +243,9 @@ fn assert_requested_encoder_path() {
         return;
     }
     if case == "optional" {
-        assert!(!encoder.supports_capability(EncoderCapability::Zoning));
-        assert_eq!(encoder.container(), None);
+        let cancellation = andean_condor::utils::cancellation::Cancellation::default();
+        assert!(encoder.supports_capability(EncoderCapability::Zoning, &cancellation).is_err());
+        assert!(encoder.container(&cancellation).is_err());
         assert_eq!(encoder.version_text(), None);
         return;
     }
@@ -247,9 +262,25 @@ fn assert_requested_encoder_path() {
         if case.contains("input") {
             let mut input = input();
             if case.ends_with("input-pass") || case == "spawn-input" {
-                encoder.encode_pass_with_input(&mut input, &output, 0, 1, (1, 1), progress, None)
+                encoder.encode_pass_with_input(
+                    &mut input,
+                    &output,
+                    0,
+                    1,
+                    (1, 1),
+                    progress,
+                    None,
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
             } else {
-                encoder.encode_with_input(&mut input, &output, 0, 1, progress)
+                encoder.encode_with_input(
+                    &mut input,
+                    &output,
+                    0,
+                    1,
+                    progress,
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
             }
         } else {
             let (sender, frames) = crossbeam_channel::unbounded();
@@ -262,9 +293,16 @@ fn assert_requested_encoder_path() {
                     progress,
                     &super::clip_info(),
                     None,
+                    &andean_condor::utils::cancellation::Cancellation::default(),
                 )
             } else {
-                encoder.encode_with_stream(frames, &output, progress, &super::clip_info())
+                encoder.encode_with_stream(
+                    frames,
+                    &output,
+                    progress,
+                    &super::clip_info(),
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
             };
             drop(sender);
             result
@@ -284,8 +322,9 @@ fn assert_requested_encoder_path() {
     );
     assert!(reports.try_recv().is_err(), "preflight emitted progress");
     if !case.starts_with("spawn-") {
-        assert!(!encoder.supports_capability(EncoderCapability::Zoning));
-        assert_eq!(encoder.container(), None);
+        let cancellation = andean_condor::utils::cancellation::Cancellation::default();
+        assert!(encoder.supports_capability(EncoderCapability::Zoning, &cancellation).is_err());
+        assert!(encoder.container(&cancellation).is_err());
         assert_eq!(encoder.version_text(), None);
     }
     assert!(

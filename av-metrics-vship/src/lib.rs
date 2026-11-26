@@ -38,7 +38,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Requires libvship and a usable GPU at runtime; see the crate README.
-//! let config = VshipConfig::new();
+//! let config = VshipConfig::default();
 //!
 //! let mut reference = Decoder::from_file("reference.mkv")?;
 //! let mut distorted = Decoder::from_file("distorted.mkv")?;
@@ -48,7 +48,7 @@
 //! let mut scorer = VshipScorer::new(config, reference_format, distorted_format, None)?;
 //!
 //! let scores = scorer.score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {})?;
-//! let pooled = VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean)?;
+//! let pooled = VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean, true)?;
 //! println!("SSIMULACRA2: {pooled:.4}");
 //! # Ok(())
 //! # }
@@ -70,7 +70,8 @@ pub use ffi::{
     VshipTransferFunction, VshipYuvMatrix,
 };
 pub use scorer::{
-    FrameScore, PlaneSet, PlaneSource, VideoFormat, VshipDevice, VshipScorer, devices,
+    FrameScore, PlaneSet, PlaneSource, VideoFormat, VshipDevice, VshipScorer, default_gpu_id,
+    devices,
 };
 
 /// The runtime libvship version string, if libvship is loaded and usable.
@@ -78,7 +79,7 @@ pub use scorer::{
 #[inline]
 #[must_use]
 pub fn libvship_version() -> Option<&'static str> {
-    VshipScorer::libvship_version()
+    default_gpu_id().and_then(|gpu_id| scorer::availability(gpu_id).ok())
 }
 
 /// Whether vship scoring is available on this system.
@@ -90,14 +91,15 @@ pub fn libvship_version() -> Option<&'static str> {
 #[inline]
 #[must_use]
 pub fn is_available() -> bool {
-    VshipScorer::is_available()
+    default_gpu_id().is_some_and(|gpu_id| scorer::availability(gpu_id).is_ok())
 }
 
 /// The name of the device libvship would use, if it is available.
 #[inline]
 #[must_use]
 pub fn device_name() -> Option<String> {
-    VshipScorer::device_name()
+    let api = ffi::VshipApi::load().ok()?;
+    api.device_info(default_gpu_id()?).ok().map(|info| info.name())
 }
 
 /// The compute backend the loaded libvship was compiled for, if it is loaded.
@@ -109,16 +111,4 @@ pub fn device_name() -> Option<String> {
 #[must_use]
 pub fn backend() -> Option<VshipBackend> {
     ffi::VshipApi::load().ok().map(ffi::VshipApi::backend)
-}
-
-/// The device index libvship would use when none is configured, if there is
-/// one.
-///
-/// This is what [`VshipConfig::gpu_id_or_default`] resolves to, and it prefers
-/// a discrete GPU when one is present. `None` means libvship could not be
-/// loaded or reported no devices, so there is no index to name.
-#[inline]
-#[must_use]
-pub fn default_gpu_id() -> Option<u32> {
-    scorer::default_gpu_id()
 }

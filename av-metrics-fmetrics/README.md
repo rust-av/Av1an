@@ -42,7 +42,7 @@ let mut distorted = Decoder::from_file("distorted.mkv")?;
 
 let reference_color = ColorInfo::from_details(reference.get_video_details())?;
 let distorted_color = ColorInfo::from_details(distorted.get_video_details())?;
-let mut scorer = FmetricsScorer::new_with_colors(config, reference_color, distorted_color)?;
+let mut scorer = FmetricsScorer::new(config, reference_color, distorted_color)?;
 
 // Submit pairs as they are decoded; the caller owns frame lifetime.
 let score = scorer.submit_pair(&reference_planes, &distorted_planes)?;
@@ -153,8 +153,8 @@ fmetrics takes **interleaved RGB**, not planar YUV, so every pair is converted
 before submission. That makes the conversion part of the measurement: a wrong
 matrix silently changes every score. `ColorInfo::from_details` honors each input's
 decoded range and BT.601, BT.709 or BT.2020 non-constant-luminance matrix.
-`new_with_colors` keeps the two inputs independent; `new` is shorthand only when
-both inputs are known to have the same color properties.
+`FmetricsScorer::new` takes a separate `ColorInfo` for each input. Pass the same
+value twice only when the two inputs have the same color properties.
 
 Only absent/`Unspecified` values use defaults: limited range, BT.709 above 650
 lines (BT.601 otherwise), and sRGB transfer/BT.709 primaries. BT.709, SMPTE 170M,

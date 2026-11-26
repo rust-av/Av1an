@@ -6,7 +6,7 @@ use fixture_support::{assert_output, decoded, fixture, native, records, set_time
 
 fn concatenate(output: &Path, paths: &[PathBuf]) -> Result<()> {
     let (tx, _rx) = std::sync::mpsc::channel();
-    SceneConcatenator::ivf_cancel(output, paths, &tx, &Cancellation::default())
+    SceneConcatenator::ivf(output, paths, &tx, &Cancellation::default())
 }
 
 #[test]
@@ -640,7 +640,7 @@ fn malformed_framing_returns_contextual_errors_without_panics() {
         let output = dir.path().join(format!("joined-{index}.ivf"));
         let (tx, rx) = std::sync::mpsc::channel();
         let result = std::panic::catch_unwind(|| {
-            SceneConcatenator::ivf_cancel(
+            SceneConcatenator::ivf(
                 &output,
                 std::slice::from_ref(&part),
                 &tx,

@@ -238,12 +238,13 @@ fn avm_explicit_pass_and_argv_reject_noise() {
             (1, 1),
             Path::new("out.ivf"),
             &crate::core::encoder::tests::clip_info(),
+            None,
         ),
-        encoder.parameters_with_stats(
+        encoder.parameters_with_output(
             (1, 1),
             Path::new("out.ivf"),
             &crate::core::encoder::tests::clip_info(),
-            Path::new("stats"),
+            Some(Path::new("stats")),
         ),
     ] {
         assert_eq!(
@@ -270,6 +271,7 @@ fn avm_raw_native_table_remains_available_without_application_noise() {
             (1, 1),
             Path::new("out.ivf"),
             &crate::core::encoder::tests::clip_info(),
+            None,
         )
         .expect("raw native options are caller-owned");
     argv.sort();

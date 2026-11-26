@@ -238,16 +238,19 @@ mod tests {
         std::fs::write(blocked.join("sentinel"), b"preserve").expect("sentinel");
         let candidate = legacy.clone();
         let mut direct = legacy
-            .instantiate_condor(Box::new(move |data| {
-                let mut staged = candidate.clone();
-                staged.condor = data;
-                staged.save(&blocked)?;
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |data| {
+                    let mut staged = candidate.clone();
+                    staged.condor = data;
+                    staged.save(&blocked)?;
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("direct");
         let before = serde_json::to_value(direct.as_data()).expect("runtime");
         assert!(
-            Zoner::run(&mut direct).is_err(),
+            Zoner::run(&mut direct, Default::default()).is_err(),
             "old unchanged definitions must migrate, not skip the callback"
         );
         assert_eq!(
@@ -323,9 +326,12 @@ mod tests {
         condor_cmd(&temp).arg("zone").assert().success();
         assert_eq!(std::fs::read(&path).expect("current no save"), bytes);
         let mut direct = migrated
-            .instantiate_condor(Box::new(|_| anyhow::bail!("no extra save")))
+            .instantiate_condor(
+                Box::new(|_| anyhow::bail!("no extra save")),
+                &Default::default(),
+            )
             .expect("current roundtrip");
-        Zoner::run(&mut direct).expect("current exact definitions skip");
+        Zoner::run(&mut direct, Default::default()).expect("current exact definitions skip");
     }
 
     fn check_equivalent_zoner_migration(phase: u8) {
@@ -419,18 +425,21 @@ mod tests {
             let publication = legacy.clone();
             let publication_path = path.clone();
             let mut direct = legacy
-                .instantiate_condor(Box::new(move |data| {
-                    observed.set(observed.get() + 1);
-                    let mut staged = publication.clone();
-                    staged.condor = data;
-                    staged.save(&publication_path)?;
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |data| {
+                        observed.set(observed.get() + 1);
+                        let mut staged = publication.clone();
+                        staged.condor = data;
+                        staged.save(&publication_path)?;
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("owning direct Zoner");
             let mut expected = serde_json::to_value(direct.as_data()).expect("all original state");
             expected["scenes"][0]["sequence_data"]["zoner"]["lifecycle"]["algorithm_revision"] =
                 1.into();
-            Zoner::run(&mut direct).expect(
+            Zoner::run(&mut direct, Default::default()).expect(
                 "M1: an equivalent algorithm must preserve downstream scaling, not refuse replay",
             );
             assert_eq!(
@@ -442,7 +451,7 @@ mod tests {
                 serde_json::to_value(direct.as_data()).expect("revision-only state"),
                 expected
             );
-            Zoner::run(&mut direct).expect("current skip");
+            Zoner::run(&mut direct, Default::default()).expect("current skip");
             assert_eq!(saves.get(), 1, "current definitions never save again");
             if phase == 1 {
                 continue;
@@ -457,18 +466,22 @@ mod tests {
             let publication = legacy.clone();
             let observed = Rc::clone(&saves);
             let mut failed = legacy
-                .instantiate_condor(Box::new(move |data| {
-                    observed.set(observed.get() + 1);
-                    let mut staged = publication.clone();
-                    staged.condor = data;
-                    staged
-                        .save(&blocked)
-                        .map_err(|error| anyhow::anyhow!("scene publication failed: {error:#}"))?;
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |data| {
+                        observed.set(observed.get() + 1);
+                        let mut staged = publication.clone();
+                        staged.condor = data;
+                        staged.save(&blocked).map_err(|error| {
+                            anyhow::anyhow!("scene publication failed: {error:#}")
+                        })?;
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("rollback job");
             let before = serde_json::to_value(failed.as_data()).expect("before failure");
-            let error = Zoner::run(&mut failed).expect_err("callback must reject migration");
+            let error = Zoner::run(&mut failed, Default::default())
+                .expect_err("callback must reject migration");
             assert!(format!("{error:#}").contains("scene publication failed"));
             assert_eq!(saves.get(), 2);
             assert_eq!(
@@ -620,11 +633,7 @@ mod tests {
             test_helpers::default_config,
             zoner::{Zoner, ZonerConfig, parse_zone},
         };
-        use std::{
-            cell::Cell,
-            rc::Rc,
-            sync::{Arc, atomic::AtomicBool},
-        };
+        use std::{cell::Cell, rc::Rc};
         let video = get_test_video();
         let temp = tempfile::tempdir().expect("temp");
         let mut config = default_config(&video, &temp.path().join("out.mkv"), temp.path());
@@ -647,18 +656,25 @@ mod tests {
         std::fs::write(blocked.join("sentinel"), b"preserve").expect("sentinel");
         let staged_config = config.clone();
         let mut direct = config
-            .instantiate_condor(Box::new(move |data| {
-                let mut candidate = staged_config.clone();
-                candidate.condor = data;
-                candidate.save(&blocked)?;
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |data| {
+                    let mut candidate = staged_config.clone();
+                    candidate.condor = data;
+                    candidate.save(&blocked)?;
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("direct");
         let runtime_before = serde_json::to_value(direct.as_data()).expect("runtime before");
         let (tx, _rx) = std::sync::mpsc::channel();
         assert!(
             Zoner::default()
-                .execute(&mut direct, tx, Arc::new(AtomicBool::new(false)))
+                .execute(
+                    &mut direct,
+                    tx,
+                    andean_condor::utils::cancellation::Cancellation::default()
+                )
                 .is_err()
         );
         // instantiate_condor adds a source_path, so compare against the exact runtime snapshot.
@@ -685,7 +701,7 @@ mod tests {
             observed.set(observed.get() + 1);
             Ok(())
         });
-        Zoner::run(&mut direct).expect("successful stage");
+        Zoner::run(&mut direct, Default::default()).expect("successful stage");
         assert_eq!(saves.get(), 1);
         assert!(direct.scenes[0].sequence_data.parallel_encoder.invalidated);
         let roundtrip =
@@ -694,15 +710,22 @@ mod tests {
         config.condor = roundtrip;
         let observed = Rc::clone(&saves);
         let mut direct = config
-            .instantiate_condor(Box::new(move |_| {
-                observed.set(observed.get() + 1);
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |_| {
+                    observed.set(observed.get() + 1);
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("reload");
-        Zoner::run(&mut direct).expect("known unchanged");
+        Zoner::run(&mut direct, Default::default()).expect("known unchanged");
         let (tx, _rx) = std::sync::mpsc::channel();
         Zoner::default()
-            .execute(&mut direct, tx, Arc::new(AtomicBool::new(false)))
+            .execute(
+                &mut direct,
+                tx,
+                andean_condor::utils::cancellation::Cancellation::default(),
+            )
             .expect("direct unchanged");
         assert_eq!(
             saves.get(),
@@ -714,9 +737,10 @@ mod tests {
         }
         let mut removed = config.clone();
         removed.condor.sequence_config.zoner = None;
-        let mut restored =
-            removed.instantiate_condor(Box::new(|_| Ok(()))).expect("remove length cap");
-        Zoner::run(&mut restored).expect("restore original partition");
+        let mut restored = removed
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+            .expect("remove length cap");
+        Zoner::run(&mut restored, Default::default()).expect("restore original partition");
         assert_eq!(
             restored.scenes.iter().map(|s| (s.start_frame, s.end_frame)).collect::<Vec<_>>(),
             video.scenes
@@ -736,7 +760,7 @@ mod tests {
             &mut direct.save_callback,
             Box::new(|_| anyhow::bail!("reject rebased candidate")),
         );
-        assert!(Zoner::run(&mut direct).is_err());
+        assert!(Zoner::run(&mut direct, Default::default()).is_err());
         assert_eq!(
             serde_json::to_value(direct.as_data()).expect("rebase rollback"),
             before_failed_rebase
@@ -748,7 +772,7 @@ mod tests {
         direct.scenes[0].encoder.set_quantizer(18.0);
         direct.sequence_config.zoner = None;
         let manual = serde_json::to_value(direct.as_data()).expect("manual edits");
-        let error = Zoner::run(&mut direct).expect_err("unsafe rebase");
+        let error = Zoner::run(&mut direct, Default::default()).expect_err("unsafe rebase");
         assert!(format!("{error:#}").contains("reset/redetect"));
         assert_eq!(
             serde_json::to_value(direct.as_data()).expect("preserved"),
@@ -765,10 +789,14 @@ mod tests {
             let result = if execute {
                 let (tx, _rx) = std::sync::mpsc::channel();
                 Zoner::default()
-                    .execute(&mut direct, tx, Arc::new(AtomicBool::new(false)))
+                    .execute(
+                        &mut direct,
+                        tx,
+                        andean_condor::utils::cancellation::Cancellation::default(),
+                    )
                     .map(|_| ())
             } else {
-                Zoner::run(&mut direct)
+                Zoner::run(&mut direct, Default::default())
             };
             assert!(
                 format!("{:#}", result.expect_err("legacy unknown refusal"))
@@ -863,11 +891,12 @@ mod tests {
                     .is_none())
             );
             let mut direct = edited
-                .instantiate_condor(Box::new(|_| {
-                    anyhow::bail!("unchanged definitions must not save")
-                }))
+                .instantiate_condor(
+                    Box::new(|_| anyhow::bail!("unchanged definitions must not save")),
+                    &Default::default(),
+                )
                 .expect("direct");
-            Zoner::run(&mut direct).expect("direct unchanged skip after edit");
+            Zoner::run(&mut direct, Default::default()).expect("direct unchanged skip after edit");
             if phase >= 2 {
                 condor_cmd(&temp).args(["zone", "240 480 replace x264"]).assert().failure();
                 assert_eq!(std::fs::read(&path).expect("unsafe rebase preserved"), json);
@@ -1343,6 +1372,56 @@ mod tests {
     #[test]
     fn zoner_success_saves_once_and_unchanged_run_or_execute_does_not_resave() {
         check_direct_zoner_publication(2);
+    }
+
+    #[serial]
+    #[test]
+    fn zoner_run_respects_the_job_token_at_admission_and_return() {
+        use andean_condor::utils::cancellation::{Cancellation, Cancelled};
+        use california_condor::{
+            test_helpers::default_config,
+            zoner::{Zoner, ZonerConfig, parse_zone},
+        };
+        use std::{cell::Cell, rc::Rc};
+
+        let video = get_test_video();
+        let temp = tempfile::tempdir().expect("temp");
+        let mut config = default_config(&video, &temp.path().join("out.mkv"), temp.path());
+        config.condor.scenes = video.mock_scenes(&config.condor.encoder);
+        config.condor.sequence_config.zoner = Some(ZonerConfig {
+            zones: vec![parse_zone("0 121 --maximum-frames 96").expect("zone")],
+        });
+        let cancellation = Cancellation::default();
+        let saves = Rc::new(Cell::new(0));
+        let mut job = config
+            .instantiate_condor(
+                Box::new({
+                    let controls = cancellation.clone();
+                    let saves = Rc::clone(&saves);
+                    move |_| {
+                        saves.set(saves.get() + 1);
+                        controls.request()?;
+                        controls.request()
+                    }
+                }),
+                &cancellation,
+            )
+            .expect("open fixture");
+
+        let stopped = Cancellation::default();
+        stopped.request().expect("graceful before admission");
+        let error = Zoner::run(&mut job, stopped).expect_err("do not apply a zone after shutdown");
+        assert_eq!(
+            error.downcast_ref::<Cancelled>(),
+            Some(&Cancelled::Graceful)
+        );
+        assert_eq!(saves.get(), 0);
+        assert!(job.scenes[0].sequence_data.zoner.lifecycle.is_none());
+
+        let error =
+            Zoner::run(&mut job, cancellation).expect_err("force during save is not success");
+        assert_eq!(error.downcast_ref::<Cancelled>(), Some(&Cancelled::Forced));
+        assert_eq!(saves.get(), 1);
     }
 
     #[serial]

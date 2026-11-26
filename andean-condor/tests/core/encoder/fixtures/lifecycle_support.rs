@@ -117,7 +117,7 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
     let mut filter_spawn_failed = false;
     let result: Result<()> = if case.starts_with("filter") {
         let (_tx, rx) = crossbeam_channel::bounded(1);
-        match FfmpegFilter::spawn_cancel(
+        match FfmpegFilter::spawn(
             rx,
             1,
             "null",
@@ -146,7 +146,7 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
         }
     } else if case == "dg" {
         fs::write(root.join("source"), "finite fixture source").expect("source");
-        DGSource::index_video_cancel(
+        DGSource::index_video(
             &root.join("source"),
             Some(&root.join("out.dgi")),
             Some(&root.join("fake")),
@@ -160,7 +160,7 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
         fs::write(&scenes[0], b"owned scene fixture").expect("nonempty mux input");
         let (tx, _rx) = mpsc::channel();
         if case.starts_with("ffmpeg") {
-            SceneConcatenator::ffmpeg_cancel(
+            SceneConcatenator::ffmpeg(
                 root,
                 &root.join("out.mkv"),
                 &scenes,
@@ -172,7 +172,7 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
                 &cancellation,
             )
         } else {
-            SceneConcatenator::mkvmerge_cancel(
+            SceneConcatenator::mkvmerge(
                 root,
                 &root.join("out.mkv"),
                 &scenes,
@@ -203,7 +203,7 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
         });
         let (progress, _rx) = mpsc::channel();
         let result = encoder(root, case == "capture" || case == "replay-full")
-            .encode_with_stream_cancel(
+            .encode_with_stream(
                 rx,
                 &root.join("out.264"),
                 progress,
@@ -251,14 +251,15 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
                     output: root.join(format!("{i}.264")),
                 })
                 .collect();
-            let plan = ZonePlan::try_build_cancel(&tasks, &cancellation);
+            let plan = ZonePlan::try_build(&tasks, &cancellation);
             plan.and_then(|plan| {
-                ZoneEncoder::encode_tasks_cancel(
+                ZoneEncoder::encode_tasks(
                     &mut input,
                     tasks.into(),
                     plan,
                     progress,
                     cancellation,
+                    true,
                 )
             })
             .map(|_| ())
@@ -280,9 +281,9 @@ pub(super) fn assert_scene_case(root: &Path, case: &str, cancellation: Cancellat
                 }),
             );
             let result = if case.starts_with("serial") {
-                SerialEncoder::new(root).execute_cancel(&mut condor, progress, cancellation)
+                SerialEncoder::new(root).execute(&mut condor, progress, cancellation)
             } else {
-                ParallelEncoder::default().execute_cancel(&mut condor, progress, cancellation)
+                ParallelEncoder::default().execute(&mut condor, progress, cancellation)
             };
             if case.starts_with("graceful") {
                 assert_eq!(

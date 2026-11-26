@@ -290,7 +290,7 @@ impl std::fmt::Debug for FmetricsScorer {
 }
 
 impl FmetricsScorer {
-    /// Build a scorer for `config`, reading frames as `color` describes.
+    /// Build a scorer with independent colors for the reference and distorted input.
     ///
     /// # Errors
     ///
@@ -298,19 +298,7 @@ impl FmetricsScorer {
     /// peak sample value, or if CVVDP is configured without a usable frame
     /// rate, or if Butteraugli's finite exponent is not positive.
     #[inline]
-    pub fn new(config: FmetricsConfig, color: ColorInfo) -> Result<Self, FmetricsError> {
-        Self::new_with_colors(config, color, color)
-    }
-
-    /// Build a scorer with independent reference and distorted color properties.
-    /// Use [`Self::new`] only when both inputs are known to share color metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for invalid sample depths/frame rate/Butteraugli exponent
-    /// or an unavailable library.
-    #[inline]
-    pub fn new_with_colors(
+    pub fn new(
         config: FmetricsConfig,
         color: ColorInfo,
         distorted_color: ColorInfo,
@@ -408,20 +396,6 @@ impl FmetricsScorer {
             Inner::PerPair { pool } => pool.len().max(1),
             Inner::Temporal { .. } => 1,
         }
-    }
-
-    /// Whether fmetrics is available on this system.
-    #[inline]
-    #[must_use]
-    pub fn is_available() -> bool {
-        FmetricsApi::load().is_ok()
-    }
-
-    /// The fmetrics version, if it is loaded.
-    #[inline]
-    #[must_use]
-    pub fn fmetrics_version() -> Option<String> {
-        FmetricsApi::load().ok().map(FmetricsApi::version_string)
     }
 
     /// Score one pair that is already interleaved RGB.
@@ -930,7 +904,7 @@ mod tests {
             let config = FmetricsConfig::new(FmetricsMetric::Butteraugli)
                 .with_threads(1)
                 .with_pnorm(pnorm);
-            let error = FmetricsScorer::new(config, color(8)).unwrap_err();
+            let error = FmetricsScorer::new(config, color(8), color(8)).unwrap_err();
             assert!(
                 matches!(error, FmetricsError::InvalidConfiguration { .. }),
                 "{error}"
@@ -978,7 +952,7 @@ mod tests {
                     // Context creation is lazy; even a broken bound cannot allocate a ring here.
                     assert!(
                         matches!(
-                            FmetricsScorer::new(config, color(8)),
+                            FmetricsScorer::new(config, color(8), color(8)),
                             Err(FmetricsError::InvalidConfiguration { .. })
                         ),
                         "{rate} must fail before library discovery"
@@ -1362,6 +1336,7 @@ mod tests {
         fn assert_workspace_capacity(scenario: &str) {
             let scorer = FmetricsScorer::new(
                 FmetricsConfig::new(FmetricsMetric::Ssimulacra2).with_threads(2),
+                color(8),
                 color(8),
             )
             .expect("the native ABI sink must load");

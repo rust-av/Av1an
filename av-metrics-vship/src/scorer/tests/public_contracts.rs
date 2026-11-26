@@ -17,19 +17,20 @@ fn ssimulacra2_pooling_returns_requested_mean_min_or_max() {
             ..FrameScore::default()
         },
     ];
-    let mean = VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean).unwrap();
+    let mean =
+        VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean, true).unwrap();
     assert!((mean - 0.6).abs() < 1e-12, "mean was {mean}, expected 0.6");
     assert_eq!(
-        VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Max).unwrap(),
+        VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Max, true).unwrap(),
         0.8
     );
     assert_eq!(
-        VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Min).unwrap(),
+        VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Min, true).unwrap(),
         0.4
     );
 }
 
 #[test]
 fn ssimulacra2_pooling_rejects_empty_scores() {
-    assert!(VshipScorer::pool(&[], VshipMetric::Ssimulacra2, PoolMethod::Mean).is_err());
+    assert!(VshipScorer::pool(&[], VshipMetric::Ssimulacra2, PoolMethod::Mean, true).is_err());
 }

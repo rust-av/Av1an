@@ -13,14 +13,12 @@ fn direct(
     output: &Path,
     paths: &[PathBuf],
     token: &Cancellation,
-    compatibility: bool,
 ) -> Result<()> {
     let (tx, _rx) = sync::mpsc::channel();
     let source = root.join("source");
-    match (backend, compatibility) {
-        ("ivf", false) => SceneConcatenator::ivf_cancel(output, paths, &tx, token),
-        ("ivf", true) => SceneConcatenator::ivf(output, paths, &tx, &token.legacy_flag()),
-        ("ffmpeg", false) => SceneConcatenator::ffmpeg_cancel(
+    match backend {
+        "ivf" => SceneConcatenator::ivf(output, paths, &tx, token),
+        "ffmpeg" => SceneConcatenator::ffmpeg(
             root,
             output,
             paths,
@@ -31,18 +29,7 @@ fn direct(
             &tx,
             token,
         ),
-        ("ffmpeg", true) => SceneConcatenator::ffmpeg(
-            root,
-            output,
-            paths,
-            Some(&source),
-            paths.len() * 2,
-            Ratio::new(24, 1),
-            Some(&FfmpegConfig::default()),
-            &tx,
-            &token.legacy_flag(),
-        ),
-        ("mkvmerge", false) => SceneConcatenator::mkvmerge_cancel(
+        "mkvmerge" => SceneConcatenator::mkvmerge(
             root,
             output,
             paths,
@@ -51,16 +38,6 @@ fn direct(
             None,
             &tx,
             token,
-        ),
-        ("mkvmerge", true) => SceneConcatenator::mkvmerge(
-            root,
-            output,
-            paths,
-            Some(&source),
-            Ratio::new(24, 1),
-            None,
-            &tx,
-            &token.legacy_flag(),
         ),
         _ => unreachable!("fixture backend"),
     }
@@ -83,53 +60,49 @@ fn concat_rejects_invalid_scene_lists_before_output_or_scratch_mutation() {
     for backend in ["ivf", "ffmpeg", "mkvmerge"] {
         for case in ["empty-list", "missing-middle", "empty-file", "directory", "unreadable"] {
             for existing in [false, true] {
-                for compatibility in [false, true] {
-                    let dir = tempfile::tempdir().expect("isolated fixture");
-                    let bin = dir.path().join("bin");
-                    std::fs::create_dir_all(&bin).expect("private PATH");
-                    for tool in ["ffprobe", "ffmpeg", "mkvmerge"] {
-                        let script = bin.join(tool);
-                        std::fs::write(&script, format!(
+                let dir = tempfile::tempdir().expect("isolated fixture");
+                let bin = dir.path().join("bin");
+                std::fs::create_dir_all(&bin).expect("private PATH");
+                for tool in ["ffprobe", "ffmpeg", "mkvmerge"] {
+                    let script = bin.join(tool);
+                    std::fs::write(&script, format!(
                             "#!{}\nimport os,sys\nfrom pathlib import Path\nPath(os.environ['SCENE_LIST_ROOT'],'tool-invoked').write_text(sys.argv[0])\nsys.exit(88)\n",
                             python.display()
                         )).expect("finite tool trap");
-                        std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o700))
-                            .expect("executable");
-                    }
-                    let log_path = dir.path().join("child.log");
-                    let log = File::create(&log_path).expect("child log");
-                    let mut command = Command::new(std::env::current_exe().expect("test binary"));
-                    command
-                        .args(["--exact", &exact, "--nocapture"])
-                        .env("SCENE_LIST_ROOT", dir.path())
-                        .env("SCENE_LIST_BACKEND", backend)
-                        .env("SCENE_LIST_CASE", case)
-                        .env("SCENE_LIST_EXISTING", existing.to_string())
-                        .env("SCENE_LIST_COMPAT", compatibility.to_string())
-                        .env("PATH", &bin)
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::from(log.try_clone().expect("log clone")))
-                        .stderr(Stdio::from(log));
-                    let cancellation = Cancellation::default();
-                    let mut child = OwnedProcess::spawn(&mut command, &cancellation)
-                        .expect("owned isolated test");
-                    let (status, timed_out) = crate::core::support::process::wait_with_timeout(
-                        &mut child,
-                        cancellation,
-                        Duration::from_secs(20),
-                    );
-                    let log = std::fs::read_to_string(log_path).expect("diagnostics");
-                    let label =
-                        format!("{backend}/{case}/existing={existing}/compat={compatibility}");
-                    if timed_out
-                        || !status.success()
-                        || !log.contains("1 passed;")
-                        || !log.contains("invalid scene-list assertions completed")
-                    {
-                        failures.push(format!("{label}: timeout={timed_out}\n{log}"));
-                    }
-                    dir.close().expect("fixture cleanup");
+                    std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o700))
+                        .expect("executable");
                 }
+                let log_path = dir.path().join("child.log");
+                let log = File::create(&log_path).expect("child log");
+                let mut command = Command::new(std::env::current_exe().expect("test binary"));
+                command
+                    .args(["--exact", &exact, "--nocapture"])
+                    .env("SCENE_LIST_ROOT", dir.path())
+                    .env("SCENE_LIST_BACKEND", backend)
+                    .env("SCENE_LIST_CASE", case)
+                    .env("SCENE_LIST_EXISTING", existing.to_string())
+                    .env("PATH", &bin)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::from(log.try_clone().expect("log clone")))
+                    .stderr(Stdio::from(log));
+                let cancellation = Cancellation::default();
+                let mut child =
+                    OwnedProcess::spawn(&mut command, &cancellation).expect("owned isolated test");
+                let (status, timed_out) = crate::core::support::process::wait_with_timeout(
+                    &mut child,
+                    cancellation,
+                    Duration::from_secs(20),
+                );
+                let log = std::fs::read_to_string(log_path).expect("diagnostics");
+                let label = format!("{backend}/{case}/existing={existing}");
+                if timed_out
+                    || !status.success()
+                    || !log.contains("1 passed;")
+                    || !log.contains("invalid scene-list assertions completed")
+                {
+                    failures.push(format!("{label}: timeout={timed_out}\n{log}"));
+                }
+                dir.close().expect("fixture cleanup");
             }
         }
     }
@@ -143,7 +116,6 @@ fn assert_invalid_list_preserves_files() {
     let backend = std::env::var("SCENE_LIST_BACKEND").expect("backend");
     let case = std::env::var("SCENE_LIST_CASE").expect("case");
     let existing = std::env::var("SCENE_LIST_EXISTING").expect("existing") == "true";
-    let compatibility = std::env::var("SCENE_LIST_COMPAT").expect("compat") == "true";
     let scratch = scratch_directory(&root);
     std::fs::create_dir_all(&scratch).expect("scratch");
     let sentinels = [
@@ -197,14 +169,7 @@ fn assert_invalid_list_preserves_files() {
     // The catch exposes the old IVF panic; a panic is never an acceptable refusal.
     let result = run_backend.then(|| {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            direct(
-                &backend,
-                &root,
-                &output,
-                &paths,
-                &Cancellation::default(),
-                compatibility,
-            )
+            direct(&backend, &root, &output, &paths, &Cancellation::default())
         }))
     });
     if case == "unreadable" {
@@ -293,9 +258,15 @@ fn sequence_current_context_malformed_ivf_never_completes_or_replaces_final() {
     let (tx, rx) = sync::mpsc::channel();
     let mut concat = SceneConcatenator::default();
     concat.validate(&mut job).expect("final admission");
-    concat.initialize(&mut job, tx.clone()).expect("readable requested list");
+    concat
+        .initialize(
+            &mut job,
+            tx.clone(),
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        )
+        .expect("readable requested list");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        concat.execute_cancel(&mut job, tx, Cancellation::default())
+        concat.execute(&mut job, tx, Cancellation::default())
     }));
     let error = result
         .expect("owning Sequence must not panic")
@@ -350,7 +321,14 @@ fn sequence_initialization_and_bypassed_execution_reject_incomplete_lists() {
             .expect("missing middle after certification");
         let (tx, rx) = sync::mpsc::channel();
         let mut concat = SceneConcatenator::default();
-        if concat.initialize(&mut job, tx.clone()).is_ok() {
+        if concat
+            .initialize(
+                &mut job,
+                tx.clone(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
+            .is_ok()
+        {
             failures.push(format!(
                 "count={count}: initialize accepted incomplete list"
             ));
@@ -359,7 +337,7 @@ fn sequence_initialization_and_bypassed_execution_reject_incomplete_lists() {
             failures.push(format!("count={count}: initialize created scratch"));
         }
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            concat.execute_cancel(&mut job, tx, Cancellation::default())
+            concat.execute(&mut job, tx, Cancellation::default())
         }));
         if !matches!(result, Ok(Err(_))) {
             failures.push(format!("count={count}: execute did not return an error"));
@@ -394,21 +372,14 @@ fn cancellation_still_precedes_list_admission() {
             Cancelled::Graceful
         };
         for backend in ["ivf", "ffmpeg", "mkvmerge"] {
-            let error = direct(
-                backend,
-                dir.path(),
-                &dir.path().join("out"),
-                &[],
-                &token,
-                false,
-            )
-            .expect_err("cancel before invalid list");
+            let error = direct(backend, dir.path(), &dir.path().join("out"), &[], &token)
+                .expect_err("cancel before invalid list");
             assert_eq!(error.downcast_ref::<Cancelled>(), Some(&expected));
         }
         let mut job = job(dir.path(), &dir.path().join("final"), 0);
         let (tx, _rx) = sync::mpsc::channel();
         let error = SceneConcatenator::default()
-            .execute_cancel(&mut job, tx, token)
+            .execute(&mut job, tx, token)
             .expect_err("Sequence cancellation first");
         assert_eq!(error.downcast_ref::<Cancelled>(), Some(&expected));
     }
@@ -445,12 +416,16 @@ fn final_sequence_refuses_chunks_without_current_provenance_before_mux() {
         let (tx, rx) = sync::mpsc::channel();
         let mut concat = SceneConcatenator::default();
         concat
-            .initialize(&mut fixture.job, tx.clone())
+            .initialize(
+                &mut fixture.job,
+                tx.clone(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
             .expect("complete initialization");
         for scene in &mut fixture.job.scenes {
             scene.sequence_data.parallel_encoder.provenance = None;
         }
-        assert!(concat.execute_cancel(&mut fixture.job, tx, Cancellation::default()).is_err());
+        assert!(concat.execute(&mut fixture.job, tx, Cancellation::default()).is_err());
         assert!(!final_path.exists());
         assert!(
             !rx.try_iter()
@@ -469,12 +444,16 @@ fn final_sequence_publishes_current_chunks_in_order_and_reports_completion_once(
         let (tx, rx) = sync::mpsc::channel();
         let mut concat = SceneConcatenator::default();
         concat
-            .initialize(&mut fixture.job, tx.clone())
+            .initialize(
+                &mut fixture.job,
+                tx.clone(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
             .expect("complete initialization");
         current_encoding_fixture(&mut fixture.job);
         let saved = serde_json::to_value(&fixture.job.sequence_config).expect("config snapshot");
         concat
-            .execute_cancel(&mut fixture.job, tx, Cancellation::default())
+            .execute(&mut fixture.job, tx, Cancellation::default())
             .expect("current saved-job-admission fixture admitted");
         assert_eq!(
             fixture::decoded(&final_path),

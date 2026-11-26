@@ -24,35 +24,9 @@ use crate::{
     configuration::Configuration,
 };
 
-#[allow(clippy::too_many_arguments)]
-pub fn detect_scenes_handler(
-    config_path: Option<&Path>,
-    temp_path: Option<&Path>,
-    input_path: Option<&Path>,
-    decoder: Option<&DecoderMethod>,
-    filters: Option<&[VapourSynthFilter]>,
-    vs_args: Option<&[String]>,
-    method: Option<&SceneDetectionMethod>,
-    min_scene_seconds: Option<usize>,
-    max_scene_seconds: Option<usize>,
-) -> Result<(Configuration, PathBuf)> {
-    detect_scenes_handler_cancel(
-        config_path,
-        temp_path,
-        input_path,
-        decoder,
-        filters,
-        vs_args,
-        method,
-        min_scene_seconds,
-        max_scene_seconds,
-        &Default::default(),
-    )
-}
-
 /// Runtime handler with caller-owned input/index cancellation.
 #[allow(clippy::too_many_arguments)]
-pub fn detect_scenes_handler_cancel(
+pub fn detect_scenes_handler(
     config_path: Option<&Path>,
     temp_path: Option<&Path>,
     input_path: Option<&Path>,
@@ -69,7 +43,7 @@ pub fn detect_scenes_handler_cancel(
 
     configure_temp(&mut configuration, temp_path)?;
 
-    configure_scene_detector_cancel(
+    configure_scene_detector(
         &mut configuration,
         input_path,
         decoder,
@@ -87,33 +61,9 @@ pub fn detect_scenes_handler_cancel(
     Ok((configuration, config_path))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn configure_scene_detector(
-    configuration: &mut Configuration,
-    input_path: Option<&Path>,
-    decoder: Option<&DecoderMethod>,
-    filters: Option<&[VapourSynthFilter]>,
-    vs_args: Option<&[String]>,
-    method: Option<&SceneDetectionMethod>,
-    min_scene_seconds: Option<usize>,
-    max_scene_seconds: Option<usize>,
-) -> Result<()> {
-    configure_scene_detector_cancel(
-        configuration,
-        input_path,
-        decoder,
-        filters,
-        vs_args,
-        method,
-        min_scene_seconds,
-        max_scene_seconds,
-        &Default::default(),
-    )
-}
-
 /// Explicit root for the preparatory scene-detector metadata open.
 #[allow(clippy::too_many_arguments)]
-pub fn configure_scene_detector_cancel(
+pub fn configure_scene_detector(
     configuration: &mut Configuration,
     input_path: Option<&Path>,
     decoder: Option<&DecoderMethod>,
@@ -142,7 +92,7 @@ pub fn configure_scene_detector_cancel(
     )? {
         configuration.condor.sequence_config.scene_detector.input = Some(input);
     }
-    let (_, clip_info) = crate::tui::open_input_cancel(
+    let (_, clip_info) = crate::tui::open_input(
         configuration
             .condor
             .sequence_config

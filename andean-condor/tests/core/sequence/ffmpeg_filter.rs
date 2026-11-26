@@ -115,7 +115,8 @@ mod parallel_failures {
                 }]
                 .into(),
                 progress_tx,
-                cancelled,
+                cancelled.into(),
+                andean_condor::core::sequence::parallel_encoder::ParallelEncoderOptions::default(),
             )
             .expect_err("early failure must unblock inline producer")
         } else {
@@ -152,7 +153,7 @@ mod parallel_failures {
                 }),
             );
             let error = ParallelEncoder::default()
-                .execute(&mut condor, progress_tx, cancelled)
+                .execute(&mut condor, progress_tx, cancelled.into())
                 .expect_err("filter/encoder failure");
             assert_eq!(
                 *saved.lock().expect("saved"),
@@ -239,8 +240,14 @@ fn y4m_stream(frames: usize) -> Vec<u8> {
 fn run_filter(graph: &str, stream: Vec<u8>) -> (Vec<u8>, Result<()>) {
     let (input_tx, input_rx) = crossbeam_channel::bounded(2);
     let failure = Arc::new(Mutex::new(None));
-    let mut stage =
-        FfmpegFilter::spawn(input_rx, 2, graph, failure).expect("FfmpegFilter should spawn");
+    let mut stage = FfmpegFilter::spawn(
+        input_rx,
+        2,
+        graph,
+        failure,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect("FfmpegFilter should spawn");
     let output_rx = stage.take_receiver().expect("sole receiver");
     let producer = thread::spawn(move || {
         // Feed one chunk per frame to mirror window-streamed producers.
@@ -348,7 +355,13 @@ fn spawn_reports_path_lookup_context_when_ffmpeg_is_unavailable() {
     }
     let (input_tx, input_rx) = crossbeam_channel::bounded(2);
     drop(input_tx);
-    let Err(error) = FfmpegFilter::spawn(input_rx, 2, "null", Arc::new(Mutex::new(None))) else {
+    let Err(error) = FfmpegFilter::spawn(
+        input_rx,
+        2,
+        "null",
+        Arc::new(Mutex::new(None)),
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    ) else {
         panic!("FFmpeg cannot be found in an empty PATH");
     };
     assert!(

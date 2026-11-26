@@ -93,7 +93,7 @@ pub(super) fn execute(root: &Path, case: &str) -> MuxOutcome {
     let chunk = root.join(format!(
         "{}.{}",
         ParallelEncoder::scene_id(0),
-        job.scenes[0].encoder.output_extension()
+        job.scenes[0].encoder.base().output_extension()
     ));
     std::fs::write(chunk, reference).expect("real encoded scene");
     job.sequence_config.parallel_encoder.scenes_directory = root.into();
@@ -122,8 +122,10 @@ pub(super) fn execute(root: &Path, case: &str) -> MuxOutcome {
     let mut concatenator = SceneConcatenator::default();
     let (tx, rx) = sync::mpsc::channel();
     concatenator.validate(&mut job).expect("final preflight");
-    concatenator.initialize(&mut job, tx.clone()).expect("owning scratch setup");
-    let result = concatenator.execute_cancel(&mut job, tx, token).map(|_| ());
+    concatenator
+        .initialize(&mut job, tx.clone(), &Default::default())
+        .expect("owning scratch setup");
+    let result = concatenator.execute(&mut job, tx, token).map(|_| ());
     if let Some(controller) = controller {
         controller.join().expect("controller joined");
     }

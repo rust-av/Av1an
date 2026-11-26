@@ -165,6 +165,9 @@ impl Cancellation {
     }
 
     /// Compatibility for metric callbacks; this bool does not provide force support.
+    #[deprecated(
+        note = "graceful-only compatibility flag; new sequences should use the token itself (`check`, `check_forced`, `is_cancelled`, `forced`)"
+    )]
     #[inline]
     pub fn legacy_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.0.legacy)
@@ -238,6 +241,7 @@ mod tests {
         assert!(admitted.check_admission().expect_err("active view forced").is::<Cancelled>());
     }
     #[test]
+    #[expect(deprecated, reason = "exercises the compatibility flag")]
     fn legacy_cancellation_flag_is_monotonic_and_never_forces() {
         let flag = Arc::new(AtomicBool::new(false));
         let token = Cancellation::from(Arc::clone(&flag));

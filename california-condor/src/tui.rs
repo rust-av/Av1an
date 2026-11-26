@@ -1,6 +1,5 @@
 use std::{
     io::{IsTerminal, Write},
-    sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, Instant},
 };
@@ -189,31 +188,15 @@ fn recovery_notice(
     Ok(())
 }
 
-/// Opens `data`, logging its progress, if available.
-///
-/// Only FFMS2 and DGDecNV report real progress. A VapourSynth input indexes
-/// inside its source plugin, where no callback can reach it, so it only gets
-/// the single `Opening input...` line.
-///
-/// Returns the input together with its probed clip info, so callers do not have
-/// to reopen it just to read the header.
-pub fn open_input(data: &InputModel, cancelled: &Arc<AtomicBool>) -> Result<(Input, ClipInfo)> {
-    // Legacy flags are graceful-only; retain one explicit token for force support.
-    open_input_cancel(
-        data,
-        &andean_condor::utils::cancellation::Cancellation::from(Arc::clone(cancelled)),
-    )
-}
-
 /// Library callers can retain this token across opening and sequence execution.
-pub fn open_input_cancel(
+pub fn open_input(
     data: &InputModel,
     cancellation: &andean_condor::utils::cancellation::Cancellation,
 ) -> Result<(Input, ClipInfo)> {
     info!("Opening input...");
     // FFMS2 reports every whole percent, so only the tens are worth a line.
     let mut last_decile = 0;
-    let mut input = Input::ensure_indexed_cancel(
+    let mut input = Input::ensure_indexed(
         data,
         |progress| {
             let OpenProgress::Indexing { current, total } = progress else {
@@ -256,7 +239,7 @@ pub fn run_scene_detector_tui(
     // its own, so re-opening the same model here would only index it twice.
     let (input, clip_info) = if let Some(configured) = &condor.sequence_config.scene_detector.input
     {
-        let (input, clip_info) = open_input_cancel(configured, &cancelled.token)?;
+        let (input, clip_info) = open_input(configured, &cancelled.token)?;
         (Some(input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -313,7 +296,7 @@ pub fn run_scene_detector_tui(
 
         let mut combined = scd_input_data;
         combined.append_input_filters(&main_input_data)?;
-        let (scd_input, clip_info) = open_input_cancel(&combined, &cancelled.token)?;
+        let (scd_input, clip_info) = open_input(&combined, &cancelled.token)?;
 
         // Double check that the frames match
         if clip_info.num_frames != condor.input.clip_info()?.num_frames {
@@ -342,7 +325,7 @@ pub fn run_scene_detector_tui(
     debug!("Initializing Scene Detector"); // Input should already be indexed but just in case
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        scene_detector.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        scene_detector.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -361,7 +344,7 @@ pub fn run_scene_detector_tui(
         );
         run_reported(scd_app, progress_rx, ctrlc_cancelled)
     });
-    let executed = scene_detector.execute_cancel(condor, progress_tx, cancelled.token);
+    let executed = scene_detector.execute(condor, progress_tx, cancelled.token);
     finish_reported_stage(
         "Scene Detection",
         executed,
@@ -383,7 +366,7 @@ pub fn run_noise_detector_tui(
     };
 
     let (input, clip_info) = if let Some(input) = &noise_detector_config.input {
-        let (nd_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+        let (nd_input, clip_info) = open_input(input, &cancelled.token)?;
         (Some(nd_input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -408,7 +391,7 @@ pub fn run_noise_detector_tui(
     debug!("Initializing Noise Detector"); // Input should already be indexed but just in case
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        noise_detector.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        noise_detector.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -420,7 +403,7 @@ pub fn run_noise_detector_tui(
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
     let report_interrupt = cancelled.clone();
     let tui_handle = thread::spawn(move || run_reported(nd_app, progress_rx, ctrlc_cancelled));
-    let executed = noise_detector.execute_cancel(condor, progress_tx, cancelled.token);
+    let executed = noise_detector.execute(condor, progress_tx, cancelled.token);
     finish_reported_stage(
         "Noise Detection",
         executed,
@@ -447,7 +430,7 @@ pub fn run_noise_scaler_tui(
     debug!("Initializing Noise Scaler");
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        noise_scaler.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        noise_scaler.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -455,8 +438,7 @@ pub fn run_noise_scaler_tui(
 
     debug!("Running Noise Scaler");
     let (progress_tx, _progress_rx) = std::sync::mpsc::channel();
-    let (_, processing_warnings) =
-        noise_scaler.execute_cancel(condor, progress_tx, cancelled.token)?;
+    let (_, processing_warnings) = noise_scaler.execute(condor, progress_tx, cancelled.token)?;
 
     for warning in processing_warnings.iter() {
         warn!("{}", warning);
@@ -484,7 +466,7 @@ pub fn run_benchmarker_tui(
     debug!("Initializing Benchmarker"); // Input should already be indexed but just in case
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        benchmarker.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        benchmarker.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -504,7 +486,7 @@ pub fn run_benchmarker_tui(
             ctrlc_cancelled,
         )
     });
-    let executed = benchmarker.execute_cancel(condor, progress_tx, cancelled.token);
+    let executed = benchmarker.execute(condor, progress_tx, cancelled.token);
     finish_reported_stage(
         "Benchmarker",
         executed,
@@ -561,11 +543,11 @@ pub fn run_target_quality_tui(
     let (target_quality_input, clip_info) = if let Some(Some(input)) =
         &condor.sequence_config.target_quality.as_ref().map(|tq| tq.input.clone())
     {
-        let (tq_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+        let (tq_input, clip_info) = open_input(input, &cancelled.token)?;
         (Some(tq_input), clip_info)
     } else if let Some(pe_input) = &condor.sequence_config.parallel_encoder.input {
         debug!("Falling back to Parallel Encoder input");
-        let (tq_input, clip_info) = open_input_cancel(pe_input, &cancelled.token)?;
+        let (tq_input, clip_info) = open_input(pe_input, &cancelled.token)?;
         (Some(tq_input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -576,7 +558,7 @@ pub fn run_target_quality_tui(
         .as_ref()
         .and_then(|tq| tq.metric_input.clone())
     {
-        Some(input) => Some(open_input_cancel(&input, &cancelled.token)?.0),
+        Some(input) => Some(open_input(&input, &cancelled.token)?.0),
         None => None,
     };
 
@@ -592,7 +574,7 @@ pub fn run_target_quality_tui(
     debug!("Initializing Target Quality"); // Input should already be indexed but just in case
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        target_quality.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        target_quality.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -614,7 +596,7 @@ pub fn run_target_quality_tui(
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
     let report_interrupt = cancelled.clone();
     let tui_handle = thread::spawn(move || run_reported(tq_app, progress_rx, ctrlc_cancelled));
-    let executed = target_quality.execute_cancel(condor, progress_tx, cancelled.token);
+    let executed = target_quality.execute(condor, progress_tx, cancelled.token);
     finish_reported_stage(
         "Target Quality",
         executed,
@@ -639,7 +621,7 @@ pub fn run_quality_check_tui(
     );
     let (quality_check_input, clip_info) = if !std::ptr::eq(reference, &root) {
         let input = reference;
-        let (qc_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+        let (qc_input, clip_info) = open_input(input, &cancelled.token)?;
         (Some(qc_input), clip_info)
     } else {
         (None, condor.input.clip_info()?)
@@ -657,7 +639,7 @@ pub fn run_quality_check_tui(
     debug!("Initializing Quality Check");
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        quality_check.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        quality_check.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -682,7 +664,7 @@ pub fn run_quality_check_tui(
     let (progress_tx, progress_rx) = std::sync::mpsc::channel();
     let report_interrupt = cancelled.clone();
     let tui_handle = thread::spawn(move || run_reported(qc_app, progress_rx, ctrlc_cancelled));
-    let executed = quality_check.execute_cancel(condor, progress_tx, cancelled.token);
+    let executed = quality_check.execute(condor, progress_tx, cancelled.token);
     finish_reported_stage(
         "Quality Check",
         executed,
@@ -709,7 +691,7 @@ pub fn run_bitrate_optimizer_tui(
     debug!("Initializing Bitrate Optimizer");
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        bitrate_optimizer.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        bitrate_optimizer.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -718,7 +700,7 @@ pub fn run_bitrate_optimizer_tui(
     debug!("Running Bitrate Optimizer");
     let (progress_tx, _progress_rx) = std::sync::mpsc::channel();
     let (_, processing_warnings) =
-        bitrate_optimizer.execute_cancel(condor, progress_tx, cancelled.token)?;
+        bitrate_optimizer.execute(condor, progress_tx, cancelled.token)?;
 
     for warning in processing_warnings.iter() {
         warn!("{}", warning);
@@ -745,7 +727,7 @@ pub fn run_speed_scaler_tui(
     debug!("Initializing Convex Hull");
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        convex_hull.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        convex_hull.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -753,8 +735,7 @@ pub fn run_speed_scaler_tui(
 
     debug!("Running Convex Hull");
     let (progress_tx, _progress_rx) = std::sync::mpsc::channel();
-    let (_, processing_warnings) =
-        convex_hull.execute_cancel(condor, progress_tx, cancelled.token)?;
+    let (_, processing_warnings) = convex_hull.execute(condor, progress_tx, cancelled.token)?;
 
     for warning in processing_warnings.iter() {
         warn!("{}", warning);
@@ -773,7 +754,7 @@ pub fn run_parallel_encoder_tui(
     debug!("Instantiating Parallel Encoder Input");
     let (parallel_encoder_input, clip_info) =
         if let Some(input) = &condor.sequence_config.parallel_encoder.input {
-            let (pe_input, clip_info) = open_input_cancel(input, &cancelled.token)?;
+            let (pe_input, clip_info) = open_input(input, &cancelled.token)?;
             (Some(pe_input), clip_info)
         } else {
             (None, condor.input.clip_info()?)
@@ -792,7 +773,7 @@ pub fn run_parallel_encoder_tui(
     debug!("Initializing Parallel Encoder"); // Input should already be indexed but just in case
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        parallel_encoder.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        parallel_encoder.initialize(condor, init_progress_tx, &cancelled.token)?;
 
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
@@ -817,7 +798,7 @@ pub fn run_parallel_encoder_tui(
             ctrlc_cancelled,
         )
     });
-    let executed = parallel_encoder.execute_cancel(condor, progress_tx, cancelled.token);
+    let executed = parallel_encoder.execute(condor, progress_tx, cancelled.token);
     finish_reported_stage(
         "Parallel Encoder",
         executed,
@@ -845,7 +826,7 @@ pub fn run_scene_concatenator_tui(
     // Initialize - Input should be already indexed
     let (init_progress_tx, _init_progress_rx) = std::sync::mpsc::channel();
     let (_, initialization_warnings) =
-        scene_concatenator.initialize_cancel(condor, init_progress_tx, &cancelled.token)?;
+        scene_concatenator.initialize(condor, init_progress_tx, &cancelled.token)?;
     for warning in initialization_warnings.iter() {
         warn!("{}", warning);
     }
@@ -861,7 +842,7 @@ pub fn run_scene_concatenator_tui(
             ctrlc_cancelled,
         )
     });
-    let executed = scene_concatenator.execute_cancel(condor, progress_tx, cancelled.token);
+    let executed = scene_concatenator.execute(condor, progress_tx, cancelled.token);
     finish_reported_stage(
         "Scene Concatenator",
         executed,
@@ -1035,6 +1016,10 @@ mod tests {
     fn broken_display_then_executor_cancellation_is_reported_as_failure() {
         use crate::apps::progress::{ProgressSnapshot, StageReport};
         let interrupt = Interrupt::default();
+        #[expect(
+            deprecated,
+            reason = "simulates a display failure requesting an internal stop"
+        )]
         interrupt.token.legacy_flag().store(true, std::sync::atomic::Ordering::SeqCst);
         let mut output = Vec::new();
         let error = finish_reported_stage_to(
@@ -1270,6 +1255,7 @@ mod tests {
 
     mod internal_integration {
         use super::*;
+        use std::sync::Arc;
 
         #[derive(Clone, Copy, Debug)]
         enum StageOutcome {

@@ -30,7 +30,7 @@ mod internal_integration {
             let node = output_node(input.decoder()).expect("output node");
             let (sender, receiver) = crossbeam_channel::bounded(payloads.len());
             // One request also keeps the pre-fix panic reproduction free of outstanding callbacks.
-            y4m_frames(&node, &sender, &[0, 1], 1).expect("stream frames");
+            y4m_frames(&node, &sender, &[0, 1], 1, &Default::default()).expect("stream frames");
             drop(sender);
             let actual: Vec<_> = receiver.iter().map(std::io::Cursor::into_inner).collect();
             assert_eq!(actual, expected);
@@ -156,7 +156,8 @@ mod internal_integration {
             "{error:#}"
         );
         let (sender, receiver) = crossbeam_channel::bounded(2);
-        let error = y4m_frames(&node, &sender, &[1, 0], 2).expect_err("RGB is not YUV");
+        let error = y4m_frames(&node, &sender, &[1, 0], 2, &Default::default())
+            .expect_err("RGB is not YUV");
         assert!(
             matches!(
                 error.downcast_ref::<DecoderError>(),
@@ -214,7 +215,8 @@ mod internal_integration {
         ).expect("native float fixture");
         let node = decoder.get_output(0, None).expect("actual float node");
         let (sender, receiver) = crossbeam_channel::bounded(2);
-        let error = y4m_frames(&node, &sender, &[1, 0], 2).expect_err("float is not integer Y4M");
+        let error = y4m_frames(&node, &sender, &[1, 0], 2, &Default::default())
+            .expect_err("float is not integer Y4M");
         assert!(
             matches!(
                 error.downcast_ref::<DecoderError>(),

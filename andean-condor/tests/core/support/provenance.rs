@@ -18,20 +18,22 @@ where
     let pe = job.sequence_config.parallel_encoder().expect("PE");
     let tq = job.sequence_config.target_quality().expect("TQ").as_ref();
     for (index, scene) in job.scenes.iter_mut().enumerate() {
-        let path = pe
-            .scenes_directory
-            .join(format!("{index:05}.{}", scene.encoder.output_extension()));
+        let path = pe.scenes_directory.join(format!(
+            "{index:05}.{}",
+            scene.encoder.base().output_extension()
+        ));
         if path.is_file() {
-            let context = provenance::encode_context(
-                pe.input.as_ref().unwrap_or(&root),
-                provenance::probe_input(&root, pe, tq),
-                tq.and_then(|c| c.metric_input.as_ref()),
-                scene,
-                tq,
-                &path,
-                index,
-            )
-            .expect("explicit current chunk fixture");
+            let context = provenance::Admission::default()
+                .encode_context(
+                    pe.input.as_ref().unwrap_or(&root),
+                    provenance::probe_input(&root, pe, tq),
+                    tq.and_then(|c| c.metric_input.as_ref()),
+                    scene,
+                    tq,
+                    &path,
+                    index,
+                )
+                .expect("explicit current chunk fixture");
             scene.sequence_data.get_parallel_encoder_mut().expect("PE data").provenance =
                 Some(ResultProvenance::new(context));
         }
@@ -62,7 +64,8 @@ pub(in crate::core) fn current_quality_fixture(
             } else {
                 MetricBackend::current(engine)
             };
-            let context = provenance::quality_context(input, output, scene, qc, &backend)
+            let context = provenance::Admission::default()
+                .quality_context(input, output, scene, qc, &backend)
                 .expect("explicit current quality fixture");
             let pass = &mut scene.sequence_data.quality_check.quality;
             pass.backend = Some(backend);
@@ -112,7 +115,8 @@ where
                 }
             });
             pass.provenance = Some(ResultProvenance::new(
-                provenance::target_context(input, tq.metric_input.as_ref(), scene, tq, pass)
+                provenance::Admission::default()
+                    .target_context(input, tq.metric_input.as_ref(), scene, tq, pass)
                     .expect("explicit current fixture context"),
             ));
         }

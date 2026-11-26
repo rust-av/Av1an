@@ -772,11 +772,6 @@ impl Encoder {
         }
     }
 
-    #[inline]
-    pub fn output_extension(&self) -> &'static str {
-        self.base().output_extension()
-    }
-
     /// The FFmpeg filtergraph applied to this encoder's frames, if any.
     ///
     /// Always `None` for [`Encoder::FFmpeg`], which filters through `options`.
@@ -961,7 +956,8 @@ mod tests {
     #[test]
     fn ffmpeg_extension_uses_one_dot_in_output_names() {
         let encoder = Encoder::default_from_base(&EncoderBase::FFmpeg, false);
-        for extension in [EncoderBase::FFmpeg.output_extension(), encoder.output_extension()] {
+        for extension in [EncoderBase::FFmpeg.output_extension(), encoder.base().output_extension()]
+        {
             assert_eq!(
                 (
                     extension,

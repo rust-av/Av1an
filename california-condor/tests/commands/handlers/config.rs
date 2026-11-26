@@ -337,16 +337,19 @@ exec "$REAL_FFPROBE" "$@"
         let original = config.clone();
         let saved_path = file.clone();
         let mut job = config
-            .instantiate_condor(Box::new(move |data| {
-                let mut saved = original.clone();
-                saved.condor = data;
-                saved.save(&saved_path)?;
-                Ok(())
-            }))
+            .instantiate_condor(
+                Box::new(move |data| {
+                    let mut saved = original.clone();
+                    saved.condor = data;
+                    saved.save(&saved_path)?;
+                    Ok(())
+                }),
+                &Default::default(),
+            )
             .expect("native job");
         let (tx, _rx) = std::sync::mpsc::channel();
         TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real TQ");
         let measured = job.scenes[0].sequence_data.target_quality.passes.clone();
         let raw_encoder = job.scenes[0].encoder.clone();
@@ -372,7 +375,7 @@ exec "$REAL_FFPROBE" "$@"
             Box::new(|_| anyhow::bail!("speed save failure")),
         );
         let (tx, _rx) = std::sync::mpsc::channel();
-        assert!(SpeedScaler::default().execute_cancel(&mut job, tx, Default::default()).is_err());
+        assert!(SpeedScaler::default().execute(&mut job, tx, Default::default()).is_err());
         assert_eq!(
             serde_json::to_vec(&job.scenes).expect("full rollback"),
             before
@@ -380,7 +383,7 @@ exec "$REAL_FFPROBE" "$@"
         job.save_callback = save;
         let (tx, _rx) = std::sync::mpsc::channel();
         SpeedScaler::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("actual downstream speed transition");
         assert_eq!(
             job.scenes[0].encoder.parameters()["preset"].to_string_value(),
@@ -396,7 +399,7 @@ exec "$REAL_FFPROBE" "$@"
                     vec![(speed, 0.0), (speed, 51.0)];
                 let (tx, _rx) = std::sync::mpsc::channel();
                 SpeedScaler::default()
-                    .execute_cancel(&mut job, tx, Default::default())
+                    .execute(&mut job, tx, Default::default())
                     .expect("legitimate repeated speed transition");
                 Configuration::load(&file)
                     .expect("saved")
@@ -409,7 +412,7 @@ exec "$REAL_FFPROBE" "$@"
             *tq.metric.target_range_mut() = (-999.0, 999.0);
             let (tx, _rx) = std::sync::mpsc::channel();
             TargetQuality::default()
-                .execute_cancel(&mut job, tx, Default::default())
+                .execute(&mut job, tx, Default::default())
                 .expect("target/budget reuse under unchanged Some options");
             assert_eq!(
                 std::fs::read(temp.path().join("calls")).expect("no reprobe"),
@@ -417,7 +420,7 @@ exec "$REAL_FFPROBE" "$@"
             );
         }
         let (tx, _rx) = std::sync::mpsc::channel();
-        ParallelEncoder::default().execute_cancel(&mut job,tx,Default::default()).expect("H1: first TQ -> SpeedScaler -> PE must accept certified probe input and actual final preset");
+        ParallelEncoder::default().execute(&mut job,tx,Default::default()).expect("H1: first TQ -> SpeedScaler -> PE must accept certified probe input and actual final preset");
         let saved = Configuration::load(&file).expect("saved model").expect("job");
         saved.admit_results().expect("saved CLI admission after speed scaling");
         let calls = std::fs::read(temp.path().join("calls")).expect("encode counter");
@@ -461,15 +464,17 @@ exec "$REAL_FFPROBE" "$@"
             let saves = std::rc::Rc::new(std::cell::Cell::new(0));
             let observed = std::rc::Rc::clone(&saves);
             let mut resumed = reset
-                .instantiate_condor(Box::new(move |_| {
-                    observed.set(observed.get() + 1);
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |_| {
+                        observed.set(observed.get() + 1);
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("owning direct job");
             let before = serde_json::to_vec(&resumed.scenes).expect("saved history/q");
             let (tx, rx) = std::sync::mpsc::channel();
-            let direct =
-                TargetQuality::default().execute_cancel(&mut resumed, tx, Default::default());
+            let direct = TargetQuality::default().execute(&mut resumed, tx, Default::default());
             let cli = condor_cmd(&temp)
                 .args(["encode", "-w", "2"])
                 .output()
@@ -1776,7 +1781,7 @@ mod output {
                         andean_condor::core::sequence::parallel_encoder::ParallelEncoder::scene_id(
                             0
                         ),
-                        config.condor.scenes[0].encoder.output_extension()
+                        config.condor.scenes[0].encoder.base().output_extension()
                     ));
                         config.condor.output.path = chunk;
                     },
@@ -3300,6 +3305,7 @@ mod crud {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("config");
         let file = temp.path().join("condor.json");
@@ -3363,6 +3369,7 @@ mod crud {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("seed config");
         let source = temp.path().join("configuration-only.mkv");

@@ -158,7 +158,7 @@ fn mux(
     config: &FfmpegConfig,
 ) -> Result<()> {
     let (tx, _rx) = sync::mpsc::channel();
-    SceneConcatenator::ffmpeg_cancel(
+    SceneConcatenator::ffmpeg(
         root,
         output,
         &[chunk.to_owned()],
@@ -400,7 +400,7 @@ fn ffmpeg_mux_validates_selected_sources_before_mutation_but_does_not_probe_unus
     }
     // No config must never open or probe this nonexistent, unused source.
     let (tx, _rx) = sync::mpsc::channel();
-    SceneConcatenator::ffmpeg_cancel(
+    SceneConcatenator::ffmpeg(
         dir.path(),
         &output,
         &[chunk],
@@ -543,7 +543,7 @@ fn assert_failed_source_probe_preserves_files() {
         })
     });
     let (tx, _rx) = sync::mpsc::channel();
-    let result = SceneConcatenator::ffmpeg_cancel(
+    let result = SceneConcatenator::ffmpeg(
         &root,
         &output,
         std::slice::from_ref(&scene),
@@ -718,7 +718,7 @@ fn native_mov_timecode_is_omitted_and_audio_selection_is_preserved() {
         ("selected", selected, vec!["jpn"]),
     ] {
         let output = dir.path().join(format!("{case}.mkv"));
-        let result = SceneConcatenator::ffmpeg_cancel(
+        let result = SceneConcatenator::ffmpeg(
             dir.path(),
             &output,
             std::slice::from_ref(&chunk),

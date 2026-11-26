@@ -1,3 +1,4 @@
+use crate::utils::cancellation::Cancellation;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
@@ -35,6 +36,7 @@ pub(super) use lifecycle::TempOutput;
 pub use task::{ParallelEncoderResult, Task};
 
 /// Per-scene dispatch policy. A try includes every pass and output validation.
+/// Defaults to three total tries with frame-count validation enabled.
 #[derive(Clone, Copy, Debug)]
 pub struct ParallelEncoderOptions {
     pub max_tries: u32,
@@ -156,81 +158,74 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        for (index, scene) in condor.scenes.iter().enumerate() {
-            scene.sequence_data.get_parallel_encoder()?.admit_scene(index)?;
-        }
-        condor.sequence_config.parallel_encoder()?.validate()?;
-        let mut warnings = vec![];
-
-        // Ensure scenes is not empty
-        if condor.scenes.is_empty() {
-            warnings.push(anyhow::Error::new(ParallelEncoderError::ScenesEmpty));
-        }
-        if let Some(input) = &mut self.input {
-            // VapourSynth inputs may cache here, which is why this is separate
-            // from validate.
-            progress_tx.send(SequenceStatus::Whole(Status::Processing {
-                id: DETAILS.name.to_owned(),
-                completion: SequenceCompletion::Custom {
-                    name: DETAILS.name.to_owned(),
-                    completed: 0.0,
-                    total: 1.0,
-                },
-            }))?;
-            input.clip_info()?;
-            progress_tx.send(SequenceStatus::Whole(Status::Completed {
-                id: DETAILS.name.to_owned(),
-            }))?;
-        }
-
-        let scenes_directory = &condor.sequence_config.parallel_encoder()?.scenes_directory;
-        if !scenes_directory.exists() {
-            std::fs::create_dir_all(scenes_directory)?;
-        }
-
-        // Generate Photon Noise tables
-        let input = self.input.as_mut().unwrap_or(&mut condor.input);
-        let clip_info = input.clip_info()?;
-        let transfer_function = clip_info.photon_noise_transfer_function();
-        for scene in &mut condor.scenes {
-            let params = scene.encoder.generate_photon_noise_table(
-                clip_info.resolution.0,
-                clip_info.resolution.1,
-                transfer_function,
-                clip_info.color_range,
-            )?;
-
-            if let Some((hashed_name, params)) = params {
-                let output_directory = scenes_directory.join(DETAILS.name);
-                let output = output_directory.join(format!("{}.tbl", hashed_name));
-                let output_clone = output.clone();
-                if !output.exists() {
-                    if !output_directory.exists() {
-                        std::fs::create_dir_all(&output_directory)?;
-                    }
-                    debug!("Writing a new photon noise table to {}", output.display());
-                    write_grain_table(output, &[params])?;
-                }
-                scene.encoder.apply_photon_noise_parameters(&output_clone)?;
+        super::check_sequence(cancellation, || {
+            for (index, scene) in condor.scenes.iter().enumerate() {
+                scene.sequence_data.get_parallel_encoder()?.admit_scene(index)?;
             }
-        }
+            condor.sequence_config.parallel_encoder()?.validate()?;
+            let mut warnings = vec![];
 
-        Ok(((), warnings))
+            // Ensure scenes is not empty
+            if condor.scenes.is_empty() {
+                warnings.push(anyhow::Error::new(ParallelEncoderError::ScenesEmpty));
+            }
+            if let Some(input) = &mut self.input {
+                // VapourSynth inputs may cache here, which is why this is separate
+                // from validate.
+                progress_tx.send(SequenceStatus::Whole(Status::Processing {
+                    id: DETAILS.name.to_owned(),
+                    completion: SequenceCompletion::Custom {
+                        name: DETAILS.name.to_owned(),
+                        completed: 0.0,
+                        total: 1.0,
+                    },
+                }))?;
+                input.clip_info()?;
+                progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                    id: DETAILS.name.to_owned(),
+                }))?;
+            }
+
+            let scenes_directory = &condor.sequence_config.parallel_encoder()?.scenes_directory;
+            if !scenes_directory.exists() {
+                std::fs::create_dir_all(scenes_directory)?;
+            }
+
+            // Generate Photon Noise tables
+            let input = self.input.as_mut().unwrap_or(&mut condor.input);
+            let clip_info = input.clip_info()?;
+            let transfer_function = clip_info.photon_noise_transfer_function();
+            for scene in &mut condor.scenes {
+                let params = scene.encoder.generate_photon_noise_table(
+                    clip_info.resolution.0,
+                    clip_info.resolution.1,
+                    transfer_function,
+                    clip_info.color_range,
+                )?;
+
+                if let Some((hashed_name, params)) = params {
+                    let output_directory = scenes_directory.join(DETAILS.name);
+                    let output = output_directory.join(format!("{}.tbl", hashed_name));
+                    let output_clone = output.clone();
+                    if !output.exists() {
+                        if !output_directory.exists() {
+                            std::fs::create_dir_all(&output_directory)?;
+                        }
+                        debug!("Writing a new photon noise table to {}", output.display());
+                        write_grain_table(output, &[params])?;
+                    }
+                    scene.encoder.apply_photon_noise_parameters(&output_clone)?;
+                }
+            }
+
+            Ok(((), warnings))
+        })
     }
 
     #[inline]
     fn execute(
-        &mut self,
-        condor: &mut Condor<DataHandler, ConfigHandler>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<std::sync::atomic::AtomicBool>,
-    ) -> Result<((), Vec<anyhow::Error>)> {
-        self.execute_cancel(condor, progress_tx, cancelled.into())
-    }
-
-    #[inline]
-    fn execute_cancel(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
@@ -277,7 +272,7 @@ where
                 let path = config.scenes_directory.join(format!(
                     "{}.{}",
                     Self::scene_id(index),
-                    scene.encoder.output_extension()
+                    scene.encoder.base().output_extension()
                 ));
                 let state = admission
                     .admit_encode_for_recovery(
@@ -418,7 +413,11 @@ where
         }
         let mut configured_input =
             if self.input.is_none() && !tasks.is_empty() && !cancelled.is_cancelled() {
-                config.input.as_ref().map(Input::from_data).transpose()?
+                config
+                    .input
+                    .as_ref()
+                    .map(|input| Input::ensure_indexed(input, |_| {}, &cancelled.active()))
+                    .transpose()?
             } else {
                 None
             };
@@ -535,14 +534,20 @@ where
             save_callback,
         } = condor;
         let input_data = condor_input.as_data();
-        let before = provenance::measurement_inputs(&input_model, None, None)?;
+        let before =
+            provenance::Admission::default().measurement_inputs(&input_model, None, None)?;
         let input = self.input.as_mut().or(configured_input.as_mut()).unwrap_or(condor_input);
 
         let (results_tx, results_rx) = crossbeam_channel::unbounded();
         let finished_scenes = Arc::new(crate::utils::semaphore::Semaphore::new(0));
         let mut on_results = |results: Vec<task::PublishedResult>| -> Result<()> {
             ensure!(
-                before == provenance::measurement_inputs(&input_model, None, None)?,
+                before
+                    == provenance::Admission::default().measurement_inputs(
+                        &input_model,
+                        None,
+                        None
+                    )?,
                 "Encoding input changed during processing; recompute or use a new job"
             );
             let mut staged = scenes.clone();
@@ -560,7 +565,7 @@ where
                     let path = config.scenes_directory.join(format!(
                         "{}.{}",
                         Self::scene_id(encoder_result.scene),
-                        scene.encoder.output_extension()
+                        scene.encoder.base().output_extension()
                     ));
                     let context = publication.encode_context(
                         &input_model,

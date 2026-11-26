@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
-};
+use std::path::{Path, PathBuf};
 
 use crate::utils::cancellation::Cancellation;
 use anyhow::{Context, Result};
@@ -140,20 +137,9 @@ where
         &mut self,
         processor_index: Option<usize>,
         progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<((), SequenceWarningsTuple)>;
-    fn process_all(
-        &mut self,
-        progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<Vec<((), SequenceWarningsTuple)>>;
-    fn process_one_cancel(
-        &mut self,
-        processor_index: Option<usize>,
-        progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
         cancellation: Cancellation,
     ) -> Result<((), SequenceWarningsTuple)>;
-    fn process_all_cancel(
+    fn process_all(
         &mut self,
         progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
         cancellation: Cancellation,
@@ -212,16 +198,6 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
         &mut self,
         processor_index: Option<usize>,
         progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<((), SequenceWarningsTuple)> {
-        self.process_one_cancel(processor_index, progress_event_tx, cancelled.into())
-    }
-
-    #[inline]
-    fn process_one_cancel(
-        &mut self,
-        processor_index: Option<usize>,
-        progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
         cancelled: Cancellation,
     ) -> Result<((), SequenceWarningsTuple)> {
         cancelled.check()?;
@@ -235,6 +211,7 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
         // Processors could have their own Inputs, Outputs, Encoders, and Scenes
         // that should be validated
         let (_, validation_warnings) = processor.validate(&mut self.condor)?;
+        cancelled.check()?;
         // Processors could have their own Inputs that should be initialized
         let (progress_tx, progress_rx) = std::sync::mpsc::channel();
         let event_tx = progress_event_tx.clone();
@@ -250,13 +227,14 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
             }
             Ok(())
         });
-        let initialized = processor.initialize_cancel(&mut self.condor, progress_tx, &cancelled);
+        let initialized = processor.initialize(&mut self.condor, progress_tx, &cancelled);
         let relayed = encoder::pipes::join_worker(
             initialization_progress_thread,
             "Joining initialization progress relay",
         );
         let (_, initialization_warnings) = initialized?;
         relayed?;
+        cancelled.check()?;
         // Finally, process the Processor (But who processes the process
         // processor?)
         let (progress_tx, progress_rx) = std::sync::mpsc::channel();
@@ -272,10 +250,11 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
             }
             Ok(())
         });
-        let executed = processor.execute_cancel(&mut self.condor, progress_tx, cancelled);
+        let executed = processor.execute(&mut self.condor, progress_tx, cancelled.clone());
         let relayed =
             encoder::pipes::join_worker(process_progress_thread, "Joining sequence progress relay");
         let (_, process_warnings) = executed?;
+        cancelled.check_forced()?;
         relayed?;
 
         Ok((
@@ -292,15 +271,6 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
     fn process_all(
         &mut self,
         progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<Vec<((), SequenceWarningsTuple)>> {
-        self.process_all_cancel(progress_event_tx, cancelled.into())
-    }
-
-    #[inline]
-    fn process_all_cancel(
-        &mut self,
-        progress_event_tx: std::sync::mpsc::Sender<SequenceProgressEvent>,
         cancelled: Cancellation,
     ) -> Result<Vec<((), SequenceWarningsTuple)>> {
         let mut processor_warnings_tuples = Vec::with_capacity(self.sequences.len());
@@ -311,7 +281,7 @@ impl AndeanCondor<DefaultSequenceData, DefaultSequenceConfig>
             }
             let progress_event_tx = progress_event_tx.clone();
             let (_, (validation_warnings, initialization_warnings, process_warnings)) =
-                self.process_one_cancel(Some(i), progress_event_tx, cancelled.clone())?;
+                self.process_one(Some(i), progress_event_tx, cancelled.clone())?;
 
             processor_warnings_tuples.push((
                 (),

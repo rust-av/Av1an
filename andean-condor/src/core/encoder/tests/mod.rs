@@ -41,7 +41,7 @@ pub(super) fn clip_info() -> ClipInfo {
 
 fn parameters(encoder: &Encoder) -> Vec<String> {
     encoder
-        .parameters_with_output((1, 1), &PathBuf::from("output.ivf"), &clip_info())
+        .parameters_with_output((1, 1), &PathBuf::from("output.ivf"), &clip_info(), None)
         .expect("valid settings")
 }
 
@@ -75,7 +75,7 @@ fn vvenc_default_one_pass_argv_declares_y4m_pipe() {
     let mut encoder = Encoder::default_from_base(&EncoderBase::VVenC, false);
     encoder.set_append_color_data(false);
     let argv = encoder
-        .parameters_with_output((1, 1), Path::new(output), &clip_info())
+        .parameters_with_output((1, 1), Path::new(output), &clip_info(), None)
         .expect("argv");
     // HashMap option order can vary; input/output pairs must remain intact.
     assert!(
@@ -97,7 +97,7 @@ fn vvenc_disabled_or_excluded_y4m_default_is_not_reinserted() {
         }
         assert_eq!(
             encoder
-                .parameters_with_output((1, 1), Path::new(output), &clip_info())
+                .parameters_with_output((1, 1), Path::new(output), &clip_info(), None)
                 .expect("argv"),
             ["-i", "-", "-o", output],
             "exclude_defaults={exclude_defaults}"
@@ -164,7 +164,7 @@ fn a_user_option_overrides_the_appended_hdr_metadata() {
     };
 
     let parameters = encoder
-        .parameters_with_output((1, 1), &PathBuf::from("output.hevc"), &clip_info)
+        .parameters_with_output((1, 1), &PathBuf::from("output.hevc"), &clip_info, None)
         .expect("valid settings");
     assert_eq!(value_of(&parameters, "--max-cll"), Some("400,200"));
 }
@@ -181,7 +181,7 @@ fn svt_av1_multipass_argv_keeps_pass_and_colour_options() {
         .insert("rc".into(), CLIParameter::new_number("--", " ", 1.0));
 
     let parameters = encoder
-        .parameters_with_output((1, 2), &PathBuf::from("output.ivf"), &clip_info())
+        .parameters_with_output((1, 2), &PathBuf::from("output.ivf"), &clip_info(), None)
         .expect("VBR two-pass");
 
     // A two-pass SVT-AV1 command carries `--pass 1`; the colour data is
@@ -201,6 +201,7 @@ fn ffmpeg_colour_data_precedes_the_input() {
                 chroma_location: Some(av_decoders::ChromaLocation::Left),
                 ..clip_info()
             },
+            None,
         )
         .expect("valid settings");
     let input = parameters

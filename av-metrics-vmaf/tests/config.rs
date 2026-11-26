@@ -252,9 +252,9 @@ mod native {
         let count = |index| unsafe { counter(index) };
         let root = PathBuf::from(std::env::var_os("VMAF_MODEL_FIXTURE_ROOT").expect("root"));
         let explicit = root.join("explicit models 雪;literal:directory/vmaf_v0.6.1.json");
-        let mut config = VmafConfig::new().with_backend(BackendPreference::CpuOnly);
+        let mut config = VmafConfig::default().with_backend(BackendPreference::CpuOnly);
         if scenario == "direct" {
-            config = config.with_model_path(&explicit);
+            config = config.with_model(VmafModel::Path(explicit.clone()));
         }
         let requested_model = config.model.clone();
         let result = VmafScorer::new(

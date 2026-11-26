@@ -508,25 +508,12 @@ pub struct VmafConfig {
 }
 
 impl VmafConfig {
-    /// A configuration using the default model and serial native extraction.
-    #[inline]
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Set the model.
     #[inline]
     #[must_use]
     pub fn with_model(mut self, model: VmafModel) -> Self {
         self.model = model;
         self
-    }
-
-    /// Set the model from an explicit path, independent of `VMAF_MODEL_PATH`.
-    #[inline]
-    pub fn with_model_path(self, path: impl AsRef<Path>) -> Self {
-        self.with_model(VmafModel::Path(path.as_ref().to_path_buf()))
     }
 
     /// Add a feature extractor.
@@ -618,13 +605,13 @@ mod tests {
 
     #[test]
     fn default_feature_contributes_no_name() {
-        let config = VmafConfig::new().with_feature(VmafFeature::Default);
+        let config = VmafConfig::default().with_feature(VmafFeature::Default);
         assert!(config.feature_names().is_empty());
     }
 
     #[test]
     fn duplicate_features_are_deduplicated_in_order() {
-        let config = VmafConfig::new()
+        let config = VmafConfig::default()
             .with_feature(VmafFeature::Psnr)
             .with_feature(VmafFeature::Ssim)
             .with_feature(VmafFeature::Psnr);

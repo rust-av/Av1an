@@ -18,7 +18,7 @@
 //! changed/removed overrides reversible. Unknown legacy baselines and unsafe
 //! rebases refuse without overwriting scene edits or deleting files.
 
-use std::sync::{self, Arc, atomic::AtomicBool};
+use std::sync;
 
 use andean_condor::{
     core::{
@@ -29,6 +29,7 @@ use andean_condor::{
         encoder::Encoder,
         scene::{Scene, SubScene},
     },
+    utils::cancellation::Cancellation,
 };
 use anyhow::{Context, Result, bail};
 use schemars::JsonSchema;
@@ -145,14 +146,18 @@ impl Zoner {
     /// baseline or refuse an unsafe rebase. If old/new algorithms produce the
     /// same recorded definitions, only the revision tag is published; live
     /// downstream edits and results remain untouched.
-    pub fn run(condor: &mut Condor<CliSequenceData, CliSequenceConfig>) -> Result<()> {
+    pub fn run(
+        condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
+        cancellation: Cancellation,
+    ) -> Result<()> {
+        cancellation.check()?;
         let mut zoner = Self::default();
 
         let (_, warnings) = zoner.validate(condor)?;
         log_warnings(&warnings);
 
         let (progress_tx, _progress_rx) = sync::mpsc::channel();
-        let (_, warnings) = zoner.execute(condor, progress_tx, Arc::new(AtomicBool::new(false)))?;
+        let (_, warnings) = zoner.execute(condor, progress_tx, cancellation)?;
         log_warnings(&warnings);
 
         Ok(())
@@ -182,7 +187,9 @@ impl Sequence<CliSequenceData, CliSequenceConfig> for Zoner {
         &mut self,
         _condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
+        cancellation.check()?;
         Ok(((), Vec::new()))
     }
 
@@ -190,7 +197,18 @@ impl Sequence<CliSequenceData, CliSequenceConfig> for Zoner {
         &mut self,
         condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        _cancelled: Arc<AtomicBool>,
+        cancellation: Cancellation,
+    ) -> Result<((), Vec<anyhow::Error>)> {
+        cancellation.check()?;
+        let result = Self::apply(condor);
+        cancellation.check_forced()?;
+        result
+    }
+}
+
+impl Zoner {
+    fn apply(
+        condor: &mut Condor<CliSequenceData, CliSequenceConfig>,
     ) -> Result<((), Vec<anyhow::Error>)> {
         let zones = configured_zones(&condor.sequence_config);
         let lifecycle =

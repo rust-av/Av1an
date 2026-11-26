@@ -13,7 +13,12 @@ fn avm_one_pass_argv_omits_pass_and_statistics_options() {
     encoder.set_append_color_data(false);
     assert_eq!(
         encoder
-            .parameters_with_output((1, 1), output, &crate::core::encoder::tests::clip_info())
+            .parameters_with_output(
+                (1, 1),
+                output,
+                &crate::core::encoder::tests::clip_info(),
+                None
+            )
             .expect("argv"),
         ["-", "-o", output.to_str().expect("utf8")]
     );

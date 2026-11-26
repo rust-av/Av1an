@@ -63,6 +63,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (mut config, _) =
@@ -379,9 +380,10 @@ mod tests {
             }
             changed.save(&path).expect("dependency edit");
             let mut direct = changed
-                .instantiate_condor(Box::new(|_| {
-                    anyhow::bail!("changed dependencies must refuse before saving")
-                }))
+                .instantiate_condor(
+                    Box::new(|_| anyhow::bail!("changed dependencies must refuse before saving")),
+                    &Default::default(),
+                )
                 .expect("direct producer");
             let before = serde_json::to_value(direct.as_data()).expect("before direct refusal");
             let (tx, rx) = std::sync::mpsc::channel();
@@ -389,7 +391,7 @@ mod tests {
                 &mut andean_condor::core::sequence::noise_scaler::NoiseScaler::default(),
                 &mut direct,
                 tx,
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                Default::default(),
             )
             .expect_err("known changed dependencies cannot skip as already scaled");
             assert!(format!("{error:#}").contains("noise scaling dependencies changed"));

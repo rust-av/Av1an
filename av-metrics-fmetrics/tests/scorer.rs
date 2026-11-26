@@ -43,8 +43,8 @@ fn scorer_construction_succeeds_with_availability_or_reports_library_not_found()
     // Without fmetrics this must be a clean error, not a panic: the caller
     // falls back to the VapourSynth plugin when this tier is unavailable.
     let config = FmetricsConfig::new(FmetricsMetric::Ssimulacra2);
-    match FmetricsScorer::new(config, color(8)) {
-        Ok(_) => assert!(FmetricsScorer::is_available()),
+    match FmetricsScorer::new(config, color(8), color(8)) {
+        Ok(_) => assert!(av_metrics_fmetrics::is_available()),
         Err(error) => assert!(
             matches!(error, FmetricsError::LibraryNotFound { .. }),
             "expected unavailability, got {error:?}"
@@ -56,6 +56,7 @@ fn scorer_construction_succeeds_with_availability_or_reports_library_not_found()
 fn a_temporal_metric_needs_the_temporal_entry_point() {
     let Ok(mut scorer) = FmetricsScorer::new(
         FmetricsConfig::new(FmetricsMetric::Cvvdp).with_frame_rate(24.0),
+        color(8),
         color(8),
     ) else {
         return;
@@ -85,6 +86,7 @@ fn concurrent_scoring_matches_serial_scoring() {
     // A native scratch arena must never be shared by concurrent callers.
     let Ok(scorer) = FmetricsScorer::new(
         FmetricsConfig::new(FmetricsMetric::Ssimulacra2).with_threads(4),
+        color(8),
         color(8),
     ) else {
         return;

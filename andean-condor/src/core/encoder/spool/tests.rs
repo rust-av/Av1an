@@ -7,7 +7,7 @@ fn forced_spool_replay_unblocks_a_full_consumer_queue() {
     tx.send(Cursor::new(vec![1; 1024 * 1024])).expect("spool input");
     drop(tx);
     let mut calls = 0;
-    let error = encode_cancel(
+    let error = encode(
         Cursor::new(Vec::new()),
         rx,
         Path::new("unused"),
@@ -35,7 +35,7 @@ fn force_between_spool_passes_prevents_the_next_pass() {
     tx.send(Cursor::new(vec![1; 32])).expect("spool input");
     drop(tx);
     let mut calls = 0;
-    let error = encode_cancel(
+    let error = encode(
         Cursor::new(Vec::new()),
         rx,
         Path::new("unused"),
@@ -283,6 +283,7 @@ fi
                     &job_output,
                     progress,
                     &crate::core::encoder::tests::clip_info(),
+                    &crate::utils::cancellation::Cancellation::default(),
                 )
             });
             let header = b"YUV4MPEG2 W64 H64 F24:1 Ip A0:0 C420\n";
@@ -501,6 +502,7 @@ fi
                         &parent.join("out.ivf"),
                         mpsc::channel().0,
                         &crate::core::encoder::tests::clip_info(),
+                        &crate::utils::cancellation::Cancellation::default(),
                     );
                     if parent.ends_with("readonly") {
                         fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
@@ -544,6 +546,7 @@ fi
                 }
             });
             let mut launched = 0;
+            let cancellation = crate::utils::cancellation::Cancellation::default();
             let error = spool::encode(
                 FaultFile {
                     file,
@@ -553,6 +556,7 @@ fi
                 rx,
                 &output,
                 2,
+                &cancellation,
                 |pass, rx| {
                     launched += 1;
                     if case == "drop" {
@@ -566,6 +570,7 @@ fi
                         mpsc::channel().0,
                         &crate::core::encoder::tests::clip_info(),
                         Some(&stats),
+                        &cancellation,
                     )
                 },
             )
@@ -585,10 +590,17 @@ fi
                 let (tx, rx) = crossbeam_channel::bounded(1);
                 tx.send(Cursor::new(vec![1; 1024 * 1024])).expect("input");
                 drop(tx);
-                let error = spool::encode(named, rx, &output, 2, |_, rx| -> Result<()> {
-                    drop(rx);
-                    anyhow::bail!("cancelled")
-                })
+                let error = spool::encode(
+                    named,
+                    rx,
+                    &output,
+                    2,
+                    &Default::default(),
+                    |_, rx| -> Result<()> {
+                        drop(rx);
+                        anyhow::bail!("cancelled")
+                    },
+                )
                 .expect_err("consumer drop");
                 assert_eq!(error.to_string(), "cancelled");
                 assert!(
@@ -722,7 +734,7 @@ fi
             };
             let captured = Arc::clone(&completed);
             let capture = thread::spawn(move || {
-                spool::encode(file, rx, &output, 2, |_, rx| {
+                spool::encode(file, rx, &output, 2, &Default::default(), |_, rx| {
                     assert_eq!(
                         captured.load(Ordering::SeqCst),
                         64,
@@ -800,33 +812,38 @@ fi
                 count: Arc::clone(&count),
                 interrupted: true,
             };
-            spool::replay(&mut file, &root.join("replay.ivf"), |rx| {
-                let first = rx.recv().expect("first writer-held chunk");
-                assert_eq!(
-                    rx.capacity(),
-                    Some(2),
-                    "replay must be bounded even while the consumer is stopped"
-                );
-                for _ in 0..4 {
-                    observed.recv().expect("four actual read buffers");
-                }
-                assert_eq!(
-                    count.load(Ordering::SeqCst),
-                    4,
-                    "producer cannot read a fifth buffer while send is blocked"
-                );
-                assert_eq!(rx.len(), 2);
-                assert_eq!(first.get_ref().len(), 64 * 1024);
-                drop(first);
-                let mut chunks = 1;
-                for chunk in rx {
-                    assert_eq!(chunk.get_ref().len(), 64 * 1024);
-                    assert!(chunk.get_ref().iter().all(|b| *b == 37));
-                    chunks += 1;
-                }
-                assert_eq!(chunks, 32);
-                Ok(())
-            })
+            spool::replay(
+                &mut file,
+                &root.join("replay.ivf"),
+                &crate::utils::cancellation::Cancellation::default(),
+                |rx| {
+                    let first = rx.recv().expect("first writer-held chunk");
+                    assert_eq!(
+                        rx.capacity(),
+                        Some(2),
+                        "replay must be bounded even while the consumer is stopped"
+                    );
+                    for _ in 0..4 {
+                        observed.recv().expect("four actual read buffers");
+                    }
+                    assert_eq!(
+                        count.load(Ordering::SeqCst),
+                        4,
+                        "producer cannot read a fifth buffer while send is blocked"
+                    );
+                    assert_eq!(rx.len(), 2);
+                    assert_eq!(first.get_ref().len(), 64 * 1024);
+                    drop(first);
+                    let mut chunks = 1;
+                    for chunk in rx {
+                        assert_eq!(chunk.get_ref().len(), 64 * 1024);
+                        assert!(chunk.get_ref().iter().all(|b| *b == 37));
+                        chunks += 1;
+                    }
+                    assert_eq!(chunks, 32);
+                    Ok(())
+                },
+            )
             .expect("replay joins");
             assert_eq!(count.load(Ordering::SeqCst), 32);
             eprintln!(

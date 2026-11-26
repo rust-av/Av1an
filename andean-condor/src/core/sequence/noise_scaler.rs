@@ -1,4 +1,5 @@
-use std::sync::{self, Arc, atomic::AtomicBool};
+use crate::utils::cancellation::Cancellation;
+use std::sync;
 
 use anyhow::{Context, ensure};
 use tracing::debug;
@@ -58,10 +59,9 @@ where
         &mut self,
         _condor: &mut Condor<Data, Config>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> anyhow::Result<((), Vec<anyhow::Error>)> {
-        let warnings = vec![];
-
-        Ok(((), warnings))
+        super::check_sequence(cancellation, || Ok(((), Vec::new())))
     }
 
     #[inline]
@@ -69,180 +69,182 @@ where
         &mut self,
         condor: &mut Condor<Data, Config>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        _cancelled: Arc<AtomicBool>,
+        cancellation: Cancellation,
     ) -> anyhow::Result<((), Vec<anyhow::Error>)> {
-        let warnings = vec![];
-        let Some(config) = &condor.sequence_config.noise_scaler()? else {
-            return Ok(((), warnings));
-        };
-        config.validate()?;
+        super::check_sequence(&cancellation, || {
+            let warnings = vec![];
+            let Some(config) = &condor.sequence_config.noise_scaler()? else {
+                return Ok(((), warnings));
+            };
+            config.validate()?;
 
-        if condor.scenes.is_empty() {
-            return Ok(((), vec![]));
-        }
+            if condor.scenes.is_empty() {
+                return Ok(((), vec![]));
+            }
 
-        // Retain all recorded scenes in the maximum, including excluded encoders.
-        let noise_levels = condor
-            .scenes
-            .iter()
-            .enumerate()
-            .map(|(index, scene)| {
-                let noise = scene
+            // Retain all recorded scenes in the maximum, including excluded encoders.
+            let noise_levels = condor
+                .scenes
+                .iter()
+                .enumerate()
+                .map(|(index, scene)| {
+                    let noise = scene
+                        .sequence_data
+                        .get_noise_detection()
+                        .with_context(|| format!("scene {index} noise detection"))?
+                        .as_ref()
+                        .map(|data| data.noise);
+                    if let Some(noise) = noise {
+                        ensure!(
+                            noise.is_finite() && noise >= 0.0,
+                            "scene {index} recorded noise must be finite and non-negative"
+                        );
+                    }
+                    Ok(noise)
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let maximum_noise = noise_levels.iter().flatten().copied().reduce(f64::max);
+            let input = condor.input.as_data();
+            let detector = condor.sequence_config.noise_detector()?.as_ref();
+            for (index, scene) in condor.scenes.iter().enumerate() {
+                if let Some(baseline) = scene
                     .sequence_data
-                    .get_noise_detection()
-                    .with_context(|| format!("scene {index} noise detection"))?
+                    .get_noise_scaling()?
                     .as_ref()
-                    .map(|data| data.noise);
-                if let Some(noise) = noise {
+                    .and_then(|data| data.baseline.as_ref())
+                {
                     ensure!(
-                        noise.is_finite() && noise >= 0.0,
-                        "scene {index} recorded noise must be finite and non-negative"
+                        scene.encoder.photon_noise() == Some(&baseline.scaled)
+                            && baseline.context
+                                == scaling_context(
+                                    &input,
+                                    detector,
+                                    Some(config),
+                                    scene,
+                                    scene.sequence_data.get_noise_detection()?.as_ref(),
+                                    maximum_noise
+                                ),
+                        "scene {index} noise scaling dependencies changed; explicitly reset noise-scaling to restore its original PhotonNoise before recomputing, or use a new job"
                     );
                 }
-                Ok(noise)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let maximum_noise = noise_levels.iter().flatten().copied().reduce(f64::max);
-        let input = condor.input.as_data();
-        let detector = condor.sequence_config.noise_detector()?.as_ref();
-        for (index, scene) in condor.scenes.iter().enumerate() {
-            if let Some(baseline) = scene
-                .sequence_data
-                .get_noise_scaling()?
-                .as_ref()
-                .and_then(|data| data.baseline.as_ref())
-            {
+            }
+            let Some(max_noise_level) = maximum_noise else {
+                return Ok(((), warnings));
+            };
+            // No positive interval means no scaling, not a new NaN/zero/identity measurement.
+            if max_noise_level <= config.threshold {
+                return Ok(((), warnings));
+            }
+
+            let mut edits = vec![];
+            for (index, scene) in condor.scenes.iter().enumerate() {
+                if scene
+                    .sequence_data
+                    .get_noise_scaling()
+                    .with_context(|| format!("scene {index} noise scaling"))?
+                    .is_some()
+                {
+                    // Noise already scaled
+                    continue;
+                }
+                let mut encoder = scene.encoder.clone();
+                let scene_photon_noise = match &mut encoder {
+                    Encoder::AOM { photon_noise, .. } | Encoder::RAV1E { photon_noise, .. } => {
+                        photon_noise
+                    },
+                    Encoder::SVTAV1 {
+                        options,
+                        photon_noise,
+                        ..
+                    } => {
+                        if !options.contains_key("film-grain") {
+                            photon_noise
+                        } else {
+                            continue;
+                        }
+                    },
+                    _ => continue,
+                };
+                let Some(scene_photon_noise) = scene_photon_noise else {
+                    continue;
+                };
+                let original = scene_photon_noise.clone();
+                let Some(noise_level) = noise_levels[index] else {
+                    continue;
+                };
+                if noise_level < config.threshold {
+                    continue;
+                }
+
+                let relative_noise_level =
+                    (noise_level - config.threshold) / (max_noise_level - config.threshold);
+                let scaler = relative_noise_level.mul_add(
+                    config.maximum_scaler - config.minimum_scaler,
+                    config.minimum_scaler,
+                );
                 ensure!(
-                    scene.encoder.photon_noise() == Some(&baseline.scaled)
-                        && baseline.context
-                            == scaling_context(
+                    relative_noise_level.is_finite() && scaler.is_finite(),
+                    "scene {index} relative noise and scaler must be finite"
+                );
+                debug!("Scaling Scene {} Photon Noise by {:.2}", index, scaler);
+
+                let scale_iso = |iso: u32, channel: &str| -> anyhow::Result<u32> {
+                    let product = f64::from(iso) * scaler;
+                    let rounded = product.round();
+                    ensure!(
+                        product.is_finite() && (0.0..=f64::from(u32::MAX)).contains(&rounded),
+                        "scene {index} {channel} scaled ISO must be finite and round into u32"
+                    );
+                    Ok(rounded as u32)
+                };
+                scene_photon_noise.iso = scale_iso(scene_photon_noise.iso, "luma")?;
+                if config.scale_chroma {
+                    scene_photon_noise.chroma_iso = scene_photon_noise
+                        .chroma_iso
+                        .map(|iso| scale_iso(iso, "chroma"))
+                        .transpose()?;
+                }
+
+                let mut data = scene.sequence_data.clone();
+                *data
+                    .get_noise_scaling_mut()
+                    .with_context(|| format!("scene {index} noise scaling update"))? =
+                    Some(NoiseScalerData {
+                        scaler,
+                        baseline: Some(NoiseScalerBaseline {
+                            original,
+                            scaled: scene_photon_noise.clone(),
+                            context: scaling_context(
                                 &input,
                                 detector,
                                 Some(config),
                                 scene,
                                 scene.sequence_data.get_noise_detection()?.as_ref(),
-                                maximum_noise
+                                maximum_noise,
                             ),
-                    "scene {index} noise scaling dependencies changed; explicitly reset noise-scaling to restore its original PhotonNoise before recomputing, or use a new job"
-                );
-            }
-        }
-        let Some(max_noise_level) = maximum_noise else {
-            return Ok(((), warnings));
-        };
-        // No positive interval means no scaling, not a new NaN/zero/identity measurement.
-        if max_noise_level <= config.threshold {
-            return Ok(((), warnings));
-        }
-
-        let mut edits = vec![];
-        for (index, scene) in condor.scenes.iter().enumerate() {
-            if scene
-                .sequence_data
-                .get_noise_scaling()
-                .with_context(|| format!("scene {index} noise scaling"))?
-                .is_some()
-            {
-                // Noise already scaled
-                continue;
-            }
-            let mut encoder = scene.encoder.clone();
-            let scene_photon_noise = match &mut encoder {
-                Encoder::AOM { photon_noise, .. } | Encoder::RAV1E { photon_noise, .. } => {
-                    photon_noise
-                },
-                Encoder::SVTAV1 {
-                    options,
-                    photon_noise,
-                    ..
-                } => {
-                    if !options.contains_key("film-grain") {
-                        photon_noise
-                    } else {
-                        continue;
-                    }
-                },
-                _ => continue,
-            };
-            let Some(scene_photon_noise) = scene_photon_noise else {
-                continue;
-            };
-            let original = scene_photon_noise.clone();
-            let Some(noise_level) = noise_levels[index] else {
-                continue;
-            };
-            if noise_level < config.threshold {
-                continue;
+                        }),
+                    });
+                edits.push((index, encoder, data));
             }
 
-            let relative_noise_level =
-                (noise_level - config.threshold) / (max_noise_level - config.threshold);
-            let scaler = relative_noise_level.mul_add(
-                config.maximum_scaler - config.minimum_scaler,
-                config.minimum_scaler,
-            );
-            ensure!(
-                relative_noise_level.is_finite() && scaler.is_finite(),
-                "scene {index} relative noise and scaler must be finite"
-            );
-            debug!("Scaling Scene {} Photon Noise by {:.2}", index, scaler);
-
-            let scale_iso = |iso: u32, channel: &str| -> anyhow::Result<u32> {
-                let product = f64::from(iso) * scaler;
-                let rounded = product.round();
-                ensure!(
-                    product.is_finite() && (0.0..=f64::from(u32::MAX)).contains(&rounded),
-                    "scene {index} {channel} scaled ISO must be finite and round into u32"
-                );
-                Ok(rounded as u32)
-            };
-            scene_photon_noise.iso = scale_iso(scene_photon_noise.iso, "luma")?;
-            if config.scale_chroma {
-                scene_photon_noise.chroma_iso = scene_photon_noise
-                    .chroma_iso
-                    .map(|iso| scale_iso(iso, "chroma"))
-                    .transpose()?;
+            if edits.is_empty() {
+                return Ok(((), warnings));
+            }
+            // Publish only after every computation and fallible data access succeeds.
+            for (index, encoder, data) in &mut edits {
+                std::mem::swap(&mut condor.scenes[*index].encoder, encoder);
+                std::mem::swap(&mut condor.scenes[*index].sequence_data, data);
+            }
+            if let Err(error) = condor.save() {
+                for (index, encoder, data) in edits {
+                    condor.scenes[index].encoder = encoder;
+                    condor.scenes[index].sequence_data = data;
+                }
+                return Err(error);
             }
 
-            let mut data = scene.sequence_data.clone();
-            *data
-                .get_noise_scaling_mut()
-                .with_context(|| format!("scene {index} noise scaling update"))? =
-                Some(NoiseScalerData {
-                    scaler,
-                    baseline: Some(NoiseScalerBaseline {
-                        original,
-                        scaled: scene_photon_noise.clone(),
-                        context: scaling_context(
-                            &input,
-                            detector,
-                            Some(config),
-                            scene,
-                            scene.sequence_data.get_noise_detection()?.as_ref(),
-                            maximum_noise,
-                        ),
-                    }),
-                });
-            edits.push((index, encoder, data));
-        }
-
-        if edits.is_empty() {
-            return Ok(((), warnings));
-        }
-        // Publish only after every computation and fallible data access succeeds.
-        for (index, encoder, data) in &mut edits {
-            std::mem::swap(&mut condor.scenes[*index].encoder, encoder);
-            std::mem::swap(&mut condor.scenes[*index].sequence_data, data);
-        }
-        if let Err(error) = condor.save() {
-            for (index, encoder, data) in edits {
-                condor.scenes[index].encoder = encoder;
-                condor.scenes[index].sequence_data = data;
-            }
-            return Err(error);
-        }
-
-        Ok(((), warnings))
+            Ok(((), warnings))
+        })
     }
 }
 
@@ -380,7 +382,11 @@ mod tests {
 
     fn run(condor: &mut TestCondor) -> anyhow::Result<((), Vec<anyhow::Error>)> {
         let (tx, _rx) = sync::mpsc::channel();
-        NoiseScaler::default().execute(condor, tx, Arc::new(AtomicBool::new(false)))
+        NoiseScaler::default().execute(
+            condor,
+            tx,
+            crate::utils::cancellation::Cancellation::default(),
+        )
     }
 
     fn snapshot(condor: &TestCondor) -> Vec<u8> {
@@ -422,6 +428,33 @@ mod tests {
             );
             assert!(saved.borrow().is_empty());
         }
+    }
+
+    #[test]
+    fn force_during_sequence_save_is_not_reported_as_success() {
+        use crate::utils::cancellation::{Cancellation, Cancelled};
+
+        let scenes = [0.1, 0.2, 0.4, 0.6].map(|n| scene(EncoderBase::AOM, Some(n))).to_vec();
+        let (mut condor, saved) = fixture(Some(config()), scenes);
+        let cancellation = Cancellation::default();
+        let controls = cancellation.clone();
+        let save = condor.save_callback;
+        condor.save_callback = Box::new(move |data| {
+            save(data)?;
+            controls.request()?;
+            controls.request()
+        });
+        let (tx, _rx) = sync::mpsc::channel();
+
+        let error = NoiseScaler::default()
+            .execute(&mut condor, tx, cancellation)
+            .expect_err("force must be observed after cooperative work");
+
+        assert!(matches!(
+            error.downcast_ref::<Cancelled>(),
+            Some(Cancelled::Forced)
+        ));
+        assert_eq!(saved.borrow().len(), 1);
     }
 
     #[test]

@@ -393,7 +393,11 @@ fi
         );
         let (tx, rx) = std::sync::mpsc::channel();
         let error = ParallelEncoder::default()
-            .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+            .execute(
+                &mut condor,
+                tx,
+                crate::utils::cancellation::Cancellation::default(),
+            )
             .expect_err("peer failure returned only after all active jobs finish");
         let ParallelEncoderError::EncoderFailed { scene, result } = error
             .downcast_ref::<ParallelEncoderError>()

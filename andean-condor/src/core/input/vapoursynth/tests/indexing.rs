@@ -73,7 +73,7 @@ fn assert_index_publication_case() {
     };
     let token = Cancellation::default();
     if case == "failure-retry" {
-        let error = source_path(&source, &method, None)
+        let error = source_path(&source, &method, None, &Cancellation::default())
             .expect_err("exit 42 cannot publish a partial index");
         let failed = error.downcast_ref::<DGIndexFailure>().expect("typed status/raw diagnostics");
         assert_eq!(failed.status.expect("status").code(), Some(42));
@@ -97,7 +97,7 @@ fn assert_index_publication_case() {
             filters: vec![],
         };
         let mut starts = 0;
-        index_source_cancel(
+        index_source(
             &data,
             |progress| {
                 if matches!(
@@ -115,15 +115,15 @@ fn assert_index_publication_case() {
         .expect("owning input pre-index retry");
         assert_eq!(starts, 1);
         assert_eq!(
-            source_path(&source, &method, None).expect("retry succeeds"),
+            source_path(&source, &method, None, &Cancellation::default()).expect("retry succeeds"),
             cache
         );
         assert_eq!(
-            source_path(&source, &method, None).expect("valid reuse"),
+            source_path(&source, &method, None, &Cancellation::default()).expect("valid reuse"),
             cache
         );
-        let (_, lines) =
-            source_script(&source, &method, None).expect("source-options generated planner");
+        let (_, lines) = source_script(&source, &method, None, &Cancellation::default())
+            .expect("source-options generated planner");
         assert_eq!(
             super::source_options::recorded(lines),
             serde_json::json!([{"source": cache.display().to_string()}])

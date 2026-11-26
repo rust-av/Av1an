@@ -99,7 +99,11 @@ fn main() -> anyhow::Result<()> {
         }
         count
     });
-    input.y4m_frames(sender, &indices)?;
+    input.y4m_frames(
+        sender,
+        &indices,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )?;
     let streamed = consumer.join().expect("consumer thread should join");
     report(&Timing {
         label: "y4m_frames".to_owned(),
@@ -139,7 +143,14 @@ fn main() -> anyhow::Result<()> {
                         }
                         count
                     });
-                    reader.y4m_frames(&sender, &share, 8).expect("frame source reads");
+                    reader
+                        .y4m_frames(
+                            &sender,
+                            &share,
+                            8,
+                            &andean_condor::utils::cancellation::Cancellation::default(),
+                        )
+                        .expect("frame source reads");
                     // `y4m_frames` borrows the sender, so it has to be dropped
                     // here; otherwise the consumer waits
                     // for a disconnect that never comes.

@@ -162,6 +162,7 @@ mod handler_configuration {
             Some(&QualityProfile::Slow),
             None,
             false,
+            &Default::default(),
         )
         .expect("start_handler should succeed");
         assert_eq!(
@@ -322,6 +323,7 @@ mod handler_configuration {
             Some(&QualityProfile::Standard),
             None,
             false,
+            &Default::default(),
         )
         .expect("start_handler should succeed");
         assert!(config_path.exists(), "config file exists");
@@ -468,6 +470,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("start_handler should succeed");
         assert_eq!(
@@ -579,6 +582,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("start_handler should succeed");
         assert!(
@@ -639,6 +643,7 @@ mod handler_configuration {
                 None,
                 None,
                 false,
+                &Default::default(),
             );
             let error = result.expect_err("invalid saved lengths must fail preparation");
             assert!(error.to_string().contains(diagnostic), "{error:#}");
@@ -694,6 +699,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         );
         assert_matches!(result, Err(_), "start_handler should fail");
         assert!(!config_path.exists(), "config file does not exist");

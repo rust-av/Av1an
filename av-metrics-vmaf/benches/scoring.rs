@@ -89,7 +89,7 @@ fn throughput(criterion: &mut Criterion) {
 
         group.throughput(Throughput::Elements(BENCH_FRAMES as u64));
         group.bench_function(label, |bencher| {
-            bencher.iter(|| black_box(score_once(&pair, VmafConfig::new())));
+            bencher.iter(|| black_box(score_once(&pair, VmafConfig::default())));
         });
     }
 
@@ -114,7 +114,7 @@ fn thread_scaling(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("vmaf/threads");
 
     for threads in [1u32, 2, 4, 8] {
-        let config = VmafConfig::new().with_threads(threads);
+        let config = VmafConfig::default().with_threads(threads);
         group.throughput(Throughput::Elements(BENCH_FRAMES as u64));
         group.bench_function(format!("{threads}-threads"), |bencher| {
             bencher.iter(|| black_box(score_once(&pair, config.clone())));
@@ -147,7 +147,7 @@ fn cuda_vs_cpu(criterion: &mut Criterion) {
     for (label, preference) in
         [("cpu", BackendPreference::CpuOnly), ("auto", BackendPreference::Auto)]
     {
-        let config = VmafConfig::new().with_backend(preference).with_threads(1);
+        let config = VmafConfig::default().with_backend(preference).with_threads(1);
 
         // Report the backend outside the measured loop so printing does not
         // pollute the numbers.

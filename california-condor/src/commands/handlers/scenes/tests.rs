@@ -150,14 +150,16 @@ mod internal_integration {
             maximum_scaler: 0.5,
             scale_chroma: true,
         });
-        let mut job = config.instantiate_condor(Box::new(|_| Ok(()))).expect("native job");
-        Zoner::run(&mut job).expect("owning original zoning proof");
+        let mut job = config
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+            .expect("native job");
+        Zoner::run(&mut job, Default::default()).expect("owning original zoning proof");
         let (tx, _rx) = std::sync::mpsc::channel();
         NoiseScaler::default()
             .execute(
                 &mut job,
                 tx,
-                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                andean_condor::utils::cancellation::Cancellation::default(),
             )
             .expect("owning scaling proof");
         config.condor = job.as_data();

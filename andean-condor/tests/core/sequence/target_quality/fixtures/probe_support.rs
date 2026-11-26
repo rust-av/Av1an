@@ -101,7 +101,7 @@ pub(super) fn probe(
     tasks: &[Task],
 ) -> anyhow::Result<Vec<Task>> {
     let (tx, _rx) = sync::mpsc::channel();
-    let (completed, warnings) = TargetQuality::probe_pass_with_options(
+    let (completed, warnings) = TargetQuality::probe_pass(
         pass,
         directory,
         config,

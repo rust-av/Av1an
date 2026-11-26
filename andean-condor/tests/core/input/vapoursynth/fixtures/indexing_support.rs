@@ -31,12 +31,18 @@ pub(super) fn assert_index_case() {
     fs::write(root.join("sentinel"), "caller-owned").expect("sentinel");
     let token = Cancellation::default();
     let index = |token: &Cancellation| {
-        DGSource::index_video_cancel(&source, None, Some(&root.join("fake")), None, token)
+        DGSource::index_video(&source, None, Some(&root.join("fake")), None, token)
     };
     if case == "existing" {
         let no_executable = root.join("must-not-run");
         let reuse = |path: &Path, cache| {
-            DGSource::index_video(path, cache, Some(&no_executable), None, None)
+            DGSource::index_video(
+                path,
+                cache,
+                Some(&no_executable),
+                None,
+                &Cancellation::default(),
+            )
         };
         for bytes in [
             Vec::new(),
@@ -190,7 +196,7 @@ pub(super) fn assert_index_case() {
             [SAMPLE, b"winning concurrent result\n"].concat()
         );
     } else if case == "observer-panic" {
-        let result = DGSource::index_video_cancel(
+        let result = DGSource::index_video(
             &source,
             None,
             Some(&root.join("fake")),
@@ -206,7 +212,7 @@ pub(super) fn assert_index_case() {
         assert!(!cache.exists());
     } else if case == "spawn" {
         assert!(
-            DGSource::index_video_cancel(
+            DGSource::index_video(
                 &source,
                 None,
                 Some(&root.join("missing-executable")),

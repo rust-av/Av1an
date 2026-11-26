@@ -236,7 +236,7 @@ fn assert_public_lifecycle_case() {
             filters: vec![],
         };
         let mut observed = false;
-        let result = Input::ensure_indexed_cancel(
+        let result = Input::ensure_indexed(
             &data,
             |progress| {
                 if matches!(
@@ -266,7 +266,7 @@ fn assert_public_lifecycle_case() {
         let (progress, _) = mpsc::channel();
         assert_eq!(
             encoder(&root, true)
-                .encode_with_stream_cancel(
+                .encode_with_stream(
                     rx,
                     &root.join("out.264"),
                     progress,
@@ -282,7 +282,7 @@ fn assert_public_lifecycle_case() {
         let (progress, _) = mpsc::channel();
         assert!(
             encoder(&root, true)
-                .encode_with_stream_cancel(
+                .encode_with_stream(
                     rx,
                     &root.join("out.264"),
                     progress,

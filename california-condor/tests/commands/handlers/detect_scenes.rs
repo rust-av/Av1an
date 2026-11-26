@@ -59,6 +59,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = detect_scenes_handler(
@@ -71,6 +72,7 @@ mod handler_configuration {
             None,
             None,
             None,
+            &Default::default(),
         )
         .expect("detect_scenes_handler should succeed");
         assert_eq!(
@@ -145,6 +147,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = detect_scenes_handler(
@@ -157,6 +160,7 @@ mod handler_configuration {
             Some(&SceneDetectionMethod::Fast),
             Some(min_scene_seconds),
             Some(max_scene_seconds),
+            &Default::default(),
         )
         .expect("detect_scenes_handler should succeed");
         assert_eq!(
@@ -216,6 +220,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, _) = detect_scenes_handler(
@@ -228,6 +233,7 @@ mod handler_configuration {
             None,
             None,
             None,
+            &Default::default(),
         )
         .expect("detect_scenes_handler should succeed");
         check_basic_config(&config, &expected_config);

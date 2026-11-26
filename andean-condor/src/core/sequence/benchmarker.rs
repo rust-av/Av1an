@@ -1,9 +1,7 @@
+use crate::utils::cancellation::Cancellation;
 use std::{
     collections::VecDeque,
-    sync::{
-        self, Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{self, Arc, atomic::Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -72,60 +70,53 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let mut warnings = vec![];
+        super::check_sequence(cancellation, || {
+            let mut warnings = vec![];
 
-        let parallel_encoder_config = condor.sequence_config.parallel_encoder()?;
+            let parallel_encoder_config = condor.sequence_config.parallel_encoder()?;
 
-        // Ensure scenes is not empty
-        if condor.scenes.is_empty() {
-            warnings.push(anyhow::Error::new(BenchmarkerError::ScenesEmpty));
-            return Ok(((), warnings));
-        }
-        let input = if let Some(input) = self.input.as_mut() {
-            input
-        } else if let Some(input_model) = &parallel_encoder_config.input {
-            &mut Input::from_data(input_model)?
-        } else {
-            &mut condor.input
-        };
-        // Initialize input by getting clip_info. For VapourSynth inputs, this
-        // may begin a lengthy caching process, hence the separation
-        // between validate and initialize.
-        progress_tx.send(SequenceStatus::Whole(Status::Processing {
-            id: DETAILS.name.to_owned(),
-            completion: SequenceCompletion::Custom {
-                name: DETAILS.name.to_owned(),
-                completed: 0.0,
-                total: 1.0,
-            },
-        }))?;
-        input.clip_info()?;
-        progress_tx.send(SequenceStatus::Whole(Status::Completed {
-            id: DETAILS.name.to_owned(),
-        }))?;
+            // Ensure scenes is not empty
+            if condor.scenes.is_empty() {
+                warnings.push(anyhow::Error::new(BenchmarkerError::ScenesEmpty));
+                return Ok(((), warnings));
+            }
+            let input = if let Some(input) = self.input.as_mut() {
+                input
+            } else if let Some(input_model) = &parallel_encoder_config.input {
+                &mut Input::ensure_indexed(input_model, |_| {}, cancellation)?
+            } else {
+                &mut condor.input
+            };
+            // Initialize input by getting clip_info. For VapourSynth inputs, this
+            // may begin a lengthy caching process, hence the separation
+            // between validate and initialize.
+            progress_tx.send(SequenceStatus::Whole(Status::Processing {
+                id: DETAILS.name.to_owned(),
+                completion: SequenceCompletion::Custom {
+                    name: DETAILS.name.to_owned(),
+                    completed: 0.0,
+                    total: 1.0,
+                },
+            }))?;
+            input.clip_info()?;
+            progress_tx.send(SequenceStatus::Whole(Status::Completed {
+                id: DETAILS.name.to_owned(),
+            }))?;
 
-        let benchmarker_directory = &parallel_encoder_config.scenes_directory.join(DETAILS.name);
-        if !benchmarker_directory.exists() {
-            std::fs::create_dir_all(benchmarker_directory)?;
-        }
+            let benchmarker_directory =
+                &parallel_encoder_config.scenes_directory.join(DETAILS.name);
+            if !benchmarker_directory.exists() {
+                std::fs::create_dir_all(benchmarker_directory)?;
+            }
 
-        Ok(((), warnings))
+            Ok(((), warnings))
+        })
     }
 
-    #[tracing::instrument(level = "debug", skip_all)]
     #[inline]
     fn execute(
-        &mut self,
-        condor: &mut Condor<DataHandler, ConfigHandler>,
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<((), Vec<anyhow::Error>)> {
-        self.execute_cancel(condor, progress_tx, cancelled.into())
-    }
-
-    #[inline]
-    fn execute_cancel(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
@@ -145,7 +136,7 @@ where
         let input = if let Some(input) = self.input.as_mut() {
             input
         } else if let Some(input_model) = &parallel_encoder_config.input {
-            &mut Input::from_data(input_model)?
+            &mut Input::ensure_indexed(input_model, |_| {}, &cancelled)?
         } else {
             &mut condor.input
         };
@@ -175,12 +166,12 @@ where
                 output: benchmarker_directory.join(format!(
                     "{}.{}",
                     index,
-                    condor.encoder.output_extension()
+                    condor.encoder.base().output_extension()
                 )),
             })
             .collect();
 
-        let mut previous_result = Self::benchmark_workers_with_options(
+        let mut previous_result = Self::benchmark_workers(
             input,
             1,
             tasks.as_slice(),
@@ -201,7 +192,7 @@ where
             if cancelled.is_cancelled() {
                 break;
             }
-            let current_result = Self::benchmark_workers_with_options(
+            let current_result = Self::benchmark_workers(
                 input,
                 previous_result.workers + 1,
                 tasks.as_slice(),
@@ -261,60 +252,9 @@ impl Default for Benchmarker {
 impl Benchmarker {
     pub const DETAILS: SequenceDetails = DETAILS;
 
-    #[inline]
-    pub fn benchmark_workers(
-        input: &mut Input,
-        workers: u8,
-        tasks: &[ParallelEncodeTask],
-        progress_tx: &sync::mpsc::Sender<SequenceStatus>,
-        cancelled: &Arc<AtomicBool>,
-    ) -> Result<BenchmarkResult> {
-        Self::benchmark_workers_cancel(
-            input,
-            workers,
-            tasks,
-            progress_tx,
-            &crate::utils::cancellation::Cancellation::from(Arc::clone(cancelled)),
-        )
-    }
-
-    #[inline]
-    pub fn benchmark_workers_cancel(
-        input: &mut Input,
-        workers: u8,
-        tasks: &[ParallelEncodeTask],
-        progress_tx: &sync::mpsc::Sender<SequenceStatus>,
-        cancelled: &crate::utils::cancellation::Cancellation,
-    ) -> Result<BenchmarkResult> {
-        Self::benchmark_workers_with_validation(input, workers, tasks, progress_tx, cancelled, true)
-    }
-
-    /// One fixed trial with an explicit count-only policy; legacy APIs stay strict.
-    #[inline]
-    pub fn benchmark_workers_with_validation(
-        input: &mut Input,
-        workers: u8,
-        tasks: &[ParallelEncodeTask],
-        progress_tx: &sync::mpsc::Sender<SequenceStatus>,
-        cancelled: &crate::utils::cancellation::Cancellation,
-        validate_frame_count: bool,
-    ) -> Result<BenchmarkResult> {
-        Self::benchmark_workers_with_options(
-            input,
-            workers,
-            tasks,
-            progress_tx,
-            cancelled,
-            super::parallel_encoder::ParallelEncoderOptions {
-                validate_frame_count,
-                ..Default::default()
-            },
-        )
-    }
-
     /// A fixed trial with explicit per-scene total-attempt/count policy.
     #[inline]
-    pub fn benchmark_workers_with_options(
+    pub fn benchmark_workers(
         input: &mut Input,
         workers: u8,
         tasks: &[ParallelEncodeTask],
@@ -344,7 +284,7 @@ impl Benchmarker {
                 task.output = attempt.path().join(format!(
                     "{}.{}",
                     task.index,
-                    task.encoder.output_extension()
+                    task.encoder.base().output_extension()
                 ));
                 task
             })
@@ -402,7 +342,7 @@ impl Benchmarker {
             Ok(())
         });
 
-        let encoded = ParallelEncoder::encode_tasks_with_options(
+        let encoded = ParallelEncoder::encode_tasks(
             input,
             workers,
             tasks,

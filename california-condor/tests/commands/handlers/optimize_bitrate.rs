@@ -50,6 +50,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = optimize_bitrate_handler(Some(&config_path), None)
@@ -106,6 +107,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = optimize_bitrate_handler(Some(&config_path), Some(3))
@@ -212,7 +214,8 @@ mod tests {
             let mut pass = scene.sequence_data.target_quality.passes[0].clone();
             pass.backend = Some(backend.clone());
             pass.provenance = Some(ResultProvenance::new(
-                provenance::target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
+                provenance::Admission::default()
+                    .target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
                     .expect("current probe context"),
             ));
             scene.sequence_data.target_quality.passes[0] = pass;

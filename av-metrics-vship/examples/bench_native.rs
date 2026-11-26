@@ -77,7 +77,7 @@ fn main() {
         )),
     };
 
-    let config = VshipConfig::new().with_metric(metric).with_handler_threads(handler_threads);
+    let config = VshipConfig::default().with_metric(metric).with_handler_threads(handler_threads);
 
     // CVVDP's temporal filter is framerate-dependent, so a real frame rate must
     // be supplied. FFVship and the VapourSynth plugin both take it from the
@@ -139,7 +139,7 @@ fn main() {
     let mean = if decode_only {
         f64::NAN
     } else {
-        VshipScorer::pool(&scores, metric, PoolMethod::Mean).expect("pool")
+        VshipScorer::pool(&scores, metric, PoolMethod::Mean, true).expect("pool")
     };
     let frames = scores.len();
     let fps = frames as f64 / elapsed.as_secs_f64();
@@ -148,7 +148,7 @@ fn main() {
     // `--live-score-output` line by line.
     if std::env::var_os("BENCH_DUMP_FRAMES").is_some() {
         for (index, score) in scores.iter().enumerate() {
-            if let Some(value) = score.value(metric) {
+            if let Some(value) = score.value(metric, true) {
                 println!("FRAME {index} {value:.6}");
             }
         }

@@ -210,9 +210,22 @@ fn assert_public_pass_execution(root: &Path, native: bool) {
             let (progress, rx) = mpsc::channel();
             drop(rx);
             let result = if api == "input" {
-                encoder.encode_with_input(&mut input, &output, 1, 4, progress)
+                encoder.encode_with_input(
+                    &mut input,
+                    &output,
+                    1,
+                    4,
+                    progress,
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
             } else {
-                encoder.encode_with_stream(frames(&mut input), &output, progress, &info)
+                encoder.encode_with_stream(
+                    frames(&mut input),
+                    &output,
+                    progress,
+                    &info,
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
             }
             .expect("successful public orchestration");
             assert!(result.status.success(), "{result}");
@@ -506,7 +519,14 @@ fi
         let info = check_input(&mut input);
         let (progress, rx) = mpsc::channel();
         let result = match (api, direct) {
-            ("input", false) => encoder.encode_with_input(&mut input, &output, 1, 4, progress),
+            ("input", false) => encoder.encode_with_input(
+                &mut input,
+                &output,
+                1,
+                4,
+                progress,
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            ),
             ("input", true) => encoder.encode_pass_with_input(
                 &mut input,
                 &output,
@@ -515,10 +535,15 @@ fi
                 failing,
                 progress,
                 stats.as_ref(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
             ),
-            ("stream", false) => {
-                encoder.encode_with_stream(frames(&mut input), &output, progress, &info)
-            },
+            ("stream", false) => encoder.encode_with_stream(
+                frames(&mut input),
+                &output,
+                progress,
+                &info,
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            ),
             ("stream", true) => encoder.encode_pass_with_stream(
                 failing,
                 frames(&mut input),
@@ -526,6 +551,7 @@ fi
                 progress,
                 &info,
                 stats.as_ref(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
             ),
             _ => panic!("unknown API {api}"),
         };

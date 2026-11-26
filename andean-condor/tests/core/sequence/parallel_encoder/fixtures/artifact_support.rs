@@ -274,7 +274,7 @@ esac
             unsafe { std::env::set_var("ENCODER_FIXTURE_CASE", "artifact-validation-seed-valid") };
             let (tx, _rx) = std::sync::mpsc::channel();
             ParallelEncoder::default()
-                .execute_cancel(&mut condor, tx, Cancellation::default())
+                .execute(&mut condor, tx, Cancellation::default())
                 .expect("owning publication of a genuinely valid chunk before corruption");
             // SAFETY: the isolated child's seed encoder and relays have all joined.
             unsafe {
@@ -339,7 +339,7 @@ esac
                 })
             });
             let result = if kind == "api-existing" {
-                ParallelEncoder::encode_tasks_cancel(
+                ParallelEncoder::encode_tasks(
                     &mut condor.input,
                     1,
                     vec![Task {
@@ -353,10 +353,11 @@ esac
                     .into(),
                     tx,
                     token.clone(),
+                    condor::core::sequence::parallel_encoder::ParallelEncoderOptions::default(),
                 )
                 .map(|_| ((), vec![]))
             } else {
-                ParallelEncoder::default().execute_cancel(&mut condor, tx, token.clone())
+                ParallelEncoder::default().execute(&mut condor, tx, token.clone())
             };
             if let Some(force) = force {
                 force.join().expect("force controller");
@@ -406,7 +407,7 @@ esac
                 };
                 let (tx, _rx) = std::sync::mpsc::channel();
                 ParallelEncoder::default()
-                    .execute_cancel(&mut condor, tx, Cancellation::default())
+                    .execute(&mut condor, tx, Cancellation::default())
                     .expect("explicit restart gets a fresh budget");
                 assert_eq!(
                     fs::read_to_string(root.join("starts")).expect("encoder starts"),
@@ -1026,7 +1027,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
         let (tx, rx) = std::sync::mpsc::channel();
         if case.starts_with("resume-cache") {
             ParallelEncoder::default()
-                .execute_cancel(&mut condor, tx, token.clone())
+                .execute(&mut condor, tx, token.clone())
                 .expect("publish a chunk");
             let path = root.join("saved-job.json");
             let mut json: serde_json::Value =
@@ -1043,7 +1044,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             fs::remove_file(root.join("starts")).expect("reset attempt counter");
             let (tx, _rx) = std::sync::mpsc::channel();
             ParallelEncoder::default()
-                .execute_cancel(&mut condor, tx, token.clone())
+                .execute(&mut condor, tx, token.clone())
                 .expect("resume the saved chunk");
             assert_eq!(
                 fs::read_to_string(root.join("probes")).unwrap_or_default(),
@@ -1055,7 +1056,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             let _ = fs::remove_file(root.join("probes"));
             let (tx, _rx) = std::sync::mpsc::channel();
             ParallelEncoder::default()
-                .execute_cancel(&mut condor, tx, token)
+                .execute(&mut condor, tx, token)
                 .expect("resume the newly checkpointed chunk");
             assert!(!root.join("probes").exists());
             assert!(!root.join("starts").exists());
@@ -1063,7 +1064,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             let result = match case {
                 "preflight-worker" => Benchmarker::default().validate(&mut condor).map(|_| ()),
                 "preflight-tq" => TargetQuality::default().validate(&mut condor).map(|_| ()),
-                "preflight-tq-api" => TargetQuality::probe_pass_cancel(
+                "preflight-tq-api" => TargetQuality::probe_pass(
                     1,
                     &scenes_dir,
                     &TargetQualityConfig::default(),
@@ -1080,13 +1081,14 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                     }],
                     tx,
                     &token,
+                    condor::core::sequence::parallel_encoder::ParallelEncoderOptions::default(),
                 )
                 .map(|_| ()),
                 "preflight-parallel" | "preflight-encoder" => {
                     if case == "preflight-encoder" {
                         condor.scenes[0].encoder.set_executable(Some(root.join("missing-encoder")));
                     }
-                    ParallelEncoder::encode_tasks_cancel(
+                    ParallelEncoder::encode_tasks(
                         &mut condor.input,
                         1,
                         vec![Task {
@@ -1100,6 +1102,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                         .into(),
                         tx,
                         token,
+                        condor::core::sequence::parallel_encoder::ParallelEncoderOptions::default(),
                     )
                     .map(|_| ())
                 },
@@ -1113,14 +1116,15 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                         encoder: condor.encoder.clone(),
                         output: scenes_dir.join("new.264"),
                     };
-                    let plan = ZonePlan::try_build_cancel(std::slice::from_ref(&task), &token)
+                    let plan = ZonePlan::try_build(std::slice::from_ref(&task), &token)
                         .expect("real zone plan");
-                    ZoneEncoder::encode_tasks_cancel(
+                    ZoneEncoder::encode_tasks(
                         &mut condor.input,
                         vec![task].into(),
                         plan,
                         tx,
                         token,
+                        true,
                     )
                     .map(|_| ())
                 },
@@ -1142,7 +1146,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             Benchmarker::default()
                 .validate(&mut condor)
                 .expect("stage prerequisites with configured count policy");
-            let result = Benchmarker::default().execute_cancel(&mut condor, tx, token);
+            let result = Benchmarker::default().execute(&mut condor, tx, token);
             if case.ends_with("optout") {
                 result.expect("saved optout forwarded through default workers discovery");
                 assert!(
@@ -1222,7 +1226,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             TargetQuality::default()
                 .validate(&mut condor)
                 .expect("optout requires no ffprobe, normal stage prerequisites remain");
-            let result = TargetQuality::default().execute_cancel(&mut condor, tx, token);
+            let result = TargetQuality::default().execute(&mut condor, tx, token);
             if case.ends_with("optout") {
                 result.expect("configured optout forwarded to actual TQ encode and scoring");
                 assert!(
@@ -1321,7 +1325,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                     rx.iter().collect::<Vec<_>>()
                 });
                         ParallelEncoder::default()
-                            .execute_cancel(&mut condor, tx, token.clone())
+                            .execute(&mut condor, tx, token.clone())
                             .expect("graceful stops after finite active candidate");
                         let events = cancel.join().expect("progress observer");
                         assert_eq!(
@@ -1339,14 +1343,14 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                     let late = scenes_dir.join("00001.264");
                     fs::remove_file(&late).expect("missing at admission");
                     let error = ParallelEncoder::default()
-                        .execute_cancel(&mut condor, tx, token)
+                        .execute(&mut condor, tx, token)
                         .expect_err("a file appeared after missing-at-admission");
                     assert!(format!("{error:#}").contains("chunk appeared before repair"));
                     assert_eq!(fs::read(late).expect("preserved late file"), b"late-file");
                 } else {
                     fs::write(root.join("peer-probe-bad"), []).expect("trigger probe fault");
                     let error = ParallelEncoder::default()
-                        .execute_cancel(&mut condor, tx, token)
+                        .execute(&mut condor, tx, token)
                         .expect_err("a later verifier error stops the stage");
                     assert!(format!("{error:#}").contains("Scene 1 cannot verify"));
                     assert_eq!(
@@ -1372,7 +1376,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                     fs::remove_file(root.join("probes")).expect("reset probe counter");
                     let (tx, _rx) = std::sync::mpsc::channel();
                     ParallelEncoder::default()
-                        .execute_cancel(&mut condor, tx, Cancellation::default())
+                        .execute(&mut condor, tx, Cancellation::default())
                         .expect_err("the same second probe still fails");
                     assert_eq!(
                         fs::read_to_string(root.join("probes")).expect("probe calls"),
@@ -1382,7 +1386,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             } else if case == "resume-policy" {
                 let original = fs::read(&final_path).expect("wrong-count chunk");
                 ParallelEncoder::default()
-                    .execute_cancel(&mut condor, tx, token)
+                    .execute(&mut condor, tx, token)
                     .expect("re-encode a verified frame-count mismatch");
                 assert_eq!(
                     fs::read_to_string(root.join("starts"))
@@ -1396,7 +1400,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
             } else {
                 fs::write(root.join("probe-bad"), "transient").expect("probe fault");
                 let error = ParallelEncoder::default()
-                    .execute_cancel(&mut condor, tx, token.clone())
+                    .execute(&mut condor, tx, token.clone())
                     .expect_err("first check fails closed");
                 let diagnostic = format!("{error:#}");
                 assert!(diagnostic.contains(if case == "resume-probe-noisy" {
@@ -1427,7 +1431,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                 fs::remove_file(root.join("probe-bad")).expect("restore healthy probe");
                 let (tx, rx) = std::sync::mpsc::channel();
                 ParallelEncoder::default()
-                    .execute_cancel(&mut condor, tx, token)
+                    .execute(&mut condor, tx, token)
                     .expect("same job recovers after policy/tool repair");
                 assert_eq!(rx.iter().filter(size).count(), 1);
                 assert_eq!(
@@ -1455,7 +1459,7 @@ exec "$ARTIFACT_VALIDATION_FFPROBE" "$@"
                         .expect("observer handshake");
                 });
                 ParallelEncoder::default()
-                    .execute_cancel(&mut condor, tx, token)
+                    .execute(&mut condor, tx, token)
                     .expect("optional observer cannot invalidate publication");
                 observer.join().expect("observer joined");
             });

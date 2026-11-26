@@ -45,7 +45,9 @@ fn vpx_pipe_outputs_decode_three_frames_with_codec_specific_colour() {
         encoder
             .parameters_mut()
             .insert("cpu-used".into(), CLIParameter::new_number("--", "=", 6.0));
-        let argv = encoder.parameters_with_output((1, 1), &output, &clip).expect("production argv");
+        let argv = encoder
+            .parameters_with_output((1, 1), &output, &clip, None)
+            .expect("production argv");
         eprintln!("VPX {codec} production argv: {argv:?}");
         let (reader, mut writer) = std::io::pipe().expect("nonseekable stdin");
         let producer = thread::spawn(move || writer.write_all(&y4m));

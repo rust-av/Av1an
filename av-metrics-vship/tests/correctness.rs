@@ -32,7 +32,7 @@ macro_rules! require_vship {
 
 /// A config retaining a non-default legacy handler-thread request.
 fn config_for(metric: VshipMetric) -> VshipConfig {
-    VshipConfig::new().with_metric(metric).with_handler_threads(2)
+    VshipConfig::default().with_metric(metric).with_handler_threads(2)
 }
 
 /// Video details in the shape `av-decoders` reports them.
@@ -247,7 +247,7 @@ fn padded_upload_case(pad_reference: bool) {
         ]
     }
     let baseline = scorer
-        .submit_pair_raw(planes(&reference, false), planes(&distorted, false))
+        .submit_pair_raw(planes(&reference, false), planes(&distorted, false), false)
         .unwrap()
         .score
         .unwrap();
@@ -269,7 +269,7 @@ fn padded_upload_case(pad_reference: bool) {
             planes(&padded_distorted, true),
         )
     };
-    let score = scorer.submit_pair_raw(a, b).unwrap().score.unwrap();
+    let score = scorer.submit_pair_raw(a, b, false).unwrap().score.unwrap();
     assert!(
         score.is_finite(),
         "padded {side} must yield a finite GPU score"
@@ -285,7 +285,7 @@ fn padded_upload_case(pad_reference: bool) {
 fn construction_fails_cleanly_without_vship() {
     let format = VideoFormat::from_details(&details(64, 48, 8, ChromaSubsampling::Yuv420));
 
-    let outcome = VshipScorer::new(VshipConfig::new(), format, format, None);
+    let outcome = VshipScorer::new(VshipConfig::default(), format, format, None);
     if !is_available() {
         assert!(
             outcome.is_err(),
@@ -379,7 +379,7 @@ fn identical_clips_have_ssimulacra2_scores_above_point_nine_nine() {
 
     assert!(!scores.is_empty(), "every pair must produce a score");
     for score in &scores {
-        let value = score.value(VshipMetric::Ssimulacra2).expect("SSIMULACRA2 sets `score`");
+        let value = score.value(VshipMetric::Ssimulacra2, true).expect("SSIMULACRA2 sets `score`");
         // SSIMULACRA2's maximum is 1.0, and identical inputs must reach it
         // within the metric's numerical slack.
         assert!(
@@ -429,7 +429,7 @@ fn ssimulacra2_pooled_score_does_not_increase_with_distortion() {
         let scores =
             scorer.score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {}).unwrap();
         let pooled =
-            VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean).unwrap();
+            VshipScorer::pool(&scores, VshipMetric::Ssimulacra2, PoolMethod::Mean, true).unwrap();
 
         assert!(
             pooled <= previous,
@@ -459,7 +459,8 @@ fn butteraugli_reports_all_three_norms() {
 
     // Butteraugli is a difference, so two different clips must score above
     // zero.
-    let pooled = VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean).unwrap();
+    let pooled =
+        VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean, true).unwrap();
     assert!(
         pooled > 0.0,
         "a distorted clip must score above zero, got {pooled}"
@@ -495,25 +496,27 @@ fn butteraugli_headline_and_pool_select_distinct_q_or_infinity_norms() {
          cannot matter"
     );
     assert_eq!(
-        first.butteraugli_value(true),
+        first.value(VshipMetric::Butteraugli, true),
         Some(q_norm),
         "`true` selects the Q-norm"
     );
     assert_eq!(
-        first.butteraugli_value(false),
+        first.value(VshipMetric::Butteraugli, false),
         Some(infinity),
         "`false` selects the infinity norm, matching the plugin's default"
     );
 
     // `pool` keeps the Q-norm for callers that configure `q_norm`, which is the
     // default a Butteraugli-specific pool has always used.
-    let pooled = VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean).unwrap();
+    let pooled =
+        VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean, true).unwrap();
     assert!(
         pooled > 0.0,
         "a distorted clip must score above zero, got {pooled}"
     );
 
-    let pooled_inf = VshipScorer::pool_butteraugli(&scores, false, PoolMethod::Mean).unwrap();
+    let pooled_inf =
+        VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean, false).unwrap();
     assert!(
         pooled_inf > 0.0,
         "the infinity norm of a distorted clip must be above zero, got {pooled_inf}"
@@ -545,8 +548,9 @@ fn butteraugli_q_norm_changes_the_score() {
         let (mut reference, mut distorted) = pair.decoders();
         let scores =
             scorer.score_decoders::<u8>(&mut reference, &mut distorted, |_, _| {}).unwrap();
-        pooled
-            .push(VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean).unwrap());
+        pooled.push(
+            VshipScorer::pool(&scores, VshipMetric::Butteraugli, PoolMethod::Mean, true).unwrap(),
+        );
     }
 
     assert!(
@@ -575,8 +579,8 @@ fn cvvdp_first_and_last_scores_differ_on_varying_clip() {
     assert!(!scores.is_empty());
     // A temporal metric's score is a running mean over everything it has seen,
     // so it moves as frames arrive rather than staying per-frame constant.
-    let first = scores[0].value(VshipMetric::Cvvdp).unwrap();
-    let last = scores[scores.len() - 1].value(VshipMetric::Cvvdp).unwrap();
+    let first = scores[0].value(VshipMetric::Cvvdp, true).unwrap();
+    let last = scores[scores.len() - 1].value(VshipMetric::Cvvdp, true).unwrap();
     assert_ne!(
         first, last,
         "CVVDP's running mean must move as frames are fed"
@@ -772,7 +776,7 @@ fn a_plane_whose_geometry_disagrees_is_rejected() {
     planes[1] = PlaneSource::from_bytes(&chroma, 16, 24, 32, 0, 1).unwrap();
 
     assert!(matches!(
-        scorer.submit_pair_raw(planes, planes),
+        scorer.submit_pair_raw(planes, planes, false),
         Err(VshipError::InputMismatch { .. })
     ));
 }
@@ -788,17 +792,17 @@ fn repeated_identical_raw_ssimulacra2_pairs_return_equal_values() {
     let (luma, chroma) = grey_frame();
     let first = {
         let planes = grey_planes(&luma, &chroma);
-        scorer.submit_pair_raw(planes, planes)
+        scorer.submit_pair_raw(planes, planes, false)
     };
     let second = {
         let planes = grey_planes(&luma, &chroma);
-        scorer.submit_pair_raw(planes, planes)
+        scorer.submit_pair_raw(planes, planes, false)
     };
 
     // Identical pairs must score identically, since a non-temporal metric
     // carries no state between them.
     assert_eq!(
-        first.expect("geometry is correct").value(VshipMetric::Ssimulacra2),
-        second.expect("geometry is correct").value(VshipMetric::Ssimulacra2)
+        first.expect("geometry is correct").value(VshipMetric::Ssimulacra2, true),
+        second.expect("geometry is correct").value(VshipMetric::Ssimulacra2, true)
     );
 }

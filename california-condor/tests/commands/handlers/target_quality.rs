@@ -69,6 +69,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = target_quality_handler(
@@ -179,6 +180,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = target_quality_handler(
@@ -1005,9 +1007,7 @@ pub(super) mod validation {
         for invalid in
             ["range", "target", "probes", "scene", "options", "nan", "infinity", "endpoint"]
         {
-            for entry in
-                ["validate", "initialize", "execute", "execute_cancel", "tui", "instantiate"]
-            {
+            for entry in ["validate", "initialize", "execute", "tui", "instantiate"] {
                 let mut configuration = fixture(temp.path());
                 let quality =
                     configuration.condor.sequence_config.target_quality.as_mut().expect("TQ");
@@ -1075,15 +1075,14 @@ pub(super) mod validation {
                 let (tx, rx) = mpsc::channel();
                 let result = match entry {
                     "validate" => sequence.validate(&mut condor).map(|_| ()),
-                    "initialize" => sequence.initialize(&mut condor, tx).map(|_| ()),
-                    "execute" => sequence
-                        .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
-                        .map(|_| ()),
-                    "execute_cancel" => {
-                        sequence.execute_cancel(&mut condor, tx, Default::default()).map(|_| ())
+                    "initialize" => {
+                        sequence.initialize(&mut condor, tx, &Default::default()).map(|_| ())
                     },
+                    "execute" => sequence.execute(&mut condor, tx, Default::default()).map(|_| ()),
                     "tui" => run_target_quality_tui(&mut condor, Arc::new(AtomicBool::new(false))),
-                    _ => configuration.instantiate_condor(Box::new(|_| Ok(()))).map(|_| ()),
+                    _ => configuration
+                        .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+                        .map(|_| ()),
                 };
                 let error = result.expect_err("invalid TQ rejected");
                 assert!(

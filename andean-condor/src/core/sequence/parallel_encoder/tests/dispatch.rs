@@ -465,7 +465,7 @@ pub(in crate::core::sequence::parallel_encoder) mod internal_integration {
                     }, // Fixed-pool one-attempt control.
                 )
             } else {
-                ParallelEncoder::encode_tasks_with_options(
+                ParallelEncoder::encode_tasks(
                     &mut input,
                     workers,
                     tasks,
@@ -660,7 +660,7 @@ pub(in crate::core::sequence::parallel_encoder) mod internal_integration {
         fs::write(root.join("unrelated.stat"), "stats sentinel").expect("stats sentinel");
         fs::write(root.join("preexisting.264"), "final sentinel").expect("final sentinel");
         let (tx, rx) = std::sync::mpsc::channel();
-        let result = ParallelEncoder::encode_tasks_with_options(
+        let result = ParallelEncoder::encode_tasks(
             &mut input,
             1,
             tasks,

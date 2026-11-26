@@ -226,22 +226,24 @@ mod tests {
         let dir = config.condor.sequence_config.parallel_encoder.scenes_directory.clone();
         std::fs::create_dir_all(dir.join("Target Quality/1/Scene Concatenator")).expect("scratch");
         std::fs::create_dir_all(dir.join("Scene Concatenator")).expect("final concat scratch");
-        let mut job = config.instantiate_condor(Box::new(|_| Ok(()))).expect("native job");
+        let mut job = config
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+            .expect("native job");
         let (tx, _rx) = std::sync::mpsc::channel();
         TargetQuality::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real probes");
         let (tx, _rx) = std::sync::mpsc::channel();
         ParallelEncoder::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real chunks");
         let (tx, _rx) = std::sync::mpsc::channel();
         SceneConcatenator::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real final output");
         let (tx, _rx) = std::sync::mpsc::channel();
         QualityCheck::default()
-            .execute_cancel(&mut job, tx, Default::default())
+            .execute(&mut job, tx, Default::default())
             .expect("real QC");
         config.condor = job.as_data();
         for scene in &mut config.condor.scenes {
@@ -383,15 +385,18 @@ mod tests {
             let saves = Rc::new(Cell::new(0));
             let observed = Rc::clone(&saves);
             let mut direct = edited
-                .instantiate_condor(Box::new(move |_| {
-                    observed.set(observed.get() + 1);
-                    Ok(())
-                }))
+                .instantiate_condor(
+                    Box::new(move |_| {
+                        observed.set(observed.get() + 1);
+                        Ok(())
+                    }),
+                    &Default::default(),
+                )
                 .expect("direct job");
             let before = serde_json::to_value(direct.as_data()).expect("before");
             let (tx, rx) = std::sync::mpsc::channel();
             let error = ParallelEncoder::default()
-                .execute_cancel(&mut direct, tx, Default::default())
+                .execute(&mut direct, tx, Default::default())
                 .expect_err("direct core barrier");
             assert!(format!("{error:#}").contains(&format!("scene {first_affected}")));
             assert_eq!(saves.get(), 0);
@@ -418,11 +423,14 @@ mod tests {
             .expect("empty workdir");
         assert!(edited.admit_results().is_err());
         let mut absent = edited
-            .instantiate_condor(Box::new(|_| anyhow::bail!("must not save")))
+            .instantiate_condor(
+                Box::new(|_| anyhow::bail!("must not save")),
+                &Default::default(),
+            )
             .expect("absent artifacts");
         let (tx, rx) = std::sync::mpsc::channel();
         let error = ParallelEncoder::default()
-            .execute_cancel(&mut absent, tx, Default::default())
+            .execute(&mut absent, tx, Default::default())
             .expect_err("marker before source/artifact checks");
         assert!(format!("{error:#}").contains("scene 1"));
         assert!(rx.try_iter().next().is_none());
@@ -433,11 +441,12 @@ mod tests {
             scene.sequence_data.parallel_encoder = Default::default();
         }
         edited.condor.sequence_config.target_quality = None;
-        let mut recovered =
-            edited.instantiate_condor(Box::new(|_| Ok(()))).expect("explicit reset");
+        let mut recovered = edited
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
+            .expect("explicit reset");
         let (tx, _rx) = std::sync::mpsc::channel();
         ParallelEncoder::default()
-            .execute_cancel(&mut recovered, tx, Default::default())
+            .execute(&mut recovered, tx, Default::default())
             .expect("normal producer after explicit reset in empty workdir");
         assert!(
             recovered
@@ -1341,7 +1350,8 @@ mod scene_encoders {
             let mut pass = scene.sequence_data.target_quality.passes[0].clone();
             pass.backend = Some(MetricBackend::current(andean_condor::metrics::Engine::Vmaf));
             pass.provenance = Some(ResultProvenance::new(
-                provenance::target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
+                provenance::Admission::default()
+                    .target_context(input, tq.metric_input.as_ref(), scene, tq, &pass)
                     .expect("explicit current probe fixture"),
             ));
             scene.sequence_data.target_quality.passes[0] = pass;
@@ -1353,16 +1363,17 @@ mod scene_encoders {
             let chunk = pe.scenes_directory.join("00000.264");
             fs::write(&chunk, [0_u8; 123])
                 .expect("synthetic current chunk, not native integrity acceptance");
-            let context = provenance::encode_context(
-                pe.input.as_ref().unwrap_or(&config.condor.input),
-                input,
-                tq.metric_input.as_ref(),
-                scene,
-                Some(tq),
-                &chunk,
-                0,
-            )
-            .expect("explicit current encode fixture");
+            let context = provenance::Admission::default()
+                .encode_context(
+                    pe.input.as_ref().unwrap_or(&config.condor.input),
+                    input,
+                    tq.metric_input.as_ref(),
+                    scene,
+                    Some(tq),
+                    &chunk,
+                    0,
+                )
+                .expect("explicit current encode fixture");
             scene.sequence_data.parallel_encoder.provenance = Some(ResultProvenance::new(context));
             scene.sequence_data.parallel_encoder.started_on = Some(100);
             scene.sequence_data.parallel_encoder.completed_on = Some(200);

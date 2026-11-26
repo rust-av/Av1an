@@ -26,7 +26,12 @@ fn rav1e_pass_argv_uses_first_and_second_pass_statistics_flags() {
             "{pass:?}"
         );
         let argv = encoder
-            .parameters_with_output(pass, output, &crate::core::encoder::tests::clip_info())
+            .parameters_with_output(
+                pass,
+                output,
+                &crate::core::encoder::tests::clip_info(),
+                None,
+            )
             .expect("argv");
         assert_eq!(argv[0], "-");
         assert!(

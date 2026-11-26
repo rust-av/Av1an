@@ -147,7 +147,7 @@ fn native_help_gaps(base: EncoderBase, root: &Path) -> Vec<String> {
         None
     };
     let argv = encoder
-        .parameters_with_output((1, 1), &output, &clip)
+        .parameters_with_output((1, 1), &output, &clip, None)
         .expect("native proof argv");
     if base == EncoderBase::RAV1E {
         assert_eq!(value(&argv, "--photon-noise-table"), table.to_str());
@@ -365,12 +365,12 @@ fn argv_options_exist_in_installed_help(selected: EncoderBase) {
                 }
                 let output = root.join(format!("scene.{}", base.output_extension()));
                 for argv in [
-                    encoder.parameters_with_output(pass, &output, &super::clip_info()),
-                    encoder.parameters_with_stats(
+                    encoder.parameters_with_output(pass, &output, &super::clip_info(), None),
+                    encoder.parameters_with_output(
                         pass,
                         &output,
                         &super::clip_info(),
-                        &root.join("owned stats"),
+                        Some(&root.join("owned stats")),
                     ),
                 ] {
                     let argv = argv.expect("production argv");
@@ -436,7 +436,12 @@ fn argv_options_exist_in_installed_help(selected: EncoderBase) {
                 *passes = EncoderPasses::All(1);
             }
             let argv = encoder
-                .parameters_with_output((1, 1), &root.join("override.ivf"), &super::clip_info())
+                .parameters_with_output(
+                    (1, 1),
+                    &root.join("override.ivf"),
+                    &super::clip_info(),
+                    None,
+                )
                 .expect("override argv");
             assert_eq!(value(&argv, &format!("{prefix}{key}")), Some(expected));
             assert!(
@@ -503,7 +508,9 @@ fn svt_av1_one_pass_output_is_ivf_with_three_decodable_frames() {
         " ",
         &[("preset", 12.0), ("lp", 1.0)],
     ));
-    let argv = encoder.parameters_with_output((1, 1), &output, &clip).expect("production argv");
+    let argv = encoder
+        .parameters_with_output((1, 1), &output, &clip, None)
+        .expect("production argv");
     eprintln!("CLI parity SVT one-pass production argv: {argv:?}");
     let log = run_bounded(
         Command::new(svt)
@@ -676,7 +683,7 @@ fn native_pass_outputs_decode_three_frames(selected: EncoderBase) {
             }
             for pass in 1..=count {
                 let argv = encoder
-                    .parameters_with_stats((pass, count), &output, &clip, stats.base())
+                    .parameters_with_output((pass, count), &output, &clip, Some(stats.base()))
                     .expect("production argv");
                 eprintln!("CLI parity {base} {pass}/{count} production argv: {argv:?}");
                 run_bounded(
@@ -778,7 +785,7 @@ fn vpx_default_and_conflicting_webm_outputs_are_ivf() {
                         .insert("ivf".into(), CLIParameter::new_bool("--", false));
                 }
                 let argv = encoder
-                    .parameters_with_stats((1, 1), &output, &clip, stats.base())
+                    .parameters_with_output((1, 1), &output, &clip, Some(stats.base()))
                     .expect("production argv");
                 eprintln!("VPX container {row} production argv: {argv:?}");
                 run_bounded(

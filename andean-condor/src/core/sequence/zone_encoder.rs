@@ -18,7 +18,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::{self, Arc, Mutex, atomic::AtomicBool, mpsc},
+    sync::{self, Arc, Mutex, mpsc},
     thread,
     time::SystemTime,
 };
@@ -153,40 +153,18 @@ pub struct ZonePlan {
 }
 
 impl ZonePlan {
-    /// Builds the zoning plan for a pass, or explains why the pass must fall
-    /// back to parallel encoding.
-    ///
-    /// Checks are ordered cheap-first; the capability probe (which spawns the
-    /// encoder binary) runs only when everything else already holds.
+    /// Build a zoning plan, or return a downcastable [`ZoneIneligible`] reason.
+    /// Check settings before spawning a capability probe. Cancellation or failure
+    /// to resolve the configured executable is not an ineligibility reason.
     #[inline]
-    pub fn try_build(tasks: &[Task]) -> Result<ZonePlan, ZoneIneligible> {
-        let plan = Self::settings(tasks)?;
-        let first = &tasks[0];
-        if !first.encoder.supports_capability(EncoderCapability::Zoning) {
-            return Err(ZoneIneligible::NoZoneSupport);
-        }
-        if first.encoder.container().is_none() {
-            return Err(ZoneIneligible::UnsplittableContainer);
-        }
-        Ok(plan)
-    }
-
-    /// Force-capable eligibility probes. Pure settings checks precede every spawn.
-    #[inline]
-    pub fn try_build_cancel(
-        tasks: &[Task],
-        cancellation: &Cancellation,
-    ) -> anyhow::Result<ZonePlan> {
+    pub fn try_build(tasks: &[Task], cancellation: &Cancellation) -> anyhow::Result<ZonePlan> {
         let plan = Self::settings(tasks)?;
         cancellation.check_admission()?;
         let first = &tasks[0];
-        if !first
-            .encoder
-            .supports_capability_cancel(EncoderCapability::Zoning, cancellation)?
-        {
+        if !first.encoder.supports_capability(EncoderCapability::Zoning, cancellation)? {
             return Err(ZoneIneligible::NoZoneSupport.into());
         }
-        if first.encoder.container_cancel(cancellation)?.is_none() {
+        if first.encoder.container(cancellation)?.is_none() {
             return Err(ZoneIneligible::UnsplittableContainer.into());
         }
         Ok(plan)
@@ -438,44 +416,11 @@ fn apply_zone_options(
 pub struct ZoneEncoder;
 
 impl ZoneEncoder {
-    /// Encodes every task in one zoned process and splits the output back
-    /// into the tasks' files, mirroring
-    /// [`ParallelEncoder::encode_tasks`](super::parallel_encoder::ParallelEncoder::encode_tasks).
-    ///
-    /// The owned arguments come from that mirrored signature: the pass hands
-    /// over its tasks, plan and channels rather than borrowing them.
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::needless_pass_by_value)]
+    /// Encodes a planned zone batch in one attempt. The count check is optional;
+    /// a successful exit and nonempty output are always required.
     #[inline]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn encode_tasks(
-        input: &mut Input,
-        tasks: VecDeque<Task>,
-        plan: ZonePlan,
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_cancel(input, tasks, plan, progress_tx, cancelled.into())
-    }
-
-    #[inline]
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "Mirrors the owning parallel job API"
-    )]
-    pub fn encode_tasks_cancel(
-        input: &mut Input,
-        tasks: VecDeque<Task>,
-        plan: ZonePlan,
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Cancellation,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_with_validation(input, tasks, plan, progress_tx, cancelled, true)
-    }
-
-    /// Explicit count-only policy for probe stages; status/nonempty remain mandatory.
-    #[inline]
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn encode_tasks_with_validation(
         input: &mut Input,
         mut tasks: VecDeque<Task>,
         plan: ZonePlan,
@@ -512,7 +457,7 @@ impl ZoneEncoder {
         let zone_directory =
             tempfile::tempdir_in(&directory).context("Creating owned zone files")?;
         let zone_files = apply_zone_options(&mut encoder, &plan, zone_directory.path())?;
-        let extension = encoder.output_extension();
+        let extension = encoder.base().output_extension();
         let whole_output = directory.join(format!("zone-pass.temp.{extension}"));
         let mut partial = crate::core::process::InterruptedOutput::new(&whole_output, &cancelled);
         let discard = {
@@ -549,7 +494,7 @@ impl ZoneEncoder {
         // on it — `differing_field` already rejected the pass otherwise.
         let (encoder_rx, mut filter_stage) = match encoder.ffmpeg_filter() {
             Some(graph) => {
-                let mut stage = FfmpegFilter::spawn_cancel(
+                let mut stage = FfmpegFilter::spawn(
                     frames_rx,
                     8,
                     graph,
@@ -565,7 +510,7 @@ impl ZoneEncoder {
             let whole_output = whole_output.clone();
             let cancelled = cancelled.clone();
             move || {
-                let encoded = encoder.encode_with_stream_cancel(
+                let encoded = encoder.encode_with_stream(
                     encoder_rx,
                     &whole_output,
                     encode_progress_tx,
@@ -642,8 +587,8 @@ impl ZoneEncoder {
         }
         let ended = SystemTime::now();
 
-        let split = match encoder.container_cancel(&cancelled)? {
-            Some(Container::Ivf) => split_ivf_cancel(
+        let split = match encoder.container(&cancelled)? {
+            Some(Container::Ivf) => split_ivf(
                 &whole_output,
                 tasks.make_contiguous(),
                 extension,
@@ -655,7 +600,7 @@ impl ZoneEncoder {
                     EncoderBase::X264 => Codec::H264,
                     _ => Codec::H265,
                 };
-                split_annexb_cancel(
+                split_annexb(
                     &whole_output,
                     codec,
                     tasks.make_contiguous(),
@@ -713,25 +658,7 @@ enum Codec {
 /// Byte offset of the IVF header's frame count field.
 const IVF_NFRAME_OFFSET: usize = 24;
 
-/// Splits a whole-pass IVF file into one file per task, each with the shared
-/// 32-byte file header. Returns `(bytes, frames)` per task.
-#[cfg(test)]
 fn split_ivf(
-    whole_output: &Path,
-    tasks: &[Task],
-    extension: &str,
-    validate_frame_count: bool,
-) -> Result<Vec<(u64, usize)>> {
-    split_ivf_cancel(
-        whole_output,
-        tasks,
-        extension,
-        &Cancellation::default(),
-        validate_frame_count,
-    )
-}
-
-fn split_ivf_cancel(
     whole_output: &Path,
     tasks: &[Task],
     extension: &str,
@@ -849,28 +776,7 @@ fn split_ivf_cancel(
     Ok(parts.into_iter().map(|(_, bytes, frames)| (bytes, frames)).collect())
 }
 
-/// Splits a whole-pass Annex-B stream into one file per task. Each file gets
-/// a copy of the headers (SPS/PPS/SEI) that precede the first frame, so every
-/// part decodes standalone like a per-scene encode would.
-#[cfg(test)]
 fn split_annexb(
-    whole_output: &Path,
-    codec: Codec,
-    tasks: &[Task],
-    extension: &str,
-    validate_frame_count: bool,
-) -> Result<Vec<(u64, usize)>> {
-    split_annexb_cancel(
-        whole_output,
-        codec,
-        tasks,
-        extension,
-        &Cancellation::default(),
-        validate_frame_count,
-    )
-}
-
-fn split_annexb_cancel(
     whole_output: &Path,
     codec: Codec,
     tasks: &[Task],

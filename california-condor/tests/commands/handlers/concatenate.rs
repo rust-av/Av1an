@@ -121,6 +121,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) =
@@ -180,6 +181,7 @@ mod handler_configuration {
             None,
             None,
             false,
+            &Default::default(),
         )
         .expect("init_handler should succeed");
         let (config, found_config_path) = concatenate_handler(
@@ -386,7 +388,7 @@ mod tests {
         config.condor.output.overwrite = true;
         config.condor.sequence_config.scene_concatenator.method = ConcatMethod::Ivf;
         let mut condor = config
-            .instantiate_condor(Box::new(|_| Ok(())))
+            .instantiate_condor(Box::new(|_| Ok(())), &Default::default())
             .expect("open inline source, retain declared identity");
         assert!(
             SceneConcatenator::default().validate(&mut condor).is_err(),
@@ -806,7 +808,9 @@ mod attachments {
             (24, 1).into(),
             Some(&settings),
             &tx,
-            &Arc::new(AtomicBool::new(false)),
+            &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                &Arc::new(AtomicBool::new(false)),
+            )),
         )
         .expect("native final mux");
         let ids = identify(&output);
@@ -1128,7 +1132,9 @@ mod attachments {
                 (24, 1).into(),
                 Some(&settings),
                 &tx,
-                &Arc::new(AtomicBool::new(false)),
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &Arc::new(AtomicBool::new(false)),
+                )),
             )
             .expect("native extra namespaces");
             let ids = identify(&output);
@@ -1212,7 +1218,9 @@ mod attachments {
                 (24, 1).into(),
                 Some(&settings),
                 &tx,
-                &Arc::new(AtomicBool::new(false)),
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &Arc::new(AtomicBool::new(false)),
+                )),
             )
             .expect("extra independent audio/attachment");
             let ids = identify(&output);
@@ -1269,7 +1277,9 @@ mod attachments {
             (24, 1).into(),
             Some(&settings),
             &tx,
-            &Arc::new(AtomicBool::new(false)),
+            &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                &Arc::new(AtomicBool::new(false)),
+            )),
         )
         .expect_err("direct invalid config");
         assert!(error.to_string().contains("video track entry must use track ID 0"));
@@ -1308,7 +1318,9 @@ mod attachments {
             (24, 1).into(),
             Some(&settings),
             &tx,
-            &Arc::new(AtomicBool::new(false)),
+            &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                &Arc::new(AtomicBool::new(false)),
+            )),
         )
         .expect("new file needs no unsupported source ID");
         assert_eq!(
@@ -1330,7 +1342,9 @@ mod attachments {
                 (24, 1).into(),
                 Some(&settings),
                 &tx,
-                &Arc::new(AtomicBool::new(false)),
+                &andean_condor::utils::cancellation::Cancellation::from(std::sync::Arc::clone(
+                    &Arc::new(AtomicBool::new(false)),
+                )),
             )
             .expect_err("unsupported source has no IDs");
             assert!(error.to_string().contains("no provable mkvmerge track/attachment ID mapping"));

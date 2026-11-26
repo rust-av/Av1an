@@ -33,12 +33,12 @@ fn vpx_color_argv_respects_codec_metadata_and_native_overrides() {
                         vec![]
                     };
                     for argv in [
-                        encoder.parameters_with_output((1, 1), Path::new("out.ivf"), &clip),
-                        encoder.parameters_with_stats(
+                        encoder.parameters_with_output((1, 1), Path::new("out.ivf"), &clip, None),
+                        encoder.parameters_with_output(
                             (1, 1),
                             Path::new("out.ivf"),
                             &clip,
-                            Path::new("stats"),
+                            Some(Path::new("stats")),
                         ),
                     ] {
                         let argv = argv.expect("production argv");

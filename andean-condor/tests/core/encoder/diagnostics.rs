@@ -3,13 +3,7 @@ use andean_condor::core::{
     encoder::{EncodeProgress, EncoderResult, StringOrBytes},
     input::Input,
 };
-use std::{
-    collections::HashMap,
-    fs,
-    io::Cursor,
-    path::PathBuf,
-    sync::{Arc, mpsc},
-};
+use std::{collections::HashMap, fs, io::Cursor, path::PathBuf, sync::mpsc};
 
 fn bytes(value: &StringOrBytes) -> &[u8] {
     match value {
@@ -262,6 +256,7 @@ fn assert_diagnostic_case() {
             0,
             if case == "decode" { 2 } else { 1 },
             progress,
+            &andean_condor::utils::cancellation::Cancellation::default(),
         )
     } else {
         let (tx, frames) = crossbeam_channel::unbounded();
@@ -279,9 +274,16 @@ fn assert_diagnostic_case() {
                 progress,
                 &super::clip_info(),
                 None,
+                &andean_condor::utils::cancellation::Cancellation::default(),
             )
         } else {
-            encoder.encode_with_stream(frames, &output, progress, &super::clip_info())
+            encoder.encode_with_stream(
+                frames,
+                &output,
+                progress,
+                &super::clip_info(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
         }
     };
     if case == "decode" || early {
@@ -424,17 +426,18 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                         }
                         .expect("statistics do not grant output ownership");
                         for parameters in [
-                            encoder.parameters_with_output((total, total), &output, &info),
-                            encoder.parameters_with_stats(
+                            encoder.parameters_with_output((total, total), &output, &info, None),
+                            encoder.parameters_with_output(
                                 (total, total),
                                 &output,
                                 &info,
-                                stats.base(),
+                                Some(stats.base()),
                             ),
                             encoder.parameters_with_output(
                                 (total, total),
                                 &caller.join("missing.mkv"),
                                 &info,
+                                None,
                             ),
                         ] {
                             assert!(!parameters.expect("public argv").iter().any(|p| p == "-y"));
@@ -451,9 +454,17 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                                     (total, total),
                                     tx,
                                     Some(&stats),
+                                    &andean_condor::utils::cancellation::Cancellation::default(),
                                 )
                             } else {
-                                encoder.encode_with_input(&mut input, &output, 0, 2, tx)
+                                encoder.encode_with_input(
+                                    &mut input,
+                                    &output,
+                                    0,
+                                    2,
+                                    tx,
+                                    &andean_condor::utils::cancellation::Cancellation::default(),
+                                )
                             }
                         } else {
                             let (frames, rx) = crossbeam_channel::unbounded();
@@ -467,9 +478,16 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                                     tx,
                                     &info,
                                     Some(&stats),
+                                    &andean_condor::utils::cancellation::Cancellation::default(),
                                 )
                             } else {
-                                encoder.encode_with_stream(rx, &output, tx, &info)
+                                encoder.encode_with_stream(
+                                    rx,
+                                    &output,
+                                    tx,
+                                    &info,
+                                    &andean_condor::utils::cancellation::Cancellation::default(),
+                                )
                             }
                         };
                         // Some native FFmpeg builds return zero on overwrite refusal.
@@ -504,7 +522,14 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
             fs::write(&raw_output, b"explicit caller overwrite").expect("raw sentinel");
             let (tx, _rx) = mpsc::channel();
             let result = encoder
-                .encode_with_input(&mut input, &raw_output, 0, 2, tx)
+                .encode_with_input(
+                    &mut input,
+                    &raw_output,
+                    0,
+                    2,
+                    tx,
+                    &andean_condor::utils::cancellation::Cancellation::default(),
+                )
                 .expect("explicit raw -y");
             assert_eq!(result.parameters.iter().filter(|p| *p == "-y").count(), 1);
             decoded_frames(&raw_output);
@@ -534,11 +559,8 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                 Box::new(|_| Ok(())),
             );
             let (tx, _rx) = mpsc::channel();
-            let result = SerialEncoder::new(&scenes).execute_cancel(
-                &mut condor,
-                tx,
-                Cancellation::default(),
-            );
+            let result =
+                SerialEncoder::new(&scenes).execute(&mut condor, tx, Cancellation::default());
             eprintln!("serial result={result:?}");
             result.expect("owned serial FFmpeg output");
             decoded_frames(&scenes.join("00000.mkv"));
@@ -554,7 +576,7 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                 })
                 .collect::<VecDeque<_>>();
             let (tx, _rx) = mpsc::channel();
-            let result = ParallelEncoder::encode_tasks_with_options(
+            let result = ParallelEncoder::encode_tasks(
                 &mut input,
                 2,
                 tasks,
@@ -665,12 +687,12 @@ fn vvenc_case(root: &Path, case: &str) {
             filters: vec![],
             stream_concurrently: false,
         }).expect("input");
-        encoder.encode_with_input(&mut input, &output, 0, 1, tx)
+        encoder.encode_with_input(&mut input, &output, 0, 1, tx, &andean_condor::utils::cancellation::Cancellation::default())
     } else {
         let (frames, receiver) = crossbeam_channel::unbounded();
         frames.send(Cursor::new(vec![0; 64])).expect("finite stream");
         drop(frames);
-        encoder.encode_with_stream(receiver, &output, tx, &super::clip_info())
+        encoder.encode_with_stream(receiver, &output, tx, &super::clip_info(), &andean_condor::utils::cancellation::Cancellation::default())
     }.expect("public VVenC encode");
     assert!(result.status.success());
     assert_eq!(
@@ -784,7 +806,7 @@ fn serial_case(root: &Path, case: &str, mut encoder: Encoder) {
     let result = serial.execute(
         &mut condor,
         tx,
-        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        andean_condor::utils::cancellation::Cancellation::default(),
     );
     if matches!(case, "serialdecode" | "serialencode") {
         assert!(

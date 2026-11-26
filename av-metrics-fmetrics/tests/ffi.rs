@@ -317,7 +317,8 @@ fn finite_options_child(scenario: &str) {
             } else {
                 invalid = invalid.with_pnorm(p);
             }
-            let error = FmetricsScorer::new(invalid, color).expect_err("nonpositive exponent");
+            let error =
+                FmetricsScorer::new(invalid, color, color).expect_err("nonpositive exponent");
             assert!(
                 matches!(error, FmetricsError::InvalidConfiguration { .. }),
                 "{error}"
@@ -337,7 +338,7 @@ fn finite_options_child(scenario: &str) {
     for p in [None, Some(3), Some(7), Some(i32::MAX)] {
         let mut config = config.clone().with_intensity_target(150.0);
         config.butteraugli_pnorm = p;
-        let scorer = FmetricsScorer::new(config, color).expect("positive norm");
+        let scorer = FmetricsScorer::new(config, color, color).expect("positive norm");
         assert_eq!(
             scorer.submit_rgb(&image, &image).expect("finite marker").butteraugli,
             Some(42.0),
@@ -358,7 +359,7 @@ fn finite_options_child(scenario: &str) {
         return;
     }
     let scorer =
-        FmetricsScorer::new(config.with_pnorm(i32::MAX), color).expect("large finite norm");
+        FmetricsScorer::new(config.with_pnorm(i32::MAX), color, color).expect("large finite norm");
     for value in ["nan", "inf", "-inf"] {
         std::fs::write(&result_file, value).expect("nonfinite ABI result");
         let before = count(2);
@@ -447,7 +448,11 @@ fn child() {
         colorspace: FmetricsColorspace::Srgb,
         hdr: false,
     };
-    let result = FmetricsScorer::new(FmetricsConfig::new(FmetricsMetric::Ssimulacra2), color);
+    let result = FmetricsScorer::new(
+        FmetricsConfig::new(FmetricsMetric::Ssimulacra2),
+        color,
+        color,
+    );
     if std::env::var("FMETRICS_BOUNDARY_FIXTURE_VERSION").expect("version") != "0.1.0" {
         assert!(
             matches!(&result, Err(FmetricsError::IncompatibleLibrary { .. })),

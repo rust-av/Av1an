@@ -149,7 +149,7 @@ fn assert_mux_status() {
     let token = Cancellation::default();
     let events = Events::default();
     let result = tracing::subscriber::with_default(events.clone(), || {
-        SceneConcatenator::mkvmerge_cancel(
+        SceneConcatenator::mkvmerge(
             &root,
             &output,
             &scenes,

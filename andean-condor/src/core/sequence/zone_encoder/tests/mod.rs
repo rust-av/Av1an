@@ -5,6 +5,27 @@ mod runtime;
 use super::*;
 use crate::models::encoder::photon_noise::PhotonNoise;
 
+fn build_for_ineligibility(tasks: &[Task]) -> Result<ZonePlan, ZoneIneligible> {
+    ZonePlan::try_build(tasks, &Cancellation::default())
+        .map_err(|error| error.downcast().expect("typed zone ineligibility"))
+}
+
+#[test]
+fn force_prevents_probing_an_otherwise_eligible_zone_plan() {
+    let mut encoder = x264(20.0);
+    encoder.set_executable(Some(PathBuf::from("does-not-exist-zone-test")));
+    let tasks = [task(0, 5, encoder)];
+    let cancellation = Cancellation::default();
+    cancellation.request().expect("graceful");
+    cancellation.request().expect("force");
+
+    let error = ZonePlan::try_build(&tasks, &cancellation).expect_err("force prevents probing");
+    assert!(matches!(
+        error.downcast_ref::<crate::utils::cancellation::Cancelled>(),
+        Some(crate::utils::cancellation::Cancelled::Forced)
+    ));
+}
+
 fn temp_directory(name: &str) -> tempfile::TempDir {
     tempfile::Builder::new()
         .prefix(&format!("av1an-zone-{name}-"))
@@ -89,7 +110,7 @@ fn a_scene_without_a_quantizer_is_ineligible() {
     scene.parameters_mut().remove("crf");
     let tasks = vec![task(0, 5, x264(20.0)), task(1, 3, scene)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::NoQuantizer { scene: 1 })
     );
 }
@@ -103,7 +124,7 @@ fn encoders_differing_beyond_the_quantizer_are_ineligible() {
     );
     let tasks = vec![task(0, 5, x264(20.0)), task(1, 3, scene)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::DifferingEncoder {
             scene: 1,
             field: DifferingField::Options,
@@ -118,7 +139,7 @@ fn missing_custom_binaries_do_not_group_as_stock() {
     first.set_executable(Some(PathBuf::from("missing-custom-encoder-one")));
     second.set_executable(Some(PathBuf::from("missing-custom-encoder-two")));
     assert_eq!(
-        ZonePlan::try_build(&[task(0, 5, first), task(1, 3, second)]),
+        build_for_ineligibility(&[task(0, 5, first), task(1, 3, second)]),
         Err(ZoneIneligible::DifferingEncoder {
             scene: 1,
             field: DifferingField::Executable,
@@ -132,7 +153,7 @@ fn a_different_encoder_is_ineligible() {
     other.set_quantizer(30.0);
     let tasks = vec![task(0, 5, x264(20.0)), task(1, 3, other)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::DifferingEncoder {
             scene: 1,
             field: DifferingField::Base,
@@ -148,7 +169,7 @@ fn a_shared_filter_keeps_the_pass_zone_eligible() {
     second.set_ffmpeg_filter(Some("crop=iw-16:ih-16".to_owned()));
     let tasks = vec![task(0, 5, first), task(1, 3, second)];
     assert!(
-        ZonePlan::try_build(&tasks).is_ok(),
+        ZonePlan::try_build(&tasks, &crate::utils::cancellation::Cancellation::default()).is_ok(),
         "scenes sharing one filtergraph still zone encode"
     );
 }
@@ -161,7 +182,7 @@ fn differing_filters_are_ineligible() {
     second.set_ffmpeg_filter(Some("hflip".to_owned()));
     let tasks = vec![task(0, 5, first), task(1, 3, second)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::DifferingEncoder {
             scene: 1,
             field: DifferingField::FfmpegFilter,
@@ -175,7 +196,7 @@ fn a_filter_on_only_one_scene_is_ineligible() {
     filtered.set_ffmpeg_filter(Some("crop=iw-16:ih-16".to_owned()));
     let tasks = vec![task(0, 5, x264(20.0)), task(1, 3, filtered)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::DifferingEncoder {
             scene: 1,
             field: DifferingField::FfmpegFilter,
@@ -193,7 +214,7 @@ fn scenes_differing_only_in_photon_noise_name_the_field() {
     let mut second = svt_av1(30.0);
     set_photon_noise_iso(&mut second, 12000);
     let tasks = vec![task(0, 5, first), task(1, 3, second)];
-    let reason = ZonePlan::try_build(&tasks).expect_err("scenes differ");
+    let reason = build_for_ineligibility(&tasks).expect_err("scenes differ");
     assert_eq!(
         reason,
         ZoneIneligible::DifferingEncoder {
@@ -240,7 +261,7 @@ fn multi_pass_encodes_are_ineligible() {
     *encoder.passes_mut().expect("x264 has passes") = EncoderPasses::All(2);
     let tasks = vec![task(0, 5, encoder)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::NotSinglePass { scene: 0 })
     );
 }
@@ -254,7 +275,7 @@ fn user_configured_zone_options_are_ineligible() {
     );
     let tasks = vec![task(0, 5, encoder)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::ReservedOption { scene: 0 })
     );
 }
@@ -265,14 +286,14 @@ fn unsupported_encoders_are_ineligible() {
     encoder.set_quantizer(30.0);
     let tasks = vec![task(0, 5, encoder)];
     assert_eq!(
-        ZonePlan::try_build(&tasks),
+        build_for_ineligibility(&tasks),
         Err(ZoneIneligible::UnsupportedEncoder(EncoderBase::AOM))
     );
 }
 
 #[test]
 fn empty_passes_are_ineligible() {
-    assert_eq!(ZonePlan::try_build(&[]), Err(ZoneIneligible::Empty));
+    assert_eq!(build_for_ineligibility(&[]), Err(ZoneIneligible::Empty));
 }
 
 #[test]
@@ -478,7 +499,15 @@ fn check_x264_zone_stream_split() {
             output: directory.join(format!("part{index}.264")),
         })
         .collect();
-    let split = split_annexb(&whole, Codec::H264, &tasks, "264", true).expect("split");
+    let split = split_annexb(
+        &whole,
+        Codec::H264,
+        &tasks,
+        "264",
+        &crate::utils::cancellation::Cancellation::default(),
+        true,
+    )
+    .expect("split");
     assert_eq!(
         split.iter().map(|(_, frames)| *frames).collect::<Vec<_>>(),
         scene_frames.to_vec(),
@@ -638,7 +667,15 @@ fn check_x265_zone_stream_split() {
             output: directory.join(format!("part{index}.hevc")),
         })
         .collect();
-    let split = split_annexb(&whole, Codec::H265, &tasks, "hevc", true).expect("split");
+    let split = split_annexb(
+        &whole,
+        Codec::H265,
+        &tasks,
+        "hevc",
+        &crate::utils::cancellation::Cancellation::default(),
+        true,
+    )
+    .expect("split");
     assert_eq!(
         split.iter().map(|(_, frames)| *frames).collect::<Vec<_>>(),
         scene_frames.to_vec(),
@@ -790,7 +827,14 @@ fn check_svt_zone_keyframes() {
             output: directory.join(format!("part{index}.ivf")),
         })
         .collect();
-    let split = split_ivf(&directory.join("zone.ivf"), &tasks, "ivf", true).expect("split");
+    let split = split_ivf(
+        &directory.join("zone.ivf"),
+        &tasks,
+        "ivf",
+        &crate::utils::cancellation::Cancellation::default(),
+        true,
+    )
+    .expect("split");
     assert_eq!(
         split.iter().map(|(_, frames)| *frames).collect::<Vec<_>>(),
         scene_frames.to_vec(),
@@ -1007,7 +1051,14 @@ fn check_ivf_scene_files() {
             output: directory.join("scene2.ivf"),
         },
     ];
-    let split = split_ivf(&whole, &tasks, "ivf", false).expect("split");
+    let split = split_ivf(
+        &whole,
+        &tasks,
+        "ivf",
+        &crate::utils::cancellation::Cancellation::default(),
+        false,
+    )
+    .expect("split");
     // 32-byte header + frame headers + payloads.
     assert_eq!(
         split,
@@ -1078,7 +1129,15 @@ fn check_annexb_scene_headers() {
             output: directory.join("scene2.264"),
         },
     ];
-    let split = split_annexb(&whole, Codec::H264, &tasks, "264", false).expect("split");
+    let split = split_annexb(
+        &whole,
+        Codec::H264,
+        &tasks,
+        "264",
+        &crate::utils::cancellation::Cancellation::default(),
+        false,
+    )
+    .expect("split");
     assert_eq!(
         split.iter().map(|(_, frames)| *frames).collect::<Vec<_>>(),
         vec![2, 3, 1]
@@ -1114,7 +1173,7 @@ fn check_zone_part_validation() {
         encoder: x264(20.0),
         output: directory.path().join("scene.264"),
     };
-    let result = split_annexb_cancel(
+    let result = split_annexb(
         &whole,
         Codec::H264,
         std::slice::from_ref(&task),

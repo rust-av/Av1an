@@ -62,6 +62,7 @@ mod input_configuration {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("configuration");
         let media = temp.path().join("not-a-decodable-source.mkv");
@@ -164,9 +165,15 @@ mod input_configuration {
              height=16, format=vs.YUV420P8)\nclip.set_output(0)\n",
         )
         .expect("script file writes to disk");
-        let configuration =
-            Configuration::new(&script, &PathBuf::from("out.mkv"), None, None, None)
-                .expect("a configuration can be built from a script");
+        let configuration = Configuration::new(
+            &script,
+            &PathBuf::from("out.mkv"),
+            None,
+            None,
+            None,
+            &Default::default(),
+        )
+        .expect("a configuration can be built from a script");
         let rebuilt = configure_input(
             &configuration,
             &script_input(false),
@@ -226,6 +233,7 @@ mod encoder_admission {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("seed config");
         let source = temp.path().join("must-not-open.mkv");
@@ -381,6 +389,7 @@ mod encoder_admission {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("config");
         let source = temp.path().join("must-not-open.mkv");
@@ -595,6 +604,7 @@ mod filter_rejection {
             Some(temp.path()),
             None,
             None,
+            &Default::default(),
         )
         .expect("seed config");
         let source = temp.path().join("must-not-be-decoded.mkv");
@@ -741,7 +751,7 @@ mod filter_rejection {
 mod quality_admission {
     use std::sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         mpsc,
     };
 
@@ -915,7 +925,7 @@ mod quality_admission {
             (None, Some(49), "range"),
         ] {
             for stage in ["TQ", "QC"] {
-                for entry in ["validate", "initialize", "execute", "execute_cancel"] {
+                for entry in ["validate", "initialize", "execute"] {
                     let mut configuration = fixture(temp.path());
                     if let Some(end) = invalid_end {
                         configuration.condor.scenes[1].end_frame = end;
@@ -965,11 +975,8 @@ mod quality_admission {
                     let (tx, rx) = mpsc::channel();
                     let result = match entry {
                         "validate" => sequence.validate(&mut condor),
-                        "initialize" => sequence.initialize(&mut condor, tx),
-                        "execute" => {
-                            sequence.execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
-                        },
-                        _ => sequence.execute_cancel(&mut condor, tx, Default::default()),
+                        "initialize" => sequence.initialize(&mut condor, tx, &Default::default()),
+                        _ => sequence.execute(&mut condor, tx, Default::default()),
                     };
                     let error = result.expect_err("invalid selection must fail before work");
                     let message = error.to_string();
@@ -1024,7 +1031,7 @@ mod quality_admission {
                 let saves = Arc::new(AtomicUsize::new(0));
                 let mut condor = runtime(&configuration, Arc::clone(&saves));
                 let mut sequence = sequence(stage);
-                for entry in ["initialize", "execute", "execute_cancel"] {
+                for entry in ["initialize", "execute"] {
                     let cancellation = Cancellation::default();
                     if matches!(mode, "graceful" | "forced") {
                         cancellation.request().expect("cancel");
@@ -1034,9 +1041,8 @@ mod quality_admission {
                     }
                     let (tx, rx) = mpsc::channel();
                     let result = match entry {
-                        "initialize" => sequence.initialize_cancel(&mut condor, tx, &cancellation),
-                        "execute" => sequence.execute(&mut condor, tx, cancellation.legacy_flag()),
-                        _ => sequence.execute_cancel(&mut condor, tx, cancellation),
+                        "initialize" => sequence.initialize(&mut condor, tx, &cancellation),
+                        _ => sequence.execute(&mut condor, tx, cancellation),
                     };
                     if matches!(mode, "graceful" | "forced") {
                         assert!(
@@ -1181,6 +1187,7 @@ mod target_quality_admission {
                         cli.target_profile.as_ref(),
                         cli.max_tries,
                         cli.overwrite,
+                        &Default::default(),
                     );
                     if let Err(error) = result {
                         failures.push(format!("{case}/{entry}: {error:#}"));

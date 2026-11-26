@@ -783,7 +783,7 @@ mod tests {
             let mut encoder = Encoder::default_from_base(&EncoderBase::X265, false);
             encoder.set_append_color_data(false);
             let before = encoder
-                .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
+                .parameters_with_output((1, 1), &output, &clip_info(), Some(&stats))
                 .expect("default argv");
             configure_encoder(
                 &mut encoder,
@@ -797,7 +797,7 @@ mod tests {
             )
             .expect("valid parameters");
             let argv = encoder
-                .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
+                .parameters_with_output((1, 1), &output, &clip_info(), Some(&stats))
                 .expect("configured argv");
             assert_eq!(argv.len(), before.len() + 1, "{argv:?}");
             assert_eq!(argv.iter().filter(|arg| *arg == "--no-sao").count(), 1);
@@ -870,7 +870,7 @@ mod tests {
                 )
                 .expect("valid encoder parameters");
                 let argv = encoder
-                    .parameters_with_stats((1, 1), &output, &clip_info(), &stats)
+                    .parameters_with_output((1, 1), &output, &clip_info(), Some(&stats))
                     .expect("actual emitted encoder argv");
                 assert_eq!(
                     argv.len(),

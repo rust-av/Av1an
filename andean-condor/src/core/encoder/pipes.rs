@@ -101,7 +101,7 @@ pub(super) fn progress_reader(
         } else if stdout != (base == EncoderBase::VVenC) {
             // VVenC stats use stdout; other keyed progress stays on stderr.
             return;
-        } else if let Some(latest) = Encoder::parse_encoded_frames_base(&base, line) {
+        } else if let Some(latest) = base.parse_encoded_frames(line) {
             if latest <= frames.load(Ordering::Relaxed) {
                 return;
             }

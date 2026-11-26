@@ -11,6 +11,7 @@ use andean_condor::{
         scene::Scene,
         sequence::{DefaultSequenceConfig, DefaultSequenceData},
     },
+    utils::cancellation::{Cancellation, Cancelled},
 };
 use av1_grain::{GrainTableSegment, NoiseGenArgs, generate_photon_noise_params};
 use std::{collections::HashMap, fs, io::Cursor, path::PathBuf, sync::mpsc};
@@ -63,6 +64,43 @@ fn input(width: u32, height: u32, transfer: u8, range: u8) -> Input {
             "from vapoursynth import core, YUV420P8\nclip = core.std.BlankClip(width={width}, height={height}, length=1, format=YUV420P8)\nclip = core.std.SetFrameProps(clip, _Transfer={transfer}, _ColorRange={range})\nclip.set_output()\n"
         )), variables: HashMap::new(), index: 0, filters: vec![], stream_concurrently: true,
     }).expect("one-frame metadata fixture")
+}
+
+#[test]
+fn cancelled_sequence_initialization_does_not_create_scene_directory() {
+    let temp = tempfile::tempdir().expect("temporary job");
+    let scenes_directory = temp.path().join("uncreated");
+    let mut config = DefaultSequenceConfig::default();
+    config.parallel_encoder.scenes_directory = scenes_directory.clone();
+    let mut condor = Condor::new(
+        input(64, 64, 1, 1),
+        Output {
+            path: temp.path().join("unused.ivf"),
+            overwrite: false,
+            tags: HashMap::new(),
+            video_tags: HashMap::new(),
+        },
+        Encoder::default_from_base(&EncoderBase::AOM, true),
+        Vec::new(),
+        Some(config),
+        Box::new(|_| Ok(())),
+    );
+    let mut sequence: Box<dyn Sequence<DefaultSequenceData, DefaultSequenceConfig>> =
+        Box::new(ParallelEncoder::default());
+    let cancellation = Cancellation::default();
+    cancellation.request().expect("graceful before initialization");
+    let (tx, rx) = mpsc::channel();
+
+    let error = sequence
+        .initialize(&mut condor, tx, &cancellation)
+        .expect_err("no admission after a graceful request");
+
+    assert!(matches!(
+        error.downcast_ref::<Cancelled>(),
+        Some(Cancelled::Graceful)
+    ));
+    assert!(!scenes_directory.exists());
+    assert!(rx.try_recv().is_err());
 }
 
 #[test]
@@ -132,7 +170,13 @@ fn initialize_grain_tables(check_reuse: bool) {
                 ColorRange::Limited
             })
         );
-        let (_, warnings) = sequence.initialize(&mut condor, tx.clone()).expect("real initialize");
+        let (_, warnings) = sequence
+            .initialize(
+                &mut condor,
+                tx.clone(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
+            .expect("real initialize");
         assert!(warnings.is_empty());
         let CLIParameter::String { value, .. } =
             &condor.scenes[0].encoder.parameters()["film-grain-table"]
@@ -180,7 +224,13 @@ fn initialize_grain_tables(check_reuse: bool) {
     equivalent.height = Some(1080);
     condor.scenes[0].encoder.set_photon_noise(Some(equivalent));
     condor.input = input(640, 360, 1, 1);
-    sequence.initialize(&mut condor, tx).expect("equivalent resolved request");
+    sequence
+        .initialize(
+            &mut condor,
+            tx,
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        )
+        .expect("equivalent resolved request");
     let CLIParameter::String { value, .. } =
         &condor.scenes[0].encoder.parameters()["film-grain-table"]
     else {
@@ -237,9 +287,16 @@ fn avm_application_noise_fails_before_executable_lookup_or_output_changes() {
                 progress_tx,
                 &super::clip_info(),
                 None,
+                &andean_condor::utils::cancellation::Cancellation::default(),
             )
         } else {
-            encoder.encode_with_stream(frames_rx, &output, progress_tx, &super::clip_info())
+            encoder.encode_with_stream(
+                frames_rx,
+                &output,
+                progress_tx,
+                &super::clip_info(),
+                &andean_condor::utils::cancellation::Cancellation::default(),
+            )
         };
         let error = result.expect_err("unsupported settings must win over missing executable");
         assert_eq!(
@@ -302,7 +359,12 @@ fn supported_backends_keep_generated_filmgrn1_tables_and_native_flags() {
             ))
         );
         let argv = encoder
-            .parameters_with_output((1, 1), &temp.path().join("out.ivf"), &super::clip_info())
+            .parameters_with_output(
+                (1, 1),
+                &temp.path().join("out.ivf"),
+                &super::clip_info(),
+                None,
+            )
             .expect("supported argv");
         if delimiter == "=" {
             assert!(argv.contains(&format!("--{flag}={}", path.display())));

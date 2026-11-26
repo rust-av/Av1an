@@ -8,6 +8,49 @@ const SAMPLE: &[u8] = include_bytes!("../../../../src/vapoursynth/plugins/dginde
 #[path = "fixtures/indexing_support.rs"]
 mod fixture;
 
+#[test]
+fn force_at_dg_open_does_not_retry_indexing_with_a_fresh_token() {
+    use andean_condor::{
+        core::input::{Input, OpenProgress},
+        models::input::{Input as InputModel, VapourSynthImportMethod},
+    };
+
+    let temp = tempfile::tempdir().expect("DG fixture");
+    let source = temp.path().join("source.mkv");
+    let cache = source.with_extension("dgi");
+    fs::write(&source, b"original media").expect("source");
+    fs::write(&cache, SAMPLE).expect("complete index");
+    let input = InputModel::VapourSynth {
+        path: source,
+        import_method: VapourSynthImportMethod::DGDecNV {
+            dgindexnv_executable: Some(temp.path().join("must-not-run")),
+        },
+        cache_path: Some(cache.clone()),
+        filters: vec![],
+    };
+    let cancellation = Cancellation::default();
+
+    let result = Input::ensure_indexed(
+        &input,
+        |progress| {
+            if matches!(progress, OpenProgress::Opening) {
+                fs::remove_file(&cache).expect("simulate removal after successful index lookup");
+                cancellation.request().expect("graceful");
+                cancellation.request().expect("force");
+            }
+        },
+        &cancellation,
+    );
+
+    let error = result.err().expect("forced before opening");
+    assert_eq!(
+        error.downcast_ref::<Cancelled>(),
+        Some(&Cancelled::Forced),
+        "{error:#}"
+    );
+    assert!(!cache.exists());
+}
+
 macro_rules! index_cases {
     ($name:ident, [$($case:literal),+ $(,)?]) => {
         #[test]
@@ -64,7 +107,13 @@ fn dg_index_reuse_accepts_either_valid_numeric_footer_order() {
     ] {
         let bytes = format!("DGIndexNV\n{footer}");
         fs::write(&cache, &bytes).expect("structural fixture");
-        let result = DGSource::index_video(&source, Some(&cache), Some(&executable), None, None);
+        let result = DGSource::index_video(
+            &source,
+            Some(&cache),
+            Some(&executable),
+            None,
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        );
         assert_eq!(result.is_ok(), valid, "footer {footer:?}: {result:?}");
         if valid {
             assert_eq!(result.expect("reuse without spawning"), cache);
@@ -82,8 +131,14 @@ fn media_cache_alias_guidance_never_suggests_removing_original() {
     let directory = tempfile::tempdir().expect("alias fixture");
     let source = directory.path().join("source.mkv");
     fs::write(&source, b"original media").expect("source");
-    let error = DGSource::index_video(&source, Some(&source), None, None, None)
-        .expect_err("media is not an index");
+    let error = DGSource::index_video(
+        &source,
+        Some(&source),
+        None,
+        None,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect_err("media is not an index");
     assert_eq!(
         fs::read(source).expect("preserved source"),
         b"original media"
@@ -104,8 +159,14 @@ fn direct_project_guidance_selects_valid_input_not_ignored_cache_override() {
     let alternate = directory.path().join("alternate.dgi");
     fs::write(&project, b"invalid original project").expect("project");
     fs::write(&alternate, SAMPLE).expect("valid alternate");
-    let error = DGSource::index_video(&project, Some(&alternate), None, None, None)
-        .expect_err("direct project must be validated, not replaced by cache alias");
+    let error = DGSource::index_video(
+        &project,
+        Some(&alternate),
+        None,
+        None,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect_err("direct project must be validated, not replaced by cache alias");
     assert_eq!(
         fs::read(project).expect("preserved project"),
         b"invalid original project"

@@ -365,7 +365,7 @@ mod internal_integration {
                 }),
             );
             let (tx, _rx) = mpsc::channel();
-            let result = ParallelEncoder::default().execute_cancel(&mut condor, tx, cancellation);
+            let result = ParallelEncoder::default().execute(&mut condor, tx, cancellation);
             assert_eq!(
                 result
                     .expect_err("force at idle dispatch return is not success")
@@ -395,7 +395,7 @@ mod internal_integration {
                     let scenes = vec![root.join("scene.264")];
                     fs::write(&scenes[0], b"owned scene fixture").expect("nonempty mux input");
                     if case.starts_with("commit-ffmpeg") {
-                        SceneConcatenator::ffmpeg_cancel(
+                        SceneConcatenator::ffmpeg(
                             &root,
                             &output,
                             &scenes,
@@ -407,7 +407,7 @@ mod internal_integration {
                             &cancellation,
                         )
                     } else {
-                        SceneConcatenator::mkvmerge_cancel(
+                        SceneConcatenator::mkvmerge(
                             &root,
                             &output,
                             &scenes,
@@ -427,10 +427,10 @@ mod internal_integration {
                     bytes.extend_from_slice(&0_u64.to_le_bytes());
                     bytes.push(0x12);
                     fs::write(&source, bytes).expect("finite IVF");
-                    SceneConcatenator::ivf_cancel(&output, &[source], &progress, &cancellation)
+                    SceneConcatenator::ivf(&output, &[source], &progress, &cancellation)
                 } else if case.starts_with("commit-dg") {
                     fs::write(root.join("source"), "fixture source").expect("source");
-                    crate::vapoursynth::plugins::dgdecodenv::DGSource::index_video_cancel(
+                    crate::vapoursynth::plugins::dgdecodenv::DGSource::index_video(
                         &root.join("source"),
                         Some(&output),
                         Some(&root.join("fake")),
@@ -448,14 +448,14 @@ mod internal_integration {
                         },
                         filters: vec![],
                     };
-                    Input::ensure_indexed_cancel(&data, |_| {}, &cancellation).map(|_| ())
+                    Input::ensure_indexed(&data, |_| {}, &cancellation).map(|_| ())
                 } else {
                     let encoder = encoder(&root, case.starts_with("commit-all2"));
                     let (progress, _rx) = mpsc::channel::<EncodeProgress>();
                     if case.starts_with("commit-input-") || case.starts_with("commit-pass-input-") {
                         let mut input = input(&root, false);
                         if case.starts_with("commit-pass-input") {
-                            encoder.encode_pass_with_input_cancel(
+                            encoder.encode_pass_with_input(
                                 &mut input,
                                 &output,
                                 0,
@@ -466,7 +466,7 @@ mod internal_integration {
                                 &cancellation,
                             )
                         } else {
-                            encoder.encode_with_input_cancel(
+                            encoder.encode_with_input(
                                 &mut input,
                                 &output,
                                 0,
@@ -480,7 +480,7 @@ mod internal_integration {
                         tx.send(Cursor::new(vec![0; 64])).expect("finite stream");
                         drop(tx);
                         if case.starts_with("commit-pass-stream") {
-                            encoder.encode_pass_with_stream_cancel(
+                            encoder.encode_pass_with_stream(
                                 (1, 1),
                                 rx,
                                 &output,
@@ -490,7 +490,7 @@ mod internal_integration {
                                 &cancellation,
                             )
                         } else {
-                            encoder.encode_with_stream_cancel(
+                            encoder.encode_with_stream(
                                 rx,
                                 &output,
                                 progress,

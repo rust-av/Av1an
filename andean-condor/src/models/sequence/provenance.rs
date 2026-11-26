@@ -519,74 +519,6 @@ impl Admission {
     }
 }
 
-// Single-scene callers retain the narrow API; owning loops share an Admission.
-#[inline]
-pub fn target_context<Data: TargetQualityDataHandler>(
-    input: &Input,
-    metric_input: Option<&Input>,
-    scene: &Scene<Data>,
-    config: &TargetQualityConfig,
-    pass: &QualityPass,
-) -> Result<Value> {
-    Admission::default().target_context(input, metric_input, scene, config, pass)
-}
-
-#[inline]
-pub fn admit_target<Data: TargetQualityDataHandler>(
-    input: &Input,
-    metric_input: Option<&Input>,
-    scene: &Scene<Data>,
-    config: Option<&TargetQualityConfig>,
-    index: usize,
-) -> Result<()> {
-    Admission::default().admit_target(input, metric_input, scene, config, index)
-}
-
-#[inline]
-pub fn measurement_inputs(
-    input: &Input,
-    reference: Option<&Input>,
-    metric: Option<&QualityMetric>,
-) -> Result<Value> {
-    Admission::default().measurement_inputs(input, reference, metric)
-}
-
-#[inline]
-pub fn quality_context<Data>(
-    input: &Input,
-    output: &Path,
-    scene: &Scene<Data>,
-    config: &QualityCheckConfig,
-    backend: &MetricBackend,
-) -> Result<Value> {
-    Admission::default().quality_context(input, output, scene, config, backend)
-}
-
-#[inline]
-pub fn admit_quality<Data>(
-    input: &Input,
-    output: &Path,
-    scene: &Scene<Data>,
-    config: Option<&QualityCheckConfig>,
-    quality: &QualityPass,
-    index: usize,
-) -> Result<()> {
-    Admission::default().admit_quality(input, output, scene, config, quality, index)
-}
-
-#[inline]
-pub fn encode_context<Data: SequenceDataHandler + TargetQualityDataHandler>(
-    input: &Input,
-    probe_input: &Input,
-    metric_input: Option<&Input>,
-    scene: &Scene<Data>,
-    tq: Option<&TargetQualityConfig>,
-    output: &Path,
-    index: usize,
-) -> Result<Value> {
-    Admission::default().encode_context(input, probe_input, metric_input, scene, tq, output, index)
-}
-
 /// Structured policy plus canonical content identity of the separately stored raw
 /// measurements; no repeated whole-history context in each selection/chunk.
 #[inline]
@@ -745,21 +677,6 @@ impl Admission {
             .map_err(|e| refusal(index, "encoding", &format!("{e:#}")))?;
         require_context(saved, &expected, index, "encoding")
     }
-}
-
-#[inline]
-pub fn admit_encode<
-    Data: SequenceDataHandler + TargetQualityDataHandler + ParallelEncoderDataHandler,
->(
-    input: &Input,
-    probe_input: &Input,
-    metric_input: Option<&Input>,
-    scene: &Scene<Data>,
-    tq: Option<&TargetQualityConfig>,
-    output: &Path,
-    index: usize,
-) -> Result<()> {
-    Admission::default().admit_encode(input, probe_input, metric_input, scene, tq, output, index)
 }
 
 /// Effective declared inputs, also used by CLI preflight without opening decoders.

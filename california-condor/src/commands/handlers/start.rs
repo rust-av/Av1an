@@ -16,7 +16,7 @@ use crate::{
         handlers::{
             concatenate::{apply_discard, configure_concatenate},
             configure_root_input, configure_temp,
-            detect_scenes::configure_scene_detector_cancel,
+            detect_scenes::configure_scene_detector,
             encode::{configure_encoder, configure_parallel_encoder, warn_existing_scene_encoders},
             target_quality::{configure_target_quality, require_target_quality_target},
         },
@@ -24,83 +24,9 @@ use crate::{
     configuration::{ConfigError, Configuration},
 };
 
-#[allow(clippy::too_many_arguments)]
-pub fn start_handler(
-    config_path: Option<&Path>,
-    temp_path: Option<&Path>,
-    input_path: Option<&Path>,
-    scd_input_path: Option<&Path>,
-    tq_input_path: Option<&Path>,
-    output_path: Option<&Path>,
-    decoder: Option<&DecoderMethod>,
-    scd_decoder: Option<&DecoderMethod>,
-    tq_decoder: Option<&DecoderMethod>,
-    filters: Option<&[VapourSynthFilter]>,
-    scd_filters: Option<&[VapourSynthFilter]>,
-    tq_filters: Option<&[VapourSynthFilter]>,
-    vs_args: Option<&[String]>,
-    scd_vs_args: Option<&[String]>,
-    tq_vs_args: Option<&[String]>,
-    concatenator: Option<&ConcatenationMethod>,
-    discard: Option<&[DiscardCategory]>,
-    workers: Option<u8>,
-    encoder: Option<&EncoderMethod>,
-    passes: Option<u8>,
-    params: Option<&str>,
-    tq_params: Option<&str>,
-    photon_noise: Option<u32>,
-    chroma_noise: Option<u32>,
-    ffmpeg_filter: Option<&str>,
-    append_color_data: Option<bool>,
-    target_metric: Option<&QualityMetric>,
-    target: Option<f64>,
-    minimum_quantizer: Option<u8>,
-    maximum_quantizer: Option<u8>,
-    target_profile: Option<&QualityProfile>,
-    max_tries: Option<u32>,
-    overwrite: bool,
-) -> Result<(Configuration, PathBuf)> {
-    start_handler_cancel(
-        config_path,
-        temp_path,
-        input_path,
-        scd_input_path,
-        tq_input_path,
-        output_path,
-        decoder,
-        scd_decoder,
-        tq_decoder,
-        filters,
-        scd_filters,
-        tq_filters,
-        vs_args,
-        scd_vs_args,
-        tq_vs_args,
-        concatenator,
-        discard,
-        workers,
-        encoder,
-        passes,
-        params,
-        tq_params,
-        photon_noise,
-        chroma_noise,
-        ffmpeg_filter,
-        append_color_data,
-        target_metric,
-        target,
-        minimum_quantizer,
-        maximum_quantizer,
-        target_profile,
-        max_tries,
-        overwrite,
-        &Default::default(),
-    )
-}
-
 /// Root startup, including preparatory opens, bound to the execution root.
 #[allow(clippy::too_many_arguments)]
-pub fn start_handler_cancel(
+pub fn start_handler(
     config_path: Option<&Path>,
     temp_path: Option<&Path>,
     input_path: Option<&Path>,
@@ -224,14 +150,8 @@ pub fn start_handler_cancel(
                 ffmpeg_filter,
                 append_color_data,
             )?;
-            let mut configuration = Configuration::new_cancel(
-                &input,
-                &output,
-                temp_path,
-                vs_args,
-                decoder,
-                cancellation,
-            )?;
+            let mut configuration =
+                Configuration::new(&input, &output, temp_path, vs_args, decoder, cancellation)?;
             configuration.condor.encoder = selected_encoder;
             configuration
         }
@@ -311,7 +231,7 @@ pub fn start_handler_cancel(
         target,
         tq_options_supplied,
     )?;
-    configure_scene_detector_cancel(
+    configure_scene_detector(
         &mut configuration,
         scd_input_path,
         scd_decoder,

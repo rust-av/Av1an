@@ -139,7 +139,11 @@ fn actual_rate_child() {
         }
     };
     let (tx, _rx) = std::sync::mpsc::channel();
-    let zone_plan = ZonePlan::try_build(&[task(false)]).expect("eligible zone plan");
+    let zone_plan = ZonePlan::try_build(
+        &[task(false)],
+        &condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect("eligible zone plan");
     let plan = || zone_plan.clone();
     if matches!(kind, "integer" | "fractional") {
         let rate = if kind == "integer" {
@@ -149,7 +153,7 @@ fn actual_rate_child() {
         };
         let mut set_rate = set_rate;
         set_rate(&mut input, rate);
-        let result = ParallelEncoder::encode_tasks_with_options(
+        let result = ParallelEncoder::encode_tasks(
             &mut input,
             1,
             [task(false)].into(),
@@ -186,7 +190,7 @@ fn actual_rate_child() {
             (Rational64::new(24, 1), true),
         ] {
             set_rate(&mut input, rate);
-            let error = ParallelEncoder::encode_tasks_with_options(
+            let error = ParallelEncoder::encode_tasks(
                 &mut input,
                 1,
                 [task(empty)].into(),
@@ -196,7 +200,7 @@ fn actual_rate_child() {
             )
             .expect_err("reject before worker");
             assert!(format!("{error:#}").contains("bitrate"), "{error:#}");
-            let error = ZoneEncoder::encode_tasks_with_validation(
+            let error = ZoneEncoder::encode_tasks(
                 &mut input,
                 [task(empty)].into(),
                 plan(),
@@ -240,7 +244,7 @@ fn actual_rate_child() {
             set_rate(&mut condor.input, rate);
             condor.scenes[0].end_frame = frames;
             let error = ParallelEncoder::default()
-                .execute_cancel(&mut condor, tx.clone(), Cancellation::default())
+                .execute(&mut condor, tx.clone(), Cancellation::default())
                 .expect_err("sequence rejects invalid rate/count");
             assert!(format!("{error:#}").contains("bitrate"), "{error:#}");
             assert_eq!(*saves.lock().expect("saves"), 0);
@@ -251,7 +255,7 @@ fn actual_rate_child() {
         let mut set_rate = set_rate;
         set_rate(&mut input, Rational64::new_raw(0, 0));
         assert!(
-            ParallelEncoder::encode_tasks_with_options(
+            ParallelEncoder::encode_tasks(
                 &mut input,
                 1,
                 Default::default(),
@@ -263,7 +267,7 @@ fn actual_rate_child() {
             .is_empty()
         );
         assert!(
-            ZoneEncoder::encode_tasks_with_validation(
+            ZoneEncoder::encode_tasks(
                 &mut input,
                 Default::default(),
                 plan(),
@@ -277,7 +281,7 @@ fn actual_rate_child() {
         let cancelled = Cancellation::default();
         cancelled.request().expect("graceful");
         assert!(
-            ParallelEncoder::encode_tasks_with_options(
+            ParallelEncoder::encode_tasks(
                 &mut input,
                 1,
                 [task(false)].into(),
@@ -289,7 +293,7 @@ fn actual_rate_child() {
                 .is_none()
         );
         cancelled.request().expect("forced");
-        let error = ParallelEncoder::encode_tasks_with_options(
+        let error = ParallelEncoder::encode_tasks(
             &mut input,
             1,
             [task(false)].into(),
@@ -326,7 +330,7 @@ fn actual_rate_child() {
             [(Rational64::new(24, 1), 0.8), (Rational64::new(24000, 1001), 800.0 / 1001.0)]
         {
             set_rate(&mut input, rate);
-            let results = ZoneEncoder::encode_tasks_with_validation(
+            let results = ZoneEncoder::encode_tasks(
                 &mut input,
                 [task(false)].into(),
                 plan(),

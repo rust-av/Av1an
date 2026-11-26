@@ -84,7 +84,7 @@ fn final_validation_rejects_every_declared_source_and_existing_destination() {
                 job.output.path = dir.path().join(format!(
                     "{}.{}",
                     ParallelEncoder::scene_id(0),
-                    job.scenes[0].encoder.output_extension()
+                    job.scenes[0].encoder.base().output_extension()
                 ));
             },
             "override" => {
@@ -119,13 +119,13 @@ fn failed_final_concat_preserves_old_output() {
     let chunk = dir.path().join(format!(
         "{}.{}",
         ParallelEncoder::scene_id(0),
-        job.scenes[0].encoder.output_extension()
+        job.scenes[0].encoder.base().output_extension()
     ));
     std::fs::write(chunk, b"invalid IVF header").expect("invalid chunk");
     let (tx, rx) = sync::mpsc::channel();
     assert!(
         SceneConcatenator::default()
-            .execute_cancel(&mut job, tx, Cancellation::default())
+            .execute(&mut job, tx, Cancellation::default())
             .is_err()
     );
     assert_eq!(

@@ -33,24 +33,6 @@ fn read_header(path: &Path) -> Result<([u8; 32], Ratio<i64>)> {
 }
 
 impl SceneConcatenator {
-    /// Concatenates IVF parts using the input/timestamp policy of [`Self::ivf_cancel`].
-    /// Scratch writer: the caller must exclusively own `output`; this can overwrite it.
-    /// Use the final Sequence boundary for saved overwrite/source protection and publication.
-    #[inline]
-    pub fn ivf(
-        output: &Path,
-        scene_paths: &[PathBuf],
-        progress_tx: &sync::mpsc::Sender<SequenceStatus>,
-        cancelled: &Arc<AtomicBool>,
-    ) -> Result<()> {
-        Self::ivf_cancel(
-            output,
-            scene_paths,
-            progress_tx,
-            &Cancellation::from(Arc::clone(cancelled)),
-        )
-    }
-
     /// Concatenates nonempty standard version-0/32-byte-header IVF parts with matching
     /// codec/dimensions and equal rational timebases (nonzero u32 rate/scale).
     /// Input counts are hints: zero means unknown; output counts actual records, including
@@ -63,7 +45,7 @@ impl SceneConcatenator {
     /// The first input's exact rate/scale pair is preserved; output counts actual records.
     /// Caller must exclusively own the scratch output (it may be truncated on error).
     #[inline]
-    pub fn ivf_cancel(
+    pub fn ivf(
         output: &Path,
         scene_paths: &[PathBuf],
         progress_tx: &sync::mpsc::Sender<SequenceStatus>,

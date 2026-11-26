@@ -51,8 +51,7 @@ pub(super) fn spawn_filter(
                 .and_then(|cells| cells.get(&task.original_index))
                 .cloned()
                 .unwrap_or_else(|| Arc::new(Mutex::new(None)));
-            let mut stage =
-                FfmpegFilter::spawn_cancel(frames_rx, window, graph, failure, cancellation)?;
+            let mut stage = FfmpegFilter::spawn(frames_rx, window, graph, failure, cancellation)?;
             Ok((stage.take_receiver()?, Some(stage)))
         },
         None => Ok((frames_rx, None)),
@@ -146,7 +145,7 @@ pub(super) fn consume_frames(
             let result = task
                 .encoder
                 // encode_attempts retains the exclusive TempDir through this call.
-                .encode_owned_with_stream_cancel(frames, temp, tx, clip_info, cancellation)
+                .encode_owned_with_stream(frames, temp, tx, clip_info, cancellation)
                 .or_else(|error| {
                     if error.is::<crate::utils::cancellation::Cancelled>() {
                         Err(error)
@@ -270,7 +269,9 @@ pub(super) fn encode_attempts<'a>(
         let directory = tempfile::Builder::new()
             .prefix(".av1an-attempt-")
             .tempdir_in(task.output.parent().unwrap_or_else(|| std::path::Path::new(".")))?;
-        let path = directory.path().join(format!("scene.{}", task.encoder.output_extension()));
+        let path = directory
+            .path()
+            .join(format!("scene.{}", task.encoder.base().output_extension()));
         let attempt_progress = AttemptProgress::new(
             progress,
             task.original_index,
@@ -354,60 +355,12 @@ pub(super) fn report_result(
 }
 
 impl ParallelEncoder {
-    #[inline]
-    pub fn encode_tasks(
-        input: &mut Input,
-        workers: u8,
-        tasks: VecDeque<Task>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_cancel(input, workers, tasks, progress_tx, cancelled.into())
-    }
-
-    /// Force-capable dispatcher, defaulting to three total attempts per scene.
-    /// All active worker owners join before return.
-    #[inline]
-    pub fn encode_tasks_cancel(
-        input: &mut Input,
-        workers: u8,
-        tasks: VecDeque<Task>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Cancellation,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_with_validation(input, workers, tasks, progress_tx, cancelled, true)
-    }
-
-    /// Explicit count-only policy for intentional frame-changing filters.
-    /// Successful encoder status and nonempty regular output remain mandatory.
-    /// Retains the default of three total attempts per scene.
-    #[inline]
-    pub fn encode_tasks_with_validation(
-        input: &mut Input,
-        workers: u8,
-        tasks: VecDeque<Task>,
-        progress_tx: std::sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Cancellation,
-        validate_frame_count: bool,
-    ) -> Result<Vec<Option<ParallelEncoderResult>>> {
-        Self::encode_tasks_with_options(
-            input,
-            workers,
-            tasks,
-            progress_tx,
-            cancelled,
-            ParallelEncoderOptions {
-                validate_frame_count,
-                ..Default::default()
-            },
-        )
-    }
-
-    /// Explicit attempt/count policy. Non-replayable scenes with more than one
+    /// Encodes scenes with the given attempt and validation policy, joining
+    /// all workers before returning. Non-replayable scenes with more than one
     /// attempt capture one anonymous Y4M disk spool before the first encode.
     #[allow(clippy::too_many_arguments)]
     #[inline]
-    pub fn encode_tasks_with_options(
+    pub fn encode_tasks(
         input: &mut Input,
         workers: u8,
         tasks: VecDeque<Task>,
@@ -603,7 +556,7 @@ impl ParallelEncoder {
                                       stop, STREAM_WINDOW);
                                  spool.as_mut().map_or_else(
                                      || consume(direct.take().expect("one direct attempt")),
-                                     |file| crate::core::encoder::spool::replay_cancel(file, &task.output, cancelled, consume),
+                                     |file| crate::core::encoder::spool::replay(file, &task.output, cancelled, consume),
                                  )
                              })?;
                             // EOF alone is not success: a failed producer can leave
@@ -658,7 +611,7 @@ impl ParallelEncoder {
                     super::tests::dispatch::internal_integration::before_admission(&stop, task);
                     // Reserve a real worker before creating/decoding its input.
                     // The worker owns this permit through completion, never reacquires it.
-                    let Some(permit) = stop.workers.acquire_owned_cancel(&cancelled) else {
+                    let Some(permit) = stop.workers.acquire_owned(&cancelled) else {
                         break;
                     };
                     if stop.stopped(&cancelled) {
@@ -678,6 +631,7 @@ impl ParallelEncoder {
                         },
                     }
                     #[cfg(all(test, target_os = "linux"))]
+                    #[expect(deprecated, reason = "the existing test hook uses an AtomicBool")]
                     super::tests::dispatch::internal_integration::after_handoff(&cancelled.legacy_flag());
                     // The worker owns the stop check after handoff. If it has
                     // started, graceful cancellation must still feed its input.
@@ -699,7 +653,7 @@ impl ParallelEncoder {
                     super::tests::shutdown::internal_integration::fault("decode", task.original_index)?;
                     #[cfg(all(test, target_os = "linux"))]
                     super::tests::dispatch::internal_integration::before_frames(&stop);
-                    let produced = input.y4m_frames_cancel(frames_tx.clone(), &task.frame_indices, &cancelled);
+                    let produced = input.y4m_frames(frames_tx.clone(), &task.frame_indices, &cancelled);
                     #[cfg(all(test, target_os = "linux"))]
                     super::tests::dispatch::internal_integration::producer_returned(&produced);
                     if let Err(err) = produced {

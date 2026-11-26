@@ -32,10 +32,7 @@ use probe_fixture::executable;
 use probe_fixture::{
     fixture, probe, probe_budget_progress, probe_budget_watchdog, probe_execution_fixture, tasks,
 };
-use std::{
-    sync::{self, Arc, atomic::AtomicBool},
-    thread,
-};
+use std::{sync, thread};
 
 #[test]
 fn resumed_duplicate_prediction_measures_an_untested_quantizer_and_finalizes_closest_measurement() {
@@ -90,7 +87,11 @@ fn public_execute_saves_255th_native_record() {
         "probe-budget native-255: entering public Sequence::execute with 254 synthetic records"
     );
     let (_, warnings) = TargetQuality::default()
-        .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+        .execute(
+            &mut condor,
+            tx,
+            andean_condor::utils::cancellation::Cancellation::default(),
+        )
         .expect("one real final pass through normal wrapper");
     assert!(warnings.is_empty(), "{warnings:?}");
     let passes = &condor.scenes[0].sequence_data.target_quality.passes;
@@ -170,7 +171,7 @@ fn exhausted_or_satisfied_probe_budget_preserves_history_without_new_work_or_ext
             condor.scenes[0].encoder.set_quantizer(configured_q);
             let (tx, rx) = sync::mpsc::channel();
             let (_, warnings) = TargetQuality::default()
-                .execute_cancel(&mut condor, tx, Default::default())
+                .execute(&mut condor, tx, Default::default())
                 .expect("bounded no-work owning execute");
             assert!(warnings.is_empty(), "{warnings:?}");
             assert!(rx.try_iter().next().is_none(), "no skipped-round progress");
@@ -447,7 +448,7 @@ fn execute_probe_rounds(
 ) -> Vec<(u8, u64, f64, f64)> {
     let (tx, rx) = sync::mpsc::channel();
     let (_, warnings) = TargetQuality::default()
-        .execute_cancel(condor, tx, Default::default())
+        .execute(condor, tx, Default::default())
         .expect("actual sequence execution");
     assert!(warnings.is_empty(), "{warnings:?}");
     rx.into_iter()
@@ -612,7 +613,7 @@ fn check_measured_restoration(phase: u8) {
         for _ in 0..2 {
             let (tx, _rx) = sync::mpsc::channel();
             TargetQuality::default()
-                .execute_cancel(&mut condor, tx, Default::default())
+                .execute(&mut condor, tx, Default::default())
                 .expect("no new work");
             assert_eq!(condor.scenes[0].encoder.quantizer(), Some(26.0));
             assert_eq!(
@@ -641,7 +642,7 @@ fn check_measured_restoration(phase: u8) {
             }
             let (tx, _rx) = sync::mpsc::channel();
             let error = TargetQuality::default()
-                .execute_cancel(&mut condor, tx, cancelled)
+                .execute(&mut condor, tx, cancelled)
                 .expect_err("cancel precedence");
             assert_eq!(
                 error.downcast_ref::<Cancelled>(),
@@ -659,13 +660,13 @@ fn check_measured_restoration(phase: u8) {
         condor.sequence_config.target_quality = None;
         let (tx, _rx) = sync::mpsc::channel();
         TargetQuality::default()
-            .execute_cancel(&mut condor, tx, Default::default())
+            .execute(&mut condor, tx, Default::default())
             .expect("disabled");
         assert_eq!(condor.scenes[0].encoder.quantizer(), Some(20.0));
         condor.scenes.clear();
         let (tx, _rx) = sync::mpsc::channel();
         TargetQuality::default()
-            .execute_cancel(&mut condor, tx, Default::default())
+            .execute(&mut condor, tx, Default::default())
             .expect("empty");
         assert_eq!(snapshots.borrow().len(), 1);
         eprintln!(
@@ -791,7 +792,7 @@ fn check_probe_interruption(modes: &[&'static str], replay: bool) {
             let collision = directory.join("2/00000.mkv");
             std::fs::create_dir_all(&collision).expect("stale directory");
             std::fs::write(collision.join("sentinel"), b"preserve").expect("sentinel");
-            let result = sequence.execute_cancel(&mut condor, tx, cancellation);
+            let result = sequence.execute(&mut condor, tx, cancellation);
             assert!(
                 !script.with_extension("started").exists(),
                 "no native work before cleanup succeeds"
@@ -829,7 +830,7 @@ fn check_probe_interruption(modes: &[&'static str], replay: bool) {
                 std::fs::write(barrier.with_extension("release"), b"go").expect("release");
                 vec![]
             });
-            let result = sequence.execute_cancel(&mut condor, tx, cancellation);
+            let result = sequence.execute(&mut condor, tx, cancellation);
             (result, controller.join().expect("controller"))
         };
         if mode.ends_with("graceful") {
@@ -880,7 +881,7 @@ fn check_probe_interruption(modes: &[&'static str], replay: bool) {
         current_target_fixture(&mut condor);
         let (tx, _rx) = sync::mpsc::channel();
         TargetQuality::default()
-            .execute_cancel(&mut condor, tx, Default::default())
+            .execute(&mut condor, tx, Default::default())
             .expect("resume complete pass");
         assert_eq!(snapshots.borrow().len(), 1);
         for (index, scene) in condor.scenes.iter().enumerate() {

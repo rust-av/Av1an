@@ -248,7 +248,7 @@ fn serial_artifact_child() {
         let validated = serial.validate(&mut condor);
         let (tx, rx) = sync::mpsc::channel();
         drop(rx);
-        let executed = serial.execute_cancel(&mut condor, tx, Cancellation::default());
+        let executed = serial.execute(&mut condor, tx, Cancellation::default());
         assert!(
             !root.join("starts").exists(),
             "non-final Specific must fail before codec launch: validate={validated:?}, execute={executed:?}"
@@ -259,7 +259,7 @@ fn serial_artifact_child() {
             for expected in [
                 "Serial scene 00000",
                 "pass 1 of 2",
-                "Encoder::encode_pass_with_stream_cancel",
+                "Encoder::encode_pass_with_stream",
                 "PassStatistics",
             ] {
                 assert!(text.contains(expected), "{text}");
@@ -317,7 +317,7 @@ fn serial_artifact_child() {
         for direct in [false, true] {
             let (tx, _rx) = sync::mpsc::channel();
             let result = if direct {
-                serial.execute_cancel(&mut condor, tx, Cancellation::default())
+                serial.execute(&mut condor, tx, Cancellation::default())
             } else {
                 serial.validate(&mut condor)
             };
@@ -433,7 +433,7 @@ fn serial_artifact_child() {
     if case.starts_with("optout-") {
         serial.validate_frame_count = false;
     }
-    let result = serial.execute_cancel(&mut condor, tx, cancellation.clone());
+    let result = serial.execute(&mut condor, tx, cancellation.clone());
     if let Some(controller) = controller {
         controller.join().expect("controller joined");
     }

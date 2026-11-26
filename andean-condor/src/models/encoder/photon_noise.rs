@@ -101,13 +101,8 @@ impl PhotonNoise {
 
     #[inline]
     pub fn hash_name(&self) -> String {
-        PhotonNoise::hash_full(self)
-    }
-
-    #[inline]
-    pub fn hash_full(photon_noise: &PhotonNoise) -> String {
         let mut hasher = DefaultHasher::new();
-        photon_noise.hash(&mut hasher);
+        self.hash(&mut hasher);
         format!("{:x}", hasher.finish())
     }
 }

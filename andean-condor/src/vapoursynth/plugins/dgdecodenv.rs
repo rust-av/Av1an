@@ -4,7 +4,6 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf, absolute},
     process::{Command, ExitStatus, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
     thread,
 };
 
@@ -386,42 +385,11 @@ impl DGSource {
         Ok(node)
     }
 
-    /// Attempt to index a video file using `dgindexnv` or the provided
-    /// executable and save the resulting cache file to the provided path or
-    /// next to the source file. Reuses only structurally valid existing indices;
-    /// invalid existing data is preserved; check the chosen input/index path and
-    /// select a valid project or input. An input ending in `.dgi` is validated directly.
-    /// Generates privately and publishes without clobbering only after successful
-    /// exit, validation and a force-linearized commit. This is not a full DGI parser.
-    ///
-    /// DGIndexNV runs out of process, so its console output is read line by
-    /// line rather than swallowed by [`Command::output`] and forwarded to
-    /// `progress` as `(current, total)`. This legacy bool entry point is graceful-only;
-    /// use `index_video_cancel` to force teardown of an in-flight index.
+    /// Resolve or create the `.dgi`, with optional progress as `(current, total)`.
+    /// Owns the indexer's process tree through reader completion and reap;
+    /// force interrupts an already admitted index without publishing it.
     #[inline]
     pub fn index_video(
-        source: &Path,
-        cache: Option<&Path>,
-        executable: Option<&Path>,
-        progress: Option<IndexProgress<'_>>,
-        cancelled: Option<&AtomicBool>,
-    ) -> Result<PathBuf> {
-        // Legacy cancellation is graceful-only: an admitted index finishes.
-        if cancelled.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            return Err(crate::utils::cancellation::Cancelled::Graceful.into());
-        }
-        Self::index_video_cancel(
-            source,
-            cache,
-            executable,
-            progress,
-            &crate::utils::cancellation::Cancellation::default(),
-        )
-    }
-
-    /// Owns the indexer's whole process tree through reader completion and reap.
-    #[inline]
-    pub fn index_video_cancel(
         source: &Path,
         cache: Option<&Path>,
         executable: Option<&Path>,

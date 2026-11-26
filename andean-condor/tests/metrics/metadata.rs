@@ -232,14 +232,14 @@ mod tests {
             chroma_location: None,
         };
         let mut scorer = VshipScorer::new(
-            VshipConfig::new().with_gpu_id(0).with_handler_threads(2),
+            VshipConfig::default().with_gpu_id(0).with_handler_threads(2),
             format,
             format,
             None,
         )
         .expect("ABI scorer");
         let mut typed_scorer = VshipScorer::new(
-            VshipConfig::new().with_gpu_id(0).with_handler_threads(1),
+            VshipConfig::default().with_gpu_id(0).with_handler_threads(1),
             VideoFormat {
                 width: 4,
                 height: 4,
@@ -294,9 +294,9 @@ mod tests {
                 invalid[index] =
                     PlaneSource::from_bytes(&y, p.width(), p.height(), p.stride(), 1, 1).unwrap();
                 let result = if side == 0 {
-                    scorer.submit_pair_raw(invalid, planes)
+                    scorer.submit_pair_raw(invalid, planes, false)
                 } else {
-                    scorer.submit_pair_raw(planes, invalid)
+                    scorer.submit_pair_raw(planes, invalid, false)
                 };
                 let error = result.expect_err("raw storage mismatch").to_string();
                 assert!(
@@ -305,9 +305,9 @@ mod tests {
                 );
                 assert_eq!(scorer.submitted().unwrap(), 0);
                 let result = if side == 0 {
-                    scorer.submit_pair_raw_with_reset(invalid, planes, true)
+                    scorer.submit_pair_raw(invalid, planes, true)
                 } else {
-                    scorer.submit_pair_raw_with_reset(planes, invalid, true)
+                    scorer.submit_pair_raw(planes, invalid, true)
                 };
                 assert!(result.is_err());
                 assert_eq!(scorer.submitted().unwrap(), 0);
@@ -322,13 +322,13 @@ mod tests {
             return;
         }
         assert_eq!(
-            scorer.submit_pair_raw(planes, planes).unwrap().score,
+            scorer.submit_pair_raw(planes, planes, false).unwrap().score,
             Some(42.0)
         );
         assert_eq!(calls(), "3 3 5 10 8 8 10 8 8\n");
         assert_eq!(scorer.submitted().unwrap(), 1);
         assert_eq!(
-            scorer.submit_pair_raw_with_reset(planes, planes, true).unwrap().score,
+            scorer.submit_pair_raw(planes, planes, true).unwrap().score,
             Some(42.0)
         );
         assert_eq!(

@@ -4,7 +4,7 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{self, Arc, Mutex, atomic::AtomicBool},
+    sync::{self, Arc, Mutex},
     thread,
 };
 
@@ -105,40 +105,33 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let scenes_directory = &condor.sequence_config.scene_concatenator()?.scenes_directory;
-        if !scenes_directory.exists() {
-            bail!(SceneConcatenatorError::ScenesDirectoryMissing {
-                path: scenes_directory.clone(),
-            });
-        }
-        if !scenes_directory.is_dir() {
-            bail!(SceneConcatenatorError::ScenesDirectoryInvalid {
-                path: scenes_directory.clone(),
-            });
-        }
-        let scene_paths = Self::scene_paths(scenes_directory, &condor.scenes);
-        Self::validate_scene_paths(&scene_paths)?;
-        let scratch_directory = Self::scratch_directory(scenes_directory.as_path());
-        if !scratch_directory.exists() {
-            std::fs::create_dir_all(scratch_directory)?;
-        }
+        super::check_sequence(cancellation, || {
+            let scenes_directory = &condor.sequence_config.scene_concatenator()?.scenes_directory;
+            if !scenes_directory.exists() {
+                bail!(SceneConcatenatorError::ScenesDirectoryMissing {
+                    path: scenes_directory.clone(),
+                });
+            }
+            if !scenes_directory.is_dir() {
+                bail!(SceneConcatenatorError::ScenesDirectoryInvalid {
+                    path: scenes_directory.clone(),
+                });
+            }
+            let scene_paths = Self::scene_paths(scenes_directory, &condor.scenes);
+            Self::validate_scene_paths(&scene_paths)?;
+            let scratch_directory = Self::scratch_directory(scenes_directory.as_path());
+            if !scratch_directory.exists() {
+                std::fs::create_dir_all(scratch_directory)?;
+            }
 
-        Ok(((), vec![]))
+            Ok(((), vec![]))
+        })
     }
 
     #[inline]
     fn execute(
-        &mut self,
-        condor: &mut Condor<DataHandler, ConfigHandler>,
-        progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        cancelled: Arc<AtomicBool>,
-    ) -> Result<((), Vec<anyhow::Error>)> {
-        self.execute_cancel(condor, progress_tx, cancelled.into())
-    }
-
-    #[inline]
-    fn execute_cancel(
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         progress_tx: sync::mpsc::Sender<SequenceStatus>,
@@ -194,7 +187,7 @@ where
 
         match &config.method {
             ConcatMethod::MKVMerge(mkvmerge) => {
-                Self::mkvmerge_cancel(
+                Self::mkvmerge(
                     &config.scenes_directory,
                     &staged_path,
                     &scene_paths,
@@ -206,7 +199,7 @@ where
                 )?;
             },
             ConcatMethod::FFmpeg(ffmpeg) => {
-                Self::ffmpeg_cancel(
+                Self::ffmpeg(
                     &config.scenes_directory,
                     &staged_path,
                     &scene_paths,
@@ -219,7 +212,7 @@ where
                 )?;
             },
             ConcatMethod::Ivf => {
-                Self::ivf_cancel(&staged_path, &scene_paths, &progress_tx, &cancelled)?;
+                Self::ivf(&staged_path, &scene_paths, &progress_tx, &cancelled)?;
             },
         };
 
@@ -285,7 +278,7 @@ impl SceneConcatenator {
                 scenes_directory.join(format!(
                     "{}.{}",
                     ParallelEncoder::scene_id(index),
-                    scene.encoder.output_extension()
+                    scene.encoder.base().output_extension()
                 ))
             })
             .collect()

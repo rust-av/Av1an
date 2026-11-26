@@ -58,7 +58,7 @@ fn svt_av1_two_pass_vbr_output_decodes_four_frames() {
     // input-backed All(2) orchestration repair; reopen finite stdin per pass.
     for pass in [1, 2] {
         let argv = encoder
-            .parameters_with_stats((pass, 2), &output, &super::clip_info(), stats.base())
+            .parameters_with_output((pass, 2), &output, &super::clip_info(), Some(stats.base()))
             .expect("production argv");
         eprintln!("SVT-AV1 pass {pass} argv: {argv:?}");
         let log = run_bounded(

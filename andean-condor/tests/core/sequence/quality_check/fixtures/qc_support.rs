@@ -3,7 +3,7 @@
 #![expect(clippy::unwrap_used, reason = "fixture assertions fail loudly")]
 
 use super::condor;
-use std::sync::{Arc, atomic::AtomicBool, mpsc};
+use std::sync::mpsc;
 
 use condor::core::sequence::{
     SequenceCompletion, SequenceStatus, Status, quality_check::QualityCheck,
@@ -111,7 +111,11 @@ pub(super) fn qc_output_case(test: &str, root_kind: &str) {
         let (_, warnings) = qc.validate(&mut job).unwrap();
         let (tx, rx) = mpsc::channel();
         clear();
-        let result = qc.execute(&mut job, tx, Arc::new(AtomicBool::new(false)));
+        let result = qc.execute(
+            &mut job,
+            tx,
+            condor::utils::cancellation::Cancellation::default(),
+        );
         if root_kind == "missing-override" {
             for warning in warnings
                 .iter()
@@ -263,7 +267,11 @@ pub(super) fn corrupt_batch(test: &str, started: Option<&dyn Fn(&anyhow::Error)>
             let (tx, rx) = mpsc::channel();
             clear();
             let error = QualityCheck::default()
-                .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+                .execute(
+                    &mut condor,
+                    tx,
+                    condor::utils::cancellation::Cancellation::default(),
+                )
                 .expect_err("invalid last scene");
             assert!(
                 error.is::<condor::models::sequence::target_quality::types::MeasurementError>(),
@@ -370,7 +378,11 @@ pub(super) fn check_qc_history(test: &str, reset: bool, started: Option<&dyn Fn(
                 unsafe { std::env::set_var("TEMPORAL_FIXTURE_FAIL", "") };
                 let (tx, _rx) = mpsc::channel();
                 QualityCheck::default()
-                    .execute(&mut job, tx, Arc::new(AtomicBool::new(false)))
+                    .execute(
+                        &mut job,
+                        tx,
+                        condor::utils::cancellation::Cancellation::default(),
+                    )
                     .expect("real valid QC publication before external tampering");
                 // SAFETY: the dedicated child's measurement workers have joined.
                 unsafe { std::env::set_var("TEMPORAL_FIXTURE_FAIL", failure) };
@@ -386,7 +398,11 @@ pub(super) fn check_qc_history(test: &str, reset: bool, started: Option<&dyn Fn(
                     let (tx, rx) = mpsc::channel();
                     clear();
                     let error = QualityCheck::default()
-                        .execute(&mut condor, tx, Arc::new(AtomicBool::new(false)))
+                        .execute(
+                            &mut condor,
+                            tx,
+                            condor::utils::cancellation::Cancellation::default(),
+                        )
                         .expect_err("corrupt certified history requires an explicit reset");
                     assert!(error.is::<MeasurementError>(), "{error:#}");
                     assert!(format!("{error:#}").contains("recorded Quality Check history"));
@@ -410,7 +426,7 @@ pub(super) fn check_qc_history(test: &str, reset: bool, started: Option<&dyn Fn(
                 let result = QualityCheck::default().execute(
                     &mut condor,
                     tx,
-                    Arc::new(AtomicBool::new(false)),
+                    condor::utils::cancellation::Cancellation::default(),
                 );
                 let reported = rx
                     .try_iter()

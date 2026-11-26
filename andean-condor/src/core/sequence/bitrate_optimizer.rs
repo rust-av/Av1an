@@ -1,4 +1,5 @@
-use std::sync::{self, Arc, atomic::AtomicBool};
+use crate::utils::cancellation::Cancellation;
+use std::sync;
 
 use anyhow::{Context, Result, ensure};
 use thiserror::Error;
@@ -53,10 +54,9 @@ where
         &mut self,
         _condor: &mut Condor<DataHandler, ConfigHandler>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
+        cancellation: &Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let warnings = vec![];
-
-        Ok(((), warnings))
+        super::check_sequence(cancellation, || Ok(((), Vec::new())))
     }
 
     #[inline]
@@ -64,120 +64,122 @@ where
         &mut self,
         condor: &mut Condor<DataHandler, ConfigHandler>,
         _progress_tx: sync::mpsc::Sender<SequenceStatus>,
-        _cancelled: Arc<AtomicBool>,
+        cancellation: Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
-        let mut warnings = vec![];
-        let Some(bitrate_sigma_threshold) =
-            condor.sequence_config.bitrate_optimizer()?.bitrate_sigma_threshold
-        else {
-            return Ok(((), warnings));
-        };
-
-        if condor.scenes.is_empty() {
-            warnings.push(anyhow::Error::new(BitrateOptimizerError::ScenesEmpty));
-            return Ok(((), warnings));
-        }
-
-        let mut scene_values = Vec::new();
-        for (index, scene) in condor.scenes.iter().enumerate() {
-            let Some(quantizer) = scene.encoder.quantizer() else {
-                continue;
-            };
-            ensure!(
-                quantizer.is_finite(),
-                "scene {index}: selected quantizer must be finite"
-            );
-            let Ok(tq) = scene.sequence_data.get_target_quality() else {
-                continue;
-            };
-            // Resume histories may end at another q or contain an unmeasured attempt.
-            let Some(pass) = tq
-                .passes
-                .iter()
-                .rfind(|pass| pass.quantizer == quantizer && !pass.scores.is_empty())
+        super::check_sequence(&cancellation, || {
+            let mut warnings = vec![];
+            let Some(bitrate_sigma_threshold) =
+                condor.sequence_config.bitrate_optimizer()?.bitrate_sigma_threshold
             else {
-                continue;
+                return Ok(((), warnings));
             };
-            ensure!(
-                pass.bitrate.is_finite() && pass.bitrate >= 0.0,
-                "scene {index}: selected probe bitrate must be finite and nonnegative"
-            );
-            ensure!(
-                pass.scores.iter().all(|score| score.is_finite()),
-                "scene {index}: selected probe score must be finite"
-            );
-            scene_values.push((index, quantizer, pass.bitrate));
-        }
-        if scene_values.len() < 2 {
-            return Ok(((), warnings));
-        }
 
-        let quantizer_average =
-            scene_values.iter().map(|(_, q, _)| q).sum::<f64>() / scene_values.len() as f64;
-        ensure!(
-            quantizer_average.is_finite(),
-            "quantizer average must be finite"
-        );
-        debug!("Average Quantizer: {}", quantizer_average);
-
-        let bitrate_average =
-            scene_values.iter().map(|(_, _, b)| b).sum::<f64>() / scene_values.len() as f64;
-        ensure!(
-            bitrate_average.is_finite(),
-            "bitrate average must be finite"
-        );
-        let bitrate_variance = scene_values
-            .iter()
-            .map(|(_, _, bitrate)| (bitrate - bitrate_average).powi(2))
-            .sum::<f64>()
-            / scene_values.len() as f64;
-        ensure!(
-            bitrate_variance.is_finite(),
-            "bitrate variance must be finite"
-        );
-        let bitrate_standard_deviation = bitrate_variance.sqrt();
-        let bitrate_sigma_threshold =
-            (bitrate_sigma_threshold as f64).mul_add(bitrate_standard_deviation, bitrate_average);
-        ensure!(
-            bitrate_sigma_threshold.is_finite(),
-            "bitrate cutoff must be finite"
-        );
-        if bitrate_standard_deviation == 0.0 {
-            return Ok(((), warnings));
-        }
-
-        let candidate = quantizer_average.round();
-        let mut updates = Vec::new();
-        for (index, quantizer, bitrate) in scene_values {
-            if bitrate <= bitrate_sigma_threshold || quantizer >= candidate {
-                continue;
+            if condor.scenes.is_empty() {
+                warnings.push(anyhow::Error::new(BitrateOptimizerError::ScenesEmpty));
+                return Ok(((), warnings));
             }
-            // Validate every prospective encoder before publishing any scene changes.
-            let mut encoder = condor.scenes[index].encoder.clone();
-            encoder.set_quantizer(candidate);
-            encoder.validate_settings().with_context(|| {
-                format!("scene {index}: optimized quantizer {candidate} is invalid")
-            })?;
-            updates.push((index, encoder, bitrate));
-        }
-        if updates.is_empty() {
-            return Ok(((), warnings));
-        }
 
-        for (index, encoder, bitrate) in updates {
-            debug!(
-                "Optimized Scene {}: Bitrate: {}({}), Quantizer: {}",
-                index,
-                bitrate,
-                (bitrate - bitrate_average) / bitrate_standard_deviation,
-                candidate,
+            let mut scene_values = Vec::new();
+            for (index, scene) in condor.scenes.iter().enumerate() {
+                let Some(quantizer) = scene.encoder.quantizer() else {
+                    continue;
+                };
+                ensure!(
+                    quantizer.is_finite(),
+                    "scene {index}: selected quantizer must be finite"
+                );
+                let Ok(tq) = scene.sequence_data.get_target_quality() else {
+                    continue;
+                };
+                // Resume histories may end at another q or contain an unmeasured attempt.
+                let Some(pass) = tq
+                    .passes
+                    .iter()
+                    .rfind(|pass| pass.quantizer == quantizer && !pass.scores.is_empty())
+                else {
+                    continue;
+                };
+                ensure!(
+                    pass.bitrate.is_finite() && pass.bitrate >= 0.0,
+                    "scene {index}: selected probe bitrate must be finite and nonnegative"
+                );
+                ensure!(
+                    pass.scores.iter().all(|score| score.is_finite()),
+                    "scene {index}: selected probe score must be finite"
+                );
+                scene_values.push((index, quantizer, pass.bitrate));
+            }
+            if scene_values.len() < 2 {
+                return Ok(((), warnings));
+            }
+
+            let quantizer_average =
+                scene_values.iter().map(|(_, q, _)| q).sum::<f64>() / scene_values.len() as f64;
+            ensure!(
+                quantizer_average.is_finite(),
+                "quantizer average must be finite"
             );
-            condor.scenes[index].encoder = encoder;
-        }
+            debug!("Average Quantizer: {}", quantizer_average);
 
-        condor.save()?;
+            let bitrate_average =
+                scene_values.iter().map(|(_, _, b)| b).sum::<f64>() / scene_values.len() as f64;
+            ensure!(
+                bitrate_average.is_finite(),
+                "bitrate average must be finite"
+            );
+            let bitrate_variance = scene_values
+                .iter()
+                .map(|(_, _, bitrate)| (bitrate - bitrate_average).powi(2))
+                .sum::<f64>()
+                / scene_values.len() as f64;
+            ensure!(
+                bitrate_variance.is_finite(),
+                "bitrate variance must be finite"
+            );
+            let bitrate_standard_deviation = bitrate_variance.sqrt();
+            let bitrate_sigma_threshold = (bitrate_sigma_threshold as f64)
+                .mul_add(bitrate_standard_deviation, bitrate_average);
+            ensure!(
+                bitrate_sigma_threshold.is_finite(),
+                "bitrate cutoff must be finite"
+            );
+            if bitrate_standard_deviation == 0.0 {
+                return Ok(((), warnings));
+            }
 
-        Ok(((), warnings))
+            let candidate = quantizer_average.round();
+            let mut updates = Vec::new();
+            for (index, quantizer, bitrate) in scene_values {
+                if bitrate <= bitrate_sigma_threshold || quantizer >= candidate {
+                    continue;
+                }
+                // Validate every prospective encoder before publishing any scene changes.
+                let mut encoder = condor.scenes[index].encoder.clone();
+                encoder.set_quantizer(candidate);
+                encoder.validate_settings().with_context(|| {
+                    format!("scene {index}: optimized quantizer {candidate} is invalid")
+                })?;
+                updates.push((index, encoder, bitrate));
+            }
+            if updates.is_empty() {
+                return Ok(((), warnings));
+            }
+
+            for (index, encoder, bitrate) in updates {
+                debug!(
+                    "Optimized Scene {}: Bitrate: {}({}), Quantizer: {}",
+                    index,
+                    bitrate,
+                    (bitrate - bitrate_average) / bitrate_standard_deviation,
+                    candidate,
+                );
+                condor.scenes[index].encoder = encoder;
+            }
+
+            condor.save()?;
+
+            Ok(((), warnings))
+        })
     }
 }
 
@@ -309,7 +311,11 @@ mod tests {
 
     fn run(condor: &mut TestCondor) -> Result<((), Vec<anyhow::Error>)> {
         let (tx, _rx) = sync::mpsc::channel();
-        BitrateOptimizer::default().execute(condor, tx, Arc::new(AtomicBool::new(false)))
+        BitrateOptimizer::default().execute(
+            condor,
+            tx,
+            crate::utils::cancellation::Cancellation::default(),
+        )
     }
 
     fn outliers() -> Vec<Scene<Data>> {

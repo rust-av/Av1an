@@ -1,14 +1,11 @@
-use andean_condor::{
-    core::encoder::parse::*,
-    models::encoder::{Encoder, EncoderBase},
-};
+use andean_condor::{core::encoder::parse::*, models::encoder::EncoderBase};
 
 fn assert_parser_parity(input: &[u8], expected: Option<u64>) {
     if let Ok(line) = std::str::from_utf8(input) {
         assert_eq!(parse_aom_vpx_frames(line), expected, "scalar: {input:?}");
         for encoder in [EncoderBase::AOM, EncoderBase::VPX, EncoderBase::AVM] {
             assert_eq!(
-                Encoder::parse_encoded_frames_base(&encoder, line),
+                encoder.parse_encoded_frames(line),
                 expected,
                 "public {encoder:?}: {input:?}"
             );

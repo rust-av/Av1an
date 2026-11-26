@@ -255,8 +255,7 @@ fn check_stream_case() {
                 Ok(())
             }),
         );
-        let result =
-            ParallelEncoder::default().execute_cancel(&mut condor, tx, Cancellation::default());
+        let result = ParallelEncoder::default().execute(&mut condor, tx, Cancellation::default());
         assert!(
             condor.scenes.iter().all(|scene| {
                 let data = &scene.sequence_data.parallel_encoder;
@@ -271,7 +270,7 @@ fn check_stream_case() {
         );
         result.map(|_| Vec::new())
     } else {
-        ParallelEncoder::encode_tasks_with_options(
+        ParallelEncoder::encode_tasks(
             &mut input,
             1,
             tasks,

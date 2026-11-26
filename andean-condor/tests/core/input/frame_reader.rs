@@ -104,7 +104,13 @@ fn check_reader_graphs(phase: &str) {
         .map(|sample| [b"FRAME\n".to_vec(), sample.to_le_bytes().repeat(32 * 16)].concat())
         .collect();
     let (sender, receiver) = crossbeam_channel::bounded(indices.len());
-    input.y4m_frames(sender, &indices).expect("existing bulk path");
+    input
+        .y4m_frames(
+            sender,
+            &indices,
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        )
+        .expect("existing bulk path");
     let bulk: Vec<_> = receiver.iter().map(Cursor::into_inner).collect();
     assert_eq!(
         bulk, expected,
@@ -124,7 +130,14 @@ fn check_reader_graphs(phase: &str) {
         );
     }
     let (sender, receiver) = crossbeam_channel::bounded(indices.len());
-    reader.y4m_frames(&sender, &indices, 3).expect("retained-node bulk path");
+    reader
+        .y4m_frames(
+            &sender,
+            &indices,
+            3,
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        )
+        .expect("retained-node bulk path");
     drop(sender);
     assert_eq!(
         receiver.iter().map(Cursor::into_inner).collect::<Vec<_>>(),
@@ -264,7 +277,14 @@ fn native_reader_reuses_open_decoder_for_absolute_indices() {
         );
     }
     let (sender, receiver) = crossbeam_channel::bounded(indices.len());
-    reader.y4m_frames(&sender, &indices, 2).expect("borrowed native bulk");
+    reader
+        .y4m_frames(
+            &sender,
+            &indices,
+            2,
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        )
+        .expect("borrowed native bulk");
     drop(sender);
     assert_eq!(
         receiver.iter().map(Cursor::into_inner).collect::<Vec<_>>(),
@@ -344,7 +364,16 @@ fn encoder_pass_reuses_one_temporal_graph_and_encodes_filtered_samples() {
     let output = directory.path().join("pass.264");
     let (progress, _receiver) = mpsc::channel();
     encoder
-        .encode_pass_with_input(&mut input, &output, 0, 4, (1, 1), progress, None)
+        .encode_pass_with_input(
+            &mut input,
+            &output,
+            0,
+            4,
+            (1, 1),
+            progress,
+            None,
+            &andean_condor::utils::cancellation::Cancellation::default(),
+        )
         .expect("actual finite encoder pass");
     assert_eq!(
         decoded(&output),
@@ -379,14 +408,19 @@ fn zone_tasks_share_one_temporal_graph_and_encode_selected_samples() {
         })
         .collect();
     let outputs: Vec<_> = tasks.iter().map(|task| task.output.clone()).collect();
-    let plan = ZonePlan::try_build(&tasks).expect("real x264 zone support");
+    let plan = ZonePlan::try_build(
+        &tasks,
+        &andean_condor::utils::cancellation::Cancellation::default(),
+    )
+    .expect("real x264 zone support");
     let (progress, _receiver) = mpsc::channel();
     let results = ZoneEncoder::encode_tasks(
         &mut input,
         tasks.into(),
         plan,
         progress,
-        Arc::new(AtomicBool::new(false)),
+        andean_condor::utils::cancellation::Cancellation::default(),
+        true,
     )
     .expect("actual finite zone feed");
     assert!(results.iter().all(Option::is_some));

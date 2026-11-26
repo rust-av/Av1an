@@ -195,6 +195,10 @@ mod tests {
     #[test]
     fn internal_stop_is_not_user_interrupt() {
         let cancellation = Interrupt::default();
+        #[expect(
+            deprecated,
+            reason = "simulates an internal stop without recording a user interrupt"
+        )]
         cancellation.token.legacy_flag().store(true, Ordering::SeqCst);
         let error = cancellation
             .finish(Err(

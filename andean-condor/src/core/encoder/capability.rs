@@ -277,17 +277,7 @@ pub(crate) fn detect_container(bytes: &[u8]) -> Option<Container> {
     }
 }
 
-/// The container the encoder binary writes, probed once and cached.
-///
-/// A probe failure is reported as `AnnexB` for the Annex-B encoders, which
-/// always write Annex-B, and `None` otherwise.
-pub(crate) fn encoder_container(encoder_base: EncoderBase, executable: &Path) -> Option<Container> {
-    encoder_container_cancel(encoder_base, executable, &Cancellation::default())
-        .ok()
-        .flatten()
-}
-
-pub(crate) fn encoder_container_cancel(
+pub(crate) fn encoder_container(
     encoder_base: EncoderBase,
     executable: &Path,
     cancellation: &Cancellation,
@@ -404,22 +394,7 @@ fn probe_container(key: &BinaryKey, cancellation: &Cancellation) -> Option<Conta
     std::fs::read(&path).ok().as_deref().and_then(detect_container)
 }
 
-/// Checks if encoder supports capability and caches the result
 pub(crate) fn check_capability(
-    encoder_base: EncoderBase,
-    executable: &Path,
-    capability: EncoderCapability,
-) -> bool {
-    check_capability_cancel(
-        encoder_base,
-        executable,
-        capability,
-        &Cancellation::default(),
-    )
-    .unwrap_or(false)
-}
-
-pub(crate) fn check_capability_cancel(
     encoder_base: EncoderBase,
     executable: &Path,
     capability: EncoderCapability,
