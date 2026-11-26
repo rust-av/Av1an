@@ -1,7 +1,9 @@
 //! Admission must reject the whole requested list before any mux side effects.
 use super::*;
+#[cfg(unix)]
 use andean_condor::core::process::OwnedProcess;
 use av_format::rational::Ratio;
+#[cfg(unix)]
 use std::fs::File;
 
 #[path = "fixtures/scene_list.rs"]

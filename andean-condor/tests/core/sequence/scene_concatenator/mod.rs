@@ -1,17 +1,20 @@
 use std::{
     path::{Path, PathBuf},
-    process::{Command, Stdio},
-    sync, thread,
+    process::Command,
+    sync,
 };
+#[cfg(unix)]
+use std::{process::Stdio, thread};
 
+#[cfg(unix)]
+use andean_condor::core::sequence::scene_concatenator::SceneConcatenatorError;
 use andean_condor::{
     core::{
         Condor,
         input::Input,
         sequence::{
-            Sequence, SequenceStatus, Status,
-            parallel_encoder::ParallelEncoder,
-            scene_concatenator::{SceneConcatenator, SceneConcatenatorError},
+            Sequence, SequenceStatus, Status, parallel_encoder::ParallelEncoder,
+            scene_concatenator::SceneConcatenator,
         },
     },
     models::{

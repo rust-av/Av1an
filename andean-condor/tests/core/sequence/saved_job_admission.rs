@@ -1,11 +1,12 @@
 //! Saved-job consumer admission. Synthetic context stamps are not producer evidence.
 use crate::core::support::provenance::current_target_fixture;
 use andean_condor as condor;
+#[cfg(unix)]
+use condor::core::output::Output;
 use condor::{
     core::{
         Condor,
         input::Input,
-        output::Output,
         sequence::{
             Sequence, SequenceStatus, Status, parallel_encoder, quality_check, scene_concatenator,
             target_quality,
