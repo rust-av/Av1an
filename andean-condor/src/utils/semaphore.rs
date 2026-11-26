@@ -107,7 +107,7 @@ impl Semaphore {
     }
 
     /// Test handshake: observe a real blocked owned acquirer, not elapsed time.
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "linux"))]
     pub(crate) fn wait_for_waiter(&self) -> bool {
         let state = self.state.lock().expect("pool state");
         let state =

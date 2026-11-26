@@ -146,12 +146,15 @@ impl PassStatistics {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-            let mut builder = std::fs::DirBuilder::new();
             #[cfg(unix)]
-            {
+            let builder = {
                 use std::os::unix::fs::DirBuilderExt;
+                let mut builder = std::fs::DirBuilder::new();
                 builder.mode(0o700);
-            }
+                builder
+            };
+            #[cfg(not(unix))]
+            let builder = std::fs::DirBuilder::new();
             // RATIONALE: Atomic create (not exists + create_dir_all) establishes ownership.
             match builder.create(&directory) {
                 Ok(()) => {

@@ -26,6 +26,7 @@ pub(crate) fn before_persist(staged: &Path, destination: &Path) {
     }
 }
 
+#[cfg(unix)]
 pub(super) fn remove_stage_before_persist() {
     BEFORE_PERSIST.with_borrow_mut(|hook| {
         *hook = Some(Box::new(|staged, _| {

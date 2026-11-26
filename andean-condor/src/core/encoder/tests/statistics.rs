@@ -35,7 +35,7 @@ fn value(argv: &[String], key: &str) -> String {
 fn encoder_statistics_argv_preserves_job_paths_and_native_suffixes() {
     // Dropping the output parent would make all jobs' scene0 statistics collide.
     for output in [PathBuf::from("scene0"), PathBuf::from("job space 映像/scene0.ivf")] {
-        let base_path = std::env::current_dir().expect("cwd").join(&output).with_extension("");
+        let base_path = std::path::absolute(&output).expect("absolute").with_extension("");
         for (base, first, second, suffix) in [
             (EncoderBase::AOM, "--fpf", "--fpf", ".log"),
             (EncoderBase::VPX, "--fpf", "--fpf", ".log"),
