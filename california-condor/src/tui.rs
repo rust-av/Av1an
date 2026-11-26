@@ -1016,6 +1016,10 @@ mod tests {
     fn broken_display_then_executor_cancellation_is_reported_as_failure() {
         use crate::apps::progress::{ProgressSnapshot, StageReport};
         let interrupt = Interrupt::default();
+        #[expect(
+            deprecated,
+            reason = "simulates a display failure requesting an internal stop"
+        )]
         interrupt.token.legacy_flag().store(true, std::sync::atomic::Ordering::SeqCst);
         let mut output = Vec::new();
         let error = finish_reported_stage_to(

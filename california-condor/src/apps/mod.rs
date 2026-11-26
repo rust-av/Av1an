@@ -560,6 +560,10 @@ pub trait TuiApp: Send + Sync + 'static {
         cancellation: impl Into<crate::interrupt::Interrupt>,
     ) -> Result<()> {
         let cancellation = cancellation.into();
+        #[expect(
+            deprecated,
+            reason = "existing terminal and panic handlers use an AtomicBool"
+        )]
         let cancelled = cancellation.token.legacy_flag();
         install_panic_hook();
         let panic_stage = Arc::new(PanicStage {

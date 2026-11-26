@@ -112,6 +112,10 @@ where
         cancellation: Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
         super::check_sequence(&cancellation, || {
+            #[expect(
+                deprecated,
+                reason = "existing scene detection helpers use an AtomicBool"
+            )]
             let cancelled = cancellation.legacy_flag();
             let warnings = vec![];
             let condor_data = condor.as_data();

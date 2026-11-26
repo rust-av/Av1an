@@ -1356,6 +1356,7 @@ impl TargetQuality {
             },
         }
 
+        #[expect(deprecated, reason = "existing metric callbacks use an AtomicBool")]
         let cancelled = &cancellation.legacy_flag();
         let metric_input = metric_input.unwrap_or(input);
         // VMAF is scored by libvmaf over decoded frames, and its decoder borrow

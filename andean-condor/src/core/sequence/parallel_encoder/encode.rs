@@ -631,6 +631,7 @@ impl ParallelEncoder {
                         },
                     }
                     #[cfg(all(test, target_os = "linux"))]
+                    #[expect(deprecated, reason = "the existing test hook uses an AtomicBool")]
                     super::tests::dispatch::internal_integration::after_handoff(&cancelled.legacy_flag());
                     // The worker owns the stop check after handoff. If it has
                     // started, graceful cancellation must still feed its input.

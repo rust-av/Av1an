@@ -82,6 +82,7 @@ where
         cancellation: Cancellation,
     ) -> anyhow::Result<((), Vec<anyhow::Error>)> {
         super::check_sequence(&cancellation, || {
+            #[expect(deprecated, reason = "existing frame callbacks use an AtomicBool")]
             let cancelled = cancellation.legacy_flag();
             let warnings = vec![];
             let config = condor.sequence_config.noise_detector()?.clone().unwrap_or_default();

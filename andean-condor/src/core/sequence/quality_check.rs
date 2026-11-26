@@ -218,6 +218,7 @@ where
         cancellation: Cancellation,
     ) -> Result<((), Vec<anyhow::Error>)> {
         super::check_sequence(&cancellation, || {
+            #[expect(deprecated, reason = "existing metric callbacks use an AtomicBool")]
             let cancelled = cancellation.legacy_flag();
 
             let mut warnings = vec![];

@@ -178,6 +178,8 @@ unchanged.
 - Implement `Sequence::initialize` with `&Cancellation` and `Sequence::execute`
   with `Cancellation`. Check the token before admitting work, and return
   `Cancelled::Forced` after forced cleanup rather than reporting success.
+  Use the token directly in new sequences: `Cancellation::legacy_flag` is
+  deprecated and cannot distinguish graceful from forced cancellation.
   Implement `AndeanCondor::{process_one, process_all}` with `Cancellation` by value.
 - Pass `ParallelEncoderOptions` to `ParallelEncoder::encode_tasks`,
   `Benchmarker::benchmark_workers`, and `TargetQuality::probe_pass`. The default
