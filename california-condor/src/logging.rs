@@ -257,6 +257,15 @@ pub fn init_logging(
     // Allow override through environment variables
     if let Ok(rust_log) = env::var("RUST_LOG") {
         for directive in rust_log.split(',') {
+            if let Ok(level) = directive.parse::<LevelFilter>() {
+                // A level-only directive applies to all configured modules.
+                for config in module_configs.values_mut() {
+                    config.console_level = level;
+                    config.file_level = level;
+                }
+                continue;
+            }
+
             if let Some((module, level)) = directive.split_once('=')
                 && let (Some(config), Ok(level)) =
                     (module_configs.get_mut(module), level.parse::<LevelFilter>())
