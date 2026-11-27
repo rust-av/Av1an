@@ -707,9 +707,6 @@ impl Encoder {
         let executable = self.resolve_executable()?;
         cancellation.check_admission()?;
         let mut output_guard = crate::core::process::InterruptedOutput::new(output, cancellation);
-        // TODO:
-        // - Report mapped errors
-        // - Report CPU, memory, disk usage - Performance testing required
 
         let base_encoder = self.base();
         let clip_info = input.clip_info()?;
@@ -751,7 +748,7 @@ impl Encoder {
                 progress_tx.clone(),
                 true,
                 Arc::clone(&frames_encoded),
-                None,
+                Some(pid),
             ),
         );
         let encoder_stderr_thread = spawn_reader(
@@ -1029,14 +1026,9 @@ impl Encoder {
                 parameters.insert(0, "-y".to_owned());
             }
         }
-        // TODO:
-        // - Report mapped errors
-        // - Report CPU, memory, disk usage - Done-ish
 
         let base_encoder = self.base();
 
-        // println!("Encoding with params: {:?}", self.parameters(pass,
-        // output)); let mut system = sysinfo::System::new();
         let mut encoder = OwnedProcess::spawn(
             Command::new(&executable)
                 .args(&parameters)
@@ -1052,7 +1044,8 @@ impl Encoder {
                 self.executable()
             )
         })?;
-        // let pid = encoder.id();
+
+        let pid = encoder.id();
 
         // Data produced and consumed throughout
         let frames_encoded = Arc::new(AtomicU64::new(0));
@@ -1069,12 +1062,19 @@ impl Encoder {
                 progress_tx.clone(),
                 true,
                 Arc::clone(&frames_encoded),
-                None,
+                Some(pid),
             ),
         );
         let encoder_stderr_thread = spawn_reader(
             stderr,
-            progress_reader(base_encoder, pass, progress_tx, false, frames_encoded, None),
+            progress_reader(
+                base_encoder,
+                pass,
+                progress_tx,
+                false,
+                frames_encoded,
+                Some(pid),
+            ),
         );
 
         let writer_cancellation = cancellation.clone();
