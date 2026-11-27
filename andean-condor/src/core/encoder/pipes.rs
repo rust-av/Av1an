@@ -40,9 +40,7 @@ impl ResourceSampler {
             self.system.refresh_processes_specifics(
                 sysinfo::ProcessesToUpdate::Some(&[self.pid]),
                 true,
-                sysinfo::ProcessRefreshKind::nothing()
-                    .with_cpu()
-                    .with_memory(),
+                sysinfo::ProcessRefreshKind::nothing().with_cpu().with_memory(),
             );
             self.last = self.system.process(self.pid).map_or_else(
                 EncodeResourceUsage::default,
