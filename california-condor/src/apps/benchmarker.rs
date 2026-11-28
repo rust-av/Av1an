@@ -112,7 +112,7 @@ impl TuiApp for BenchmarkerApp {
                         .entry(workers)
                         .and_modify(|ws| ws.usage = usage.is_available().then_some(usage));
                     true
-                }
+                },
                 _ => false,
             },
             SequenceStatus::Subprocess { parent: _, child } => match child {
@@ -398,8 +398,7 @@ mod tests {
         }
         app.shared_progress
             .apply(|state| mapper(usage_status(2, 812.0, 3 * 1024 * MIB), state));
-        app.shared_progress
-            .apply(|state| mapper(usage_status(3, 0.0, 0), state));
+        app.shared_progress.apply(|state| mapper(usage_status(3, 0.0, 0), state));
         for id in ["2", "3"] {
             app.shared_progress.apply(|state| {
                 mapper(

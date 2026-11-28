@@ -240,7 +240,7 @@ impl TuiApp for ParallelEncoderApp {
                     };
                     active.usage = EncodeResourceUsage { cpu, memory };
                     true
-                }
+                },
                 Status::Completed { id } => {
                     let scene = id.parse::<u64>().expect("Scene index is a number");
                     state.scenes.entry(scene).and_modify(|(completed, scene)| {
@@ -293,15 +293,14 @@ impl TuiApp for ParallelEncoderApp {
         if let Some((done, total)) = state.validation {
             detail = format!("{done}/{total} chunks validated, {detail}");
         }
-        let usage = state
-            .active_encoders
-            .values()
-            .map(|active| active.usage)
-            .fold(EncodeResourceUsage::default(), |mut total, usage| {
+        let usage = state.active_encoders.values().map(|active| active.usage).fold(
+            EncodeResourceUsage::default(),
+            |mut total, usage| {
                 total.cpu += usage.cpu;
                 total.memory += usage.memory;
                 total
-            });
+            },
+        );
         if let Some(usage) = crate::components::usage::describe(usage) {
             detail.push_str(", ");
             detail.push_str(&usage);

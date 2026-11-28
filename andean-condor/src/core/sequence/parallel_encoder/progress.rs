@@ -603,24 +603,25 @@ mod tests {
         drop(tx);
         relay_progress(rx, &attempt).expect("relay");
 
-        let samples: Vec<(String, f32, u64)> = status_rx
-            .try_iter()
-            .filter_map(|event| match event {
-                SequenceStatus::Subprocess {
-                    child:
-                        crate::core::sequence::Status::Processing {
-                            id,
-                            completion:
-                                crate::core::sequence::SequenceCompletion::ResourceUsage {
-                                    cpu,
-                                    memory,
-                                },
-                        },
-                    ..
-                } => Some((id, cpu, memory)),
-                _ => None,
-            })
-            .collect();
+        let samples: Vec<(String, f32, u64)> =
+            status_rx
+                .try_iter()
+                .filter_map(|event| match event {
+                    SequenceStatus::Subprocess {
+                        child:
+                            crate::core::sequence::Status::Processing {
+                                id,
+                                completion:
+                                    crate::core::sequence::SequenceCompletion::ResourceUsage {
+                                        cpu,
+                                        memory,
+                                    },
+                            },
+                        ..
+                    } => Some((id, cpu, memory)),
+                    _ => None,
+                })
+                .collect();
         assert_eq!(samples, [("4".to_owned(), 412.5, 3 * GIB)]);
     }
 

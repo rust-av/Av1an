@@ -43,7 +43,10 @@ mod tests {
             describe(sampled(99.4, 200 * MIB)).as_deref(),
             Some("CPU 99% · 200 MiB")
         );
-        assert_eq!(describe(sampled(0.0, 200 * MIB)).as_deref(), Some("200 MiB"));
+        assert_eq!(
+            describe(sampled(0.0, 200 * MIB)).as_deref(),
+            Some("200 MiB")
+        );
         assert_eq!(describe(sampled(50.0, 0)).as_deref(), Some("CPU 50%"));
     }
 }
