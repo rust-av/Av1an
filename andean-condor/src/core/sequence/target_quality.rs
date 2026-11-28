@@ -497,6 +497,7 @@ impl TargetQuality {
                 super::parallel_encoder::ParallelEncoderOptions {
                     max_tries: parallel_encoder_config.max_tries,
                     validate_frame_count: parallel_encoder_config.validate_frame_count,
+                    ..Default::default()
                 },
             );
             let relayed = crate::core::encoder::pipes::join_worker(

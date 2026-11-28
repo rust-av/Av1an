@@ -129,6 +129,7 @@ fn actual_rate_child() {
     let options = ParallelEncoderOptions {
         max_tries: 1,
         validate_frame_count: false,
+        ..Default::default()
     };
     let set_rate = |input: &mut Input, rate| {
         info.frame_rate = rate;

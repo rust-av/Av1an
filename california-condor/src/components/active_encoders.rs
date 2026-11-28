@@ -18,7 +18,8 @@ use crate::{
 ///
 /// Takes a reference to the full `SceneEncoder` map (no clone on render) so
 /// that each worker's area can display both the per-scene encoder parameters
-/// (top half) and a full progress bar with FPS/elapsed/remaining (bottom half).
+/// (top half) and a full progress bar with FPS/elapsed/remaining (bottom half),
+/// with the encoder process's live CPU and memory in the panel's top-right.
 pub struct ActiveEncoders<'a> {
     pub color: Color,
     pub workers: u8,
@@ -49,11 +50,18 @@ impl Widget for ActiveEncoders<'_> {
                     scene_encoder.current_pass,
                     scene_encoder.total_passes,
                     scene_encoder.encoder.base().friendly_name()
-                )));
+                )))
+                // This scene's live CPU/memory in the top-right corner,
+                // opposite the scene and pass; an unsampled process shows
+                // nothing rather than claiming zero.
+                .title(
+                    Line::from(super::usage::describe(scene_encoder.usage).unwrap_or_default())
+                        .right_aligned(),
+                );
             let worker_area_inner = bordered_area.inner(*worker_area);
             bordered_area.render(*worker_area, buf);
 
-            // Split the bordered area into two halves:
+            // Split the bordered area in two:
             //   [0] per-scene encoder parameters,
             //   [1] per-scene progress bar (full ProgressBar widget)
             let active_worker_areas = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)])
@@ -108,13 +116,15 @@ impl<'a> ActiveEncoders<'a> {
 mod tests {
     use std::path::PathBuf;
 
-    use andean_condor::{ffmpeg::FFPixelFormat, models::encoder::EncoderBase};
+    use andean_condor::{
+        core::encoder::EncodeResourceUsage, ffmpeg::FFPixelFormat, models::encoder::EncoderBase,
+    };
 
     use super::*;
     use crate::test_helpers::TestVideo;
 
     /// Forty rows over four workers: one ten-row slot apiece.
-    const AREA: Rect = Rect::new(0, 0, 60, 40);
+    const AREA: Rect = Rect::new(0, 0, 100, 40);
     const SLOT: u16 = AREA.height / 4;
 
     fn encoder() -> Encoder {
@@ -145,6 +155,7 @@ mod tests {
                         total_passes: 2,
                         frames_processed: 40,
                         total_frames: 100,
+                        usage: EncodeResourceUsage::default(),
                     },
                 )
             })
@@ -206,6 +217,38 @@ mod tests {
         assert_eq!(title_row(&buf, 0), Some(0));
         assert_eq!(title_row(&buf, 3), Some(3 * SLOT));
         assert_eq!(drawn_rows(&buf).len(), AREA.height as usize);
+    }
+
+    /// Live CPU/memory rides in the worker panel's top-right corner, opposite
+    /// the scene and pass it names on the left, instead of a row beneath the bar.
+    #[test]
+    fn usage_is_drawn_in_the_worker_panel_top_right_corner() {
+        const MIB: u64 = 1024 * 1024;
+        let mut active = active(&[0]);
+        active.get_mut(&0).unwrap().usage = EncodeResourceUsage {
+            cpu: 412.0,
+            memory: 3 * 1024 * MIB,
+        };
+        let buf = render(1, &active);
+
+        let rows: Vec<u16> = (0..AREA.height)
+            .filter(|&y| {
+                let text: String = (0..AREA.width).map(|x| buf[(x, y)].symbol()).collect();
+                text.contains("CPU 412%")
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![title_row(&buf, 0).expect("panel title row")],
+            "usage shares the panel's title row"
+        );
+        let border: String = (0..AREA.width).map(|x| buf[(x, rows[0])].symbol()).collect();
+        assert!(border.contains("Scene 0 Pass"), "{border}");
+        assert!(border.contains("3.0 GiB"), "{border}");
+        assert!(
+            !border.contains("40.00%"),
+            "usage stays out of the inner bar's title row: {border}"
+        );
     }
 
     /// Nothing encoding yet: an empty area, not a stray panel in slot zero.

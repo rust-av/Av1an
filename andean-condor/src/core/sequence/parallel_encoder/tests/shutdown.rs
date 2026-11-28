@@ -600,6 +600,7 @@ fi
             ParallelEncoderOptions {
                 max_tries: 1,
                 validate_frame_count: false,
+                ..Default::default()
             }, // One-attempt shutdown fixtures, not codec artifacts.
         );
         let success = matches!(kind, "success1" | "success2" | "multipass" | "cancelled");

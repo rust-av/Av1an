@@ -473,7 +473,12 @@ impl ParallelEncoder {
         }
         let total_frames =
             tasks.iter().map(|task| task.frame_indices.len()).sum::<usize>() + initial_frames;
-        let progress = Progress::new(progress_tx.clone(), total_frames, initial_frames);
+        let progress = Progress::new(
+            progress_tx.clone(),
+            total_frames,
+            initial_frames,
+            options.usage.clone(),
+        );
         // Nonstream VS decoding stays on this thread; both paths bound workers.
         if input.streams_concurrently() {
             let result = Self::encode_tasks_streaming(
@@ -521,6 +526,7 @@ impl ParallelEncoder {
                 let jobs_rx = jobs_rx.clone();
                 let results_tx = stream.results_tx.clone();
                 let finished = Arc::clone(&stream.finished_scenes);
+                let options = options.clone();
                 handles.push(scope.spawn(move || stop.catch_panic(&format!("Parallel worker {worker}"), || {
                     #[cfg(all(test, target_os = "linux"))]
                     let _worker_count = super::tests::dispatch::internal_integration::worker_started();
@@ -551,7 +557,7 @@ impl ParallelEncoder {
                                  }
                                  Some(file)
                              } else { None };
-                              let mut attempt = encode_attempts(task, options, stop, progress, |path, attempt_progress| {
+                              let mut attempt = encode_attempts(task, options.clone(), stop, progress, |path, attempt_progress| {
                                   let consume = |frames| consume_frames(task, frames, path, clip_info, attempt_progress,
                                       stop, STREAM_WINDOW);
                                  spool.as_mut().map_or_else(
@@ -772,7 +778,7 @@ mod tests {
             std::fs::write(&temp_output, vec![7_u8; 42]).expect("temp file should be written");
             let (tx, rx) = std::sync::mpsc::channel();
             let errored = AtomicBool::new(false);
-            let progress = Progress::new(tx, 3, 0);
+            let progress = Progress::new(tx, 3, 0, None);
             let mut attempt = AttemptProgress::new(
                 &progress,
                 3,
@@ -829,7 +835,7 @@ mod tests {
             std::fs::write(&temp_output, vec![7_u8; 42]).expect("temp file should be written");
             let (tx, rx) = std::sync::mpsc::channel();
             let errored = AtomicBool::new(false);
-            let progress = Progress::new(tx, 1, 0);
+            let progress = Progress::new(tx, 1, 0, None);
             let mut attempt = AttemptProgress::new(
                 &progress,
                 1,

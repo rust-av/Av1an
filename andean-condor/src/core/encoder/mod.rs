@@ -1599,6 +1599,68 @@ pub struct EncodeResourceUsage {
     pub memory: u64,
 }
 
+pub(crate) const MIB: u64 = 1024 * 1024;
+
+impl EncodeResourceUsage {
+    /// Whether a process was actually measured; unsampled usage stays default.
+    #[inline]
+    pub fn is_available(&self) -> bool {
+        self.memory > 0 || self.cpu > 0.0
+    }
+
+    /// Resident memory in mebibytes, rounded down.
+    #[inline]
+    pub fn mib(&self) -> u64 {
+        self.memory / MIB
+    }
+}
+
+/// Tracks the encoder processes active in one dispatch, keyed by scene, so a
+/// caller can act on the peak CPU and memory usage reached by concurrent workers.
+#[derive(Debug, Default)]
+pub struct ResourceUsageTracker {
+    state: std::sync::Mutex<TrackedResourceUsage>,
+}
+
+#[derive(Debug, Default)]
+struct TrackedResourceUsage {
+    active: HashMap<usize, EncodeResourceUsage>,
+    peak_memory: u64,
+    peak_cpu: f32,
+}
+
+impl ResourceUsageTracker {
+    /// Records the latest sample for `scene`, replacing any earlier sample.
+    #[inline]
+    pub fn report(&self, scene: usize, usage: EncodeResourceUsage) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.active.insert(scene, usage);
+        let memory = state.active.values().map(|usage| usage.memory).sum();
+        let cpu = state.active.values().map(|usage| usage.cpu).sum();
+        state.peak_memory = state.peak_memory.max(memory);
+        state.peak_cpu = state.peak_cpu.max(cpu);
+    }
+
+    /// Stops counting `scene` once it finishes, fails, or retries.
+    #[inline]
+    pub fn retire(&self, scene: usize) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.active.remove(&scene);
+    }
+
+    /// Largest summed resident memory of active workers observed, in bytes.
+    #[inline]
+    pub fn peak_memory(&self) -> u64 {
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).peak_memory
+    }
+
+    /// Largest summed CPU usage of active workers observed, in percent.
+    #[inline]
+    pub fn peak_cpu(&self) -> f32 {
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).peak_cpu
+    }
+}
+
 #[derive(Debug, Error, Clone)]
 pub struct EncoderResult {
     pub encoder: EncoderBase,

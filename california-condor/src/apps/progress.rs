@@ -455,6 +455,7 @@ mod tests {
                 finished: Some(start + Duration::from_secs(10)),
                 added: true,
                 failed_reason: None,
+                usage: None,
                 initial_frame: 0,
                 current_frame: 100,
                 total_frames: 100,

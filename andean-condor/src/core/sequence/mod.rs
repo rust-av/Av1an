@@ -105,6 +105,14 @@ pub enum SequenceCompletion {
         passes: (u8, u8),
         frames: (u64, u64),
     },
+    /// CPU percent and resident bytes of the process(es) behind this step.
+    ///
+    /// A live sample while work runs, the peaks of a finished benchmark trial
+    /// otherwise. Both values are zero when nothing could be sampled.
+    ResourceUsage {
+        cpu: f32,
+        memory: u64,
+    },
     Passes {
         completed: u8,
         total: u8,

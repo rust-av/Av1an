@@ -279,6 +279,7 @@ fn check_stream_case() {
             ParallelEncoderOptions {
                 max_tries: 1,
                 validate_frame_count: case != "valid",
+                ..Default::default()
             },
         )
     };

@@ -675,6 +675,10 @@ fn parallel_encoder_fixture(ci: ClipInfo) -> ParallelEncoderApp {
                 total_passes: 2,
                 frames_processed: *processed,
                 total_frames: (s.end_frame - s.start_frame) as u64,
+                usage: andean_condor::core::encoder::EncodeResourceUsage {
+                    cpu: 640.0,
+                    memory: 1_536 * 1024 * 1024,
+                },
             };
             // Each worker ~24 FPS on its own scene.
             backdate_for_frames(&mut se.started, *processed, 24.0);
@@ -830,6 +834,10 @@ fn tui_screens() -> Vec<Screen> {
                         finished: Some(now),
                         added,
                         failed_reason,
+                        usage: Some(andean_condor::core::encoder::EncodeResourceUsage {
+                            cpu: f32::from(workers) * 190.0,
+                            memory: u64::from(workers) * 900 * 1024 * 1024,
+                        }),
                         current_frame: sample,
                         initial_frame: 0,
                         total_frames: sample,

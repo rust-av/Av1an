@@ -12,6 +12,7 @@ use crate::models::sequence::{
 use crate::{
     core::{
         Condor,
+        encoder::ResourceUsageTracker,
         input::Input,
         sequence::{Sequence, SequenceCompletion, SequenceDetails, SequenceStatus, Status},
     },
@@ -37,10 +38,12 @@ pub use task::{ParallelEncoderResult, Task};
 
 /// Per-scene dispatch policy. A try includes every pass and output validation.
 /// Defaults to three total tries with frame-count validation enabled.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ParallelEncoderOptions {
     pub max_tries: u32,
     pub validate_frame_count: bool,
+    /// Observes the encoder processes this dispatch starts.
+    pub usage: Option<Arc<ResourceUsageTracker>>,
 }
 
 impl Default for ParallelEncoderOptions {
@@ -49,6 +52,7 @@ impl Default for ParallelEncoderOptions {
         Self {
             max_tries: 3,
             validate_frame_count: true,
+            usage: None,
         }
     }
 }
@@ -640,6 +644,7 @@ where
             ParallelEncoderOptions {
                 max_tries: config.max_tries,
                 validate_frame_count: config.validate_frame_count,
+                ..Default::default()
             },
             initial_frames,
         );
