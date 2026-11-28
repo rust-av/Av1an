@@ -3,10 +3,14 @@ use super::{condor, probe_fixture};
 #[path = "fixtures/duplicate_resume.rs"]
 mod duplicate_fixture;
 use crate::core::support::provenance::current_target_fixture;
+#[cfg(unix)]
+use condor::{
+    core::input::Input,
+    models::{input::Input as InputModel, sequence::scene_concatenator::ConcatMethod},
+};
 use condor::{
     core::{
         Condor,
-        input::Input,
         output::Output,
         sequence::{
             Sequence, SequenceCompletion, SequenceStatus, Status, target_quality::TargetQuality,
@@ -15,13 +19,11 @@ use condor::{
     metrics::Engine,
     models::{
         encoder::{Encoder, EncoderBase},
-        input::Input as InputModel,
         scene::Scene,
         sequence::{
             DefaultSequenceConfig, DefaultSequenceData,
             parallel_encoder::ParallelEncoderConfig,
             provenance::MetricBackend,
-            scene_concatenator::ConcatMethod,
             target_quality::{TargetQualityDataHandler, types::QualityPass},
         },
     },

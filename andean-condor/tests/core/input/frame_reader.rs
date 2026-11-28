@@ -1,26 +1,23 @@
 //! Real graph construction counts and exact filtered samples, not decode timing.
 
-use std::{
-    fs,
-    path::Path,
-    process::Command,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-        mpsc,
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
 };
+#[cfg(unix)]
+use std::{fs, path::Path, process::Command, sync::mpsc};
 
 use ::vapoursynth::map::OwnedMap;
 
 use super::*;
+use andean_condor::vapoursynth::get_api;
+#[cfg(unix)]
 use andean_condor::{
     core::sequence::{
         parallel_encoder::Task,
         zone_encoder::{ZoneEncoder, ZonePlan},
     },
     models::encoder::{Encoder, EncoderBase, cli_parameter::CLIParameter},
-    vapoursynth::get_api,
 };
 
 fn average_modifier(count: &Arc<AtomicUsize>, weights: [f64; 3]) -> ModifyNode {
@@ -66,6 +63,7 @@ fn temporal_input(format: &str, count: &Arc<AtomicUsize>) -> Input {
         .expect("native temporal input")
 }
 
+#[cfg(unix)]
 fn yuv_image(y: u8) -> Vec<u8> {
     [vec![y; 32 * 16], vec![80; 16 * 8], vec![160; 16 * 8]].concat()
 }
@@ -337,6 +335,7 @@ fn bounded_encoder(directory: &Path) -> Encoder {
     encoder
 }
 
+#[cfg(unix)]
 fn decoded(path: &Path) -> Vec<u8> {
     let result = Command::new("timeout")
         .args(["20s", "ffmpeg", "-nostdin", "-v", "error", "-i"])

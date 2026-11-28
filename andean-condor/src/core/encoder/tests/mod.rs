@@ -5,6 +5,7 @@ mod photon_noise;
 pub(crate) mod process_lifecycle;
 mod rav1e;
 mod statistics;
+#[cfg(unix)]
 pub(super) mod support;
 mod svt_av1;
 mod vpx;

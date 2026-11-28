@@ -41,6 +41,7 @@ where
 }
 
 // Synthetic current-context stamps test consumer admission, not owning-producer publication.
+#[cfg(unix)]
 pub(in crate::core) fn current_quality_fixture(
     job: &mut Condor<
         andean_condor::models::sequence::DefaultSequenceData,

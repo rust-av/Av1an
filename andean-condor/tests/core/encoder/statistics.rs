@@ -1,5 +1,7 @@
 use super::*;
+#[cfg(unix)]
 use andean_condor::core::{encoder::EncoderResult, input::Input};
+#[cfg(unix)]
 use std::{collections::HashMap, io::Cursor, path::PathBuf, sync::mpsc};
 
 fn encoder(base: EncoderBase) -> Encoder {
@@ -22,6 +24,7 @@ fn encoder(base: EncoderBase) -> Encoder {
     encoder
 }
 
+#[cfg(unix)]
 fn value(argv: &[String], key: &str) -> String {
     argv.iter()
         .enumerate()

@@ -1,7 +1,6 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+#[cfg(unix)]
+use std::path::Path;
+use std::{fs, path::PathBuf};
 
 use andean_condor::core::output::admit_output;
 

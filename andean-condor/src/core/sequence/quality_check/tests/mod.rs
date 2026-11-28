@@ -295,6 +295,7 @@ fn live_scene_quality_producer_uses_final_prefix() {
 
 use super::*;
 
+#[cfg(unix)]
 mod internal_integration {
     use super::*;
     fn native_caller(test: &str, cancel: bool) {

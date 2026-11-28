@@ -1,12 +1,8 @@
 #[cfg(unix)]
 use crate as condor;
-use crate::{
-    core::Condor,
-    models::{
-        input::Input as InputModel,
-        sequence::{DefaultSequenceConfig, DefaultSequenceData},
-    },
-};
+#[cfg(unix)]
+use crate::models::sequence::{DefaultSequenceConfig, DefaultSequenceData};
+use crate::{core::Condor, models::input::Input as InputModel};
 #[cfg(unix)]
 #[path = "../../../../tests/core/sequence/fixtures/native_scoring.rs"]
 mod native_fixture;
@@ -102,6 +98,7 @@ where
     }
 }
 
+#[cfg(unix)]
 pub(in crate::core::sequence) fn current_quality_fixture(
     job: &mut Condor<DefaultSequenceData, DefaultSequenceConfig>,
 ) {
