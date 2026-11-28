@@ -1689,8 +1689,10 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    fn owned_fixture(root: &std::path::Path) -> Result<andean_condor::core::process::OwnedProcess> {
-        use andean_condor::{core::process::OwnedProcess, utils::cancellation::Cancellation};
+    fn owned_fixture(
+        root: &std::path::Path,
+    ) -> Result<andean_condor::utils::process::OwnedProcess> {
+        use andean_condor::{utils::cancellation::Cancellation, utils::process::OwnedProcess};
         use std::{
             fmt::Write as _,
             io::BufRead,

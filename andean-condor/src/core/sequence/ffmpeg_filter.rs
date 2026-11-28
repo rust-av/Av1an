@@ -19,7 +19,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use crate::{core::process::OwnedProcess, utils::cancellation::Cancellation};
+use crate::{utils::cancellation::Cancellation, utils::process::OwnedProcess};
 use anyhow::{Context, Result, bail};
 use crossbeam_channel::Receiver;
 

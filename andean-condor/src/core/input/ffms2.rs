@@ -221,7 +221,7 @@ pub fn index_video(
     let mut default_cache = path.as_os_str().to_os_string();
     default_cache.push(".ffindex");
     let default_cache = std::path::PathBuf::from(default_cache);
-    let mut partial = crate::core::process::InterruptedOutput::new(
+    let mut partial = crate::utils::process::InterruptedOutput::new(
         cache_path.unwrap_or(&default_cache),
         cancellation,
     );

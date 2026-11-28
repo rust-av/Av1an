@@ -1,6 +1,6 @@
 use super::*;
 use crate::core::support::process::wait_with_timeout;
-use andean_condor::core::process::OwnedProcess;
+use andean_condor::utils::process::OwnedProcess;
 
 #[path = "fixtures/mux_status.rs"]
 mod fixture;

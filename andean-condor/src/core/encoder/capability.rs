@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::models::encoder::EncoderBase;
-use crate::{core::process::OwnedProcess, utils::cancellation::Cancellation};
+use crate::{utils::cancellation::Cancellation, utils::process::OwnedProcess};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;

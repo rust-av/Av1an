@@ -459,7 +459,7 @@ impl ZoneEncoder {
         let zone_files = apply_zone_options(&mut encoder, &plan, zone_directory.path())?;
         let extension = encoder.base().output_extension();
         let whole_output = directory.join(format!("zone-pass.temp.{extension}"));
-        let mut partial = crate::core::process::InterruptedOutput::new(&whole_output, &cancelled);
+        let mut partial = crate::utils::process::InterruptedOutput::new(&whole_output, &cancelled);
         let discard = {
             let whole_output = whole_output.clone();
             move || {
@@ -703,7 +703,7 @@ fn split_ivf(
         header[IVF_NFRAME_OFFSET..IVF_NFRAME_OFFSET + 4].copy_from_slice(&count.to_le_bytes());
         let temp = task.output.with_extension(format!("temp.{extension}"));
         outputs.push(super::parallel_encoder::TempOutput::new(temp.clone()));
-        partials.push(crate::core::process::InterruptedOutput::new(
+        partials.push(crate::utils::process::InterruptedOutput::new(
             &temp,
             cancellation,
         ));
@@ -793,7 +793,7 @@ fn split_annexb(
     let mut parts: Vec<(PathBuf, u64, usize)> = Vec::with_capacity(tasks.len());
     let mut temp = tasks[0].output.with_extension(format!("temp.{extension}"));
     let mut outputs = vec![super::parallel_encoder::TempOutput::new(temp.clone())];
-    let mut partials = vec![crate::core::process::InterruptedOutput::new(&temp, cancellation)];
+    let mut partials = vec![crate::utils::process::InterruptedOutput::new(&temp, cancellation)];
     let mut output = new_part(&temp)?;
     let mut bytes = 0u64;
     let mut frames = 0usize;
@@ -811,7 +811,7 @@ fn split_annexb(
             }
             let next_temp = tasks[part_index].output.with_extension(format!("temp.{extension}"));
             outputs.push(super::parallel_encoder::TempOutput::new(next_temp.clone()));
-            partials.push(crate::core::process::InterruptedOutput::new(
+            partials.push(crate::utils::process::InterruptedOutput::new(
                 &next_temp,
                 cancellation,
             ));

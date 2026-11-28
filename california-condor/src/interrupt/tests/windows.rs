@@ -3,7 +3,7 @@ pub(in crate::interrupt) use internal_integration::observe_received;
 
 mod internal_integration {
     use super::super::super::{Interrupt, Interrupted, Listener};
-    use andean_condor::core::process::OwnedProcess;
+    use andean_condor::utils::process::OwnedProcess;
     use anyhow::{Context, Result, ensure};
     use std::{
         ffi::c_void,

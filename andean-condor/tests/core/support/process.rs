@@ -1,4 +1,4 @@
-use andean_condor::{core::process::OwnedProcess, utils::cancellation::Cancellation};
+use andean_condor::utils::{cancellation::Cancellation, process::OwnedProcess};
 
 #[path = "process/wait.rs"]
 mod wait;

@@ -1,6 +1,6 @@
 //! Admission must reject the whole requested list before any mux side effects.
 use super::*;
-use andean_condor::core::process::OwnedProcess;
+use andean_condor::utils::process::OwnedProcess;
 use av_format::rational::Ratio;
 use std::fs::File;
 
