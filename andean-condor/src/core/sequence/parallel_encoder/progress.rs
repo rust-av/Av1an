@@ -1,11 +1,11 @@
-use std::sync::{Mutex, mpsc::Sender};
+use std::sync::{Arc, Mutex, mpsc::Sender};
 
 use anyhow::Result;
 
 use super::task::{PublishedResult, ResultStream};
 use crate::{
     core::{
-        encoder::EncodeProgress,
+        encoder::{EncodeProgress, ResourceUsageTracker},
         sequence::{SequenceCompletion, SequenceStatus, Status, parallel_encoder::DETAILS},
     },
     models::encoder::EncoderPasses,
@@ -16,14 +16,21 @@ pub(super) struct Progress {
     completed: Mutex<usize>,
     total: usize,
     tx: Sender<SequenceStatus>,
+    usage: Option<Arc<ResourceUsageTracker>>,
 }
 
 impl Progress {
-    pub(super) fn new(tx: Sender<SequenceStatus>, total: usize, initial: usize) -> Self {
+    pub(super) fn new(
+        tx: Sender<SequenceStatus>,
+        total: usize,
+        initial: usize,
+        usage: Option<Arc<ResourceUsageTracker>>,
+    ) -> Self {
         Self {
             completed: Mutex::new(initial),
             total,
             tx,
+            usage,
         }
     }
 
@@ -92,6 +99,9 @@ impl<'a> AttemptProgress<'a> {
     }
 
     fn report(&self, record: EncodeProgress) -> Result<()> {
+        if let Some(usage) = &self.progress.usage {
+            usage.report(self.scene, record.usage);
+        }
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let (pass, total) = record.pass;
         if total != self.passes.1 || pass == 0 || pass > self.passes.0 || pass < state.0 {
@@ -114,13 +124,26 @@ impl<'a> AttemptProgress<'a> {
             state.2 = state.1;
             self.progress.tx.send(SequenceStatus::Whole(self.progress.parent(*completed)))?;
         }
+        let parent = self.progress.parent(*completed);
         self.progress.tx.send(SequenceStatus::Subprocess {
-            parent: self.progress.parent(*completed),
+            parent: parent.clone(),
             child: Status::Processing {
                 id: self.scene.to_string(),
                 completion: SequenceCompletion::PassFrames {
                     passes: (pass, total),
                     frames: (state.1 as u64, self.frames as u64),
+                },
+            },
+        })?;
+        // The live usage sample rides along, so a consumer never has to sample
+        // processes itself or correlate a second stream.
+        self.progress.tx.send(SequenceStatus::Subprocess {
+            parent,
+            child: Status::Processing {
+                id: self.scene.to_string(),
+                completion: SequenceCompletion::ResourceUsage {
+                    cpu: record.usage.cpu,
+                    memory: record.usage.memory,
                 },
             },
         })?;
@@ -139,6 +162,9 @@ impl<'a> AttemptProgress<'a> {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *completed += self.frames - state.2;
         self.committed = true;
+        if let Some(usage) = &self.progress.usage {
+            usage.retire(self.scene);
+        }
         self.progress.whole(*completed);
         // Notification loss after rename must not lose saved usable work.
         let size = SequenceCompletion::Custom {
@@ -165,6 +191,9 @@ impl Drop for AttemptProgress<'_> {
             return;
         }
         let state = self.state.get_mut().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(usage) = &self.progress.usage {
+            usage.retire(self.scene);
+        }
         let mut completed = self
             .progress
             .completed
@@ -220,7 +249,10 @@ mod tests {
     use std::sync::mpsc::{Receiver, Sender, channel};
 
     use super::{AttemptProgress, Progress, relay_progress};
-    use crate::core::{encoder::EncodeProgress, sequence::SequenceStatus};
+    use crate::core::{
+        encoder::{EncodeProgress, EncodeResourceUsage, ResourceUsageTracker},
+        sequence::SequenceStatus,
+    };
     use crate::models::encoder::EncoderPasses;
 
     fn check_specific_pass(selected: u8) {
@@ -229,7 +261,7 @@ mod tests {
         let mut encoder = Encoder::default_from_base(&EncoderBase::X264, true);
         *encoder.passes_mut().expect("passes") = EncoderPasses::Specific(selected, 2);
         let (tx, rx) = channel();
-        let total = Progress::new(tx, 30, 0);
+        let total = Progress::new(tx, 30, 0, None);
         {
             let attempt = AttemptProgress::new(&total, 7, 30, encoder.passes());
             let (tx, progress_rx) = channel();
@@ -341,7 +373,7 @@ mod tests {
     fn sparse_progress_clamps_duplicate_and_regressing_frames_to_the_high_water_mark() {
         let (tx, rx) = channel();
         let (status_tx, status_rx) = channel();
-        let total = Progress::new(status_tx, 30, 0);
+        let total = Progress::new(status_tx, 30, 0, None);
         let attempt = AttemptProgress::new(&total, 7, 30, EncoderPasses::All(1));
         for frame in [1, 10, 10, 9, 30] {
             tx.send(EncodeProgress {
@@ -380,7 +412,7 @@ mod tests {
     fn relay_one_scene(frames: usize) -> Vec<SequenceStatus> {
         let (tx, rx): (Sender<EncodeProgress>, Receiver<EncodeProgress>) = channel();
         let (status_tx, status_rx) = std::sync::mpsc::channel();
-        let total = Progress::new(status_tx, frames, 0);
+        let total = Progress::new(status_tx, frames, 0, None);
         let attempt = AttemptProgress::new(&total, 7, frames, EncoderPasses::All(1));
 
         for frame in 1..=frames {
@@ -431,7 +463,7 @@ mod tests {
     fn check_attempt_credit(phase: &str) {
         assert!(["rollback", "commit", "zero"].contains(&phase));
         let (tx, rx) = channel();
-        let total = Progress::new(tx, 60, 0);
+        let total = Progress::new(tx, 60, 0, None);
         let mut peer = AttemptProgress::new(&total, 8, 30, EncoderPasses::All(2));
         let report = |attempt: &AttemptProgress<'_>, pass, frame| {
             attempt
@@ -511,7 +543,7 @@ mod tests {
         let per_worker = 500_usize;
         let total = workers * per_worker;
         let (tx, rx) = channel();
-        let count = Progress::new(tx, total, 0);
+        let count = Progress::new(tx, total, 0, None);
         std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(workers);
             for scene in 0..workers {
@@ -548,5 +580,88 @@ mod tests {
             .collect();
         assert!(totals.windows(2).all(|pair| pair[0] <= pair[1]));
         assert_eq!(totals.last(), Some(&(total as u64)));
+    }
+
+    /// The TUI can only show live usage it receives: each relayed sample must
+    /// also reach consumers, tagged with the scene whose process produced it.
+    #[test]
+    fn each_relayed_sample_reaches_consumers_tagged_with_its_scene() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let (status_tx, status_rx) = channel();
+        let total = Progress::new(status_tx, 10, 0, None);
+        let attempt = AttemptProgress::new(&total, 4, 10, EncoderPasses::All(1));
+        let (tx, rx) = channel();
+        tx.send(EncodeProgress {
+            pass: (1, 1),
+            frame: 1,
+            usage: EncodeResourceUsage {
+                cpu: 412.5,
+                memory: 3 * GIB,
+            },
+        })
+        .expect("usage sample");
+        drop(tx);
+        relay_progress(rx, &attempt).expect("relay");
+
+        let samples: Vec<(String, f32, u64)> = status_rx
+            .try_iter()
+            .filter_map(|event| match event {
+                SequenceStatus::Subprocess {
+                    child:
+                        crate::core::sequence::Status::Processing {
+                            id,
+                            completion:
+                                crate::core::sequence::SequenceCompletion::ResourceUsage {
+                                    cpu,
+                                    memory,
+                                },
+                        },
+                    ..
+                } => Some((id, cpu, memory)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(samples, [("4".to_owned(), 412.5, 3 * GIB)]);
+    }
+
+    #[test]
+    fn relayed_usage_reaches_the_tracker_and_completed_scenes_stop_counting() {
+        let usage = std::sync::Arc::new(ResourceUsageTracker::default());
+        let (status_tx, _status_rx) = channel();
+        let total = Progress::new(status_tx, 2, 0, Some(std::sync::Arc::clone(&usage)));
+        let mut attempt = AttemptProgress::new(&total, 7, 2, EncoderPasses::All(1));
+        let (tx, rx) = channel();
+        tx.send(EncodeProgress {
+            pass: (1, 1),
+            frame: 1,
+            usage: EncodeResourceUsage {
+                cpu: 50.0,
+                memory: 100,
+            },
+        })
+        .expect("usage sample");
+        drop(tx);
+        relay_progress(rx, &attempt).expect("relay");
+        assert_eq!(usage.peak_memory(), 100);
+        attempt.commit(1);
+
+        let peer = AttemptProgress::new(&total, 8, 2, EncoderPasses::All(1));
+        let (tx, rx) = channel();
+        tx.send(EncodeProgress {
+            pass: (1, 1),
+            frame: 1,
+            usage: EncodeResourceUsage {
+                cpu: 50.0,
+                memory: 100,
+            },
+        })
+        .expect("peer usage sample");
+        drop(tx);
+        relay_progress(rx, &peer).expect("peer relay");
+        assert_eq!(
+            usage.peak_memory(),
+            100,
+            "the committed scene no longer contributes"
+        );
     }
 }

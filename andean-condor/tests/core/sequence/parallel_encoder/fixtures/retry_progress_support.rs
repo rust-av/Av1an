@@ -634,6 +634,7 @@ fn retry_progress_child() {
                         ParallelEncoderOptions {
                             max_tries: 1,
                             validate_frame_count: true,
+                            ..Default::default()
                         },
                     )
                 } else {

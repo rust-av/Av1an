@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt::Write as _, io::IsTerminal, sync::Arc};
 
 use andean_condor::{
     core::{
+        encoder::EncodeResourceUsage,
         input::clip_info::ClipInfo,
         sequence::{SequenceCompletion, SequenceStatus, Status},
     },
@@ -209,6 +210,7 @@ impl TuiApp for ParallelEncoderApp {
                             total_passes,
                             frames_processed: 0,
                             total_frames,
+                            usage: EncodeResourceUsage::default(),
                         });
                     if total_passes != active.total_passes || current_pass < active.current_pass {
                         return false;
@@ -228,6 +230,17 @@ impl TuiApp for ParallelEncoderApp {
                     }
                     true
                 },
+                Status::Processing {
+                    id,
+                    completion: SequenceCompletion::ResourceUsage { cpu, memory },
+                } => {
+                    let scene = id.parse::<u64>().expect("Scene index is a number");
+                    let Some(active) = state.active_encoders.get_mut(&scene) else {
+                        return false;
+                    };
+                    active.usage = EncodeResourceUsage { cpu, memory };
+                    true
+                }
                 Status::Completed { id } => {
                     let scene = id.parse::<u64>().expect("Scene index is a number");
                     state.scenes.entry(scene).and_modify(|(completed, scene)| {
@@ -279,6 +292,19 @@ impl TuiApp for ParallelEncoderApp {
         );
         if let Some((done, total)) = state.validation {
             detail = format!("{done}/{total} chunks validated, {detail}");
+        }
+        let usage = state
+            .active_encoders
+            .values()
+            .map(|active| active.usage)
+            .fold(EncodeResourceUsage::default(), |mut total, usage| {
+                total.cpu += usage.cpu;
+                total.memory += usage.memory;
+                total
+            });
+        if let Some(usage) = crate::components::usage::describe(usage) {
+            detail.push_str(", ");
+            detail.push_str(&usage);
         }
         Some(super::progress::ProgressSnapshot {
             stage: "Encoding",
@@ -500,6 +526,8 @@ pub struct SceneEncoder {
     pub total_passes: u8,
     pub frames_processed: u64,
     pub total_frames: u64,
+    /// Latest sample from this scene's encoder process; default means unsampled.
+    pub usage: EncodeResourceUsage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -711,6 +739,22 @@ mod tests {
         }
     }
 
+    fn usage(scene: u64, cpu: f32, memory: u64) -> SequenceStatus {
+        SequenceStatus::Subprocess {
+            parent: Status::Processing {
+                id: "Parallel Encoder".into(),
+                completion: SequenceCompletion::Frames {
+                    completed: 0,
+                    total: 400,
+                },
+            },
+            child: Status::Processing {
+                id: scene.to_string(),
+                completion: SequenceCompletion::ResourceUsage { cpu, memory },
+            },
+        }
+    }
+
     fn custom(scene: u64, name: &str, completed: f64) -> SequenceStatus {
         SequenceStatus::Whole(Status::Processing {
             id: scene.to_string(),
@@ -788,6 +832,46 @@ mod tests {
             assert!(body.contains(name), "worker codec missing: {body}");
         }
         assert_eq!(body.matches("--preset").count(), 2, "{body}");
+    }
+
+    #[test]
+    fn live_usage_is_shown_per_worker_and_unsampled_values_stay_hidden() {
+        const MIB: u64 = 1024 * 1024;
+        let mut app = app(2, encoder(), scenes(), clip_info());
+        for index in [0, 1] {
+            ParallelEncoderApp::map_progress(progress(index, (1, 1), 10), &mut app.cached_state);
+        }
+        ParallelEncoderApp::map_progress(usage(0, 412.0, 3 * 1024 * MIB), &mut app.cached_state);
+        ParallelEncoderApp::map_progress(usage(1, 100.0, 512 * MIB), &mut app.cached_state);
+
+        let body = screen(&app).lines().skip(8).collect::<Vec<_>>().join("\n");
+        assert!(body.contains("CPU 412%"), "worker cpu missing: {body}");
+        assert!(body.contains("3.0 GiB"), "worker memory missing: {body}");
+        assert!(body.contains("512 MiB"), "peer memory missing: {body}");
+
+        let detail = app
+            .progress_snapshot(std::time::Duration::from_secs(1))
+            .expect("snapshot")
+            .detail;
+        assert!(detail.contains("CPU 512%"), "total cpu missing: {detail}");
+        assert!(detail.contains("3.5 GiB"), "total memory missing: {detail}");
+
+        for index in [0, 1] {
+            ParallelEncoderApp::map_progress(usage(index, 0.0, 0), &mut app.cached_state);
+        }
+        let body = screen(&app).lines().skip(8).collect::<Vec<_>>().join("\n");
+        assert!(
+            !body.contains("CPU 0%") && !body.contains("0 MiB"),
+            "an unsampled process must render nothing, not zero: {body}"
+        );
+        let detail = app
+            .progress_snapshot(std::time::Duration::from_secs(1))
+            .expect("snapshot")
+            .detail;
+        assert!(
+            !detail.contains("CPU") && !detail.contains("MiB") && !detail.contains("GiB"),
+            "an unsampled process must not appear in the summary: {detail}"
+        );
     }
 
     #[test]
@@ -1286,6 +1370,7 @@ mod tests {
                     total_passes: 2,
                     frames_processed: 40,
                     total_frames: 100,
+                    usage: andean_condor::core::encoder::EncodeResourceUsage::default(),
                 },
             );
         }

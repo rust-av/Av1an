@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, io::IsTerminal};
 
 use andean_condor::{
     core::{
+        encoder::EncodeResourceUsage,
         input::clip_info::ClipInfo,
         sequence::{
             SequenceCompletion, SequenceDetails, SequenceStatus, Status, benchmarker::Benchmarker,
@@ -100,6 +101,18 @@ impl TuiApp for BenchmarkerApp {
                     }
                     true
                 },
+                Status::Processing {
+                    id,
+                    completion: SequenceCompletion::ResourceUsage { cpu, memory },
+                } => {
+                    let workers = id.parse::<u8>().expect("Workers is a number");
+                    let usage = EncodeResourceUsage { cpu, memory };
+                    state
+                        .results
+                        .entry(workers)
+                        .and_modify(|ws| ws.usage = usage.is_available().then_some(usage));
+                    true
+                }
                 _ => false,
             },
             SequenceStatus::Subprocess { parent: _, child } => match child {
@@ -120,6 +133,7 @@ impl TuiApp for BenchmarkerApp {
                             added: false,
                             finished: None,
                             failed_reason: None,
+                            usage: None,
                             current_frame: completed,
                             initial_frame: completed,
                             total_frames: total,
@@ -213,6 +227,7 @@ impl TuiApp for BenchmarkerApp {
                     Cell::from(Line::from(worker.to_string()).centered()),
                     Cell::from(Line::from(status.fps_or_error()).centered()),
                     Cell::from(Line::from(status.status()).centered()),
+                    Cell::from(Line::from(status.usage_desc()).centered()),
                     Cell::from(
                         Line::from(format!("{}/{}", status.current_frame, status.total_frames))
                             .centered(),
@@ -227,12 +242,14 @@ impl TuiApp for BenchmarkerApp {
                 Constraint::Fill(1),
                 Constraint::Fill(1),
                 Constraint::Fill(1),
+                Constraint::Fill(1),
             ],
         )
         .header(Row::new(vec![
             Cell::from(Line::from("Workers").centered()),
             Cell::from(Line::from("FPS").centered()),
             Cell::from(Line::from("Meets Threshold").centered()),
+            Cell::from(Line::from("Peak Usage").centered()),
             Cell::from(Line::from("Frames").centered()),
         ]))
         .block(Block::bordered().title_bottom(Line::from("Benchmarking...").centered()));
@@ -261,6 +278,8 @@ pub struct WorkerStatus {
     pub finished: Option<std::time::Instant>,
     pub added: bool,
     pub failed_reason: Option<String>,
+    /// Peaks reported by the trial, or `None` when nothing could be sampled.
+    pub usage: Option<EncodeResourceUsage>,
     pub current_frame: u64,
     /// First observed progress, not work timed by this UI clock.
     pub initial_frame: u64,
@@ -285,6 +304,12 @@ impl WorkerStatus {
     fn fps_or_error(&self) -> String {
         self.fps_at(std::time::Instant::now())
             .map_or_else(|| "-".to_owned(), |fps| format!("{fps:.2} FPS"))
+    }
+
+    fn usage_desc(&self) -> String {
+        self.usage
+            .and_then(crate::components::usage::describe)
+            .unwrap_or_else(|| "-".to_owned())
     }
 
     fn status(&self) -> String {
@@ -320,6 +345,88 @@ pub enum BenchmarkerConsoleEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MIB: u64 = 1024 * 1024;
+
+    fn usage_status(worker: u8, cpu: f32, memory: u64) -> SequenceStatus {
+        SequenceStatus::Whole(Status::Processing {
+            id: worker.to_string(),
+            completion: SequenceCompletion::ResourceUsage { cpu, memory },
+        })
+    }
+
+    fn screen(app: &BenchmarkerApp) -> String {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 20)).expect("terminal");
+        terminal.draw(|frame| app.render(frame)).expect("render");
+        let buffer = terminal.backend().buffer();
+        (0..20)
+            .map(|y| (0..120).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// A finished trial keeps its measured peaks; a trial whose processes were
+    /// never sampled shows `-` instead of claiming zero usage.
+    #[test]
+    fn each_trial_row_shows_its_peak_usage_and_hides_unavailable_samples() {
+        let (clip, scenes) = crate::test_helpers::quality_scene_fixture();
+        let mut app = BenchmarkerApp::new(scenes[0].encoder.clone(), clip);
+        let mut mapper = app.progress_mapper();
+        for id in ["2", "3"] {
+            app.shared_progress.apply(|state| {
+                mapper(
+                    SequenceStatus::Subprocess {
+                        parent: Status::Processing {
+                            id: "Benchmarker".into(),
+                            completion: SequenceCompletion::Passes {
+                                completed: 2,
+                                total: 2,
+                            },
+                        },
+                        child: Status::Processing {
+                            id: id.into(),
+                            completion: SequenceCompletion::Frames {
+                                completed: 90,
+                                total: 100,
+                            },
+                        },
+                    },
+                    state,
+                )
+            });
+        }
+        app.shared_progress
+            .apply(|state| mapper(usage_status(2, 812.0, 3 * 1024 * MIB), state));
+        app.shared_progress
+            .apply(|state| mapper(usage_status(3, 0.0, 0), state));
+        for id in ["2", "3"] {
+            app.shared_progress.apply(|state| {
+                mapper(
+                    SequenceStatus::Whole(Status::Completed { id: id.into() }),
+                    state,
+                )
+            });
+        }
+        app.on_snapshot(app.shared_progress.read());
+
+        assert_eq!(
+            app.cached_state.results[&2].usage_desc(),
+            "CPU 812% · 3.0 GiB"
+        );
+        assert_eq!(
+            app.cached_state.results[&3].usage_desc(),
+            "-",
+            "unsampled usage is unavailable, not zero"
+        );
+        let text = screen(&app);
+        assert!(text.contains("CPU 812%"), "peak cpu missing: {text}");
+        assert!(text.contains("3.0 GiB"), "peak memory missing: {text}");
+        assert!(
+            !text.contains("CPU 0%") && !text.contains("0 MiB"),
+            "an unsampled trial must not claim zero usage: {text}"
+        );
+    }
 
     #[test]
     fn benchmark_first_observed_frame_is_rate_baseline_and_finished_rate_stays_fixed() {
@@ -440,6 +547,7 @@ mod tests {
             finished: Some(now),
             added: false,
             failed_reason: None,
+            usage: None,
             current_frame: 1,
             initial_frame: 0,
             total_frames: 0,

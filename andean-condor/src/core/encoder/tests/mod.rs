@@ -4,6 +4,7 @@ mod photon_noise;
 #[cfg(target_os = "linux")]
 pub(crate) mod process_lifecycle;
 mod rav1e;
+mod resource_usage;
 mod statistics;
 pub(super) mod support;
 mod svt_av1;

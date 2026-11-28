@@ -421,9 +421,11 @@ pub enum Commands {
         /// Defaults to `5`.
         #[arg(long, value_name = "Percent", value_parser = value_parser!(u8).range(0..=100))]
         threshold: Option<u8>,
-        /// The maximum amount of RAM (in megabytes) allowed across all workers
-        /// (unimplemented)
-        #[arg(long, value_name = "Megabytes", hide = true)]
+        /// The maximum amount of RAM (in megabytes) allowed across all workers.
+        ///
+        /// A trial that exceeds it stops the benchmark at the last worker
+        /// count that fit.
+        #[arg(long, value_name = "Megabytes")]
         max_memory: Option<u32>,
     },
     /// Calculate the optimum quantizer per scene for a given metric target

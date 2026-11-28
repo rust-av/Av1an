@@ -462,6 +462,7 @@ pub(in crate::core::sequence::parallel_encoder) mod internal_integration {
                     ParallelEncoderOptions {
                         max_tries: 1,
                         validate_frame_count: false,
+                        ..Default::default()
                     }, // Fixed-pool one-attempt control.
                 )
             } else {
@@ -474,6 +475,7 @@ pub(in crate::core::sequence::parallel_encoder) mod internal_integration {
                     ParallelEncoderOptions {
                         max_tries: 1,
                         validate_frame_count: false,
+                        ..Default::default()
                     },
                 )
             };
@@ -669,6 +671,7 @@ pub(in crate::core::sequence::parallel_encoder) mod internal_integration {
             ParallelEncoderOptions {
                 max_tries: 1,
                 validate_frame_count: false,
+                ..Default::default()
             },
         );
         let state = DISCONNECT.get().expect("race probe").state.lock().expect("state");

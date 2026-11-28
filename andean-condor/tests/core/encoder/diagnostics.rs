@@ -585,6 +585,7 @@ fn owned_ffmpeg_case(root: &Path, case: &str) {
                 ParallelEncoderOptions {
                     max_tries: 1,
                     validate_frame_count: true,
+                    ..Default::default()
                 },
             );
             eprintln!("parallel result={result:?}");

@@ -93,6 +93,7 @@ impl ParallelEncoder {
                         let results_tx = stream.results_tx.clone();
                         let finished = std::sync::Arc::clone(&stream.finished_scenes);
                         let (stop, headers, clip_info) = (&stop, &headers, &clip_info);
+                        let options = options.clone();
                         handles.push(scope.spawn(move || {
                             let mut scene = None;
                             let result = stop.catch(&format!("Streaming worker {worker}"), || {
@@ -113,7 +114,7 @@ impl ParallelEncoder {
                                             let started = std::time::SystemTime::now();
                                             let mut attempt = encode_attempts(
                                                 &task,
-                                                options,
+                                                options.clone(),
                                                 stop,
                                                 progress,
                                                 |temp, attempt_progress| {

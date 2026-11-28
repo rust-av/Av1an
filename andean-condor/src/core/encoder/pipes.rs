@@ -474,4 +474,45 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn progress_with_a_pid_reports_the_encoder_process_memory() {
+        let (tx, rx) = mpsc::channel();
+        let reader = spawn_reader(
+            Cursor::new(b"1/4 frames\n".to_vec()),
+            progress_reader(
+                EncoderBase::X264,
+                (1, 1),
+                tx,
+                false,
+                Arc::new(AtomicU64::new(0)),
+                Some(std::process::id()),
+            ),
+        );
+        let captured = join_worker(reader, "resource sampling").expect("reader joined");
+        assert!(captured.failure.is_none(), "{:?}", captured.failure);
+        let usage = rx.into_iter().next().expect("progress record").usage;
+        assert!(usage.memory > 0, "a live pid has resident memory");
+    }
+
+    #[test]
+    fn progress_without_a_pid_reports_default_usage() {
+        let (tx, rx) = mpsc::channel();
+        let reader = spawn_reader(
+            Cursor::new(b"1/4 frames\n".to_vec()),
+            progress_reader(
+                EncoderBase::X264,
+                (1, 1),
+                tx,
+                false,
+                Arc::new(AtomicU64::new(0)),
+                None,
+            ),
+        );
+        let captured = join_worker(reader, "missing pid sampling").expect("reader joined");
+        assert!(captured.failure.is_none(), "{:?}", captured.failure);
+        let usage = rx.into_iter().next().expect("progress record").usage;
+        assert_eq!(usage.memory, 0);
+        assert_eq!(usage.cpu, 0.0);
+    }
 }
